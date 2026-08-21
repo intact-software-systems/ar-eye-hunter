@@ -1,16 +1,13 @@
-import type {
-    ControlFleetAgentRunOutcome,
-    ControlFleetFailureSignature,
-} from '../../../control-run-manager.ts';
+import type { ControlFleetAgentRunOutcome, ControlFleetFailureSignature } from '../../../control-run-manager.ts';
 
 export function fleetRegionKey(
-    label: ControlFleetAgentRunOutcome['label'],
+    label: ControlFleetAgentRunOutcome['label']
 ): string {
     return `${label.region ?? 'unlabeled'} / ${label.provider ?? 'unknown'}`;
 }
 
 export function fleetRegionLabel(
-    label: ControlFleetAgentRunOutcome['label'],
+    label: ControlFleetAgentRunOutcome['label']
 ): string {
     const region = label.region ?? 'unlabeled';
     const provider = label.provider ?? 'unknown provider';
@@ -18,7 +15,7 @@ export function fleetRegionLabel(
 }
 
 export function fleetAgentStateTone(
-    state: ControlFleetAgentRunOutcome['state'] | undefined,
+    state: ControlFleetAgentRunOutcome['state'] | undefined
 ): string {
     if (state === 'passed') {
         return 'good';
@@ -36,7 +33,7 @@ export function fleetAgentStateTone(
 }
 
 export function fleetFailureTone(
-    category: ControlFleetFailureSignature['category'],
+    category: ControlFleetFailureSignature['category']
 ): string {
     if (category === 'command' || category === 'runtime') {
         return 'bad';
@@ -51,7 +48,7 @@ export function fleetFailureTone(
 }
 
 export function fleetCellTitle(
-    cell: ControlFleetAgentRunOutcome | undefined,
+    cell: ControlFleetAgentRunOutcome | undefined
 ): string {
     if (!cell) {
         return 'No result for this agent and run';

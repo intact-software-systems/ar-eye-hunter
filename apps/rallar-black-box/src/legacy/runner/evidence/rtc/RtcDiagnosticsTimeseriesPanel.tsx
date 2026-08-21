@@ -20,7 +20,7 @@ function timeseriesPolyline(series: RtcDiagnosticsTimeseriesSeries): string {
 }
 
 export function RtcDiagnosticsTimeseriesPanel({
-    series,
+    series
 }: {
     series: readonly RtcDiagnosticsTimeseriesSeries[];
 }) {
@@ -42,8 +42,7 @@ export function RtcDiagnosticsTimeseriesPanel({
                         <div>
                             <strong>{entry.label}</strong>
                             <small>
-                                latest {entry.latest} {entry.unit} - max{' '}
-                                {entry.max} {entry.unit}
+                                latest {entry.latest} {entry.unit} - max {entry.max} {entry.unit}
                             </small>
                         </div>
                         <svg

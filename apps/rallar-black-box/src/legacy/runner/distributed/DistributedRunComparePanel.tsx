@@ -1,10 +1,7 @@
 import type { ControlDistributedRunSnapshot } from '../../../control-run-manager.ts';
 import type { DistributedRunCompareSummary } from '../../../distributed-recipes.ts';
 import { Metric } from '../../shared/Metric.tsx';
-import {
-    formatSignedDuration,
-    formatSignedNumber,
-} from '../../shared/time-format.ts';
+import { formatSignedDuration, formatSignedNumber } from '../../shared/time-format.ts';
 
 export function DistributedRunComparePanel({
     runs,
@@ -12,7 +9,7 @@ export function DistributedRunComparePanel({
     rightId,
     summary,
     onLeftChange,
-    onRightChange,
+    onRightChange
 }: {
     runs: readonly ControlDistributedRunSnapshot[];
     leftId: string;
@@ -22,7 +19,7 @@ export function DistributedRunComparePanel({
     onRightChange(value: string): void;
 }) {
     const options = [...runs].sort(
-        (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+        (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
     );
     return (
         <section className="distributed-subpanel distributed-compare-panel">
@@ -89,13 +86,13 @@ export function DistributedRunComparePanel({
                         <Metric
                             label="Duration delta"
                             value={formatSignedDuration(
-                                summary.timingDelta.durationDeltaMs,
+                                summary.timingDelta.durationDeltaMs
                             )}
                         />
                         <Metric
                             label="Message delta"
                             value={formatSignedNumber(
-                                summary.receivedMessageDelta.delta,
+                                summary.receivedMessageDelta.delta
                             )}
                         />
                     </div>
@@ -143,7 +140,7 @@ export function DistributedRunComparePanel({
 function DistributedCompareList({
     title,
     values,
-    tone = 'muted',
+    tone = 'muted'
 }: {
     title: string;
     values: readonly string[];
@@ -158,9 +155,7 @@ function DistributedCompareList({
                         <span className={`pill ${tone}`}>{value}</span>
                     </div>
                 ))}
-                {values.length === 0 && (
-                    <div className="empty-state">No delta</div>
-                )}
+                {values.length === 0 && <div className="empty-state">No delta</div>}
             </div>
         </section>
     );

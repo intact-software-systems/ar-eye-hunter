@@ -1,54 +1,42 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    configureDirectRallarFacade,
-    createDirectRallarRuntimeEvent,
-} from '../../../direct-rallar-operations.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useMemo, useState } from 'react';
+import { configureDirectRallarFacade, createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
 import {
     defaultRallarServerWorkbenchVariables,
     executeRallarServerRestRequest,
     toRallarServerBlackBoxCommand,
     type RallarServerRestResponse,
-    type RallarServerWorkbenchVariables,
+    type RallarServerWorkbenchVariables
 } from '../../../rallar-server-workbench.ts';
 import { deriveRtcDiagnostics } from '../../../rtc-diagnostics.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { json } from '../../shared/json-presentation.ts';
-import {
-    recordArray,
-    recordValue as optionalRecord,
-} from '../../shared/record-value.ts';
+import { recordArray, recordValue as optionalRecord } from '../../shared/record-value.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import {
-    type CommandCenterActionFeedback,
     completedActionFeedback,
     idleActionFeedback,
     runningActionFeedback,
+    type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import { findStringDeep } from '../shared/deep-string-value.ts';
-import {
-    type CommandCenterRestActionLog,
-    restLogEntry,
-} from '../shared/rest-action-log.ts';
+import { restLogEntry, type CommandCenterRestActionLog } from '../shared/rest-action-log.ts';
 import {
     ROOMS_CLIENTS_ACTIONS,
     type ClientSortId,
     type GroupSortId,
     type RoomsClientsAction,
-    type RoomsClientsActionId,
+    type RoomsClientsActionId
 } from './rooms-clients-contracts.ts';
 import {
     rowsFromClientSnapshots,
     rowsFromGroupSnapshots,
     rowsFromStateEvents,
     sortClientRows,
-    sortGroupRows,
+    sortGroupRows
 } from './rooms-clients-derivations.ts';
 import { buildPresetRequestInput } from './rooms-clients-request.ts';
 
@@ -59,7 +47,7 @@ export type UseRoomsClientsControllerInput = Readonly<{
     globalValues?: CommandCenterGlobalValues;
     onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
 }>;
 
@@ -68,7 +56,7 @@ export function useRoomsClientsController({
     bootstrap,
     authSession,
     globalValues,
-    onGlobalValueChange,
+    onGlobalValueChange
 }: UseRoomsClientsControllerInput) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
@@ -77,23 +65,19 @@ export function useRoomsClientsController({
             defaultRallarServerWorkbenchVariables({
                 applicationId: globalValues?.applicationId,
                 workspaceId: globalValues?.workspaceId,
-                principalId:
-                    globalValues?.clientId ??
+                principalId: globalValues?.clientId ??
                     authSession?.clientId ??
                     config?.actor ??
                     bootstrap.actor,
-                sessionId:
-                    globalValues?.sessionId ??
+                sessionId: globalValues?.sessionId ??
                     authSession?.sessionId ??
                     config?.sessionId ??
                     bootstrap.sessionId,
-                groupId:
-                    globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
-                username:
-                    authSession?.username ??
+                groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+                username: authSession?.username ??
                     globalValues?.clientId ??
                     config?.actor ??
-                    bootstrap.actor,
+                    bootstrap.actor
             }),
         [
             authSession?.clientId,
@@ -109,26 +93,22 @@ export function useRoomsClientsController({
             globalValues?.clientId,
             globalValues?.roomId,
             globalValues?.sessionId,
-            globalValues?.workspaceId,
-        ],
+            globalValues?.workspaceId
+        ]
     );
     const [apiBaseUrl, setApiBaseUrl] = useState(
-        globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl
     );
-    const [variables, setVariables] =
-        useState<RallarServerWorkbenchVariables>(defaultVariables);
+    const [variables, setVariables] = useState<RallarServerWorkbenchVariables>(defaultVariables);
     const [timeoutMs, setTimeoutMs] = useState(5_000);
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
-    const [actionFeedback, setActionFeedback] =
-        useState<CommandCenterActionFeedback>(() =>
-            idleActionFeedback(
-                'Run a Groups/Clients operation to see request status.',
-            ),
-        );
-    const [actions, setActions] = useState<
-        readonly CommandCenterRestActionLog[]
-    >([]);
+    const [actionFeedback, setActionFeedback] = useState<CommandCenterActionFeedback>(() =>
+        idleActionFeedback(
+            'Run a Groups/Clients operation to see request status.'
+        )
+    );
+    const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
     const [groupsBody, setGroupsBody] = useState<unknown>();
     const [clientsBody, setClientsBody] = useState<unknown>();
     const [groupEventsBody, setGroupEventsBody] = useState<unknown>();
@@ -136,15 +116,14 @@ export function useRoomsClientsController({
     const [onlyGroupsWithMembers, setOnlyGroupsWithMembers] = useState(false);
     const [onlyOnlineClients, setOnlyOnlineClients] = useState(false);
     const [groupSort, setGroupSort] = useState<GroupSortId>('active-desc');
-    const [clientSort, setClientSort] =
-        useState<ClientSortId>('online-active-desc');
+    const [clientSort, setClientSort] = useState<ClientSortId>('online-active-desc');
     const [expectedOtherClient, setExpectedOtherClient] = useState('bob');
 
     useEffect(() => {
         setApiBaseUrl(
             globalValues?.apiBaseUrl ??
                 config?.apiBaseUrl ??
-                bootstrap.apiBaseUrl,
+                bootstrap.apiBaseUrl
         );
     }, [bootstrap.apiBaseUrl, config?.apiBaseUrl, globalValues?.apiBaseUrl]);
 
@@ -169,18 +148,17 @@ export function useRoomsClientsController({
             username: globalValues
                 ? defaultVariables.username
                 : current.username || defaultVariables.username,
-            clientInstanceId:
-                current.clientInstanceId || defaultVariables.clientInstanceId,
+            clientInstanceId: current.clientInstanceId || defaultVariables.clientInstanceId
         }));
     }, [defaultVariables, globalValues]);
 
     const updateVariable = <K extends keyof RallarServerWorkbenchVariables>(
         key: K,
-        value: RallarServerWorkbenchVariables[K],
+        value: RallarServerWorkbenchVariables[K]
     ): void => {
         setVariables((current) => ({
             ...current,
-            [key]: value,
+            [key]: value
         }));
     };
 
@@ -189,8 +167,7 @@ export function useRoomsClientsController({
     };
 
     const promoteGroupToGlobal = (body?: unknown): void => {
-        const groupId =
-            findStringDeep(body, ['groupId', 'roomId']) ??
+        const groupId = findStringDeep(body, ['groupId', 'roomId']) ??
             variables.groupId.trim();
         if (
             groupId &&
@@ -203,7 +180,7 @@ export function useRoomsClientsController({
 
     const applyResponseBody = (
         actionId: RoomsClientsActionId,
-        body: unknown,
+        body: unknown
     ): void => {
         if (
             actionId === 'list-groups' ||
@@ -234,7 +211,7 @@ export function useRoomsClientsController({
     };
 
     const runPresetAction = async (
-        action: RoomsClientsAction,
+        action: RoomsClientsAction
     ): Promise<void> => {
         if (!action.presetId) {
             return;
@@ -249,14 +226,14 @@ export function useRoomsClientsController({
                 apiBaseUrl,
                 authSession,
                 timeoutMs,
-                query: action.query,
+                query: action.query
             });
             setActionFeedback(
                 runningActionFeedback(
                     action.label,
                     requestInput.path,
-                    'Sending authenticated Rallar Server request.',
-                ),
+                    'Sending authenticated Rallar Server request.'
+                )
             );
             const response = await executeRallarServerRestRequest(requestInput);
             appendAction(restLogEntry(action.label, response));
@@ -271,8 +248,8 @@ export function useRoomsClientsController({
                     durationMs: response.durationMs,
                     message: response.ok
                         ? 'Request completed.'
-                        : (response.error?.message ?? 'Request failed.'),
-                }),
+                        : (response.error?.message ?? 'Request failed.')
+                })
             );
             if (response.bodyJson !== undefined) {
                 applyResponseBody(action.actionId, response.bodyJson);
@@ -284,14 +261,14 @@ export function useRoomsClientsController({
                     'read-group',
                     'join-group',
                     'group-presence-connect',
-                    'group-presence-heartbeat',
+                    'group-presence-heartbeat'
                 ].includes(action.actionId)
             ) {
                 promoteGroupToGlobal(response.bodyJson);
             }
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -300,10 +277,11 @@ export function useRoomsClientsController({
                     target: action.presetId,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -315,15 +293,17 @@ export function useRoomsClientsController({
         let completed = 0;
         let failedResponse: RallarServerRestResponse | undefined;
         try {
-            for (const actionId of [
-                'list-groups',
-                'list-clients',
-                'read-group',
-                'client-events-page',
-                'group-events-page',
-            ] as const) {
+            for (
+                const actionId of [
+                    'list-groups',
+                    'list-clients',
+                    'read-group',
+                    'client-events-page',
+                    'group-events-page'
+                ] as const
+            ) {
                 const action = ROOMS_CLIENTS_ACTIONS.find(
-                    (entry) => entry.actionId === actionId,
+                    (entry) => entry.actionId === actionId
                 );
                 if (!action?.presetId) {
                     continue;
@@ -334,17 +314,16 @@ export function useRoomsClientsController({
                     apiBaseUrl,
                     authSession,
                     timeoutMs,
-                    query: action.query,
+                    query: action.query
                 });
                 setActionFeedback(
                     runningActionFeedback(
                         `Refresh state: ${action.label}`,
                         requestInput.path,
-                        `Running refresh step ${completed + 1}.`,
-                    ),
+                        `Running refresh step ${completed + 1}.`
+                    )
                 );
-                const response =
-                    await executeRallarServerRestRequest(requestInput);
+                const response = await executeRallarServerRestRequest(requestInput);
                 appendAction(restLogEntry(action.label, response));
                 completed += 1;
                 if (!response.ok && !failedResponse) {
@@ -362,8 +341,8 @@ export function useRoomsClientsController({
                         message: response.ok
                             ? `Refresh step ${completed} completed.`
                             : (response.error?.message ??
-                              'Refresh step failed.'),
-                    }),
+                                'Refresh step failed.')
+                    })
                 );
                 if (response.bodyJson !== undefined) {
                     applyResponseBody(action.actionId, response.bodyJson);
@@ -378,13 +357,15 @@ export function useRoomsClientsController({
                     status: failedResponse?.status ?? 'ok',
                     statusText: failedResponse?.statusText,
                     message: failedResponse
-                        ? `Refresh completed with a failed step: ${failedResponse.error?.message ?? failedResponse.statusText}.`
-                        : `${completed} state requests completed.`,
-                }),
+                        ? `Refresh completed with a failed step: ${
+                            failedResponse.error?.message ?? failedResponse.statusText
+                        }.`
+                        : `${completed} state requests completed.`
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -393,16 +374,17 @@ export function useRoomsClientsController({
                     target: `${apiBaseUrl}/api/state`,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
     const runDirectRoomsAction = async (
-        action: 'refresh' | 'create' | 'join' | 'leave',
+        action: 'refresh' | 'create' | 'join' | 'leave'
     ): Promise<void> => {
         const providerMode = bootstrap.providerMode;
         setBusyAction(`Direct room ${action}`);
@@ -413,13 +395,13 @@ export function useRoomsClientsController({
             runningActionFeedback(
                 label,
                 variables.groupId,
-                'Calling the browser Rallar facade.',
-            ),
+                'Calling the browser Rallar facade.'
+            )
         );
         try {
             if (providerMode !== 'browser-rallar') {
                 throw new Error(
-                    'Direct room actions require provider=browser-rallar.',
+                    'Direct room actions require provider=browser-rallar.'
                 );
             }
             const facade = await loadBrowserRallarFacade();
@@ -429,20 +411,19 @@ export function useRoomsClientsController({
                 applicationId: variables.applicationId,
                 workspaceId: variables.workspaceId,
                 roomId: variables.groupId,
-                actor:
-                    authSession?.username ??
+                actor: authSession?.username ??
                     authSession?.clientId ??
                     bootstrap.actor,
                 connection: 'rooms-clients',
                 authSession,
-                timeoutMs,
+                timeoutMs
             };
             configureDirectRallarFacade(facade, context);
             await facade.start({
                 connect: true,
                 refreshRooms: false,
                 refreshPeople: false,
-                timeoutMs,
+                timeoutMs
             });
 
             let body: unknown;
@@ -450,35 +431,38 @@ export function useRoomsClientsController({
                 body = await facade.rooms.refresh({
                     scope: {
                         applicationId: variables.applicationId,
-                        workspaceId: variables.workspaceId,
+                        workspaceId: variables.workspaceId
                     },
-                    timeoutMs,
+                    timeoutMs
                 });
-            } else if (action === 'create') {
+            }
+            else if (action === 'create') {
                 body = await facade.rooms.create({
                     displayName: variables.groupId,
                     scope: {
                         applicationId: variables.applicationId,
-                        workspaceId: variables.workspaceId,
+                        workspaceId: variables.workspaceId
                     },
-                    timeoutMs,
+                    timeoutMs
                 });
-            } else if (action === 'join') {
+            }
+            else if (action === 'join') {
                 body = await facade.rooms.join(variables.groupId, {
                     scope: {
                         applicationId: variables.applicationId,
-                        workspaceId: variables.workspaceId,
+                        workspaceId: variables.workspaceId
                     },
-                    timeoutMs,
+                    timeoutMs
                 });
-            } else {
+            }
+            else {
                 body = await facade.rooms.leave({
                     roomId: variables.groupId,
                     scope: {
                         applicationId: variables.applicationId,
-                        workspaceId: variables.workspaceId,
+                        workspaceId: variables.workspaceId
                     },
-                    timeoutMs,
+                    timeoutMs
                 });
             }
 
@@ -486,15 +470,16 @@ export function useRoomsClientsController({
                 const roomState = optionalRecord(body);
                 setGroupsBody(
                     recordArray(roomState.rooms).map(
-                        (row) => optionalRecord(row).snapshot ?? row,
-                    ),
+                        (row) => optionalRecord(row).snapshot ?? row
+                    )
                 );
                 setClientsBody(
                     recordArray(roomState.members).map(
-                        (row) => optionalRecord(row).client ?? row,
-                    ),
+                        (row) => optionalRecord(row).client ?? row
+                    )
                 );
-            } else if (body !== undefined) {
+            }
+            else if (body !== undefined) {
                 setGroupsBody(body);
             }
             if (action === 'create' || action === 'join') {
@@ -508,7 +493,7 @@ export function useRoomsClientsController({
                 status: 200,
                 statusText: 'OK',
                 durationMs: Math.max(0, Date.now() - startedAtEpochMs),
-                bodyJson: body,
+                bodyJson: body
             });
             setActionFeedback(
                 completedActionFeedback({
@@ -517,8 +502,8 @@ export function useRoomsClientsController({
                     target: variables.groupId,
                     ok: true,
                     status: 'ok',
-                    message: 'Rallar facade action completed.',
-                }),
+                    message: 'Rallar facade action completed.'
+                })
             );
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                 createDirectRallarRuntimeEvent({
@@ -526,14 +511,14 @@ export function useRoomsClientsController({
                     context,
                     payload: {
                         action,
-                        result: body,
-                    },
+                        result: body
+                    }
                 }),
-                `Direct room ${action} completed`,
+                `Direct room ${action} completed`
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             appendAction({
                 actionId: `direct-room-${action}-${Date.now()}`,
@@ -543,7 +528,7 @@ export function useRoomsClientsController({
                 status: 0,
                 statusText: message,
                 durationMs: Math.max(0, Date.now() - startedAtEpochMs),
-                errorKind: 'direct-rallar',
+                errorKind: 'direct-rallar'
             });
             setActionFeedback(
                 completedActionFeedback({
@@ -552,10 +537,11 @@ export function useRoomsClientsController({
                     target: variables.groupId,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -568,8 +554,8 @@ export function useRoomsClientsController({
                 'group-presence-connect',
                 'client-session-connect',
                 'group-events-page',
-                'client-events-page',
-            ].includes(action.actionId),
+                'client-events-page'
+            ].includes(action.actionId)
         ).map((action, index) => {
             const input = buildPresetRequestInput({
                 presetId: action.presetId!,
@@ -577,11 +563,11 @@ export function useRoomsClientsController({
                 apiBaseUrl,
                 authSession,
                 timeoutMs,
-                query: action.query,
+                query: action.query
             });
             return toRallarServerBlackBoxCommand(
                 input,
-                `rooms-clients-${index + 1}-${action.actionId}`,
+                `rooms-clients-${index + 1}-${action.actionId}`
             );
         });
         void navigator.clipboard?.writeText(
@@ -589,8 +575,8 @@ export function useRoomsClientsController({
                 recipeId: 'rallar-rooms-clients-command-center',
                 name: 'Rallar rooms and clients command-center recipe',
                 continueOnFailure: false,
-                commands,
-            }),
+                commands
+            })
         );
     };
 
@@ -601,56 +587,54 @@ export function useRoomsClientsController({
         : groupRows;
     const visibleClientRows = onlyOnlineClients
         ? clientRows.filter(
-              (row) => row.online === 'online' || row.sessions.length > 0,
-          )
+            (row) => row.online === 'online' || row.sessions.length > 0
+        )
         : clientRows;
     const sortedGroupRows = sortGroupRows(visibleGroupRows, groupSort);
     const sortedClientRows = sortClientRows(visibleClientRows, clientSort);
     const stateEvents = [
         ...rowsFromStateEvents(groupEventsBody),
-        ...rowsFromStateEvents(clientEventsBody),
+        ...rowsFromStateEvents(clientEventsBody)
     ]
         .slice(-32)
         .reverse();
     const expectedClients = diagnostics.membership.expectedClients;
     const observedClients = diagnostics.membership.observedClients;
     const missingClients = expectedClients.filter(
-        (client) => !observedClients.includes(client),
+        (client) => !observedClients.includes(client)
     );
     const activeGroupRow = groupRows.find(
         (row) =>
             row.groupId === variables.groupId ||
-            row.displayName === variables.groupId,
+            row.displayName === variables.groupId
     );
     const currentSessionInGroup = Boolean(
         variables.sessionId &&
-        activeGroupRow?.sessions.includes(variables.sessionId),
+            activeGroupRow?.sessions.includes(variables.sessionId)
     );
     const currentClientRow = clientRows.find(
         (row) =>
             row.principalId === variables.principalId ||
             row.username === variables.username ||
-            row.sessions.includes(variables.sessionId),
+            row.sessions.includes(variables.sessionId)
     );
-    const currentClientOnline =
-        currentClientRow?.online === 'online' ||
+    const currentClientOnline = currentClientRow?.online === 'online' ||
         (currentClientRow?.sessions.length ?? 0) > 0 ||
         currentSessionInGroup;
-    const expectedOtherClientVisible =
-        expectedOtherClient.trim().length === 0
-            ? false
-            : clientRows.some(
-                  (row) =>
-                      [row.principalId, row.username, ...row.sessions].some(
-                          (value) =>
-                              value
-                                  .toLowerCase()
-                                  .includes(
-                                      expectedOtherClient.trim().toLowerCase(),
-                                  ),
-                      ) &&
-                      (row.online === 'online' || row.sessions.length > 0),
-              );
+    const expectedOtherClientVisible = expectedOtherClient.trim().length === 0
+        ? false
+        : clientRows.some(
+            (row) =>
+                [row.principalId, row.username, ...row.sessions].some(
+                    (value) =>
+                        value
+                            .toLowerCase()
+                            .includes(
+                                expectedOtherClient.trim().toLowerCase()
+                            )
+                ) &&
+                (row.online === 'online' || row.sessions.length > 0)
+        );
 
     return {
         apiBaseUrl,
@@ -689,10 +673,8 @@ export function useRoomsClientsController({
         missingClients,
         currentSessionInGroup,
         currentClientOnline,
-        expectedOtherClientVisible,
+        expectedOtherClientVisible
     };
 }
 
-export type RoomsClientsControllerModel = ReturnType<
-    typeof useRoomsClientsController
->;
+export type RoomsClientsControllerModel = ReturnType<typeof useRoomsClientsController>;

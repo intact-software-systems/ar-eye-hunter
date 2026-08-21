@@ -1,4 +1,3 @@
-import { describe, expect, it, vi } from 'vitest';
 import { createRallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarRoomTransportStatus,
@@ -9,8 +8,9 @@ import type {
     RallarRtcRoomLaneWaitResult,
     RallarRtcStatus,
     RallarRtcStatusListener,
-    RallarRtcWaitForOpenResult,
+    RallarRtcWaitForOpenResult
 } from '@shared-web/browser/rallar.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar RTC facade factory', () => {
     it('delegates RTC methods through injected operations', async () => {
@@ -25,13 +25,13 @@ describe('Rallar RTC facade factory', () => {
                 makingOffer: false,
                 ignoreOffer: false,
                 iceCandidateQueueSize: 0,
-                remoteStreamIds: [],
+                remoteStreamIds: []
             },
             lanes: [],
             isActive: true,
             hasNoReconnectableLanes: false,
             isRoutable: true,
-            readyLaneIds: ['lane-1'],
+            readyLaneIds: ['lane-1']
         } satisfies RallarRtcPeerStatus;
         const status = {
             sessionId: 'session-1',
@@ -40,7 +40,7 @@ describe('Rallar RTC facade factory', () => {
             activePeerIds: ['peer-1'],
             peerIdsWithNoReconnectableLanes: [],
             readyPeerIds: ['peer-1'],
-            peers: [peer],
+            peers: [peer]
         } satisfies RallarRtcStatus;
         const roomStatus = {
             roomId: 'room-1',
@@ -53,7 +53,7 @@ describe('Rallar RTC facade factory', () => {
                 reconnectEnabled: true,
                 reconnectAttempts: 0,
                 maxReconnectAttempts: 5,
-                reconnectExhausted: false,
+                reconnectExhausted: false
             },
             rtc: {
                 desired: true,
@@ -64,8 +64,8 @@ describe('Rallar RTC facade factory', () => {
                 activePeerIds: ['peer-1'],
                 readyPeerIds: ['peer-1'],
                 failedPeerIds: [],
-                laneId: 'lane-1',
-            },
+                laneId: 'lane-1'
+            }
         } satisfies RallarRoomTransportStatus;
         const laneResult = {
             transport: 'rtc',
@@ -73,7 +73,7 @@ describe('Rallar RTC facade factory', () => {
             peerId: 'peer-1',
             laneId: 'lane-1',
             rtcStatus: status,
-            peer,
+            peer
         } satisfies RallarRtcWaitForOpenResult;
         const roomLaneResult = {
             transport: 'rtc',
@@ -87,7 +87,7 @@ describe('Rallar RTC facade factory', () => {
             notReadyPeerIds: [],
             missingPeerIds: [],
             extraPeerIds: [],
-            observedCount: 1,
+            observedCount: 1
         } satisfies RallarRtcRoomLaneWaitResult;
         const diagnostics = {
             sessionId: 'session-1',
@@ -95,13 +95,13 @@ describe('Rallar RTC facade factory', () => {
             peerCount: 1,
             connectedPeerCount: 1,
             relayPeerCount: 0,
-            peers: [],
+            peers: []
         } satisfies RallarRtcDiagnostics;
         const recovery = {
             peerId: 'peer-1',
             action: 'reconnect',
             status: 'started',
-            rtcStatus: status,
+            rtcStatus: status
         } satisfies RallarRtcRecoveryResult;
         const unsubscribeStatus = vi.fn();
         const unsubscribeLifecycle = vi.fn();
@@ -124,7 +124,7 @@ describe('Rallar RTC facade factory', () => {
             readyPeerIds: vi.fn(() => ['peer-1']),
             diagnostics: vi.fn(async () => diagnostics),
             restartIce: vi.fn(async () => recovery),
-            reconnectPeer: vi.fn(async () => recovery),
+            reconnectPeer: vi.fn(async () => recovery)
         };
 
         const facade = createRallarRtcFacade(operations);
@@ -136,11 +136,11 @@ describe('Rallar RTC facade factory', () => {
         expect(facade.onStatus(statusListener)).toBe(unsubscribeStatus);
         expect(facade.onLifecycle(lifecycleListener)).toBe(unsubscribeLifecycle);
         await expect(
-            facade.waitForLane('peer-1', 'lane-1'),
+            facade.waitForLane('peer-1', 'lane-1')
         ).resolves.toBe(laneResult);
         await expect(facade.waitForOpen('peer-1')).resolves.toBe(laneResult);
         await expect(
-            facade.waitForRoomLane('room-1', 'lane-1'),
+            facade.waitForRoomLane('room-1', 'lane-1')
         ).resolves.toBe(roomLaneResult);
         expect(facade.peer('peer-1')).toBe(peer);
         expect(facade.knownPeerIds()).toEqual(['peer-1']);
@@ -158,18 +158,18 @@ describe('Rallar RTC facade factory', () => {
         expect(operations.onStatus).toHaveBeenCalledWith(statusListener, {});
         expect(operations.onLifecycle).toHaveBeenCalledWith(
             lifecycleListener,
-            {},
+            {}
         );
         expect(operations.waitForLane).toHaveBeenCalledWith(
             'peer-1',
             'lane-1',
-            {},
+            {}
         );
         expect(operations.waitForOpen).toHaveBeenCalledWith('peer-1', {});
         expect(operations.waitForRoomLane).toHaveBeenCalledWith(
             'room-1',
             'lane-1',
-            {},
+            {}
         );
         expect(operations.peer).toHaveBeenCalledWith('peer-1', {});
         expect(operations.readyPeerIds).toHaveBeenCalledWith(undefined);

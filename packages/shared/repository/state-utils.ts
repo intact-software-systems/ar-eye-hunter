@@ -23,7 +23,7 @@ export function toStableJson(value: unknown): unknown {
     return Object.fromEntries(
         Object.entries(value as Record<string, unknown>)
             .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, entryValue]) => [key, toStableJson(entryValue)]),
+            .map(([key, entryValue]) => [key, toStableJson(entryValue)])
     );
 }
 

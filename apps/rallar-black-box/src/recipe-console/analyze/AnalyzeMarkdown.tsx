@@ -9,17 +9,20 @@ type MarkdownDocument = Readonly<{
 }>;
 
 export function AnalyzeMarkdown({
-    model,
-}: Readonly<{ model: AnalyzeArtifactProjection }>) {
+    model
+}: Readonly<{ model: AnalyzeArtifactProjection; }>) {
     const [feedback, setFeedback] = useState<string>();
     const documents = markdownDocuments(model);
 
     async function copy(document: MarkdownDocument): Promise<void> {
         try {
-            if (!navigator.clipboard) throw new Error('Clipboard access is unavailable.');
+            if (!navigator.clipboard) {
+                throw new Error('Clipboard access is unavailable.');
+            }
             await navigator.clipboard.writeText(document.value);
             setFeedback(`${document.label} copied.`);
-        } catch (error) {
+        }
+        catch (error) {
             setFeedback(error instanceof Error ? error.message : String(error));
         }
     }
@@ -34,8 +37,12 @@ export function AnalyzeMarkdown({
                 <span>{documents.length} documents</span>
             </header>
             <div className={styles.markdownActions} aria-label="Artifact Markdown documents">
-                {documents.map(document => (
-                    <button key={document.id} type="button" onClick={() => void copy(document)}>
+                {documents.map((document) => (
+                    <button
+                        key={document.id}
+                        type="button"
+                        onClick={() => void copy(document)}
+                    >
                         Copy {document.label.toLowerCase()}
                     </button>
                 ))}
@@ -60,6 +67,6 @@ function markdownDocuments(model: AnalyzeArtifactProjection): readonly MarkdownD
             : undefined,
         model.analysis.performanceMarkdown
             ? { id: 'performance', label: 'Performance', value: model.analysis.performanceMarkdown }
-            : undefined,
+            : undefined
     ].filter((document): document is MarkdownDocument => document !== undefined);
 }

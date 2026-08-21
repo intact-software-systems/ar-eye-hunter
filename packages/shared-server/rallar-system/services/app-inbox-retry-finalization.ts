@@ -1,21 +1,21 @@
 import { Temporal } from '@js-temporal/polyfill';
-import {
-    EntityStatus,
-    type ResourceEntry,
-    toResourceEntryWithUpdatedResource,
-} from '@shared/queuebox/ResourceEntry.ts';
-import type {
-    ResourceInboxRetryExhaustion,
-    ResourceInboxRetryExhaustionRecovery,
-} from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
-import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
+import type {
+    ResourceInboxRetryExhaustion,
+    ResourceInboxRetryExhaustionRecovery
+} from '@shared/queuebox/DequeueResourceEntryController.ts';
+import {
+    EntityStatus,
+    toResourceEntryWithUpdatedResource,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';
+import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
 import { classifyAppInboxError } from './app-inbox-error-classification.ts';
-import { type RallarTimingSink, timeRallarAsync } from './timing.ts';
+import { timeRallarAsync, type RallarTimingSink } from './timing.ts';
 
 export type AppInboxRetryFinalization =
     | ResourceInboxRetryExhaustion
@@ -23,32 +23,32 @@ export type AppInboxRetryFinalization =
 
 export function createAppInboxRetryExhaustionHandler(
     options: Readonly<{
-    database: PSqlSql;
-    timing?: RallarTimingSink;
-    }>,
+        database: PSqlSql;
+        timing?: RallarTimingSink;
+    }>
 ): (exhaustion: ResourceInboxRetryExhaustion) => Promise<ResourceEntry> {
     return createFinalizer(options);
 }
 
 export function createAppInboxRetryExhaustionRecoveryHandler(
     options: Readonly<{
-    database: PSqlSql;
-    timing?: RallarTimingSink;
-    }>,
+        database: PSqlSql;
+        timing?: RallarTimingSink;
+    }>
 ): (exhaustion: ResourceInboxRetryExhaustionRecovery) => Promise<ResourceEntry> {
     return createFinalizer(options);
 }
 
 function createFinalizer(
     options: Readonly<{
-    database: PSqlSql;
-    timing?: RallarTimingSink;
-    }>,
+        database: PSqlSql;
+        timing?: RallarTimingSink;
+    }>
 ): (exhaustion: AppInboxRetryFinalization) => Promise<ResourceEntry> {
     return async (exhaustion) => {
         if (exhaustion.reservationAttempt < exhaustion.processingAttempts) {
             throw new RangeError(
-                'App inbox exhaustion reservation precedes the processing retry limit',
+                'App inbox exhaustion reservation precedes the processing retry limit'
             );
         }
         const finalizedAtEpochMs = toFinalizedAtEpochMs(exhaustion);
@@ -61,7 +61,7 @@ function createFinalizer(
             exhaustion: exhaustion.exhausted,
             queueAgeMs: exhaustion.queueAgeMs,
             dueAgeMs: exhaustion.dueAgeMs,
-            source: exhaustion.failure.source,
+            source: exhaustion.failure.source
         } as const;
         return await timeRallarAsync(
             options.timing,
@@ -69,49 +69,49 @@ function createFinalizer(
                 component: 'app-inbox-phase',
                 operation: 'transaction',
                 requestId: exhaustion.entry.key.resourceId,
-                details,
+                details
             },
             async () =>
                 await runInTransaction(options.database, async (transaction) => {
-                const resourceInbox = new ResourceInboxRepository(transaction);
-                const results = new ResourceInboxResultsRepository(transaction);
-                await timeRallarAsync(
-                    options.timing,
-                    {
-                        component: 'app-inbox-phase',
-                        operation: 'write',
-                        requestId: exhaustion.entry.key.resourceId,
-                        details,
-                    },
-                    async () => {
-                        await results.replace(toResourceEntryWithUpdatedResource(
-                            exhaustion.entry,
-                            EntityStatus.FAILED,
-                            diagnostics,
-                        ));
-                        const finished = await resourceInbox.finishReserved(
-                            exhaustion.entry.key,
-                            exhaustion.reservationAttempt,
-                            EntityStatus.FAILED,
-                            new Date(finalizedAtEpochMs),
-                        );
-                        if (!finished) {
-                            throw new AppInboxReservationConflictError(exhaustion.entry.key);
+                    const resourceInbox = new ResourceInboxRepository(transaction);
+                    const results = new ResourceInboxResultsRepository(transaction);
+                    await timeRallarAsync(
+                        options.timing,
+                        {
+                            component: 'app-inbox-phase',
+                            operation: 'write',
+                            requestId: exhaustion.entry.key.resourceId,
+                            details
+                        },
+                        async () => {
+                            await results.replace(toResourceEntryWithUpdatedResource(
+                                exhaustion.entry,
+                                EntityStatus.FAILED,
+                                diagnostics
+                            ));
+                            const finished = await resourceInbox.finishReserved(
+                                exhaustion.entry.key,
+                                exhaustion.reservationAttempt,
+                                EntityStatus.FAILED,
+                                new Date(finalizedAtEpochMs)
+                            );
+                            if (!finished) {
+                                throw new AppInboxReservationConflictError(exhaustion.entry.key);
+                            }
                         }
-                    },
-                );
-                return {
-                    ...exhaustion.entry,
-                    status: EntityStatus.FAILED,
-                    dequeueAudit: {
-                        ...exhaustion.entry.dequeueAudit,
-                        endTs: Temporal.Instant.fromEpochMilliseconds(
-                            finalizedAtEpochMs,
-                        ),
-                        nextTs: undefined,
-                    },
-                };
-            }),
+                    );
+                    return {
+                        ...exhaustion.entry,
+                        status: EntityStatus.FAILED,
+                        dequeueAudit: {
+                            ...exhaustion.entry.dequeueAudit,
+                            endTs: Temporal.Instant.fromEpochMilliseconds(
+                                finalizedAtEpochMs
+                            ),
+                            nextTs: undefined
+                        }
+                    };
+                })
         );
     };
 }
@@ -122,7 +122,7 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
         ? { exhaustedAtEpochMs: exhaustion.exhaustedAtEpochMs }
         : {
             selectedDueAtEpochMs: exhaustion.selectedDueAtEpochMs,
-            finalizedAtEpochMs: exhaustion.finalizedAtEpochMs,
+            finalizedAtEpochMs: exhaustion.finalizedAtEpochMs
         };
     return {
         type: 'app-inbox-retry-exhausted',
@@ -135,13 +135,13 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
             attempts: exhaustion.processingAttempts,
             lane: exhaustion.lane,
             queueAgeMs: exhaustion.queueAgeMs,
-            dueAgeMs: exhaustion.dueAgeMs,
+            dueAgeMs: exhaustion.dueAgeMs
         },
         commandIdentity: {
             contextId: exhaustion.entry.key.contextId,
             resourceId: exhaustion.entry.key.resourceId,
             topicId: exhaustion.entry.key.topicId,
-            ...operationIdentity,
+            ...operationIdentity
         },
         selectedLane: exhaustion.lane,
         processingAttempts: exhaustion.processingAttempts,
@@ -151,11 +151,11 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization) {
             : {
                 source: 'finalization-recovery',
                 code: 'app-inbox-finalization-recovery',
-                message: 'AppInbox retry exhaustion finalization is being recovered',
+                message: 'AppInbox retry exhaustion finalization is being recovered'
             },
         queueAgeMs: exhaustion.queueAgeMs,
         dueAgeMs: exhaustion.dueAgeMs,
-        ...timingIdentity,
+        ...timingIdentity
     } as const;
 }
 
@@ -166,7 +166,7 @@ function toProcessingFailure(error: Error) {
         code: classification.code,
         message: classification.kind === 'retryable'
             ? classification.message
-            : 'AppInbox processing encountered a terminal failure',
+            : 'AppInbox processing encountered a terminal failure'
     } as const;
 }
 
@@ -177,7 +177,7 @@ function toFinalizedAtEpochMs(exhaustion: AppInboxRetryFinalization): number {
 }
 
 function isProcessingFinalization(
-    exhaustion: AppInboxRetryFinalization,
+    exhaustion: AppInboxRetryFinalization
 ): exhaustion is ResourceInboxRetryExhaustion {
     return exhaustion.failure.source === 'processing';
 }

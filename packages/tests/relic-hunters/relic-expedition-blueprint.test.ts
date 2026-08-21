@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
     applyRelicCommand,
     createProceduralRelicExpeditionBlueprint,
@@ -10,63 +9,56 @@ import {
     validateRelicExpeditionVisualFit,
     type RelicCommand,
     type RelicExpeditionBlueprint,
-    type RelicGameState,
+    type RelicGameState
 } from '@relic-hunters/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Relic expedition blueprints', () => {
     it('accepts procedural blueprints and rejects invalid domain shapes', () => {
         const valid = createProceduralRelicExpeditionBlueprint({
-            seed: 'room-1:reset:1',
+            seed: 'room-1:reset:1'
         });
 
         expect(validateRelicExpeditionBlueprint(valid)).toMatchObject({ ok: true });
         expect(validateRelicExpeditionBlueprint({
             ...valid,
-            rooms: valid.rooms.map((room) =>
-                room.id === 'exit' ? { ...room, neighbors: [] } : room
-            ),
+            rooms: valid.rooms.map((room) => room.id === 'exit' ? { ...room, neighbors: [] } : room)
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionBlueprint({
             ...valid,
-            rooms: valid.rooms.filter((room) => room.id !== 'entrance'),
+            rooms: valid.rooms.filter((room) => room.id !== 'entrance')
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionBlueprint({
             ...valid,
             rooms: [
                 ...valid.rooms,
-                { ...valid.rooms[0], id: 'duplicate-gate' },
-            ],
+                { ...valid.rooms[0], id: 'duplicate-gate' }
+            ]
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionBlueprint({
             ...valid,
-            relics: valid.relics.map((relic, index) =>
-                index === 0 ? { ...relic, roomId: 'missing-room' } : relic
-            ),
+            relics: valid.relics.map((relic, index) => index === 0 ? { ...relic, roomId: 'missing-room' } : relic)
         })).toMatchObject({ ok: false });
     });
 
     it('validates fresh visual-fit constraints for AI-generated castles', () => {
         const valid = createProceduralRelicExpeditionBlueprint({
-            seed: 'room-1:reset:2',
+            seed: 'room-1:reset:2'
         });
 
         expect(RELIC_EXPEDITION_VISUAL_THEMES).toContain(valid.theme);
         expect(validateRelicExpeditionVisualFit(valid)).toMatchObject({ ok: true });
         expect(validateRelicExpeditionVisualFit({
             ...valid,
-            theme: 'Moonlit Keep',
+            theme: 'Moonlit Keep'
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionVisualFit({
             ...valid,
-            rooms: valid.rooms.map((room) =>
-                room.id === 'entrance' ? { ...room, x: 0.5 } : room
-            ),
+            rooms: valid.rooms.map((room) => room.id === 'entrance' ? { ...room, x: 0.5 } : room)
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionVisualFit({
             ...valid,
-            rooms: valid.rooms.map((room) =>
-                room.id === 'storage' ? { ...room, x: -8 } : room
-            ),
+            rooms: valid.rooms.map((room) => room.id === 'storage' ? { ...room, x: -8 } : room)
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionVisualFit({
             ...valid,
@@ -74,13 +66,11 @@ describe('Relic expedition blueprints', () => {
                 room.id === 'entrance'
                     ? { ...room, name: 'A Fresh Room Name That Is Far Too Long For Compact HUD Labels' }
                     : room
-            ),
+            )
         })).toMatchObject({ ok: false });
         expect(validateRelicExpeditionVisualFit({
             ...valid,
-            rooms: valid.rooms.map((room) =>
-                room.id === 'exit' ? { ...room, x: 6, z: 7 } : room
-            ),
+            rooms: valid.rooms.map((room) => room.id === 'exit' ? { ...room, x: 6, z: 7 } : room)
         })).toMatchObject({ ok: false });
     });
 
@@ -93,28 +83,28 @@ describe('Relic expedition blueprints', () => {
             {
                 source: 'mock',
                 seed: 'test-seed',
-                blueprintId: 'test-blueprint',
-            },
+                blueprintId: 'test-blueprint'
+            }
         );
 
         expect(state.setup).toMatchObject({
             source: 'mock',
             seed: 'test-seed',
-            blueprintId: 'test-blueprint',
+            blueprintId: 'test-blueprint'
         });
 
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         expect(state.players[0]).toMatchObject({
             playerId: 'alice',
-            roomId: 'entrance',
+            roomId: 'entrance'
         });
 
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = submitAndContinue(state, { kind: 'move', targetRoomId: 'hallway' }, 4);
         state = submitAndContinue(state, { kind: 'move', targetRoomId: 'treasure' }, 5);
@@ -126,17 +116,17 @@ describe('Relic expedition blueprints', () => {
         expect(state.players[0]).toMatchObject({
             escaped: true,
             score: 14,
-            relicIds: [],
+            relicIds: []
         });
         expect(state.relics.find((relic) => relic.id === 'ruby-seal')).toMatchObject({
             foundBy: 'alice',
-            escapedBy: 'alice',
+            escapedBy: 'alice'
         });
         expect(toPublicRelicSnapshot(state).setup).toMatchObject({
-            source: 'mock',
+            source: 'mock'
         });
         const publicSetup: Readonly<Record<string, unknown>> = {
-            ...toPublicRelicSnapshot(state).setup,
+            ...toPublicRelicSnapshot(state).setup
         };
         expect(publicSetup.seed).toBeUndefined();
         expect(publicSetup.blueprintId).toBeUndefined();
@@ -156,14 +146,14 @@ function testBlueprint(): RelicExpeditionBlueprint {
             room('trap', 'Test Trap', 'trap', -2, 0, ['hallway']),
             room('treasure', 'Test Vault', 'treasure', 2, 0, ['hallway', 'exit']),
             room('monster', 'Test Barracks', 'monster', 0, 3, ['exit']),
-            room('exit', 'Test Exit', 'exit', 0, 6, ['treasure', 'monster']),
+            room('exit', 'Test Exit', 'exit', 0, 6, ['treasure', 'monster'])
         ],
         relics: [
             { id: 'ruby-seal', name: 'Ruby Seal', value: 9, roomId: 'treasure' },
             { id: 'silver-comb', name: 'Silver Comb', value: 3, roomId: 'storage' },
             { id: 'storm-bell', name: 'Storm Bell', value: 4, roomId: 'trap' },
-            { id: 'ash-mask', name: 'Ash Mask', value: 5, roomId: 'monster' },
-        ],
+            { id: 'ash-mask', name: 'Ash Mask', value: 5, roomId: 'monster' }
+        ]
     };
 }
 
@@ -173,7 +163,7 @@ function room(
     kind: RelicExpeditionBlueprint['rooms'][number]['kind'],
     x: number,
     z: number,
-    neighbors: readonly string[],
+    neighbors: readonly string[]
 ): RelicExpeditionBlueprint['rooms'][number] {
     return { id, name, kind, x, z, neighbors };
 }
@@ -184,7 +174,7 @@ function join(playerId: string, username: string): RelicCommand {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
-        username,
+        username
     };
 }
 
@@ -194,14 +184,14 @@ function start(playerId: string, username: string): RelicCommand {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username,
+        username
     };
 }
 
 function submitAndContinue(
     state: RelicGameState,
-    action: Extract<RelicCommand, { kind: 'submit-action' }>['action'],
-    now: number,
+    action: Extract<RelicCommand, { kind: 'submit-action'; }>['action'],
+    now: number
 ): RelicGameState {
     const submitted = applyRelicCommand(
         state,
@@ -210,12 +200,12 @@ function submitAndContinue(
             kind: 'submit-action',
             gameId: 'room-1',
             username: 'Alice',
-            action,
+            action
         },
         {
             senderId: 'alice',
-            now: () => now,
-        },
+            now: () => now
+        }
     ).state;
 
     return submitted.phase === 'review'
@@ -225,12 +215,12 @@ function submitAndContinue(
                 protocolVersion: RELIC_PROTOCOL_VERSION,
                 kind: 'continue-review',
                 gameId: 'room-1',
-                username: 'Alice',
+                username: 'Alice'
             },
             {
                 senderId: 'alice',
-                now: () => now + 0.5,
-            },
+                now: () => now + 0.5
+            }
         ).state
         : submitted;
 }

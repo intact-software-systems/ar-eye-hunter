@@ -1,10 +1,10 @@
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Sigma from 'sigma';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import {
     deriveRallarTopologyGraph,
     visibleTopologyCounts,
-    type RallarTopologyFilter,
+    type RallarTopologyFilter
 } from '../../../topology-graph.ts';
 import { Metric } from '../../shared/Metric.tsx';
 
@@ -15,7 +15,7 @@ function topologyFilterLabel(filter: RallarTopologyFilter): string {
 export function TopologyGraphPanel({
     state,
     active,
-    onSelectCommand,
+    onSelectCommand
 }: {
     state: RallarBlackBoxTestState;
     active: boolean;
@@ -28,7 +28,7 @@ export function TopologyGraphPanel({
     const topology = useMemo(() => deriveRallarTopologyGraph(state), [state]);
     const visibleCounts = useMemo(
         () => visibleTopologyCounts(topology.graph, filter),
-        [filter, topology.graph],
+        [filter, topology.graph]
     );
     const matchingNodes = useMemo(() => {
         const normalizedQuery = query.trim().toLowerCase();
@@ -58,39 +58,38 @@ export function TopologyGraphPanel({
                 label: attrs.label,
                 kind: attrs.kind,
                 status: attrs.status,
-                eventCount: attrs.eventCount,
+                eventCount: attrs.eventCount
             });
         });
         return rows.sort(
             (left, right) =>
                 left.kind.localeCompare(right.kind) ||
-                left.label.localeCompare(right.label),
+                left.label.localeCompare(right.label)
         );
     }, [filter, query, topology.graph]);
     const visibleNodes = useMemo(
         () => matchingNodes.slice(0, nodeLimit),
-        [matchingNodes, nodeLimit],
+        [matchingNodes, nodeLimit]
     );
     const routeResults = useMemo(
         () =>
             state.commandHistory
                 .filter(
-                    (result) =>
-                        result.kind === 'rtc.send' || result.kind === 'ws.send',
+                    (result) => result.kind === 'rtc.send' || result.kind === 'ws.send'
                 )
                 .slice(-8)
                 .reverse(),
-        [state.commandHistory],
+        [state.commandHistory]
     );
     const routeSummary = useMemo(() => {
         const routes = state.commandHistory.filter(
-            (result) => result.kind === 'rtc.send' || result.kind === 'ws.send',
+            (result) => result.kind === 'rtc.send' || result.kind === 'ws.send'
         );
         return {
             total: routes.length,
             failed: routes.filter((result) => !result.ok).length,
             rtc: routes.filter((result) => result.kind === 'rtc.send').length,
-            ws: routes.filter((result) => result.kind === 'ws.send').length,
+            ws: routes.filter((result) => result.kind === 'ws.send').length
         };
     }, [state.commandHistory]);
 
@@ -112,12 +111,12 @@ export function TopologyGraphPanel({
             nodeReducer: (_node, attrs) => ({
                 ...attrs,
                 hidden: filter !== 'all' && attrs.status !== filter,
-                highlighted: attrs.status === 'failed',
+                highlighted: attrs.status === 'failed'
             }),
             edgeReducer: (_edge, attrs) => ({
                 ...attrs,
-                hidden: filter !== 'all' && attrs.status !== filter,
-            }),
+                hidden: filter !== 'all' && attrs.status !== filter
+            })
         });
 
         return () => renderer.kill();
@@ -144,7 +143,7 @@ export function TopologyGraphPanel({
                         >
                             {topologyFilterLabel(entry)}
                         </button>
-                    ),
+                    )
                 )}
             </div>
             <div className="topology-search-grid">
@@ -160,9 +159,7 @@ export function TopologyGraphPanel({
                     <span>Node Limit</span>
                     <select
                         value={nodeLimit}
-                        onChange={(event) =>
-                            setNodeLimit(Number(event.target.value))
-                        }
+                        onChange={(event) => setNodeLimit(Number(event.target.value))}
                     >
                         {[18, 50, 100, 200].map((limit) => (
                             <option key={limit} value={limit}>
@@ -187,29 +184,25 @@ export function TopologyGraphPanel({
                     label="Degraded"
                     value={String(
                         topology.summary.degradedNodes +
-                            topology.summary.degradedEdges,
+                            topology.summary.degradedEdges
                     )}
-                    tone={
-                        topology.summary.degradedNodes +
-                            topology.summary.degradedEdges >
-                        0
-                            ? 'warn'
-                            : 'good'
-                    }
+                    tone={topology.summary.degradedNodes +
+                                topology.summary.degradedEdges >
+                            0
+                        ? 'warn'
+                        : 'good'}
                 />
                 <Metric
                     label="Failed"
                     value={String(
                         topology.summary.failedNodes +
-                            topology.summary.failedEdges,
+                            topology.summary.failedEdges
                     )}
-                    tone={
-                        topology.summary.failedNodes +
-                            topology.summary.failedEdges >
-                        0
-                            ? 'bad'
-                            : 'good'
-                    }
+                    tone={topology.summary.failedNodes +
+                                topology.summary.failedEdges >
+                            0
+                        ? 'bad'
+                        : 'good'}
                 />
                 <Metric label="Route cmds" value={String(routeSummary.total)} />
                 <Metric label="RTC routes" value={String(routeSummary.rtc)} />
@@ -234,9 +227,7 @@ export function TopologyGraphPanel({
                         </span>
                     </div>
                     <div className="topology-list-body">
-                        {visibleNodes.length === 0 && (
-                            <div className="empty-state">No topology nodes</div>
-                        )}
+                        {visibleNodes.length === 0 && <div className="empty-state">No topology nodes</div>}
                         {visibleNodes.map((node) => (
                             <article
                                 className="topology-node-row"
@@ -249,7 +240,9 @@ export function TopologyGraphPanel({
                                     </small>
                                 </div>
                                 <span
-                                    className={`pill ${node.status === 'failed' ? 'bad' : node.status === 'degraded' ? 'warn' : 'good'}`}
+                                    className={`pill ${
+                                        node.status === 'failed' ? 'bad' : node.status === 'degraded' ? 'warn' : 'good'
+                                    }`}
                                 >
                                     {node.status}
                                 </span>
@@ -263,17 +256,13 @@ export function TopologyGraphPanel({
                         <span>{routeResults.length} commands</span>
                     </div>
                     <div className="topology-list-body">
-                        {routeResults.length === 0 && (
-                            <div className="empty-state">No route commands</div>
-                        )}
+                        {routeResults.length === 0 && <div className="empty-state">No route commands</div>}
                         {routeResults.map((result, index) => (
                             <button
                                 type="button"
                                 className="topology-route-row"
                                 key={`${result.commandId}-${index}`}
-                                onClick={() =>
-                                    onSelectCommand(result.commandId)
-                                }
+                                onClick={() => onSelectCommand(result.commandId)}
                             >
                                 <span>{result.commandId}</span>
                                 <small>{result.kind}</small>

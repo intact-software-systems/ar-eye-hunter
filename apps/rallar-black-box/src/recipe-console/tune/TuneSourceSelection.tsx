@@ -1,28 +1,26 @@
 import { useMemo } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
-import type { TuneSelectionModel } from './tune-selection-model.ts';
-import type { TuneSourceModel } from './tune-source-model.ts';
-import { tuneSourceIssueKey } from './tune-source-issue.ts';
 import { createTuneRunPickerModel } from './tune-run-picker-model.ts';
-import { TuneRunPicker } from './TuneRunPicker.tsx';
-import {
-    tuneTimingMetricPatch,
-} from './tune-url-patches.ts';
+import type { TuneSelectionModel } from './tune-selection-model.ts';
+import { tuneSourceIssueKey } from './tune-source-issue.ts';
+import type { TuneSourceModel } from './tune-source-model.ts';
+import { tuneTimingMetricPatch } from './tune-url-patches.ts';
 import styles from './TuneEvidence.module.css';
+import { TuneRunPicker } from './TuneRunPicker.tsx';
 
 const TIMING_OPTIONS = [
     { value: 'command-duration', label: 'Command' },
     { value: 'stream-send-duration', label: 'Send duration' },
     { value: 'stream-drift', label: 'Drift' },
-    { value: 'stream-cadence', label: 'Cadence' },
+    { value: 'stream-cadence', label: 'Cadence' }
 ] as const;
 
 export function TuneSourceSelection({
     selection,
     source,
     urlState,
-    navigate,
+    navigate
 }: Readonly<{
     selection: TuneSelectionModel;
     source: TuneSourceModel;
@@ -31,14 +29,12 @@ export function TuneSourceSelection({
 }>) {
     const runPicker = useMemo(() => createTuneRunPickerModel(selection), [
         selection.options,
-        selection.optionsByDistributedRunId,
+        selection.optionsByDistributedRunId
     ]);
     return (
         <section
             className={styles.source}
-            data-tune-picker-options-projected={
-                runPicker.work.pickerOptionsProjected
-            }
+            data-tune-picker-options-projected={runPicker.work.pickerOptionsProjected}
             data-tune-picker-options-visited={runPicker.work.runOptionsVisited}
             data-tune-source
         >
@@ -70,23 +66,23 @@ export function TuneSourceSelection({
                     <span>Timing metric</span>
                     <SegmentedControl
                         label="Timing metric"
-                        onChange={metric => navigate(tuneTimingMetricPatch(metric))}
+                        onChange={(metric) => navigate(tuneTimingMetricPatch(metric))}
                         options={TIMING_OPTIONS}
                         value={urlState.timingMetric ?? 'command-duration'}
                     />
                 </div>
             </div>
-            {source.issues.length > 0 ? (
-                <ul className={styles.issues}>
-                    {source.issues.map(issue => (
-                        <li key={tuneSourceIssueKey(issue)}>{issue.message}</li>
-                    ))}
-                </ul>
-            ) : (
-                <p className={styles.authority}>
-                    Focus authority · {source.focusRunId ?? 'No run selected'}
-                </p>
-            )}
+            {source.issues.length > 0
+                ? (
+                    <ul className={styles.issues}>
+                        {source.issues.map((issue) => <li key={tuneSourceIssueKey(issue)}>{issue.message}</li>)}
+                    </ul>
+                )
+                : (
+                    <p className={styles.authority}>
+                        Focus authority · {source.focusRunId ?? 'No run selected'}
+                    </p>
+                )}
         </section>
     );
 }

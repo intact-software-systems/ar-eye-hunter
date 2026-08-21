@@ -1,22 +1,22 @@
-import { useCallback } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { hydrateArenaSnapshot, resolvePickupIntent, toArenaSnapshot } from '../../simulation.ts';
 import {
-    type ArenaMatchDurationMs,
-    type ArenaSnapshot,
     GAME_COMBAT_LANE_ID,
     GAME_PROTOCOL,
+    type ArenaMatchDurationMs,
+    type ArenaSnapshot,
     type GameRealtimeMessage,
     type MatchStartIntent,
     type PickupAccepted,
-    type PickupIntent,
+    type PickupIntent
 } from '../../types.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 
 interface ArenaWorldActionsInput {
     readonly acceptMatchStartIntent: (intent: MatchStartIntent) => Promise<void>;
@@ -29,22 +29,19 @@ interface ArenaWorldActionsInput {
     readonly roomIdRef: RefObject<string | undefined>;
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
-        generation?: number,
+        generation?: number
     ) => void;
     readonly scheduleReliableArenaSnapshot: (
         snapshot: ArenaSnapshot,
-        generation: number,
+        generation: number
     ) => void;
     readonly sessionRef: RefObject<AuthSession | undefined>;
     readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
 }
 
 export function useArenaWorldActions(
-    input: ArenaWorldActionsInput,
-): Pick<
-    ArenaConnection,
-    'sendPickupIntent' | 'startArenaMatch' | 'publishArenaSnapshot'
-> {
+    input: ArenaWorldActionsInput
+): Pick<ArenaConnection, 'sendPickupIntent' | 'startArenaMatch' | 'publishArenaSnapshot'> {
     const {
         acceptMatchStartIntent,
         acceptPickup,
@@ -57,7 +54,7 @@ export function useArenaWorldActions(
         runBestEffortNetworkTask,
         scheduleReliableArenaSnapshot,
         sessionRef,
-        setArenaSnapshot,
+        setArenaSnapshot
     } = input;
 
     const sendPickupIntent = useCallback((intent: PickupIntent) => {
@@ -71,12 +68,12 @@ export function useArenaWorldActions(
         const fullIntent: PickupIntent = {
             ...intent,
             sessionId: currentSession.sessionId,
-            sentAtEpochMs: Date.now(),
+            sentAtEpochMs: Date.now()
         };
         const message: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'pickup-intent',
-            intent: fullIntent,
+            intent: fullIntent
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
@@ -88,7 +85,7 @@ export function useArenaWorldActions(
                 const result = resolvePickupIntent(
                     hydrateArenaSnapshot(previous),
                     fullIntent,
-                    Date.now(),
+                    Date.now()
                 );
                 if (!result.accepted) {
                     return;
@@ -96,7 +93,7 @@ export function useArenaWorldActions(
                 const snapshot = toArenaSnapshot(
                     result.state,
                     previous.roomId ?? currentRoomId,
-                    Date.now(),
+                    Date.now()
                 );
                 arenaSnapshotRef.current = snapshot;
                 setArenaSnapshot(snapshot);
@@ -105,13 +102,14 @@ export function useArenaWorldActions(
                     match.publishEvent({
                         protocol: GAME_PROTOCOL,
                         kind: 'director-pickup-accepted',
-                        accepted: result.acceptedPickup,
+                        accepted: result.acceptedPickup
                     }), generation);
                 runBestEffortNetworkTask(
                     () => match.publishSnapshot(snapshot, { reliable: false }),
-                    generation,
+                    generation
                 );
-            } else {
+            }
+            else {
                 runBestEffortNetworkTask(() => match.sendIntent(message), generation);
             }
             return;
@@ -126,10 +124,10 @@ export function useArenaWorldActions(
             rallar.realtime.room<GameRealtimeMessage>({
                 laneId: GAME_COMBAT_LANE_ID,
                 roomId: currentRoomId,
-                openTimeoutMs: 1500,
+                openTimeoutMs: 1500
             }).send(message, {
                 key: `pickup:${fullIntent.pickupId}`,
-                maxAgeMs: 650,
+                maxAgeMs: 650
             }), generation);
     }, [acceptPickup, isNetworkEnabled, runBestEffortNetworkTask]);
 
@@ -144,18 +142,19 @@ export function useArenaWorldActions(
             matchId: `match:${currentRoomId}:${now}:${durationMs}`,
             directorSessionId: currentSession.sessionId,
             durationMs,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         };
         const message: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'match-start-intent',
-            intent,
+            intent
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
             if (match.status().directorPeerId === currentSession.sessionId) {
                 await acceptMatchStartIntent(intent);
-            } else {
+            }
+            else {
                 await match.sendIntent(message);
             }
             return;
@@ -169,10 +168,10 @@ export function useArenaWorldActions(
         await rallar.realtime.room<GameRealtimeMessage>({
             laneId: GAME_COMBAT_LANE_ID,
             roomId: currentRoomId,
-            openTimeoutMs: 1500,
+            openTimeoutMs: 1500
         }).send(message, {
             key: `match-start:${intent.matchId}`,
-            maxAgeMs: 1_000,
+            maxAgeMs: 1_000
         });
     }, [acceptMatchStartIntent, isNetworkEnabled]);
 
@@ -185,9 +184,7 @@ export function useArenaWorldActions(
         if (previousSnapshot && snapshot.revision < previousSnapshot.revision) {
             return;
         }
-        setArenaSnapshot((previous) =>
-            !previous || snapshot.revision >= previous.revision ? snapshot : previous
-        );
+        setArenaSnapshot((previous) => !previous || snapshot.revision >= previous.revision ? snapshot : previous);
         arenaSnapshotRef.current = snapshot;
 
         const currentRoomId = roomIdRef.current;

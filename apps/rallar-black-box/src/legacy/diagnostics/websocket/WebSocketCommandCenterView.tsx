@@ -1,5 +1,5 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
@@ -16,7 +16,7 @@ export function WebSocketCommandCenterView({
     authSession,
     browserStatus,
     busy,
-    model,
+    model
 }: {
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
@@ -25,14 +25,41 @@ export function WebSocketCommandCenterView({
     model: WebSocketCommandCenterViewModel;
 }) {
     const {
-        providerMode, values, payloadPresetId, localError, busyAction,
-        actionFeedback, waitStatus, ticket, subscription, diagnostics,
-        activePreset, canSendViaRallarSignaling, routePreview,
-        subscriptionStatusLabel, subscriptionStatusTone, receiveStatusText,
-        payloadResult, updateValue, updateGroupId, updateWsScope,
-        selectPayloadPreset, configure, open, send, close, reconnect, cleanup,
-        subscribeWs, unsubscribeWs, createTicket, waitForMessage,
-        waitForRallarWsOpen, copyDiagnostics, copyRecipe, openMissingTicket,
+        providerMode,
+        values,
+        payloadPresetId,
+        localError,
+        busyAction,
+        actionFeedback,
+        waitStatus,
+        ticket,
+        subscription,
+        diagnostics,
+        activePreset,
+        canSendViaRallarSignaling,
+        routePreview,
+        subscriptionStatusLabel,
+        subscriptionStatusTone,
+        receiveStatusText,
+        payloadResult,
+        updateValue,
+        updateGroupId,
+        updateWsScope,
+        selectPayloadPreset,
+        configure,
+        open,
+        send,
+        close,
+        reconnect,
+        cleanup,
+        subscribeWs,
+        unsubscribeWs,
+        createTicket,
+        waitForMessage,
+        waitForRallarWsOpen,
+        copyDiagnostics,
+        copyRecipe,
+        openMissingTicket
     } = model;
 
     return (
@@ -40,7 +67,9 @@ export function WebSocketCommandCenterView({
             <div className="panel-heading">
                 <h2>WebSocket Command Center</h2>
                 <span
-                    className={`pill ${diagnostics.status === 'error' ? 'bad' : diagnostics.status === 'open' ? 'good' : 'muted'}`}
+                    className={`pill ${
+                        diagnostics.status === 'error' ? 'bad' : diagnostics.status === 'open' ? 'good' : 'muted'
+                    }`}
                 >
                     {diagnostics.statusLabel}
                 </span>
@@ -54,45 +83,35 @@ export function WebSocketCommandCenterView({
                         <span>API Base URL</span>
                         <input
                             value={values.apiBaseUrl}
-                            onChange={(event) =>
-                                updateValue('apiBaseUrl', event.target.value)
-                            }
+                            onChange={(event) => updateValue('apiBaseUrl', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Connection</span>
                         <input
                             value={values.connection}
-                            onChange={(event) =>
-                                updateValue('connection', event.target.value)
-                            }
+                            onChange={(event) => updateValue('connection', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Application</span>
                         <input
                             value={values.applicationId}
-                            onChange={(event) =>
-                                updateValue('applicationId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('applicationId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Workspace</span>
                         <input
                             value={values.workspaceId}
-                            onChange={(event) =>
-                                updateValue('workspaceId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('workspaceId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Group</span>
                         <input
                             value={values.groupId}
-                            onChange={(event) =>
-                                updateGroupId(event.target.value)
-                            }
+                            onChange={(event) => updateGroupId(event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -102,9 +121,8 @@ export function WebSocketCommandCenterView({
                             onChange={(event) =>
                                 updateWsScope(
                                     event.target
-                                        .value as WebSocketCommandCenterValues['wsScope'],
-                                )
-                            }
+                                        .value as WebSocketCommandCenterValues['wsScope']
+                                )}
                         >
                             <option value="room">room</option>
                             <option value="all">all</option>
@@ -115,54 +133,42 @@ export function WebSocketCommandCenterView({
                         <span>Type ID</span>
                         <input
                             value={values.typeId}
-                            onChange={(event) =>
-                                updateValue('typeId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('typeId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Topic ID</span>
                         <input
                             value={values.topicId}
-                            onChange={(event) =>
-                                updateValue('topicId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('topicId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Context ID</span>
                         <input
                             value={values.contextId}
-                            onChange={(event) =>
-                                updateValue('contextId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('contextId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Resource ID</span>
                         <input
                             value={values.resourceId}
-                            onChange={(event) =>
-                                updateValue('resourceId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('resourceId', event.target.value)}
                         />
                     </label>
                     <label className="field websocket-url-field">
                         <span>WebSocket URL</span>
                         <input
                             value={values.wsUrl}
-                            onChange={(event) =>
-                                updateValue('wsUrl', event.target.value)
-                            }
+                            onChange={(event) => updateValue('wsUrl', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Protocols</span>
                         <input
                             value={values.protocols}
-                            onChange={(event) =>
-                                updateValue('protocols', event.target.value)
-                            }
+                            onChange={(event) => updateValue('protocols', event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -174,9 +180,8 @@ export function WebSocketCommandCenterView({
                             onChange={(event) =>
                                 updateValue(
                                     'timeoutMs',
-                                    Number(event.target.value),
-                                )
-                            }
+                                    Number(event.target.value)
+                                )}
                         />
                     </label>
                     <label className="field">
@@ -187,18 +192,15 @@ export function WebSocketCommandCenterView({
                             onChange={(event) =>
                                 updateValue(
                                     'closeCode',
-                                    Number(event.target.value),
-                                )
-                            }
+                                    Number(event.target.value)
+                                )}
                         />
                     </label>
                     <label className="field">
                         <span>Close Reason</span>
                         <input
                             value={values.closeReason}
-                            onChange={(event) =>
-                                updateValue('closeReason', event.target.value)
-                            }
+                            onChange={(event) => updateValue('closeReason', event.target.value)}
                         />
                     </label>
                 </div>
@@ -237,13 +239,11 @@ export function WebSocketCommandCenterView({
                 <Metric
                     label="Raw WS"
                     value={diagnostics.statusLabel}
-                    tone={
-                        diagnostics.status === 'open'
-                            ? 'good'
-                            : diagnostics.status === 'error'
-                              ? 'bad'
-                              : 'muted'
-                    }
+                    tone={diagnostics.status === 'open'
+                        ? 'good'
+                        : diagnostics.status === 'error'
+                        ? 'bad'
+                        : 'muted'}
                 />
             </div>
             <div className="websocket-action-section">
@@ -261,12 +261,10 @@ export function WebSocketCommandCenterView({
                     </button>
                     <button
                         type="button"
-                        disabled={
-                            busy ||
+                        disabled={busy ||
                             Boolean(busyAction) ||
                             providerMode !== 'browser-rallar' ||
-                            !authSession
-                        }
+                            !authSession}
                         onClick={() => void subscribeWs()}
                     >
                         Subscribe WS
@@ -280,12 +278,10 @@ export function WebSocketCommandCenterView({
                     </button>
                     <button
                         type="button"
-                        disabled={
-                            busy ||
+                        disabled={busy ||
                             Boolean(busyAction) ||
                             providerMode !== 'browser-rallar' ||
-                            !authSession
-                        }
+                            !authSession}
                         onClick={() => void waitForRallarWsOpen()}
                     >
                         Wait Rallar WS open
@@ -335,9 +331,7 @@ export function WebSocketCommandCenterView({
                     <button
                         type="button"
                         disabled={busy || Boolean(busyAction)}
-                        onClick={() =>
-                            void open(defaultWebSocketApiUrl(values.apiBaseUrl))
-                        }
+                        onClick={() => void open(defaultWebSocketApiUrl(values.apiBaseUrl))}
                     >
                         Open API WS
                     </button>
@@ -383,9 +377,7 @@ export function WebSocketCommandCenterView({
                         <span>Payload Preset</span>
                         <select
                             value={payloadPresetId}
-                            onChange={(event) =>
-                                selectPayloadPreset(event.target.value)
-                            }
+                            onChange={(event) => selectPayloadPreset(event.target.value)}
                         >
                             {WEBSOCKET_PAYLOAD_PRESETS.map((preset) => (
                                 <option
@@ -402,9 +394,7 @@ export function WebSocketCommandCenterView({
                         <span>Payload JSON</span>
                         <textarea
                             value={values.payloadText}
-                            onChange={(event) =>
-                                updateValue('payloadText', event.target.value)
-                            }
+                            onChange={(event) => updateValue('payloadText', event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -463,7 +453,7 @@ export function WebSocketCommandCenterView({
                     <Metric
                         label="Last received"
                         value={formatTime(
-                            diagnostics.receivedMessages.at(-1)?.atEpochMs,
+                            diagnostics.receivedMessages.at(-1)?.atEpochMs
                         )}
                     />
                 </div>
@@ -486,13 +476,11 @@ export function WebSocketCommandCenterView({
                                         {message.topicId} / {message.typeId}
                                     </strong>
                                     <small>
-                                        {formatTime(message.atEpochMs)} - group{' '}
-                                        {message.roomId} - sender{' '}
+                                        {formatTime(message.atEpochMs)} - group {message.roomId} - sender{' '}
                                         {message.senderId}
                                     </small>
                                     <small>
-                                        context {message.contextId} - resource{' '}
-                                        {message.resourceId}
+                                        context {message.contextId} - resource {message.resourceId}
                                     </small>
                                 </div>
                                 <pre className="mini-json">
@@ -511,13 +499,11 @@ export function WebSocketCommandCenterView({
                 <Metric
                     label="Raw WS"
                     value={diagnostics.statusLabel}
-                    tone={
-                        diagnostics.status === 'open'
-                            ? 'good'
-                            : diagnostics.status === 'error'
-                              ? 'bad'
-                              : 'muted'
-                    }
+                    tone={diagnostics.status === 'open'
+                        ? 'good'
+                        : diagnostics.status === 'error'
+                        ? 'bad'
+                        : 'muted'}
                 />
                 <Metric
                     label="Signal WS"
@@ -526,18 +512,14 @@ export function WebSocketCommandCenterView({
                 />
                 <Metric
                     label="Rallar WS send"
-                    value={
-                        canSendViaRallarSignaling ||
-                        diagnostics.status === 'open'
-                            ? 'available'
-                            : '-'
-                    }
-                    tone={
-                        canSendViaRallarSignaling ||
-                        diagnostics.status === 'open'
-                            ? 'good'
-                            : 'muted'
-                    }
+                    value={canSendViaRallarSignaling ||
+                            diagnostics.status === 'open'
+                        ? 'available'
+                        : '-'}
+                    tone={canSendViaRallarSignaling ||
+                            diagnostics.status === 'open'
+                        ? 'good'
+                        : 'muted'}
                 />
                 <Metric
                     label="Raw ready state"
@@ -590,11 +572,9 @@ export function WebSocketCommandCenterView({
             </div>
             {(localError || !payloadResult.ok) && (
                 <div
-                    className={
-                        localError || !payloadResult.ok
-                            ? 'workbench-error'
-                            : 'command-center-status'
-                    }
+                    className={localError || !payloadResult.ok
+                        ? 'workbench-error'
+                        : 'command-center-status'}
                     role="status"
                 >
                     {localError ??
@@ -603,8 +583,8 @@ export function WebSocketCommandCenterView({
             )}
             {canSendViaRallarSignaling && !localError && (
                 <div className="command-center-status" role="status">
-                    Send JSON uses rallar.messages.ws.send and connects Rallar
-                    signaling if needed. Open is only for raw WebSocket checks.
+                    Send JSON uses rallar.messages.ws.send and connects Rallar signaling if needed. Open is only for raw
+                    WebSocket checks.
                 </div>
             )}
             <div className="websocket-event-log-heading">
@@ -612,9 +592,7 @@ export function WebSocketCommandCenterView({
                 <span>{diagnostics.recentEvents.length} recent</span>
             </div>
             <div className="websocket-event-list">
-                {diagnostics.recentEvents.length === 0 && (
-                    <div className="empty-state">No WebSocket events yet</div>
-                )}
+                {diagnostics.recentEvents.length === 0 && <div className="empty-state">No WebSocket events yet</div>}
                 {diagnostics.recentEvents
                     .slice()
                     .reverse()
@@ -630,7 +608,9 @@ export function WebSocketCommandCenterView({
                                 </small>
                             </div>
                             <span
-                                className={`pill ${event.severity === 'error' ? 'bad' : event.kind === 'message' ? 'good' : 'muted'}`}
+                                className={`pill ${
+                                    event.severity === 'error' ? 'bad' : event.kind === 'message' ? 'good' : 'muted'
+                                }`}
                             >
                                 {event.severity}
                             </span>

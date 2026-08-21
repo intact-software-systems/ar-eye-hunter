@@ -1,26 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    rallarBlackBoxRuntimeStore,
-    type RallarBlackBoxBootstrapConfig,
-} from '../../runtime-store.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
+import type { LegacyDiagnosticContext } from '../diagnostics/context/legacy-diagnostic-context.ts';
 import {
     bootstrapPatchFromGlobalValues,
     commandCenterGlobalValuesFromState,
     reconcileDiagnosticGlobalScope,
     sameCommandCenterGlobalValues,
-    type CommandCenterGlobalValues,
+    type CommandCenterGlobalValues
 } from './global-context-model.ts';
 import { deriveRallarBrowserStatus } from './rallar-browser-status.ts';
-import type { LegacyDiagnosticContext } from
-    '../diagnostics/context/legacy-diagnostic-context.ts';
 
 export function useCommandCenterGlobalContext({
     state,
     bootstrap,
     authSession,
-    diagnosticContext,
+    diagnosticContext
 }: Readonly<{
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -28,12 +24,13 @@ export function useCommandCenterGlobalContext({
     diagnosticContext?: LegacyDiagnosticContext;
 }>) {
     const defaultGlobalValues = useMemo(
-        () => commandCenterGlobalValuesFromState(
-            state,
-            bootstrap,
-            authSession,
-            diagnosticContext,
-        ),
+        () =>
+            commandCenterGlobalValuesFromState(
+                state,
+                bootstrap,
+                authSession,
+                diagnosticContext
+            ),
         [
             authSession?.clientId,
             authSession?.sessionId,
@@ -45,25 +42,24 @@ export function useCommandCenterGlobalContext({
             diagnosticContext?.contextApplicationId,
             diagnosticContext?.contextGroupId,
             diagnosticContext?.contextWorkspaceId,
-            state.currentConfig,
-        ],
+            state.currentConfig
+        ]
     );
-    const [globalValues, setGlobalValues] =
-        useState<CommandCenterGlobalValues>(defaultGlobalValues);
+    const [globalValues, setGlobalValues] = useState<CommandCenterGlobalValues>(defaultGlobalValues);
     const [globalValuesEdited, setGlobalValuesEdited] = useState(false);
     const browserStatus = useMemo(
         () => deriveRallarBrowserStatus(state, globalValues),
-        [globalValues, state],
+        [globalValues, state]
     );
     const lastGlobalAuthKey = useRef<string | undefined>(
         authSession
             ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}`
-            : undefined,
+            : undefined
     );
     const diagnosticContextKey = JSON.stringify([
         diagnosticContext?.contextApplicationId,
         diagnosticContext?.contextWorkspaceId,
-        diagnosticContext?.contextGroupId,
+        diagnosticContext?.contextGroupId
     ]);
     const lastDiagnosticContextKey = useRef(diagnosticContextKey);
 
@@ -73,43 +69,37 @@ export function useCommandCenterGlobalContext({
             : undefined;
         const authChanged = authKey !== lastGlobalAuthKey.current;
         lastGlobalAuthKey.current = authKey;
-        const diagnosticContextChanged =
-            diagnosticContextKey !== lastDiagnosticContextKey.current;
+        const diagnosticContextChanged = diagnosticContextKey !== lastDiagnosticContextKey.current;
         lastDiagnosticContextKey.current = diagnosticContextKey;
 
         setGlobalValues((current) => {
             if (!globalValuesEdited) {
                 return sameCommandCenterGlobalValues(
-                    current,
-                    defaultGlobalValues,
-                )
+                        current,
+                        defaultGlobalValues
+                    )
                     ? current
                     : defaultGlobalValues;
             }
 
             const nextValues = {
                 ...current,
-                apiBaseUrl:
-                    current.apiBaseUrl || defaultGlobalValues.apiBaseUrl,
-                applicationId:
-                    current.applicationId || defaultGlobalValues.applicationId,
-                workspaceId:
-                    current.workspaceId || defaultGlobalValues.workspaceId,
+                apiBaseUrl: current.apiBaseUrl || defaultGlobalValues.apiBaseUrl,
+                applicationId: current.applicationId || defaultGlobalValues.applicationId,
+                workspaceId: current.workspaceId || defaultGlobalValues.workspaceId,
                 roomId: current.roomId || defaultGlobalValues.roomId,
-                clientId:
-                    authChanged && authSession
-                        ? (authSession.clientId ?? authSession.username)
-                        : current.clientId || defaultGlobalValues.clientId,
-                sessionId:
-                    authChanged && authSession
-                        ? authSession.sessionId
-                        : current.sessionId || defaultGlobalValues.sessionId,
+                clientId: authChanged && authSession
+                    ? (authSession.clientId ?? authSession.username)
+                    : current.clientId || defaultGlobalValues.clientId,
+                sessionId: authChanged && authSession
+                    ? authSession.sessionId
+                    : current.sessionId || defaultGlobalValues.sessionId
             };
 
             const reconciledValues = reconcileDiagnosticGlobalScope(
                 nextValues,
                 defaultGlobalValues,
-                diagnosticContextChanged,
+                diagnosticContextChanged
             );
 
             return sameCommandCenterGlobalValues(current, reconciledValues)
@@ -122,28 +112,28 @@ export function useCommandCenterGlobalContext({
         authSession?.username,
         defaultGlobalValues,
         diagnosticContextKey,
-        globalValuesEdited,
+        globalValuesEdited
     ]);
 
     const updateGlobalValue = <K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void => {
         const nextValues = {
             ...globalValues,
-            [key]: value,
+            [key]: value
         };
         setGlobalValues(nextValues);
         setGlobalValuesEdited(true);
         rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-            bootstrapPatchFromGlobalValues(nextValues),
+            bootstrapPatchFromGlobalValues(nextValues)
         );
     };
     const resetGlobalValues = (): void => {
         setGlobalValues(defaultGlobalValues);
         setGlobalValuesEdited(false);
         rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-            bootstrapPatchFromGlobalValues(defaultGlobalValues),
+            bootstrapPatchFromGlobalValues(defaultGlobalValues)
         );
     };
 
@@ -152,6 +142,6 @@ export function useCommandCenterGlobalContext({
         globalValuesEdited,
         browserStatus,
         updateGlobalValue,
-        resetGlobalValues,
+        resetGlobalValues
     };
 }

@@ -24,21 +24,21 @@ export type RelicSnapshotAcceptance = Readonly<{
 }>;
 
 export type RelicSnapshotAcceptanceResult = Readonly<
-    | { accepted: true }
-    | { accepted: false; reason: RelicSnapshotRejectionReason }
+    | { accepted: true; }
+    | { accepted: false; reason: RelicSnapshotRejectionReason; }
 >;
 
 export function shouldAcceptRelicSnapshot({
     current,
     candidate,
     expectedRoomId,
-    allowSemanticRegression,
+    allowSemanticRegression
 }: RelicSnapshotAcceptance): boolean {
     return classifyRelicSnapshotAcceptance({
         current,
         candidate,
         expectedRoomId,
-        allowSemanticRegression,
+        allowSemanticRegression
     }).accepted;
 }
 
@@ -46,7 +46,7 @@ export function classifyRelicSnapshotAcceptance({
     current,
     candidate,
     expectedRoomId,
-    allowSemanticRegression = false,
+    allowSemanticRegression = false
 }: RelicSnapshotAcceptance): RelicSnapshotAcceptanceResult {
     if (expectedRoomId && candidate.roomId !== expectedRoomId) {
         return { accepted: false, reason: 'room-mismatch' };
@@ -107,7 +107,7 @@ function phaseRank(phase: RelicPublicSnapshot['phase']): number {
 
 function isLessCompleteSnapshot(
     candidate: RelicPublicSnapshot,
-    current: RelicPublicSnapshot,
+    current: RelicPublicSnapshot
 ): boolean {
     return candidate.events.length < current.events.length ||
         candidate.submittedPlayerIds.length < current.submittedPlayerIds.length ||

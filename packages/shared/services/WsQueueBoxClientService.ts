@@ -1,10 +1,3 @@
-import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
-import { Command } from '../cache/Command.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy, } from '../resilience/TryWith.ts';
-import { OnMessageCallback, OnOutboxWebSocketMessageCallback, } from './InboxOutboxContracts.ts';
-import { JsonWebSocketClient } from '../websocket/JsonWebSocketClient.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 import { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     ALQosInputProvider,
@@ -12,23 +5,27 @@ import {
     planALMessageHandling,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
-    shouldPersistOutbox,
+    shouldPersistOutbox
 } from '../al-contracts/al-policy.ts';
-import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { EnqueuedType } from '../api/api-config.ts';
 import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
-import type {
-    ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores,
-} from '../alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundRuntimeDiagnosticsSink, ALOutboundRuntimeStores } from '../alm/ALOutboundMessageRuntime.ts';
 import {
     ALOutboundAckTrackingPlan,
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
     ALOutboundRetryTrackingPlan,
-    ALOutboundSupersedenceTrackingPlan,
+    ALOutboundSupersedenceTrackingPlan
 } from '../alm/ALOutboundMessageRuntime.ts';
+import { EnqueuedType } from '../api/api-config.ts';
+import { Command } from '../cache/Command.ts';
+import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
+import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '../resilience/TryWith.ts';
+import { JsonWebSocketClient } from '../websocket/JsonWebSocketClient.ts';
+import { OnMessageCallback, OnOutboxWebSocketMessageCallback } from './InboxOutboxContracts.ts';
+import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 
 export type WsQueueBoxClientServiceInputDto = {
     readonly sessionId: string;
@@ -56,7 +53,7 @@ export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientReco
     connectTimeoutMsecs: 10_000,
     retryIntervalMsecs: 500,
     maxRetryIntervalMsecs: 20_000,
-    canReconnect: () => true,
+    canReconnect: () => true
 };
 
 export type WsQueueBoxClientReadyState =
@@ -93,22 +90,22 @@ export class WsQueueBoxClientService {
 
     public static readonly OUTBOX_ENQUEUE_TYPE = EnqueuedType.WS_OUTBOX;
     public static readonly OUTBOX_DEQUEUE_TYPES = new Set<string>([
-        this.OUTBOX_ENQUEUE_TYPE,
+        this.OUTBOX_ENQUEUE_TYPE
     ]);
 
     public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.WS_INBOX;
     public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([
-        this.INBOX_ENQUEUE_TYPE,
+        this.INBOX_ENQUEUE_TYPE
     ]);
 
-    private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebSocketMessageCallback> =
-        new Map<string, OnOutboxWebSocketMessageCallback>();
+    private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebSocketMessageCallback> = new Map<
+        string,
+        OnOutboxWebSocketMessageCallback
+    >();
 
-    private readonly onInboxMessageCallbacks: Map<string, OnMessageCallback> =
-        new Map<string, OnMessageCallback>();
+    private readonly onInboxMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
 
-    private readonly onAnyInboxMessageCallbacks: Map<string, OnMessageCallback> =
-        new Map<string, OnMessageCallback>();
+    private readonly onAnyInboxMessageCallbacks: Map<string, OnMessageCallback> = new Map<string, OnMessageCallback>();
 
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALMessage>;
@@ -119,7 +116,7 @@ export class WsQueueBoxClientService {
         enabled: false,
         generation: 0,
         attempts: 0,
-        exhausted: false,
+        exhausted: false
     };
 
     public readonly inbox: QueueBoxResourceEntryRepository;
@@ -134,8 +131,8 @@ export class WsQueueBoxClientService {
         socket: JsonWebSocketClient,
         input: WsQueueBoxClientServiceInputDto,
         options: WsQueueBoxClientServiceOptions = {
-            reconnect: DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-        },
+            reconnect: DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
+        }
     ) {
         this.inbox = inbox;
         this.outbox = outbox;
@@ -150,10 +147,9 @@ export class WsQueueBoxClientService {
                 toOutboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
+                        WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
                     ),
-                readMessageFromEntry: (entry) =>
-                    JSON.parse(entry.resource) as ALMessage,
+                readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
                 planOutgoingMessage: (msg) => {
                     const normalized = normalizeALQosPolicy(
                         msg,
@@ -164,10 +160,10 @@ export class WsQueueBoxClientService {
                                 selfPeerId: this.input.sessionId,
                                 connectedPeerIds: this.isSocketOpen()
                                     ? [this.input.sessionId]
-                                    : [],
+                                    : []
                             },
-                            this.options.qosProvider,
-                        ),
+                            this.options.qosProvider
+                        )
                     );
                     return {
                         persist: shouldPersistOutbox(normalized.effective) ||
@@ -177,20 +173,20 @@ export class WsQueueBoxClientService {
                         retryTracking: this.toRetryTrackingPlan(normalized.effective),
                         supersedenceTracking: this.toSupersedenceTrackingPlan(
                             normalized.effective,
-                            msg,
-                        ),
+                            msg
+                        )
                     };
                 },
                 sendPreparedMessage: async (msg, _phase) => {
                     await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(
                             msg,
-                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
-                        ),
+                            WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE
+                        )
                     );
                     return { status: 'sent' };
-                },
-            },
+                }
+            }
         );
 
         this.inboundRuntime = new ALInboundMessageRuntime(
@@ -207,7 +203,7 @@ export class WsQueueBoxClientService {
                             connectedPeerIds: [this.input.sessionId],
                             dedupStore: runtime.dedupStore,
                             orderingStore: runtime.orderingStore,
-                            supersedenceStore: runtime.supersedenceStore,
+                            supersedenceStore: runtime.supersedenceStore
                         },
                         resolveALQosNormalizationInput(
                             msg,
@@ -215,33 +211,32 @@ export class WsQueueBoxClientService {
                                 direction: 'inbound',
                                 selfPeerId: this.input.sessionId,
                                 fromPeerId,
-                                connectedPeerIds: [this.input.sessionId],
+                                connectedPeerIds: [this.input.sessionId]
                             },
-                            this.options.qosProvider,
-                        ),
+                            this.options.qosProvider
+                        )
                     ),
                 readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
 
                 toInboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WsQueueBoxClientService.INBOX_ENQUEUE_TYPE,
+                        WsQueueBoxClientService.INBOX_ENQUEUE_TYPE
                     ),
-                dispatchInboxEntry: async (entry, plan) =>
-                    await this.dispatchInboxEntry(entry, plan),
+                dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),
                 sendControlMessage: async (msg) => {
                     await this.enqueueOutboxIfAbsent(msg);
                 },
                 onControlMessage: async (msg) => {
                     await this.outboundRuntime.acceptControlMessage(msg);
-                },
-            },
+                }
+            }
         );
     }
 
     onAllOutboxMessagesDo(
         callback: OnOutboxWebSocketMessageCallback,
-        forceUpdate: boolean = false,
+        forceUpdate: boolean = false
     ): WsQueueBoxClientService {
         if (
             !forceUpdate &&
@@ -256,7 +251,7 @@ export class WsQueueBoxClientService {
 
     onOutboxMessageDo(
         id: string,
-        callback: OnOutboxWebSocketMessageCallback,
+        callback: OnOutboxWebSocketMessageCallback
     ): WsQueueBoxClientService {
         this.onOutboxMessageCallbacks.set(id, callback);
         return this;
@@ -268,7 +263,7 @@ export class WsQueueBoxClientService {
 
     onInboxMessageDo(
         id: string,
-        callback: OnMessageCallback,
+        callback: OnMessageCallback
     ): WsQueueBoxClientService {
         this.onInboxMessageCallbacks.set(id, callback);
         return this;
@@ -276,7 +271,7 @@ export class WsQueueBoxClientService {
 
     onAllInboxMessagesDo(
         callback: OnMessageCallback,
-        forceUpdate: boolean = false,
+        forceUpdate: boolean = false
     ): WsQueueBoxClientService {
         if (
             !forceUpdate &&
@@ -291,7 +286,7 @@ export class WsQueueBoxClientService {
 
     onAnyInboxMessageDo(
         id: string,
-        callback: OnMessageCallback,
+        callback: OnMessageCallback
     ): WsQueueBoxClientService {
         this.onAnyInboxMessageCallbacks.set(id, callback);
         return this;
@@ -317,7 +312,7 @@ export class WsQueueBoxClientService {
             reconnectEnabled: this.reconnectStatus.enabled,
             reconnectAttempts: this.reconnectStatus.attempts,
             maxReconnectAttempts: this.options.reconnect.maxAttempts,
-            reconnectExhausted: this.reconnectStatus.exhausted,
+            reconnectExhausted: this.reconnectStatus.exhausted
         };
     }
 
@@ -333,8 +328,8 @@ export class WsQueueBoxClientService {
                         // TODO: Anything to do?
                     },
                     onClose: () => this.reconnect(),
-                    onError: () => this.reconnect(),
-                },
+                    onError: () => this.reconnect()
+                }
             );
         return this;
     }
@@ -364,8 +359,8 @@ export class WsQueueBoxClientService {
                         socket.sendAsJsonString(entry.resource);
 
                         return Promise.resolve();
-                    },
-                },
+                    }
+                }
             );
 
         this.socket
@@ -380,8 +375,8 @@ export class WsQueueBoxClientService {
                         }
 
                         await this.handleIncomingWsMessage(msg);
-                    },
-                },
+                    }
+                }
             );
 
         return this;
@@ -398,33 +393,33 @@ export class WsQueueBoxClientService {
 
         const reconnectGeneration = this.reconnectStatus.generation;
         const connectionRequestId = this.options.newConnectionRequestId?.();
-        const reconnectTask =
-            tryWithPolicy(
-                async () =>
-                    await this.attemptReconnect(
-                        reconnectGeneration,
-                        connectionRequestId,
-                    ),
-                this.toReconnectPolicy(reconnectGeneration)
-            )
-                .catch(
-                    (error) => this.handleReconnectFailure(
+        const reconnectTask = tryWithPolicy(
+            async () =>
+                await this.attemptReconnect(
+                    reconnectGeneration,
+                    connectionRequestId
+                ),
+            this.toReconnectPolicy(reconnectGeneration)
+        )
+            .catch(
+                (error) =>
+                    this.handleReconnectFailure(
                         error,
-                        reconnectGeneration,
+                        reconnectGeneration
                     )
-                )
-                .finally(() => {
-                    if (this.reconnectStatus.task === reconnectTask) {
-                        this.reconnectStatus.task = undefined;
-                    }
-                });
+            )
+            .finally(() => {
+                if (this.reconnectStatus.task === reconnectTask) {
+                    this.reconnectStatus.task = undefined;
+                }
+            });
 
         this.reconnectStatus.task = reconnectTask;
     }
 
     private async attemptReconnect(
         reconnectGeneration: number,
-        connectionRequestId: string | undefined,
+        connectionRequestId: string | undefined
     ): Promise<void> {
         if (!this.isReconnectCurrent(reconnectGeneration)) {
             return;
@@ -447,8 +442,8 @@ export class WsQueueBoxClientService {
             (signal) => this.socket.connect({ requestId, signal }),
             {
                 timeoutMs,
-                errorOnNull: false,
-            },
+                errorOnNull: false
+            }
         ).run();
     }
 
@@ -464,7 +459,7 @@ export class WsQueueBoxClientService {
 
     private handleReconnectFailure(
         error: unknown,
-        reconnectGeneration: number,
+        reconnectGeneration: number
     ): void {
         if (this.reconnectStatus.generation !== reconnectGeneration) {
             return;
@@ -477,10 +472,8 @@ export class WsQueueBoxClientService {
             this.reconnectStatus.attempts = error.context.attempt;
             this.reconnectStatus.exhausted = true;
             console.warn(
-                `WebSocket reconnect exhausted after ${
-                    this.reconnectStatus.attempts
-                } attempts for ${this.input.sessionId}`,
-                error,
+                `WebSocket reconnect exhausted after ${this.reconnectStatus.attempts} attempts for ${this.input.sessionId}`,
+                error
             );
             return;
         }
@@ -488,7 +481,7 @@ export class WsQueueBoxClientService {
         this.reconnectStatus.exhausted = false;
         console.warn(
             `WebSocket reconnect stopped for ${this.input.sessionId}`,
-            error,
+            error
         );
     }
 
@@ -516,7 +509,7 @@ export class WsQueueBoxClientService {
                 status: 'skipped',
                 message,
                 entries: [],
-                reason: 'WS queue-box client is closed.',
+                reason: 'WS queue-box client is closed.'
             };
         }
 
@@ -537,8 +530,8 @@ export class WsQueueBoxClientService {
             typesToDequeue,
             resilience,
             QueueBoxUtilities.withRetryDisposition(
-                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry),
-            ),
+                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry)
+            )
         );
     }
 
@@ -548,7 +541,7 @@ export class WsQueueBoxClientService {
 
     private async dispatchInboxEntry(
         entry: ResourceEntry,
-        plan?: ReturnType<typeof planALMessageHandling>,
+        plan?: ReturnType<typeof planALMessageHandling>
     ): Promise<void> {
         const message = JSON.parse(entry.resource) as ALMessage;
 
@@ -556,19 +549,19 @@ export class WsQueueBoxClientService {
         let wildcard = undefined;
 
         if (plan?.ownership.exclusive) {
-            exclusiveCallback =
-                this.onInboxMessageCallbacks.get(message.payload.typeId) ??
+            exclusiveCallback = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
                 this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN);
 
             await this.onMessageIfPresent(exclusiveCallback, message, entry);
-        } else {
+        }
+        else {
             exclusiveCallback = this.onInboxMessageCallbacks.get(
-                message.payload.typeId,
+                message.payload.typeId
             );
             await this.onMessageIfPresent(exclusiveCallback, message, entry);
 
             wildcard = this.onInboxMessageCallbacks.get(
-                WsQueueBoxClientService.ALL_IN,
+                WsQueueBoxClientService.ALL_IN
             );
             await this.onMessageIfPresent(wildcard, message, entry);
         }
@@ -589,11 +582,12 @@ export class WsQueueBoxClientService {
     private async onMessageIfPresent(
         callback: OnMessageCallback | undefined,
         message: ALMessage,
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ) {
         try {
             await callback?.onMessage(message, entry);
-        } catch (e) {
+        }
+        catch (e) {
             console.error('Error calling onMessage callback', e);
         }
     }
@@ -607,7 +601,8 @@ export class WsQueueBoxClientService {
         for (const callback of this.onOutboxMessageCallbacks.values()) {
             try {
                 await callback.onMessage(entry, this.socket);
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Error calling onMessage callback', e);
             }
         }
@@ -619,14 +614,13 @@ export class WsQueueBoxClientService {
             return false;
         }
 
-        const openState =
-            (globalThis.WebSocket as { OPEN?: number } | undefined)?.OPEN ?? 1;
+        const openState = (globalThis.WebSocket as { OPEN?: number; } | undefined)?.OPEN ?? 1;
         return readyState === openState;
     }
 
     private toAckTrackingPlan(
         effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
-        msg: ALMessage,
+        msg: ALMessage
     ): ALOutboundAckTrackingPlan | undefined {
         const targets = msg.targets;
         if (effective.ack.algo === 'none' || targets?.mode !== 'unicast') {
@@ -639,12 +633,12 @@ export class WsQueueBoxClientService {
             maxAttempts: effective.retry.algo === 'none'
                 ? 0
                 : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [targets.toPeerId],
+            expectedPeerIds: [targets.toPeerId]
         };
     }
 
     private toRetryTrackingPlan(
-        effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
+        effective: ReturnType<typeof normalizeALQosPolicy>['effective']
     ): ALOutboundRetryTrackingPlan | undefined {
         if (effective.retry.algo === 'none') {
             return undefined;
@@ -652,13 +646,13 @@ export class WsQueueBoxClientService {
 
         return {
             enabled: true,
-            maxAttempts: effective.retry.opts.maxAttempts,
+            maxAttempts: effective.retry.opts.maxAttempts
         };
     }
 
     private toSupersedenceTrackingPlan(
         effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
-        msg: ALMessage,
+        msg: ALMessage
     ): ALOutboundSupersedenceTrackingPlan | undefined {
         if (effective.supersedence.algo === 'none') {
             return undefined;
@@ -668,13 +662,13 @@ export class WsQueueBoxClientService {
             enabled: true,
             algo: effective.supersedence.algo,
             key: resolveSupersedenceKey(msg, effective),
-            replacesMsgId: effective.supersedence.opts.replacesMsgId,
+            replacesMsgId: effective.supersedence.opts.replacesMsgId
         };
     }
 }
 
 function toWsQueueBoxClientReadyState(
-    readyState: number | undefined,
+    readyState: number | undefined
 ): WsQueueBoxClientReadyState {
     switch (readyState) {
         case undefined:

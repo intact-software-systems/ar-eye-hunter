@@ -1,12 +1,7 @@
-import {
-    COMPLETED_STATUSES,
-    EntityStatus,
-    isFailed,
-    type ResourceEntry,
-} from '@shared/queuebox/ResourceEntry.ts';
+import { COMPLETED_STATUSES, EntityStatus, isFailed, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlTransactionSql } from '../PostgresSqlClient.ts';
+import { toDomain, toPgTimestamp, type ResourceInboxRow } from './repository-utils.ts';
 import { ResourceInboxInvariantCorruptionError } from './ResourceInboxRepository.ts';
-import { type ResourceInboxRow, toDomain, toPgTimestamp } from './repository-utils.ts';
 
 export interface ReplaceFinishedResourceEntryInput {
     readonly expected: ResourceEntry;
@@ -22,7 +17,7 @@ export interface ReplaceFinishedResourceEntryInput {
  */
 export async function replaceFinishedResourceEntryIfMatch(
     sql: PSqlTransactionSql,
-    input: ReplaceFinishedResourceEntryInput,
+    input: ReplaceFinishedResourceEntryInput
 ): Promise<ResourceEntry | null> {
     const { expected, next, expectedGeneration } = input;
     if (
@@ -39,7 +34,7 @@ export async function replaceFinishedResourceEntryIfMatch(
     ) {
         throw new ResourceInboxInvariantCorruptionError(
             next.key,
-            'Resource inbox finished replacement identity or lifecycle differs',
+            'Resource inbox finished replacement identity or lifecycle differs'
         );
     }
 
@@ -47,9 +42,11 @@ export async function replaceFinishedResourceEntryIfMatch(
         update resource_inbox
         set ri_resource = ${next.resource},
             ri_status = ${next.status},
-            next_ts = ${next.dequeueAudit.nextTs
-                ? toPgTimestamp(next.dequeueAudit.nextTs)
-                : null},
+            next_ts = ${
+        next.dequeueAudit.nextTs
+            ? toPgTimestamp(next.dequeueAudit.nextTs)
+            : null
+    },
             ri_attempts = 0,
             start_ts = null,
             end_ts = null,
@@ -72,7 +69,7 @@ export async function replaceFinishedResourceEntryIfMatch(
     if (rows.length !== 1) {
         throw new ResourceInboxInvariantCorruptionError(
             next.key,
-            'Resource inbox finished replacement returned an unexpected row count',
+            'Resource inbox finished replacement returned an unexpected row count'
         );
     }
 
@@ -84,7 +81,7 @@ export async function replaceFinishedResourceEntryIfMatch(
     ) {
         throw new ResourceInboxInvariantCorruptionError(
             next.key,
-            'Resource inbox finished replacement returned different content',
+            'Resource inbox finished replacement returned different content'
         );
     }
     return revived;

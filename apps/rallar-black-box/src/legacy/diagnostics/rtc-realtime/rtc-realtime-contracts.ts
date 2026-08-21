@@ -47,8 +47,7 @@ export type RtcRealtimeViewModel = Readonly<{
     setReliability(value: 'best-effort' | 'at-least-once'): void;
     ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
     setAck(
-        value:
-            'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'
+        value: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'
     ): void;
     ownership: 'shared' | 'exclusive';
     setOwnership(value: 'shared' | 'exclusive'): void;

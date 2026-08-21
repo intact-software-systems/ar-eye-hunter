@@ -6,23 +6,21 @@ import {
     visibleAppTabForTab,
     type AppModeId,
     type AppTabId,
-    type RunnerAdvancedSurfaceId,
+    type RunnerAdvancedSurfaceId
 } from '../../app-tabs.ts';
 import {
     normalizeAppNavigation,
     readInitialAppNavigation,
     writeAppNavigationToUrl,
-    type AppNavigationState,
+    type AppNavigationState
 } from './navigation.ts';
 
 export function useLegacyNavigation() {
-    const [navigation, setNavigation] = useState<AppNavigationState>(() =>
-        readInitialAppNavigation(),
-    );
+    const [navigation, setNavigation] = useState<AppNavigationState>(() => readInitialAppNavigation());
     const {
         mode: activeMode,
         tab: activeTab,
-        advancedSurface: activeAdvancedSurface,
+        advancedSurface: activeAdvancedSurface
     } = navigation;
 
     useEffect(() => {
@@ -30,8 +28,7 @@ export function useLegacyNavigation() {
             return;
         }
 
-        const handlePopState = (): void =>
-            setNavigation(readInitialAppNavigation());
+        const handlePopState = (): void => setNavigation(readInitialAppNavigation());
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
     }, []);
@@ -42,7 +39,7 @@ export function useLegacyNavigation() {
     };
     const selectTab = (
         tab: AppTabId,
-        advancedSurface?: RunnerAdvancedSurfaceId,
+        advancedSurface?: RunnerAdvancedSurfaceId
     ): void => {
         const visibleTab = visibleAppTabForTab(tab);
         const mode = appTabInMode(visibleTab, activeMode)
@@ -52,8 +49,8 @@ export function useLegacyNavigation() {
             normalizeAppNavigation({
                 mode,
                 tab,
-                advancedSurface,
-            }),
+                advancedSurface
+            })
         );
     };
     const selectMode = (mode: AppModeId): void => {
@@ -63,8 +60,8 @@ export function useLegacyNavigation() {
                 tab: appTabInMode(activeTab, mode)
                     ? activeTab
                     : defaultAppTabForMode(mode),
-                advancedSurface: activeAdvancedSurface,
-            }),
+                advancedSurface: activeAdvancedSurface
+            })
         );
     };
 
@@ -74,6 +71,6 @@ export function useLegacyNavigation() {
         activeAdvancedSurface,
         selectNavigation,
         selectTab,
-        selectMode,
+        selectMode
     };
 }

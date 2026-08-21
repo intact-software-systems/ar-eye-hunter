@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
@@ -8,7 +8,7 @@ import { formatTime } from '../../shared/time-format.ts';
 
 export function ControlPanel({
     state,
-    control,
+    control
 }: {
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;
@@ -17,15 +17,18 @@ export function ControlPanel({
     const [url, setUrl] = useState(control.url ?? '');
     const [runId, setRunId] = useState(control.runId ?? config?.runId ?? '');
     const [agentId, setAgentId] = useState(
-        control.agentId ?? config?.agentId ?? '',
+        control.agentId ?? config?.agentId ?? ''
     );
     const connected = control.state === 'registered';
-    const connecting =
-        control.state === 'connecting' || control.state === 'reconnecting';
+    const connecting = control.state === 'connecting' || control.state === 'reconnecting';
 
     useEffect(() => {
-        if (!runId && config?.runId) setRunId(config.runId);
-        if (!agentId && config?.agentId) setAgentId(config.agentId);
+        if (!runId && config?.runId) {
+            setRunId(config.runId);
+        }
+        if (!agentId && config?.agentId) {
+            setAgentId(config.agentId);
+        }
     }, [agentId, config?.agentId, config?.runId, runId]);
 
     useEffect(() => {
@@ -76,21 +79,16 @@ export function ControlPanel({
                         rallarBlackBoxRuntimeStore.connectControl(
                             url,
                             runId,
-                            agentId,
-                        )
-                    }
+                            agentId
+                        )}
                 >
                     Connect
                 </button>
                 <button
                     type="button"
-                    disabled={
-                        control.state === 'idle' ||
-                        control.state === 'disconnected'
-                    }
-                    onClick={() =>
-                        rallarBlackBoxRuntimeStore.disconnectControl()
-                    }
+                    disabled={control.state === 'idle' ||
+                        control.state === 'disconnected'}
+                    onClick={() => rallarBlackBoxRuntimeStore.disconnectControl()}
                 >
                     Disconnect
                 </button>

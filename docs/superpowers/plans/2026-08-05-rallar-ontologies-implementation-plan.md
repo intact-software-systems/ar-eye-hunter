@@ -248,49 +248,49 @@ Task 1 implements a minimal semantic core in the narrow `@shared/ontology/mod.ts
 
 ```ts
 export type RallarOntologyIri =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/${string}`;
 export type RallarOntologyId = RallarOntologyIri;
 export type RallarOntologyVersionIri = `${RallarOntologyId}/version/${number}.${number}.${number}`;
 export type RallarOntologyTermId =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/${string}`;
 export type RallarOntologyOwnerId =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/owner/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/owner/${string}`;
 export type RallarOntologyRelationId =
-  | `https://github.com/intact-software-systems/ar-eye-hunter/ontology/relation/${string}`
-  | 'http://www.w3.org/2004/02/skos/core#broader'
-  | 'http://www.w3.org/2004/02/skos/core#narrower'
-  | 'http://www.w3.org/2004/02/skos/core#related';
+    | `https://github.com/intact-software-systems/ar-eye-hunter/ontology/relation/${string}`
+    | 'http://www.w3.org/2004/02/skos/core#broader'
+    | 'http://www.w3.org/2004/02/skos/core#narrower'
+    | 'http://www.w3.org/2004/02/skos/core#related';
 export type RallarOntologyVersion = `${number}.${number}.${number}`;
 export type RallarOntologyCompetencyQuestionId = `CQ-${string}`;
 
 export interface RallarOntologyReference {
-  readonly relationId: RallarOntologyRelationId;
-  readonly targetTermId: RallarOntologyTermId;
+    readonly relationId: RallarOntologyRelationId;
+    readonly targetTermId: RallarOntologyTermId;
 }
 
 export interface RallarOntologyTermBase {
-  readonly termId: RallarOntologyTermId;
-  readonly kind: string;
-  readonly label: string;
-  readonly definition: string;
-  readonly status: 'draft' | 'active' | 'deprecated';
-  readonly references: readonly RallarOntologyReference[];
-  readonly supersededBy?: RallarOntologyTermId;
-  readonly removalCondition?: string;
+    readonly termId: RallarOntologyTermId;
+    readonly kind: string;
+    readonly label: string;
+    readonly definition: string;
+    readonly status: 'draft' | 'active' | 'deprecated';
+    readonly references: readonly RallarOntologyReference[];
+    readonly supersededBy?: RallarOntologyTermId;
+    readonly removalCondition?: string;
 }
 
 export interface RallarOntologyVocabularyModule<
-  TTerm extends RallarOntologyTermBase = RallarOntologyTermBase,
+    TTerm extends RallarOntologyTermBase = RallarOntologyTermBase,
 > {
-  readonly ontologyId: RallarOntologyId;
-  readonly ownerId: RallarOntologyOwnerId;
-  readonly version: RallarOntologyVersion;
-  readonly versionIri: RallarOntologyVersionIri;
-  readonly maturity: 'experimental' | 'stable';
-  readonly compatibleWith: readonly RallarOntologyVersionIri[];
-  readonly requiredVocabularyVersionIris: readonly RallarOntologyVersionIri[];
-  readonly competencyQuestionIds: readonly RallarOntologyCompetencyQuestionId[];
-  readonly terms: readonly TTerm[];
+    readonly ontologyId: RallarOntologyId;
+    readonly ownerId: RallarOntologyOwnerId;
+    readonly version: RallarOntologyVersion;
+    readonly versionIri: RallarOntologyVersionIri;
+    readonly maturity: 'experimental' | 'stable';
+    readonly compatibleWith: readonly RallarOntologyVersionIri[];
+    readonly requiredVocabularyVersionIris: readonly RallarOntologyVersionIri[];
+    readonly competencyQuestionIds: readonly RallarOntologyCompetencyQuestionId[];
+    readonly terms: readonly TTerm[];
 }
 ```
 
@@ -304,109 +304,109 @@ Bindings are annotations over vocabulary terms, not part of term identity or the
 
 ```ts
 export type RallarOntologyBindingId =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/binding/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/binding/${string}`;
 export type RallarOntologyBindingSetId =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/binding-set/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/binding-set/${string}`;
 export type RallarOntologyBindingProfileId =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/binding-profile/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/binding-profile/${string}`;
 
 export type RallarOntologyBindingStrength = 'contractual' | 'owner' | 'implementation' | 'example';
 
 export type RallarOntologyBindingTarget =
-  | Readonly<{
-      kind: 'typescript-export';
-      modulePath: string;
-      exportName: string;
+    | Readonly<{
+        kind: 'typescript-export';
+        modulePath: string;
+        exportName: string;
     }>
-  | Readonly<{
-      kind: 'wire-constant';
-      modulePath: string;
-      exportName: string;
-      propertyPath?: readonly string[];
+    | Readonly<{
+        kind: 'wire-constant';
+        modulePath: string;
+        exportName: string;
+        propertyPath?: readonly string[];
     }>
-  | Readonly<{
-      kind: 'openapi-component';
-      documentPath: string;
-      componentName: string;
+    | Readonly<{
+        kind: 'openapi-component';
+        documentPath: string;
+        componentName: string;
     }>
-  | Readonly<{
-      kind: 'runtime-validator';
-      modulePath: string;
-      exportName: string;
-      validatorId: string;
+    | Readonly<{
+        kind: 'runtime-validator';
+        modulePath: string;
+        exportName: string;
+        validatorId: string;
     }>
-  | Readonly<{
-      kind: 'normative-anchor';
-      documentPath: string;
-      anchor: string;
+    | Readonly<{
+        kind: 'normative-anchor';
+        documentPath: string;
+        anchor: string;
     }>
-  | Readonly<{
-      kind: 'export-property';
-      modulePath: string;
-      exportName: string;
-      propertyName: string;
+    | Readonly<{
+        kind: 'export-property';
+        modulePath: string;
+        exportName: string;
+        propertyName: string;
     }>
-  | Readonly<{
-      kind: 'package-script';
-      manifestPath: string;
-      scriptName: string;
+    | Readonly<{
+        kind: 'package-script';
+        manifestPath: string;
+        scriptName: string;
     }>
-  | Readonly<{
-      kind: 'repository-owner';
-      ownerId: RallarOntologyOwnerId;
-      path: string;
+    | Readonly<{
+        kind: 'repository-owner';
+        ownerId: RallarOntologyOwnerId;
+        path: string;
     }>
-  | Readonly<{
-      kind: 'implementation-symbol';
-      path: string;
-      symbol: string;
+    | Readonly<{
+        kind: 'implementation-symbol';
+        path: string;
+        symbol: string;
     }>
-  | Readonly<{
-      kind: 'example';
-      path: string;
+    | Readonly<{
+        kind: 'example';
+        path: string;
     }>;
 
 export interface RallarOntologyBinding {
-  readonly bindingId: RallarOntologyBindingId;
-  readonly termId: RallarOntologyTermId;
-  readonly role:
-    | 'authoritative-contract'
-    | 'projection'
-    | 'wire-identity'
-    | 'schema'
-    | 'runtime-validation'
-    | 'authorization-owner'
-    | 'identifier'
-    | 'normative-standard'
-    | 'enforcement-owner'
-    | 'enforcement-gate'
-    | 'review-evidence'
-    | 'exception-policy'
-    | 'implementation'
-    | 'example';
-  readonly strength: RallarOntologyBindingStrength;
-  readonly target: RallarOntologyBindingTarget;
+    readonly bindingId: RallarOntologyBindingId;
+    readonly termId: RallarOntologyTermId;
+    readonly role:
+        | 'authoritative-contract'
+        | 'projection'
+        | 'wire-identity'
+        | 'schema'
+        | 'runtime-validation'
+        | 'authorization-owner'
+        | 'identifier'
+        | 'normative-standard'
+        | 'enforcement-owner'
+        | 'enforcement-gate'
+        | 'review-evidence'
+        | 'exception-policy'
+        | 'implementation'
+        | 'example';
+    readonly strength: RallarOntologyBindingStrength;
+    readonly target: RallarOntologyBindingTarget;
 }
 
 export interface RallarOntologyBindingProfileBase {
-  readonly profileId: RallarOntologyBindingProfileId;
-  readonly termId: RallarOntologyTermId;
-  readonly kind: string;
+    readonly profileId: RallarOntologyBindingProfileId;
+    readonly termId: RallarOntologyTermId;
+    readonly kind: string;
 }
 
 export interface RallarOntologyBindingModule<
-  TProfile extends RallarOntologyBindingProfileBase = RallarOntologyBindingProfileBase,
+    TProfile extends RallarOntologyBindingProfileBase = RallarOntologyBindingProfileBase,
 > {
-  readonly bindingSetId: RallarOntologyBindingSetId;
-  readonly ontologyId: RallarOntologyId;
-  readonly vocabularyVersionIri: RallarOntologyVersionIri;
-  readonly ownerId: RallarOntologyOwnerId;
-  readonly version: RallarOntologyVersion;
-  readonly versionIri: RallarOntologyVersionIri;
-  readonly maturity: 'experimental' | 'stable';
-  readonly compatibleWith: readonly RallarOntologyVersionIri[];
-  readonly bindings: readonly RallarOntologyBinding[];
-  readonly profiles: readonly TProfile[];
+    readonly bindingSetId: RallarOntologyBindingSetId;
+    readonly ontologyId: RallarOntologyId;
+    readonly vocabularyVersionIri: RallarOntologyVersionIri;
+    readonly ownerId: RallarOntologyOwnerId;
+    readonly version: RallarOntologyVersion;
+    readonly versionIri: RallarOntologyVersionIri;
+    readonly maturity: 'experimental' | 'stable';
+    readonly compatibleWith: readonly RallarOntologyVersionIri[];
+    readonly bindings: readonly RallarOntologyBinding[];
+    readonly profiles: readonly TProfile[];
 }
 ```
 
@@ -423,125 +423,125 @@ Domain and realtime modules extend the semantic base in their owning package. Re
 
 ```ts
 export interface RallarDomainOntologyTerm extends RallarOntologyTermBase {
-  readonly kind: 'domain';
-  readonly domainKind:
-    | 'scope'
-    | 'identity'
-    | 'entity'
-    | 'value-object'
-    | 'projection'
-    | 'snapshot'
-    | 'event'
-    | 'proposal';
-  readonly authority: 'authoritative' | 'derived' | 'projection' | 'proposal';
-  readonly identityFields: readonly string[];
+    readonly kind: 'domain';
+    readonly domainKind:
+        | 'scope'
+        | 'identity'
+        | 'entity'
+        | 'value-object'
+        | 'projection'
+        | 'snapshot'
+        | 'event'
+        | 'proposal';
+    readonly authority: 'authoritative' | 'derived' | 'projection' | 'proposal';
+    readonly identityFields: readonly string[];
 }
 
 export type RallarMessageTransportKind = 'al-rtc' | 'al-ws';
 export type RallarMessageTargetMode = 'unicast' | 'multicast' | 'broadcast';
 export type RallarMessageRouteId =
-  `https://github.com/intact-software-systems/ar-eye-hunter/ontology/route/${string}`;
+    `https://github.com/intact-software-systems/ar-eye-hunter/ontology/route/${string}`;
 export type RallarSenderKind = 'client-session' | 'peer-session' | 'server-node' | 'system';
 
 export interface RallarMessageRouteSemantics {
-  readonly routeId: RallarMessageRouteId;
-  readonly topicId: string;
-  readonly scope: 'room' | 'app' | 'world' | 'all' | 'system';
-  readonly transports: readonly RallarMessageTransportKind[];
-  readonly targetModes: readonly RallarMessageTargetMode[];
-  readonly requestedReliability: 'best-effort' | 'at-least-once';
-  readonly acknowledgement: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
-  readonly ordering: 'none' | 'al-policy' | 'al-policy-and-domain';
-  readonly deduplication: 'none' | 'al-message-id' | 'al-semantic-key' | 'domain-owned';
-  readonly supersedence: 'none' | 'al-latest-wins' | 'domain-owned';
-  readonly qosOwnership: 'sender' | 'receiver' | 'shared' | 'domain-owned';
-  readonly authorization: 'required' | 'not-applicable';
+    readonly routeId: RallarMessageRouteId;
+    readonly topicId: string;
+    readonly scope: 'room' | 'app' | 'world' | 'all' | 'system';
+    readonly transports: readonly RallarMessageTransportKind[];
+    readonly targetModes: readonly RallarMessageTargetMode[];
+    readonly requestedReliability: 'best-effort' | 'at-least-once';
+    readonly acknowledgement: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
+    readonly ordering: 'none' | 'al-policy' | 'al-policy-and-domain';
+    readonly deduplication: 'none' | 'al-message-id' | 'al-semantic-key' | 'domain-owned';
+    readonly supersedence: 'none' | 'al-latest-wins' | 'domain-owned';
+    readonly qosOwnership: 'sender' | 'receiver' | 'shared' | 'domain-owned';
+    readonly authorization: 'required' | 'not-applicable';
 }
 
 export type RallarPayloadSchemaVersionSemantics =
-  | Readonly<{
-      kind: 'wire-type-id';
+    | Readonly<{
+        kind: 'wire-type-id';
     }>
-  | Readonly<{
-      kind: 'payload-field';
-      fieldPath: string;
+    | Readonly<{
+        kind: 'payload-field';
+        fieldPath: string;
     }>
-  | Readonly<{
-      kind: 'external-registry';
-      registryId: string;
+    | Readonly<{
+        kind: 'external-registry';
+        registryId: string;
     }>;
 
 export type RallarPayloadValidationSemantics =
-  | Readonly<{
-      kind: 'runtime-payload';
-      schemaVersion: RallarPayloadSchemaVersionSemantics;
+    | Readonly<{
+        kind: 'runtime-payload';
+        schemaVersion: RallarPayloadSchemaVersionSemantics;
     }>
-  | Readonly<{
-      kind: 'envelope-only';
-      reason: string;
+    | Readonly<{
+        kind: 'envelope-only';
+        reason: string;
     }>
-  | Readonly<{
-      kind: 'unvalidated';
-      mechanism: 'generic-assertion' | 'unknown-payload';
-      reason: string;
+    | Readonly<{
+        kind: 'unvalidated';
+        mechanism: 'generic-assertion' | 'unknown-payload';
+        reason: string;
     }>;
 
 export interface RallarMessageOntologyTerm extends RallarOntologyTermBase {
-  readonly kind: 'message-type';
-  readonly wireTypeId: string;
-  readonly routes: readonly RallarMessageRouteSemantics[];
-  readonly senderKinds: readonly RallarSenderKind[];
-  readonly validation: RallarPayloadValidationSemantics;
-  readonly correlation: 'message-id' | 'actions-correlation' | 'domain-owned';
+    readonly kind: 'message-type';
+    readonly wireTypeId: string;
+    readonly routes: readonly RallarMessageRouteSemantics[];
+    readonly senderKinds: readonly RallarSenderKind[];
+    readonly validation: RallarPayloadValidationSemantics;
+    readonly correlation: 'message-id' | 'actions-correlation' | 'domain-owned';
 }
 
 export interface RallarRtcLaneOntologyTerm extends RallarOntologyTermBase {
-  readonly kind: 'rtc-lane';
-  readonly laneId: string;
-  readonly envelope: 'none';
-  readonly payloadKinds: readonly ('json' | 'binary')[];
-  readonly roomScopeCarrier: 'payload-room-ref-or-unique-lane';
+    readonly kind: 'rtc-lane';
+    readonly laneId: string;
+    readonly envelope: 'none';
+    readonly payloadKinds: readonly ('json' | 'binary')[];
+    readonly roomScopeCarrier: 'payload-room-ref-or-unique-lane';
 }
 
 export type RallarPayloadValidationBinding =
-  | Readonly<{
-      kind: 'runtime-payload';
-      schemaBindingId: RallarOntologyBindingId;
-      schemaVersionContractBindingId: RallarOntologyBindingId;
-      validatorBindingId: RallarOntologyBindingId;
+    | Readonly<{
+        kind: 'runtime-payload';
+        schemaBindingId: RallarOntologyBindingId;
+        schemaVersionContractBindingId: RallarOntologyBindingId;
+        validatorBindingId: RallarOntologyBindingId;
     }>
-  | Readonly<{
-      kind: 'envelope-only';
-      envelopeValidatorBindingId: RallarOntologyBindingId;
-      payloadGapOwnerBindingId: RallarOntologyBindingId;
+    | Readonly<{
+        kind: 'envelope-only';
+        envelopeValidatorBindingId: RallarOntologyBindingId;
+        payloadGapOwnerBindingId: RallarOntologyBindingId;
     }>
-  | Readonly<{
-      kind: 'unvalidated';
-      boundaryBindingId: RallarOntologyBindingId;
-      gapOwnerBindingId: RallarOntologyBindingId;
+    | Readonly<{
+        kind: 'unvalidated';
+        boundaryBindingId: RallarOntologyBindingId;
+        gapOwnerBindingId: RallarOntologyBindingId;
     }>;
 
 export interface RallarMessageOntologyBindingProfile extends RallarOntologyBindingProfileBase {
-  readonly kind: 'message-bindings';
-  readonly wireTypeBindingId: RallarOntologyBindingId;
-  readonly routeBindings: readonly Readonly<{
-    routeId: RallarMessageRouteId;
-    topicBindingId: RallarOntologyBindingId;
-    authorizationBindings: readonly Readonly<{
-      transport: RallarMessageTransportKind;
-      ownerBindingIds: readonly RallarOntologyBindingId[];
+    readonly kind: 'message-bindings';
+    readonly wireTypeBindingId: RallarOntologyBindingId;
+    readonly routeBindings: readonly Readonly<{
+        routeId: RallarMessageRouteId;
+        topicBindingId: RallarOntologyBindingId;
+        authorizationBindings: readonly Readonly<{
+            transport: RallarMessageTransportKind;
+            ownerBindingIds: readonly RallarOntologyBindingId[];
+        }>[];
     }>[];
-  }>[];
-  readonly validation: RallarPayloadValidationBinding;
+    readonly validation: RallarPayloadValidationBinding;
 }
 
 export interface RallarRtcLaneOntologyBindingProfile extends RallarOntologyBindingProfileBase {
-  readonly kind: 'rtc-lane-bindings';
-  readonly laneConfigBindingId: RallarOntologyBindingId;
+    readonly kind: 'rtc-lane-bindings';
+    readonly laneConfigBindingId: RallarOntologyBindingId;
 }
 
 export type RallarRealtimeOntologyBindingModule = RallarOntologyBindingModule<
-  RallarMessageOntologyBindingProfile | RallarRtcLaneOntologyBindingProfile
+    RallarMessageOntologyBindingProfile | RallarRtcLaneOntologyBindingProfile
 >;
 ```
 
@@ -553,65 +553,66 @@ The pilot vocabulary contains no file paths:
 
 ```ts
 export const RALLAR_DOMAIN_TERM_IDS = {
-  application:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.application',
-  workspace:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.workspace',
-  groupRef:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.group-ref',
-  group: 'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.group',
-  room: 'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.room-projection',
-  principal:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.principal',
-  clientInstance:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.client-instance',
-  session: 'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.session',
+    application:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.application',
+    workspace:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.workspace',
+    groupRef:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.group-ref',
+    group: 'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.group',
+    room:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.room-projection',
+    principal:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.principal',
+    clientInstance:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.client-instance',
+    session: 'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/domain.session'
 } as const satisfies Record<string, RallarOntologyTermId>;
 
 const groupRefTerm: RallarDomainOntologyTerm = {
-  termId: RALLAR_DOMAIN_TERM_IDS.groupRef,
-  kind: 'domain',
-  label: 'GroupRef',
-  definition: 'Composite application/workspace/group identity used by authoritative group state.',
-  status: 'draft',
-  domainKind: 'identity',
-  authority: 'authoritative',
-  identityFields: ['applicationId', 'workspaceId', 'groupId'],
-  references: [
-    {
-      relationId: RALLAR_RELATION_IDS.scopedBy,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.application,
-    },
-    {
-      relationId: RALLAR_RELATION_IDS.scopedBy,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.workspace,
-    },
-    {
-      relationId: RALLAR_RELATION_IDS.identifies,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.group,
-    },
-  ],
+    termId: RALLAR_DOMAIN_TERM_IDS.groupRef,
+    kind: 'domain',
+    label: 'GroupRef',
+    definition: 'Composite application/workspace/group identity used by authoritative group state.',
+    status: 'draft',
+    domainKind: 'identity',
+    authority: 'authoritative',
+    identityFields: ['applicationId', 'workspaceId', 'groupId'],
+    references: [
+        {
+            relationId: RALLAR_RELATION_IDS.scopedBy,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.application
+        },
+        {
+            relationId: RALLAR_RELATION_IDS.scopedBy,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.workspace
+        },
+        {
+            relationId: RALLAR_RELATION_IDS.identifies,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.group
+        }
+    ]
 };
 
 const roomTerm: RallarDomainOntologyTerm = {
-  termId: RALLAR_DOMAIN_TERM_IDS.room,
-  kind: 'domain',
-  label: 'Room projection',
-  definition: 'Browser/product view projected from authoritative GroupSnapshot state.',
-  status: 'draft',
-  domainKind: 'projection',
-  authority: 'projection',
-  identityFields: ['roomRef'],
-  references: [
-    {
-      relationId: RALLAR_RELATION_IDS.projects,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.group,
-    },
-    {
-      relationId: RALLAR_RELATION_IDS.identifiedBy,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.groupRef,
-    },
-  ],
+    termId: RALLAR_DOMAIN_TERM_IDS.room,
+    kind: 'domain',
+    label: 'Room projection',
+    definition: 'Browser/product view projected from authoritative GroupSnapshot state.',
+    status: 'draft',
+    domainKind: 'projection',
+    authority: 'projection',
+    identityFields: ['roomRef'],
+    references: [
+        {
+            relationId: RALLAR_RELATION_IDS.projects,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.group
+        },
+        {
+            relationId: RALLAR_RELATION_IDS.identifiedBy,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.groupRef
+        }
+    ]
 };
 ```
 
@@ -623,60 +624,60 @@ The cross-transport pilot remains `rallar.crdt.update.v1`. Its term states the h
 
 ```ts
 const crdtUpdateTerm: RallarMessageOntologyTerm = {
-  termId:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/realtime.message.rallar-crdt-update-v1',
-  kind: 'message-type',
-  label: 'Rallar CRDT live update v1',
-  definition: 'A CRDT update envelope carried inside ALMessage over permitted live transports.',
-  status: 'draft',
-  wireTypeId: RALLAR_CRDT_UPDATE_TYPE_ID,
-  routes: [
-    {
-      routeId:
-        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/route/realtime.crdt-update.room',
-      topicId: RALLAR_CRDT_ROOM_TOPIC_ID,
-      scope: 'room',
-      transports: ['al-rtc', 'al-ws'],
-      targetModes: ['multicast', 'broadcast'],
-      requestedReliability: 'at-least-once',
-      acknowledgement: 'none',
-      ordering: 'al-policy-and-domain',
-      deduplication: 'al-message-id',
-      supersedence: 'none',
-      qosOwnership: 'shared',
-      authorization: 'required',
+    termId:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/realtime.message.rallar-crdt-update-v1',
+    kind: 'message-type',
+    label: 'Rallar CRDT live update v1',
+    definition: 'A CRDT update envelope carried inside ALMessage over permitted live transports.',
+    status: 'draft',
+    wireTypeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+    routes: [
+        {
+            routeId:
+                'https://github.com/intact-software-systems/ar-eye-hunter/ontology/route/realtime.crdt-update.room',
+            topicId: RALLAR_CRDT_ROOM_TOPIC_ID,
+            scope: 'room',
+            transports: ['al-rtc', 'al-ws'],
+            targetModes: ['multicast', 'broadcast'],
+            requestedReliability: 'at-least-once',
+            acknowledgement: 'none',
+            ordering: 'al-policy-and-domain',
+            deduplication: 'al-message-id',
+            supersedence: 'none',
+            qosOwnership: 'shared',
+            authorization: 'required'
+        },
+        {
+            routeId:
+                'https://github.com/intact-software-systems/ar-eye-hunter/ontology/route/realtime.crdt-update.app',
+            topicId: RALLAR_CRDT_APP_TOPIC_ID,
+            scope: 'app',
+            transports: ['al-ws'],
+            targetModes: ['broadcast'],
+            requestedReliability: 'at-least-once',
+            acknowledgement: 'none',
+            ordering: 'al-policy-and-domain',
+            deduplication: 'al-message-id',
+            supersedence: 'none',
+            qosOwnership: 'shared',
+            authorization: 'required'
+        }
+    ],
+    senderKinds: ['client-session'],
+    validation: {
+        kind: 'runtime-payload',
+        schemaVersion: {
+            kind: 'payload-field',
+            fieldPath: '$.schemaVersion'
+        }
     },
-    {
-      routeId:
-        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/route/realtime.crdt-update.app',
-      topicId: RALLAR_CRDT_APP_TOPIC_ID,
-      scope: 'app',
-      transports: ['al-ws'],
-      targetModes: ['broadcast'],
-      requestedReliability: 'at-least-once',
-      acknowledgement: 'none',
-      ordering: 'al-policy-and-domain',
-      deduplication: 'al-message-id',
-      supersedence: 'none',
-      qosOwnership: 'shared',
-      authorization: 'required',
-    },
-  ],
-  senderKinds: ['client-session'],
-  validation: {
-    kind: 'runtime-payload',
-    schemaVersion: {
-      kind: 'payload-field',
-      fieldPath: '$.schemaVersion',
-    },
-  },
-  correlation: 'domain-owned',
-  references: [
-    {
-      relationId: RALLAR_RELATION_IDS.usesGroupRef,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.groupRef,
-    },
-  ],
+    correlation: 'domain-owned',
+    references: [
+        {
+            relationId: RALLAR_RELATION_IDS.usesGroupRef,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.groupRef
+        }
+    ]
 };
 ```
 
@@ -692,22 +693,22 @@ The checker-owned `scripts/repo-style-check/repo-style-rule-ids.mjs` is the sing
 
 ```ts
 interface RepositoryCodeStandardOntologyTerm extends RallarOntologyTermBase {
-  readonly kind: 'code-standard-rule';
-  readonly ruleFamily: 'construction' | 'layout' | 'contract';
+    readonly kind: 'code-standard-rule';
+    readonly ruleFamily: 'construction' | 'layout' | 'contract';
 }
 
 const forwardCaptureRule: RepositoryCodeStandardOntologyTerm = {
-  termId:
-    'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/code-rule.construction-forward-capture',
-  kind: 'code-standard-rule',
-  ruleFamily: 'construction',
-  label: 'Forward-captured construction dependency',
-  definition:
-    'A construction-time dependency is captured before the owning composition establishes it.',
-  status: 'draft',
-  references: [],
-  removalCondition:
-    'Remove only with the normative construction rule, checker finding, test evidence, and human approval policy.',
+    termId:
+        'https://github.com/intact-software-systems/ar-eye-hunter/ontology/term/code-rule.construction-forward-capture',
+    kind: 'code-standard-rule',
+    ruleFamily: 'construction',
+    label: 'Forward-captured construction dependency',
+    definition:
+        'A construction-time dependency is captured before the owning composition establishes it.',
+    status: 'draft',
+    references: [],
+    removalCondition:
+        'Remove only with the normative construction rule, checker finding, test evidence, and human approval policy.'
 };
 ```
 
@@ -912,74 +913,74 @@ Every new Task 1 source and test file must contain at most 400 physical lines, i
 
 ```ts
 export interface RallarOntologyIssue {
-  readonly code:
-    | 'invalid-ontology-iri'
-    | 'invalid-version'
-    | 'invalid-version-iri'
-    | 'invalid-term-iri'
-    | 'invalid-owner-iri'
-    | 'invalid-relation-iri'
-    | 'duplicate-ontology-id'
-    | 'duplicate-version-iri'
-    | 'duplicate-term-id'
-    | 'duplicate-binding-set-id'
-    | 'duplicate-binding-id'
-    | 'duplicate-binding-profile-id'
-    | 'invalid-maturity'
-    | 'invalid-compatible-version-iri'
-    | 'invalid-binding-target'
-    | 'invalid-binding-strength'
-    | 'missing-vocabulary-import'
-    | 'binding-vocabulary-version-mismatch'
-    | 'missing-reference'
-    | 'missing-binding-term'
-    | 'invalid-deprecation';
-  readonly path: string;
-  readonly message: string;
+    readonly code:
+        | 'invalid-ontology-iri'
+        | 'invalid-version'
+        | 'invalid-version-iri'
+        | 'invalid-term-iri'
+        | 'invalid-owner-iri'
+        | 'invalid-relation-iri'
+        | 'duplicate-ontology-id'
+        | 'duplicate-version-iri'
+        | 'duplicate-term-id'
+        | 'duplicate-binding-set-id'
+        | 'duplicate-binding-id'
+        | 'duplicate-binding-profile-id'
+        | 'invalid-maturity'
+        | 'invalid-compatible-version-iri'
+        | 'invalid-binding-target'
+        | 'invalid-binding-strength'
+        | 'missing-vocabulary-import'
+        | 'binding-vocabulary-version-mismatch'
+        | 'missing-reference'
+        | 'missing-binding-term'
+        | 'invalid-deprecation';
+    readonly path: string;
+    readonly message: string;
 }
 
 export interface CreateRallarOntologyCatalogInput {
-  readonly vocabularies: readonly RallarOntologyVocabularyModule[];
-  readonly bindingSets: readonly RallarOntologyBindingModule[];
+    readonly vocabularies: readonly RallarOntologyVocabularyModule[];
+    readonly bindingSets: readonly RallarOntologyBindingModule[];
 }
 
 export interface RallarOntologyCatalog {
-  readonly vocabularies: readonly RallarOntologyVocabularyModule[];
-  readonly bindingSets: readonly RallarOntologyBindingModule[];
-  readonly terms: readonly RallarOntologyTermBase[];
-  readonly bindings: readonly RallarOntologyBinding[];
-  readonly bindingProfiles: readonly RallarOntologyBindingProfileBase[];
+    readonly vocabularies: readonly RallarOntologyVocabularyModule[];
+    readonly bindingSets: readonly RallarOntologyBindingModule[];
+    readonly terms: readonly RallarOntologyTermBase[];
+    readonly bindings: readonly RallarOntologyBinding[];
+    readonly bindingProfiles: readonly RallarOntologyBindingProfileBase[];
 }
 
 export function validateRallarOntologyVocabularyModule(
-  vocabulary: RallarOntologyVocabularyModule,
+    vocabulary: RallarOntologyVocabularyModule
 ): readonly RallarOntologyIssue[];
 
 export function validateRallarOntologyBindingModule(
-  bindingSet: RallarOntologyBindingModule,
+    bindingSet: RallarOntologyBindingModule
 ): readonly RallarOntologyIssue[];
 
 export function validateRallarOntologyCatalog(
-  input: CreateRallarOntologyCatalogInput,
+    input: CreateRallarOntologyCatalogInput
 ): readonly RallarOntologyIssue[];
 
 export function createRallarOntologyCatalog(
-  input: CreateRallarOntologyCatalogInput,
+    input: CreateRallarOntologyCatalogInput
 ): RallarOntologyCatalog;
 
 export function getRallarOntologyTerm(
-  catalog: RallarOntologyCatalog,
-  termId: RallarOntologyTermId,
+    catalog: RallarOntologyCatalog,
+    termId: RallarOntologyTermId
 ): RallarOntologyTermBase | undefined;
 
 export function getRallarOntologyBindings(
-  catalog: RallarOntologyCatalog,
-  termId: RallarOntologyTermId,
+    catalog: RallarOntologyCatalog,
+    termId: RallarOntologyTermId
 ): readonly RallarOntologyBinding[];
 
 export function getRallarOntologyBindingProfiles(
-  catalog: RallarOntologyCatalog,
-  termId: RallarOntologyTermId,
+    catalog: RallarOntologyCatalog,
+    termId: RallarOntologyTermId
 ): readonly RallarOntologyBindingProfileBase[];
 ```
 
@@ -1285,20 +1286,20 @@ Assert:
 expect(groupRef.identityFields).toEqual(['applicationId', 'workspaceId', 'groupId']);
 expect(room.authority).toBe('projection');
 expect(room.references).toContainEqual({
-  relationId: RALLAR_RELATION_IDS.projects,
-  targetTermId: RALLAR_DOMAIN_TERM_IDS.group,
+    relationId: RALLAR_RELATION_IDS.projects,
+    targetTermId: RALLAR_DOMAIN_TERM_IDS.group
 });
 expect(session.references).toEqual(
-  expect.arrayContaining([
-    {
-      relationId: RALLAR_RELATION_IDS.sessionOf,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.principal,
-    },
-    {
-      relationId: RALLAR_RELATION_IDS.runsOn,
-      targetTermId: RALLAR_DOMAIN_TERM_IDS.clientInstance,
-    },
-  ]),
+    expect.arrayContaining([
+        {
+            relationId: RALLAR_RELATION_IDS.sessionOf,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.principal
+        },
+        {
+            relationId: RALLAR_RELATION_IDS.runsOn,
+            targetTermId: RALLAR_DOMAIN_TERM_IDS.clientInstance
+        }
+    ])
 );
 ```
 
@@ -1381,35 +1382,35 @@ git commit -m "feat: catalog core Rallar domain semantics"
 
 ```ts
 export interface RallarRealtimeOntologyIssue {
-  readonly code:
-    | 'duplicate-route-id'
-    | 'duplicate-wire-type-id'
-    | 'duplicate-topic-wire-route'
-    | 'missing-route-profile'
-    | 'missing-route-authorization-owner'
-    | 'validation-kind-mismatch'
-    | 'invalid-validation-profile';
-  readonly path: string;
-  readonly message: string;
+    readonly code:
+        | 'duplicate-route-id'
+        | 'duplicate-wire-type-id'
+        | 'duplicate-topic-wire-route'
+        | 'missing-route-profile'
+        | 'missing-route-authorization-owner'
+        | 'validation-kind-mismatch'
+        | 'invalid-validation-profile';
+    readonly path: string;
+    readonly message: string;
 }
 
 export type RallarPayloadValidator = (
-  value: unknown,
-) => Readonly<{ valid: boolean; issues: readonly unknown[] }>;
+    value: unknown
+) => Readonly<{ valid: boolean; issues: readonly unknown[]; }>;
 
 export interface RallarPayloadValidatorBinding {
-  readonly bindingId: RallarOntologyBindingId;
-  readonly validate: RallarPayloadValidator;
+    readonly bindingId: RallarOntologyBindingId;
+    readonly validate: RallarPayloadValidator;
 }
 
 export function createRallarPayloadValidatorRegistry(
-  bindings: readonly RallarPayloadValidatorBinding[],
+    bindings: readonly RallarPayloadValidatorBinding[]
 ): ReadonlyMap<RallarOntologyBindingId, RallarPayloadValidator>;
 
 export function getRallarPayloadValidatorForMessage(
-  messageTerm: RallarMessageOntologyTerm,
-  bindingProfile: RallarMessageOntologyBindingProfile,
-  registry: ReadonlyMap<RallarOntologyBindingId, RallarPayloadValidator>,
+    messageTerm: RallarMessageOntologyTerm,
+    bindingProfile: RallarMessageOntologyBindingProfile,
+    registry: ReadonlyMap<RallarOntologyBindingId, RallarPayloadValidator>
 ): RallarPayloadValidator | undefined;
 ```
 
@@ -1581,9 +1582,9 @@ git commit -m "feat: describe browser realtime lane semantics"
 
 ```js
 export const repoStyleRuleIds = Object.freeze({
-  constructionForwardCapture: 'construction.forward-capture',
-  contractOptionalCommand: 'contract.optional-command',
-  fileLength: 'file.length',
+    constructionForwardCapture: 'construction.forward-capture',
+    contractOptionalCommand: 'contract.optional-command',
+    fileLength: 'file.length'
 });
 ```
 
@@ -1694,50 +1695,50 @@ git commit -m "feat: catalog checker-owned code standards"
 
 ```ts
 export interface RallarOntologyArtifacts {
-  readonly jsonLd: string;
-  readonly markdown: string;
+    readonly jsonLd: string;
+    readonly markdown: string;
 }
 
 export interface RallarOntologyCompetencyQuestion {
-  readonly questionId: RallarOntologyCompetencyQuestionId;
-  readonly phase: 'pilot' | 'expansion-candidate';
-  readonly question: string;
-  readonly minimumEvidence: string;
+    readonly questionId: RallarOntologyCompetencyQuestionId;
+    readonly phase: 'pilot' | 'expansion-candidate';
+    readonly question: string;
+    readonly minimumEvidence: string;
 }
 
 export interface RallarOntologyBindingResolution {
-  readonly bindingId: RallarOntologyBindingId;
-  readonly status: 'resolved' | 'warning' | 'error';
-  readonly resolvedValue?: string;
-  readonly message: string;
+    readonly bindingId: RallarOntologyBindingId;
+    readonly status: 'resolved' | 'warning' | 'error';
+    readonly resolvedValue?: string;
+    readonly message: string;
 }
 
 export interface RallarOntologyCompetencyAnswer {
-  readonly questionId: RallarOntologyCompetencyQuestionId;
-  readonly status: 'answered' | 'unanswered' | 'not-selected' | 'proposed-for-expansion';
-  readonly evidenceTermIds: readonly RallarOntologyTermId[];
-  readonly evidenceBindingIds: readonly RallarOntologyBindingId[];
-  readonly explanation: string;
+    readonly questionId: RallarOntologyCompetencyQuestionId;
+    readonly status: 'answered' | 'unanswered' | 'not-selected' | 'proposed-for-expansion';
+    readonly evidenceTermIds: readonly RallarOntologyTermId[];
+    readonly evidenceBindingIds: readonly RallarOntologyBindingId[];
+    readonly explanation: string;
 }
 
 export interface RallarOntologyArtifactInput {
-  readonly catalog: RallarOntologyCatalog;
-  readonly bindingResolutions: readonly RallarOntologyBindingResolution[];
-  readonly competencyAnswers: readonly RallarOntologyCompetencyAnswer[];
+    readonly catalog: RallarOntologyCatalog;
+    readonly bindingResolutions: readonly RallarOntologyBindingResolution[];
+    readonly competencyAnswers: readonly RallarOntologyCompetencyAnswer[];
 }
 
 export function toRallarOntologyArtifacts(
-  input: RallarOntologyArtifactInput,
+    input: RallarOntologyArtifactInput
 ): RallarOntologyArtifacts;
 
 export function answerRallarOntologyCompetencyQuestions(
-  catalog: RallarOntologyCatalog,
-  questions: readonly RallarOntologyCompetencyQuestion[],
+    catalog: RallarOntologyCatalog,
+    questions: readonly RallarOntologyCompetencyQuestion[]
 ): readonly RallarOntologyCompetencyAnswer[];
 
 export function resolveRallarOntologyBindings(
-  catalog: RallarOntologyCatalog,
-  repositoryRoot: string,
+    catalog: RallarOntologyCatalog,
+    repositoryRoot: string
 ): Promise<readonly RallarOntologyBindingResolution[]>;
 ```
 

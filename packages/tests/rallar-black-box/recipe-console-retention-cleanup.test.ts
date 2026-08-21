@@ -3,20 +3,15 @@ import { createElement, StrictMode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RecipeConsoleControlRetentionCapability } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
-import type { RecipeConsoleControlRetentionApi } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
+import type { RecipeConsoleControlRetentionCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
+import type { RecipeConsoleControlRetentionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
 import type {
     ControlRetentionConfirmation,
-    ControlRetentionPreview,
+    ControlRetentionPreview
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts';
-import {
-    useRetentionCleanup,
-    type RetentionCleanupController,
-} from '../../../apps/rallar-black-box/src/recipe-console/history/use-retention-cleanup.ts';
+import { useRetentionCleanup, type RetentionCleanupController } from '../../../apps/rallar-black-box/src/recipe-console/history/use-retention-cleanup.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const RAW_PREVIEW = {
     deletedRunIds: [],
@@ -31,9 +26,9 @@ const RAW_PREVIEW = {
         issuedRunTokenCount: 2,
         distributedRuns: [
             { distributedRunId: 'distributed-a', state: 'running' },
-            { distributedRunId: 'distributed-b', state: 'failed' },
+            { distributedRunId: 'distributed-b', state: 'failed' }
         ],
-        fleetReportIds: ['distributed-b'],
+        fleetReportIds: ['distributed-b']
     }, {
         runId: 'control-b',
         createdAtEpochMs: 30,
@@ -41,27 +36,27 @@ const RAW_PREVIEW = {
         connectedAgentCount: 0,
         issuedRunTokenCount: 0,
         distributedRuns: [{ distributedRunId: 'distributed-c', state: 'passed' }],
-        fleetReportIds: ['distributed-c'],
+        fleetReportIds: ['distributed-c']
     }],
     wouldDeleteRunIds: ['control-a', 'control-b'],
     wouldDeleteDistributedRunIds: [
         'distributed-c',
         'distributed-a',
-        'distributed-b',
+        'distributed-b'
     ],
     wouldDeleteFleetReportIds: ['distributed-c', 'distributed-b'],
     projectedRetainedRuns: 2,
     preserves: {
         connectedAgentSockets: true,
-        storedArtifactFiles: true,
+        storedArtifactFiles: true
     },
-    planToken: 'opaque-plan-token-never-for-display',
+    planToken: 'opaque-plan-token-never-for-display'
 } as unknown as ControlRetentionPreview;
 
 const CONFIRMATION: ControlRetentionConfirmation = {
     deletedRunIds: ['control-a', 'control-b'],
     retainedRuns: 2,
-    maxRuns: 2,
+    maxRuns: 2
 };
 
 type HookProps = Readonly<{
@@ -90,13 +85,13 @@ function fixture(overrides: Partial<RecipeConsoleControlRetentionApi> = {}) {
     const api: RecipeConsoleControlRetentionApi = {
         preview: vi.fn(async () => RAW_PREVIEW),
         confirm: vi.fn(async () => CONFIRMATION),
-        ...overrides,
+        ...overrides
     };
     const load = vi.fn(async () => api);
     const capability: RecipeConsoleControlRetentionCapability = {
         generation: Symbol('retention-test-generation'),
         signal: lifetime.signal,
-        load,
+        load
     };
     return { api, capability, lifetime, load };
 }
@@ -157,15 +152,15 @@ describe('Recipe Console retention cleanup controller', () => {
             projectedRetainedRuns: 2,
             candidates: [{
                 key: 'retention-candidate:0',
-                ...RAW_PREVIEW.wouldDeleteRuns[0],
+                ...RAW_PREVIEW.wouldDeleteRuns[0]
             }, {
                 key: 'retention-candidate:1',
-                ...RAW_PREVIEW.wouldDeleteRuns[1],
+                ...RAW_PREVIEW.wouldDeleteRuns[1]
             }],
             wouldDeleteRunIds: RAW_PREVIEW.wouldDeleteRunIds,
             wouldDeleteDistributedRunIds: RAW_PREVIEW.wouldDeleteDistributedRunIds,
             wouldDeleteFleetReportIds: RAW_PREVIEW.wouldDeleteFleetReportIds,
-            preserves: RAW_PREVIEW.preserves,
+            preserves: RAW_PREVIEW.preserves
         });
         expect(JSON.stringify(current?.state)).not.toContain('planToken');
         expect(JSON.stringify(current?.state)).not.toContain('opaque-plan-token');
@@ -177,11 +172,13 @@ describe('Recipe Console retention cleanup controller', () => {
 
     it('remains operational after the StrictMode effect replay', async () => {
         const setup = fixture();
-        await act(async () => root.render(createElement(
-            StrictMode,
-            null,
-            createElement(Harness, { capability: setup.capability }),
-        )));
+        await act(async () =>
+            root.render(createElement(
+                StrictMode,
+                null,
+                createElement(Harness, { capability: setup.capability })
+            ))
+        );
 
         await act(async () => current?.preview());
 
@@ -193,13 +190,13 @@ describe('Recipe Console retention cleanup controller', () => {
 
     it.each([
         { maxRuns: 0, projectedRetainedRuns: 4, wouldDeleteRuns: [], wouldDeleteRunIds: [] },
-        { maxRuns: 4, projectedRetainedRuns: 4, wouldDeleteRuns: [], wouldDeleteRunIds: [] },
-    ])('keeps empty and disabled plans nonconfirmable', async patch => {
+        { maxRuns: 4, projectedRetainedRuns: 4, wouldDeleteRuns: [], wouldDeleteRunIds: [] }
+    ])('keeps empty and disabled plans nonconfirmable', async (patch) => {
         const raw = {
             ...RAW_PREVIEW,
             ...patch,
             wouldDeleteDistributedRunIds: [],
-            wouldDeleteFleetReportIds: [],
+            wouldDeleteFleetReportIds: []
         } as ControlRetentionPreview;
         const setup = fixture({ preview: vi.fn(async () => raw) });
         await render({ capability: setup.capability });
@@ -249,27 +246,35 @@ describe('Recipe Console retention cleanup controller', () => {
         expect(setup.api.confirm).toHaveBeenCalledTimes(1);
         expect(setup.api.confirm).toHaveBeenCalledWith({
             preview: RAW_PREVIEW,
-            signal: expect.any(AbortSignal),
+            signal: expect.any(AbortSignal)
         });
         expect(afterConfirmed).toHaveBeenCalledTimes(1);
-        expect(afterConfirmed).toHaveBeenCalledWith(CONFIRMATION, expect.objectContaining({
-            current: true,
-            wouldDeleteRunIds: ['control-a', 'control-b'],
-        }), expect.any(AbortSignal));
+        expect(afterConfirmed).toHaveBeenCalledWith(
+            CONFIRMATION,
+            expect.objectContaining({
+                current: true,
+                wouldDeleteRunIds: ['control-a', 'control-b']
+            }),
+            expect.any(AbortSignal)
+        );
         expect(current).toMatchObject({ busy: true, canConfirm: false });
 
         callback.resolve();
         await act(async () => confirmation);
         expect(current?.state).toMatchObject({
             status: 'succeeded',
-            confirmation: CONFIRMATION,
+            confirmation: CONFIRMATION
         });
         expect(current?.canConfirm).toBe(false);
     });
 
     it('maps 409 to drift, preserves only stale consequences, and requires a new preview', async () => {
         const conflict = Object.assign(new Error('Retention plan drifted.'), { status: 409 });
-        const setup = fixture({ confirm: vi.fn(async () => { throw conflict; }) });
+        const setup = fixture({
+            confirm: vi.fn(async () => {
+                throw conflict;
+            })
+        });
         await render({ capability: setup.capability });
         await act(async () => current?.preview());
         await act(async () => current?.confirm());
@@ -277,7 +282,7 @@ describe('Recipe Console retention cleanup controller', () => {
         expect(current?.state).toMatchObject({
             status: 'drift',
             message: 'Retention plan drifted.',
-            preview: { current: false },
+            preview: { current: false }
         });
         expect(current?.canConfirm).toBe(false);
         await act(async () => current?.confirm());
@@ -286,26 +291,30 @@ describe('Recipe Console retention cleanup controller', () => {
 
     it('shows non-abort failures and treats callback failure as an error', async () => {
         const previewFailure = fixture({
-            preview: vi.fn(async () => { throw new Error('Authorization is unavailable.'); }),
+            preview: vi.fn(async () => {
+                throw new Error('Authorization is unavailable.');
+            })
         });
         await render({ capability: previewFailure.capability });
         await act(async () => current?.preview());
         expect(current?.state).toEqual({
             status: 'error',
-            message: 'Authorization is unavailable.',
+            message: 'Authorization is unavailable.'
         });
         expect(current?.canConfirm).toBe(false);
 
         const callbackFailure = fixture();
         await render({ capability: callbackFailure.capability });
         await act(async () => current?.preview());
-        await act(async () => current?.confirm(async () => {
-            throw new Error('History reconciliation failed.');
-        }));
+        await act(async () =>
+            current?.confirm(async () => {
+                throw new Error('History reconciliation failed.');
+            })
+        );
         expect(current?.state).toMatchObject({
             status: 'error',
             message: 'History reconciliation failed.',
-            preview: { current: false },
+            preview: { current: false }
         });
     });
 
@@ -313,7 +322,7 @@ describe('Recipe Console retention cleanup controller', () => {
         const setup = fixture({
             preview: vi.fn(async () => {
                 throw new DOMException('cancelled', 'AbortError');
-            }),
+            })
         });
         await render({ capability: setup.capability });
         await act(async () => current?.preview());
@@ -337,7 +346,7 @@ describe('Recipe Console retention cleanup controller', () => {
         renders = [];
         await render({
             capability: second.capability,
-            unavailableReason: 'A new control connection is active.',
+            unavailableReason: 'A new control connection is active.'
         });
 
         expect(renders[0]?.canConfirm).toBe(false);
@@ -353,13 +362,13 @@ describe('Recipe Console retention cleanup controller', () => {
         const first = fixture();
         const secondApi: RecipeConsoleControlRetentionApi = {
             preview: vi.fn(async () => RAW_PREVIEW),
-            confirm: vi.fn(async () => CONFIRMATION),
+            confirm: vi.fn(async () => CONFIRMATION)
         };
         const secondLoad = vi.fn(async () => secondApi);
         const replacement: RecipeConsoleControlRetentionCapability = {
             generation: first.capability.generation,
             signal: first.capability.signal,
-            load: secondLoad,
+            load: secondLoad
         };
         await render({ capability: first.capability });
         await act(async () => current?.preview());
@@ -370,7 +379,7 @@ describe('Recipe Console retention cleanup controller', () => {
 
         expect(renders[0]?.state).toMatchObject({
             status: 'unavailable',
-            preview: { current: false },
+            preview: { current: false }
         });
         expect(renders[0]?.canConfirm).toBe(false);
         await act(async () => current?.confirm());
@@ -401,7 +410,7 @@ describe('Recipe Console retention cleanup controller', () => {
         expect(signal?.aborted).toBe(true);
         expect(current?.state).toMatchObject({
             status: 'unavailable',
-            preview: { current: false },
+            preview: { current: false }
         });
 
         confirmation.resolve(CONFIRMATION);
@@ -416,10 +425,12 @@ describe('Recipe Console retention cleanup controller', () => {
         const afterConfirmed = vi.fn(async (
             _confirmation: ControlRetentionConfirmation,
             _preview: unknown,
-            signal: AbortSignal,
+            signal: AbortSignal
         ) => {
             await reconciliation.promise;
-            if (!signal.aborted) sideEffect();
+            if (!signal.aborted) {
+                sideEffect();
+            }
         });
         const first = fixture();
         const second = fixture();
@@ -445,7 +456,7 @@ describe('Recipe Console retention cleanup controller', () => {
         await render({ unavailableReason: 'Operator authorization is required.' });
         expect(current?.state).toEqual({
             status: 'unavailable',
-            message: 'Operator authorization is required.',
+            message: 'Operator authorization is required.'
         });
         expect(current).toMatchObject({ canPreview: false, canConfirm: false, busy: false });
 
@@ -455,7 +466,7 @@ describe('Recipe Console retention cleanup controller', () => {
         await act(async () => setup.lifetime.abort());
         expect(current?.state).toMatchObject({
             status: 'unavailable',
-            preview: { current: false },
+            preview: { current: false }
         });
         expect(current?.canPreview).toBe(false);
 

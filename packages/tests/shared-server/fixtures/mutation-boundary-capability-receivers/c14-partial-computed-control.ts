@@ -4,6 +4,6 @@ declare const dynamicName: keyof typeof unrelated;
 declare const enabled: boolean;
 
 export function ignoreUnrelatedNamespace(): void {
-  const factoryName = enabled ? 'createRepository' : dynamicName;
-  unrelated[factoryName]().read();
+    const factoryName = enabled ? 'createRepository' : dynamicName;
+    unrelated[factoryName]().read();
 }

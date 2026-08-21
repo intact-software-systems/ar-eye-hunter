@@ -1,18 +1,18 @@
 import { DirectRallarBoundaryPanel } from './DirectRallarBoundaryPanel.tsx';
-import { RallarBrowserTraceBar } from './RallarBrowserTraceBar.tsx';
-import { RunnerModeBoundaryPanel } from './RunnerModeBoundaryPanel.tsx';
 import type {
     LegacyShellAuth,
     LegacyShellGlobalContext,
     LegacyShellNavigation,
-    LegacyShellRuntime,
+    LegacyShellRuntime
 } from './legacy-shell-contracts.ts';
+import { RallarBrowserTraceBar } from './RallarBrowserTraceBar.tsx';
+import { RunnerModeBoundaryPanel } from './RunnerModeBoundaryPanel.tsx';
 
 export function LegacyDiagnosticDrawer({
     runtime,
     auth,
     navigation,
-    globalContext,
+    globalContext
 }: Readonly<{
     runtime: LegacyShellRuntime;
     auth: LegacyShellAuth;
@@ -34,9 +34,7 @@ export function LegacyDiagnosticDrawer({
                     onOpenRunnerMode={() => selectMode('black-box-runner')}
                 />
             )}
-            {activeMode === 'black-box-runner' && (
-                <RunnerModeBoundaryPanel control={control} />
-            )}
+            {activeMode === 'black-box-runner' && <RunnerModeBoundaryPanel control={control} />}
             <RallarBrowserTraceBar
                 mode={activeMode}
                 state={state}

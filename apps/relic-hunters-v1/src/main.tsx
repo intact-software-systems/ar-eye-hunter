@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { rallar } from '@shared-web/browser/rallar.ts';
 import App from './App.tsx';
 import './styles.css';
 
@@ -12,18 +12,18 @@ const env = (import.meta as {
 }).env ?? {};
 
 rallar.configure({
-    apiBaseUrl: resolveApiBaseUrl(env['API_BASE_URL'], env.DEV === true),
+    apiBaseUrl: resolveApiBaseUrl(env['API_BASE_URL'], env.DEV === true)
 });
 
 createRoot(document.getElementById('root') as HTMLElement).render(
     <StrictMode>
-        <App/>
-    </StrictMode>,
+        <App />
+    </StrictMode>
 );
 
 function resolveApiBaseUrl(
     configured: string | boolean | undefined,
-    isDev: boolean,
+    isDev: boolean
 ): string {
     const value = typeof configured === 'string' ? configured.trim() : '';
     if (!value) {
@@ -44,7 +44,8 @@ function resolveApiBaseUrl(
         ) {
             return '';
         }
-    } catch {
+    }
+    catch {
         return value;
     }
 

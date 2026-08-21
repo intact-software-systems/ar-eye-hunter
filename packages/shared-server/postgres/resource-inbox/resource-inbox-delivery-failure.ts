@@ -1,15 +1,15 @@
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
-    type ResourceInboxReleaseDisposition,
     toResourceInboxReleaseDisposition,
+    type ResourceInboxReleaseDisposition
 } from '@shared/queuebox/QueueBoxTypes.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
-import { type ResourceInboxRow, toDomain } from './repository-utils.ts';
+import { toDomain, type ResourceInboxRow } from './repository-utils.ts';
 
 export async function requeueObservedResourceInboxDeliveryFailure(
     sql: PSqlSql,
     observed: ResourceEntry,
-    releaseInput: ResourceInboxReleaseDisposition,
+    releaseInput: ResourceInboxReleaseDisposition
 ): Promise<ResourceEntry | null> {
     const disposition = toResourceInboxReleaseDisposition(releaseInput);
     const releasedAt = new Date();

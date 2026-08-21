@@ -1,19 +1,15 @@
+import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     createFleetReportAnalysisCollection,
     deriveFleetReportAnalysisFromCollection,
     type FleetReportAnalysis,
-    type FleetReportAnalysisCollection,
+    type FleetReportAnalysisCollection
 } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
-import type {
-    ControlFleetRegionSummary,
-    ControlFleetRunReport,
-} from '@shared-test/rallar-bb-test/fleet-report.ts';
 import {
     validateControlFleetRunReportCollection,
-    type ControlFleetReportValidationIssue,
+    type ControlFleetReportValidationIssue
 } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
-import type { ControlServerSnapshot } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlFleetRegionSummary, ControlFleetRunReport } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import type { ControlAgentBoardRow } from '../../control-agent-board.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
@@ -70,7 +66,7 @@ export type FleetWorkspaceReportEvidence = Readonly<{
 }>;
 
 export function createFleetWorkspaceReportEvidence(
-    rawReports: unknown,
+    rawReports: unknown
 ): FleetWorkspaceReportEvidence {
     const collection = rawReports === undefined ? 'absent' : 'present';
     const validation = rawReports === undefined
@@ -84,20 +80,20 @@ export function createFleetWorkspaceReportEvidence(
         collection,
         ...(validation ? { validation } : {}),
         reports,
-        ...(analysisCollection ? { analysisCollection } : {}),
+        ...(analysisCollection ? { analysisCollection } : {})
     };
 }
 
 export function deriveFleetWorkspaceModel(
-    input: FleetWorkspaceModelInput,
+    input: FleetWorkspaceModelInput
 ): FleetWorkspaceModel {
     const evidence = createFleetWorkspaceReportEvidence(
-        input.query.snapshot?.fleetReports,
+        input.query.snapshot?.fleetReports
     );
     const analysis = evidence.analysisCollection === undefined
         ? undefined
         : deriveFleetReportAnalysisFromCollection(evidence.analysisCollection, {
-            selectedAgentId: input.selection.agentId,
+            selectedAgentId: input.selection.agentId
         });
     return deriveFleetWorkspaceModelFromEvidence(input, evidence, analysis);
 }
@@ -105,13 +101,13 @@ export function deriveFleetWorkspaceModel(
 export function deriveFleetWorkspaceModelFromEvidence(
     input: FleetWorkspaceModelInput,
     evidence: FleetWorkspaceReportEvidence,
-    analysis: FleetReportAnalysis | undefined,
+    analysis: FleetReportAnalysis | undefined
 ): FleetWorkspaceModel {
     const {
         analysisCollection,
         collection,
         reports,
-        validation,
+        validation
     } = evidence;
     const selectionIssues: FleetWorkspaceSelectionIssue[] = [];
     const currentCompleteEvidence = input.query.status === 'live' &&
@@ -119,18 +115,18 @@ export function deriveFleetWorkspaceModelFromEvidence(
     const reportSelectionAuthoritative = currentCompleteEvidence &&
         collection === 'present' && validation?.ok === true;
     const reportsById = new Map(
-        reports.map(report => [report.distributedRunId, report]),
+        reports.map((report) => [report.distributedRunId, report])
     );
     const selectedReport = selectReport(
         input.urlState,
         reports,
         reportsById,
         selectionIssues,
-        reportSelectionAuthoritative,
+        reportSelectionAuthoritative
     );
     const regionRows = analysisCollection?.regions ?? [];
     const selectedRegionRows = input.urlState.fleetRegion
-        ? regionRows.filter(row => row.region === input.urlState.fleetRegion)
+        ? regionRows.filter((row) => row.region === input.urlState.fleetRegion)
         : [];
     if (
         reportSelectionAuthoritative &&
@@ -140,12 +136,11 @@ export function deriveFleetWorkspaceModelFromEvidence(
             field: 'fleetRegion',
             code: 'unavailable',
             value: input.urlState.fleetRegion,
-            message:
-                'The requested Fleet region is not present in the accepted reports.',
+            message: 'The requested Fleet region is not present in the accepted reports.'
         });
     }
     const liveAgentsById = new Map(
-        input.selection.boardRows.map(row => [row.agentId, row]),
+        input.selection.boardRows.map((row) => [row.agentId, row])
     );
     const selectedLiveAgent = input.selection.agentId
         ? liveAgentsById.get(input.selection.agentId)
@@ -160,8 +155,7 @@ export function deriveFleetWorkspaceModelFromEvidence(
             field: 'agentId',
             code: 'unavailable',
             value: input.selection.agentId,
-            message:
-                'The requested Fleet agent is not present in live or accepted historical evidence.',
+            message: 'The requested Fleet agent is not present in live or accepted historical evidence.'
         });
     }
 
@@ -172,7 +166,7 @@ export function deriveFleetWorkspaceModelFromEvidence(
             items: reports,
             sourceCount: validation?.sourceCount ?? 0,
             acceptedCount: validation?.acceptedCount ?? 0,
-            quarantinedCount: validation?.quarantinedCount ?? 0,
+            quarantinedCount: validation?.quarantinedCount ?? 0
         },
         validationIssues: validation?.issues ?? [],
         omittedValidationIssueCount: validation?.omittedIssueCount ?? 0,
@@ -181,15 +175,16 @@ export function deriveFleetWorkspaceModelFromEvidence(
         selectedReport,
         selectedRegionRows,
         selectedLiveAgent,
-        selectionIssues,
+        selectionIssues
     };
 }
 
 function workspaceStatus(
     query: ControlQuerySnapshot<ControlServerSnapshot>,
     collection: FleetWorkspaceModel['collection'],
-    validation: ReturnType<typeof validateControlFleetRunReportCollection>
-        | undefined,
+    validation:
+        | ReturnType<typeof validateControlFleetRunReportCollection>
+        | undefined
 ): FleetWorkspaceStatus {
     if (query.status === 'connecting') {
         return 'connecting';
@@ -220,14 +215,16 @@ function selectReport(
     reports: readonly ControlFleetRunReport[],
     reportsById: ReadonlyMap<string, ControlFleetRunReport>,
     issues: FleetWorkspaceSelectionIssue[],
-    authoritative: boolean,
+    authoritative: boolean
 ): ControlFleetRunReport | undefined {
     if (!state.distributedRunId) {
         if (state.controlRunId) {
             const matches = reports.filter(
-                report => report.controlRunId === state.controlRunId,
+                (report) => report.controlRunId === state.controlRunId
             );
-            if (matches.length === 1) return matches[0];
+            if (matches.length === 1) {
+                return matches[0];
+            }
             if (authoritative) {
                 issues.push({
                     field: 'controlRunId',
@@ -235,7 +232,7 @@ function selectReport(
                     value: state.controlRunId,
                     message: matches.length === 0
                         ? 'The requested control run is not present in the accepted Fleet reports.'
-                        : `The requested control run matches ${matches.length} accepted Fleet reports; select an exact distributed run.`,
+                        : `The requested control run matches ${matches.length} accepted Fleet reports; select an exact distributed run.`
                 });
             }
             return undefined;
@@ -249,8 +246,7 @@ function selectReport(
                 field: 'distributedRunId',
                 code: 'unavailable',
                 value: state.distributedRunId,
-                message:
-                    'The requested Fleet report is not present in the accepted reports.',
+                message: 'The requested Fleet report is not present in the accepted reports.'
             });
         }
         return undefined;
@@ -261,8 +257,7 @@ function selectReport(
                 field: 'controlRunId',
                 code: 'incompatible',
                 value: state.controlRunId,
-                message:
-                    'The requested Fleet report belongs to another control run.',
+                message: 'The requested Fleet report belongs to another control run.'
             });
         }
         return undefined;

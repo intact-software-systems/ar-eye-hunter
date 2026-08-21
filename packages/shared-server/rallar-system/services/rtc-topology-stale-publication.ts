@@ -19,13 +19,15 @@ export type RtcTopologyStaleMutationComputed =
         attemptCount: number;
     }>;
 
-export function computeStaleTopologyPublication(input: Readonly<{
-    current: RuntimeStateEntryValue<RallarOverlayTopologySnapshot>;
-    publication: RtcTopologyPublication | null;
-    publicationExpireAtTimestamp: number | null;
-    commandHash: string | null;
-    attemptCount: number | null;
-}>): RtcTopologyStaleMutationComputed {
+export function computeStaleTopologyPublication(
+    input: Readonly<{
+        current: RuntimeStateEntryValue<RallarOverlayTopologySnapshot>;
+        publication: RtcTopologyPublication | null;
+        publicationExpireAtTimestamp: number | null;
+        commandHash: string | null;
+        attemptCount: number | null;
+    }>
+): RtcTopologyStaleMutationComputed {
     if (input.publication === null) {
         return { outcome: 'superseded', current: input.current.value };
     }
@@ -43,11 +45,11 @@ export function computeStaleTopologyPublication(input: Readonly<{
         outcome: 'publish-superseded',
         currentGuard: {
             expectedRevision: input.current.entry.revision,
-            current: input.current.value,
+            current: input.current.value
         },
         publication: input.publication,
         publicationExpireAtTimestamp: expiresAt,
         commandHash: input.commandHash,
-        attemptCount: input.attemptCount!,
+        attemptCount: input.attemptCount!
     };
 }

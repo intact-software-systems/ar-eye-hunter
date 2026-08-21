@@ -1,13 +1,13 @@
-import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf, } from './remove-dynamics-helpers.ts';
-import type { DiameterCandidate, EdgeCandidate } from './tree-dynamics-connect-types.ts';
-import { cloneGraph } from '../graph/graph-algs.ts';
 import { compareVertexIds, TreeGraph, VertexId } from '../graph-props.ts';
+import { cloneGraph } from '../graph/graph-algs.ts';
+import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf } from './remove-dynamics-helpers.ts';
+import type { DiameterCandidate, EdgeCandidate } from './tree-dynamics-connect-types.ts';
 
 export function findMCEdge(
     globalGraph: TreeGraph,
     treeGraph: TreeGraph,
     source: VertexId,
-    targetRoot: VertexId,
+    targetRoot: VertexId
 ): EdgeCandidate | undefined {
     const visited = new Set<VertexId>();
     const queue: VertexId[] = [targetRoot];
@@ -29,7 +29,7 @@ export function findMCEdge(
                     best = {
                         from: source,
                         to: current,
-                        weight,
+                        weight
                     };
                 }
             }
@@ -51,7 +51,7 @@ export function findMDEdge(
     treeGraph: TreeGraph,
     source: VertexId,
     targetRoot: VertexId,
-    sourceEccentricity: number,
+    sourceEccentricity: number
 ): DiameterCandidate | undefined {
     const visited = new Set<VertexId>();
     const queue: VertexId[] = [targetRoot];
@@ -68,7 +68,7 @@ export function findMDEdge(
                 const targetEccentricity = worstCaseDist(treeGraph, current);
                 const newDiameter = Math.max(
                     sourceEccentricity,
-                    linkWeight + targetEccentricity,
+                    linkWeight + targetEccentricity
                 );
 
                 if (
@@ -79,7 +79,7 @@ export function findMDEdge(
                     best = {
                         from: source,
                         to: current,
-                        diameter: newDiameter,
+                        diameter: newDiameter
                     };
                 }
             }
@@ -98,7 +98,7 @@ export function findMDEdge(
 
 export function worstCaseDist(
     graph: TreeGraph,
-    source: VertexId,
+    source: VertexId
 ): number {
     const distances = dijkstraDistances(graph, source);
     let maxDistance = 0;
@@ -114,7 +114,7 @@ export function worstCaseDist(
 
 export function dijkstraDistances(
     graph: TreeGraph,
-    source: VertexId,
+    source: VertexId
 ): Map<VertexId, number> {
     const nodes = graph.nodes() as VertexId[];
     const distances = new Map<VertexId, number>();
@@ -130,7 +130,9 @@ export function dijkstraDistances(
         let best = Number.POSITIVE_INFINITY;
 
         for (const node of nodes) {
-            if (visited.has(node)) continue;
+            if (visited.has(node)) {
+                continue;
+            }
             const d = distances.get(node) ?? Number.POSITIVE_INFINITY;
             if (d < best) {
                 best = d;
@@ -145,7 +147,9 @@ export function dijkstraDistances(
         visited.add(current);
 
         for (const neighbor of neighborsOf(graph, current)) {
-            if (visited.has(neighbor)) continue;
+            if (visited.has(neighbor)) {
+                continue;
+            }
 
             const alt = best + edgeWeightOf(graph, current, neighbor);
             const prev = distances.get(neighbor) ?? Number.POSITIVE_INFINITY;
@@ -163,7 +167,7 @@ export function withInsertedEdge(
     graph: TreeGraph,
     globalGraph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): TreeGraph {
     const next = cloneGraph(graph);
 
@@ -171,7 +175,7 @@ export function withInsertedEdge(
         next.addEdge(a, b, {
             from: a,
             to: b,
-            weight: edgeWeightOf(globalGraph, a, b),
+            weight: edgeWeightOf(globalGraph, a, b)
         });
     }
 
@@ -181,7 +185,7 @@ export function withInsertedEdge(
 export function canAcceptAnotherEdge(
     graph: TreeGraph,
     globalGraph: TreeGraph,
-    node: VertexId,
+    node: VertexId
 ): boolean {
     return degreeOf(graph, node) < degreeLimitOf(globalGraph, node);
 }
@@ -189,7 +193,7 @@ export function canAcceptAnotherEdge(
 export function hasRequiredGlobalEdge(
     globalGraph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): boolean {
     return globalGraph.hasEdge(a, b);
 }

@@ -10,36 +10,32 @@ import {
     type RallarAiJsonRequest,
     type RallarAiJsonResult,
     type RallarAiLiveEvaluationEnvironment,
-    type RallarAiLiveEvaluationRunResult,
+    type RallarAiLiveEvaluationRunResult
 } from '@shared/rallar-ai/mod.ts';
 
-import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from './browserAiConfig.ts';
 import {
     createAiDirectorMockProvider,
     createAiDirectorRequest,
-    validateAiDirectorProposalValue,
+    validateAiDirectorProposalValue
 } from './aiDirector.ts';
-import {
-    createInitialArenaState,
-    toArenaSnapshot,
-} from './simulation.ts';
+import { DEFAULT_ARENA_WEBLLM_MODEL_ID } from './browserAiConfig.ts';
+import { createInitialArenaState, toArenaSnapshot } from './simulation.ts';
 
 export const ARENA_WEBLLM_PROVIDER_ID = 'ar-eye-hunter-webllm';
 export const ARENA_WEBLLM_LIVE_EVALUATION_GATE = 'RALLAR_AI_LIVE_WEBLLM';
-export const ARENA_WEBLLM_PROVIDER_GOVERNANCE =
-    defineRallarAiProviderGovernanceMetadata({
-        providerId: ARENA_WEBLLM_PROVIDER_ID,
-        adapterVersion: 'ar-eye-hunter-v1/webllm-provider:1',
-        modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
-        target: 'browser',
-        licenseNotes: 'Runs the selected WebLLM model in the browser; model license follows VITE_RALLAR_WEBLLM_MODEL.',
-        productionAllowed: false,
-        structuredOutput: true,
-        knownLimits: {
-            maxOutputTokens: 1_200,
-            recommendedTimeoutMs: 4_000,
-        },
-    });
+export const ARENA_WEBLLM_PROVIDER_GOVERNANCE = defineRallarAiProviderGovernanceMetadata({
+    providerId: ARENA_WEBLLM_PROVIDER_ID,
+    adapterVersion: 'ar-eye-hunter-v1/webllm-provider:1',
+    modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
+    target: 'browser',
+    licenseNotes: 'Runs the selected WebLLM model in the browser; model license follows VITE_RALLAR_WEBLLM_MODEL.',
+    productionAllowed: false,
+    structuredOutput: true,
+    knownLimits: {
+        maxOutputTokens: 1_200,
+        recommendedTimeoutMs: 4_000
+    }
+});
 
 export type WebLlmChatMessage = Readonly<{
     role: 'system' | 'user';
@@ -50,7 +46,7 @@ export type WebLlmChatRequest = Readonly<{
     messages: readonly WebLlmChatMessage[];
     temperature: number;
     max_tokens: number;
-    response_format: Readonly<{ type: 'json_object' }>;
+    response_format: Readonly<{ type: 'json_object'; }>;
 }>;
 
 export type WebLlmChatResponse = Readonly<{
@@ -74,7 +70,7 @@ export type WebLlmModule = Readonly<{
         modelId: string,
         options?: Readonly<{
             initProgressCallback?: (progress: unknown) => void;
-        }>,
+        }>
     ): Promise<WebLlmEngine>;
 }>;
 
@@ -105,7 +101,7 @@ export type RunArenaWebLlmLiveEvaluationOptions =
     }>;
 
 export function createArenaWebLlmEvaluationCases(
-    options: ArenaWebLlmEvaluationOptions = {},
+    options: ArenaWebLlmEvaluationOptions = {}
 ): readonly RallarAiEvaluationCase[] {
     const nowEpochMs = options.nowEpochMs ?? 18_000;
     const roomId = options.roomId ?? 'arena-webllm-evaluation';
@@ -119,33 +115,33 @@ export function createArenaWebLlmEvaluationCases(
             validateResult: (result) => {
                 const validation = validateAiDirectorProposalValue(
                     result.value,
-                    snapshot,
+                    snapshot
                 );
                 return validation.ok ? [] : [validation.reason];
-            },
-        },
+            }
+        }
     ];
 }
 
 export async function runArenaWebLlmDeterministicEvaluation(
-    options: ArenaWebLlmEvaluationOptions = {},
+    options: ArenaWebLlmEvaluationOptions = {}
 ): Promise<RallarAiEvaluationSuiteResult> {
     return await runRallarAiEvaluationSuite({
         suiteId: 'ar-eye-hunter-webllm-ci',
         provider: createAiDirectorMockProvider(),
-        cases: createArenaWebLlmEvaluationCases(options),
+        cases: createArenaWebLlmEvaluationCases(options)
     });
 }
 
 export async function runArenaWebLlmLiveEvaluationIfEnabled(
-    options: RunArenaWebLlmLiveEvaluationOptions,
+    options: RunArenaWebLlmLiveEvaluationOptions
 ): Promise<RallarAiLiveEvaluationRunResult> {
     const gate = options.gate ?? ARENA_WEBLLM_LIVE_EVALUATION_GATE;
     if (!isRallarAiLiveEvaluationEnabled(options.env, gate)) {
         return {
             status: 'skipped',
             gate,
-            reason: `AR Eye Hunter WebLLM live evaluation requires ${gate}=1.`,
+            reason: `AR Eye Hunter WebLLM live evaluation requires ${gate}=1.`
         };
     }
 
@@ -153,7 +149,7 @@ export async function runArenaWebLlmLiveEvaluationIfEnabled(
         modelId: options.modelId ?? DEFAULT_ARENA_WEBLLM_MODEL_ID,
         loadWebLlm: options.loadWebLlm,
         hasWebGpu: options.hasWebGpu,
-        onProgress: options.onProgress,
+        onProgress: options.onProgress
     });
 
     return await runRallarAiEvaluationSuiteIfEnabled({
@@ -162,12 +158,12 @@ export async function runArenaWebLlmLiveEvaluationIfEnabled(
         cases: createArenaWebLlmEvaluationCases(options),
         env: options.env,
         gate,
-        providerLabel: 'AR Eye Hunter WebLLM',
+        providerLabel: 'AR Eye Hunter WebLLM'
     });
 }
 
 export function createWebLlmRallarAiProvider(
-    options: CreateWebLlmRallarAiProviderOptions,
+    options: CreateWebLlmRallarAiProviderOptions
 ): RallarAiJsonProvider {
     let enginePromise: Promise<WebLlmEngine> | undefined;
     const provider: RallarAiJsonProvider = {
@@ -178,10 +174,10 @@ export function createWebLlmRallarAiProvider(
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'browser',
+            target: 'browser'
         },
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             throwIfAborted(request.signal);
             const startedAtEpochMs = Date.now();
@@ -189,13 +185,14 @@ export function createWebLlmRallarAiProvider(
             throwIfAborted(request.signal);
             const response = await withAbort(
                 engine.chat.completions.create(createChatRequest(request)),
-                request.signal,
+                request.signal
             );
             const rawText = response.choices?.[0]?.message?.content?.trim() ?? '';
             let value: unknown;
             try {
                 value = JSON.parse(rawText);
-            } catch (error) {
+            }
+            catch (error) {
                 throw new Error('WebLLM returned malformed JSON.', { cause: error });
             }
 
@@ -205,9 +202,9 @@ export function createWebLlmRallarAiProvider(
                 value: value as TValue,
                 rawText,
                 startedAtEpochMs,
-                completedAtEpochMs: Date.now(),
+                completedAtEpochMs: Date.now()
             });
-        },
+        }
     };
 
     const getEngine = (): Promise<WebLlmEngine> => {
@@ -217,7 +214,7 @@ export function createWebLlmRallarAiProvider(
         enginePromise ??= (options.loadWebLlm ?? loadDefaultWebLlm)()
             .then((module) =>
                 module.CreateMLCEngine(options.modelId, {
-                    initProgressCallback: options.onProgress,
+                    initProgressCallback: options.onProgress
                 })
             );
         return enginePromise;
@@ -227,7 +224,7 @@ export function createWebLlmRallarAiProvider(
 }
 
 function createChatRequest<TContext>(
-    request: RallarAiJsonRequest<TContext>,
+    request: RallarAiJsonRequest<TContext>
 ): WebLlmChatRequest {
     return {
         messages: [
@@ -237,8 +234,8 @@ function createChatRequest<TContext>(
                     'You are RallarAI running inside AR Eye Hunter.',
                     'Return only one valid JSON object.',
                     'The JSON must match the provided schema.',
-                    'Do not include markdown, code fences, comments, or prose.',
-                ].join(' '),
+                    'Do not include markdown, code fences, comments, or prose.'
+                ].join(' ')
             },
             {
                 role: 'user',
@@ -246,13 +243,13 @@ function createChatRequest<TContext>(
                     request.prompt,
                     '',
                     `Schema: ${JSON.stringify(request.schema)}`,
-                    `Context: ${JSON.stringify(request.context ?? {})}`,
-                ].join('\n'),
-            },
+                    `Context: ${JSON.stringify(request.context ?? {})}`
+                ].join('\n')
+            }
         ],
         temperature: request.temperature ?? 0.6,
         max_tokens: request.maxOutputTokens ?? 512,
-        response_format: { type: 'json_object' },
+        response_format: { type: 'json_object' }
     };
 }
 
@@ -275,7 +272,7 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 async function withAbort<T>(
     promise: Promise<T>,
-    signal: AbortSignal | undefined,
+    signal: AbortSignal | undefined
 ): Promise<T> {
     if (!signal) {
         return await promise;
@@ -285,12 +282,14 @@ async function withAbort<T>(
         promise,
         new Promise<never>((_, reject) => {
             const abort = () => {
-                reject(signal.reason instanceof Error
-                    ? signal.reason
-                    : new Error('WebLLM generation was cancelled.'));
+                reject(
+                    signal.reason instanceof Error
+                        ? signal.reason
+                        : new Error('WebLLM generation was cancelled.')
+                );
             };
             signal.addEventListener('abort', abort, { once: true });
             promise.finally(() => signal.removeEventListener('abort', abort));
-        }),
+        })
     ]);
 }

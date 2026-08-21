@@ -1,11 +1,6 @@
+import type { RelicCharacterId, RelicGameState, RelicPublicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { applyRelicCommand, createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
 import { describe, expect, it } from 'vitest';
-import type { RelicCharacterId, RelicGameState, RelicPublicSnapshot, } from '@ar-eye-hunter/relic-hunters/mod.ts';
-import {
-    applyRelicCommand,
-    createRelicGame,
-    RELIC_PROTOCOL_VERSION,
-    toPublicRelicSnapshot,
-} from '@ar-eye-hunter/relic-hunters/mod.ts';
 import { deriveRelicGameViewModel } from '../src/game/game-view-model.ts';
 
 const NOW = 1_700_000_000_000;
@@ -17,7 +12,7 @@ describe('deriveRelicGameViewModel', () => {
             snapshot,
             localPlayerId: 'alice-session',
             draft: { kind: 'move', targetRoomId: 'hallway' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.currentPlayer?.username).toBe('Alice');
@@ -26,15 +21,15 @@ describe('deriveRelicGameViewModel', () => {
         expect(viewModel.stealTargets.map((player) => player.username)).toEqual(['Bob']);
         expect(viewModel.actionOptions.move).toMatchObject({
             legal: true,
-            consequence: { text: '2 paths open', status: 'ok' },
+            consequence: { text: '2 paths open', status: 'ok' }
         });
         expect(viewModel.actionOptions.steal).toMatchObject({
             legal: true,
-            consequence: { text: '1 hunter here', status: 'ok' },
+            consequence: { text: '1 hunter here', status: 'ok' }
         });
         expect(viewModel.actionOptions.escape).toMatchObject({
             legal: false,
-            consequence: { text: 'not at exit room', status: 'block' },
+            consequence: { text: 'not at exit room', status: 'block' }
         });
         expect(viewModel.turnStatus).toMatchObject({
             phase: 'planning',
@@ -42,7 +37,7 @@ describe('deriveRelicGameViewModel', () => {
             submittedPlayerCount: 0,
             waitingPlayerCount: 2,
             canSubmit: true,
-            isLocked: false,
+            isLocked: false
         });
         expect(viewModel.objective).toContain('Find relics, then escape within 10 rounds.');
     });
@@ -56,23 +51,23 @@ describe('deriveRelicGameViewModel', () => {
                 kind: 'submit-action',
                 gameId: 'game-1',
                 username: 'Alice',
-                action: { kind: 'move', targetRoomId: 'hallway' },
+                action: { kind: 'move', targetRoomId: 'hallway' }
             },
-            { senderId: 'alice-session', now: () => NOW + 4 },
+            { senderId: 'alice-session', now: () => NOW + 4 }
         ).state;
 
         const viewModel = deriveRelicGameViewModel({
             snapshot: toPublicRelicSnapshot(state),
             localPlayerId: 'alice-session',
             draft: { kind: 'search' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.turnStatus).toMatchObject({
             submittedPlayerCount: 1,
             waitingPlayerCount: 1,
             canSubmit: false,
-            isLocked: true,
+            isLocked: true
         });
         expect(viewModel.objective).toBe('Plan locked. Waiting for 1 hunter.');
     });
@@ -83,7 +78,7 @@ describe('deriveRelicGameViewModel', () => {
             snapshot: legacySnapshot,
             localPlayerId: 'alice-session',
             draft: { kind: 'search' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.isAdmin).toBe(true);
@@ -106,23 +101,23 @@ describe('deriveRelicGameViewModel', () => {
                     summary: 'The entry stones are cracked.',
                     hint: 'The ceiling is unstable.',
                     effect: 'ordinary-search',
-                    danger: 'Ceiling cracks widen overhead.',
-                },
-            ],
+                    danger: 'Ceiling cracks widen overhead.'
+                }
+            ]
         };
 
         const viewModel = deriveRelicGameViewModel({
             snapshot,
             localPlayerId: 'alice-session',
             draft: { kind: 'search' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.actionBriefDanger).toBe('Ceiling cracks widen overhead.');
         expect(viewModel.roundLimitWarning).toMatchObject({
             kind: 'round-limit',
             severity: 'danger',
-            message: 'Final round - escape or be lost to the ruin.',
+            message: 'Final round - escape or be lost to the ruin.'
         });
     });
 
@@ -130,22 +125,20 @@ describe('deriveRelicGameViewModel', () => {
         const base = planningSnapshot();
         const snapshot: RelicPublicSnapshot = {
             ...base,
-            players: base.players.map((player) =>
-                player.playerId === 'alice-session' ? { ...player, roomId: 'exit' } : player
-            ),
+            players: base.players.map((player) => player.playerId === 'alice-session' ? { ...player, roomId: 'exit' } : player)
         };
 
         const viewModel = deriveRelicGameViewModel({
             snapshot,
             localPlayerId: 'alice-session',
             draft: { kind: 'escape' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.currentRoom?.kind).toBe('exit');
         expect(viewModel.actionOptions.escape).toMatchObject({
             legal: true,
-            consequence: { text: 'exit door in reach', status: 'ok' },
+            consequence: { text: 'exit door in reach', status: 'ok' }
         });
         expect(viewModel.submitBlocker).toBeUndefined();
         expect(viewModel.turnStatus.canSubmit).toBe(true);
@@ -159,21 +152,21 @@ describe('deriveRelicGameViewModel', () => {
                 player.playerId === 'alice-session'
                     ? { ...player, health: 0, defeated: true }
                     : player
-            ),
+            )
         };
 
         const viewModel = deriveRelicGameViewModel({
             snapshot,
             localPlayerId: 'alice-session',
             draft: { kind: 'search' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.submitBlocker).toBe('You are down and cannot act this expedition.');
         expect(viewModel.turnStatus).toMatchObject({
             activePlayerCount: 1,
             waitingPlayerCount: 1,
-            canSubmit: false,
+            canSubmit: false
         });
         expect(viewModel.objective).toBe('You are down. The ruin keeps your relics.');
     });
@@ -183,7 +176,7 @@ describe('deriveRelicGameViewModel', () => {
             snapshot: { ...planningSnapshot(), phase: 'review', submittedPlayerIds: [] },
             localPlayerId: 'alice-session',
             draft: { kind: 'search' },
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(viewModel.turnStatus.phase).toBe('review');
@@ -206,9 +199,9 @@ function planningState(): RelicGameState {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'start-expedition',
             gameId: 'game-1',
-            username: 'Alice',
+            username: 'Alice'
         },
-        { senderId: 'alice-session', now: () => NOW + 3 },
+        { senderId: 'alice-session', now: () => NOW + 3 }
     ).state;
     return state;
 }
@@ -218,7 +211,7 @@ function join(
     senderId: string,
     username: string,
     characterId: RelicCharacterId,
-    now: number,
+    now: number
 ): RelicGameState {
     return applyRelicCommand(
         state,
@@ -227,8 +220,8 @@ function join(
             kind: 'join-expedition',
             gameId: 'game-1',
             username,
-            characterId,
+            characterId
         },
-        { senderId, now: () => now },
+        { senderId, now: () => now }
     ).state;
 }

@@ -1,19 +1,19 @@
-import { useCallback, useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
-import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useCallback, useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import {
-    type AvatarProfile,
     createAvatarProfileMockProvider,
     createAvatarProfileRequest,
     createDeterministicAvatarProfile,
     validateAvatarProfile,
+    type AvatarProfile
 } from '../../avatarProfile.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
+import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaSnapshot } from '../../types.ts';
 import type { ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';
@@ -43,16 +43,16 @@ interface ArenaNetworkTransportSupportInput {
 export interface ArenaNetworkTransportSupport {
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
-        generation?: number,
+        generation?: number
     ) => void;
     readonly scheduleReliableArenaSnapshot: (
         snapshot: ArenaSnapshot,
-        generation: number,
+        generation: number
     ) => void;
 }
 
 export function useArenaNetworkTransportSupport(
-    input: ArenaNetworkTransportSupportInput,
+    input: ArenaNetworkTransportSupportInput
 ): ArenaNetworkTransportSupport {
     const {
         arenaMatchRef,
@@ -69,25 +69,25 @@ export function useArenaNetworkTransportSupport(
         roomId,
         roomIdRef,
         session,
-        setTransportDiagnostics,
+        setTransportDiagnostics
     } = input;
 
     const recordNetworkSendFailure = useCallback((
         generation: number,
-        error: Error,
+        error: Error
     ) => {
         if (!isCurrentNetworkGeneration(generation)) {
             return;
         }
         setTransportDiagnostics((previous) => ({
             ...previous,
-            error: toErrorMessage(error),
+            error: toErrorMessage(error)
         }));
     }, [isCurrentNetworkGeneration]);
 
     const runBestEffortNetworkTask = useCallback(<T>(
         task: () => Promise<T> | undefined,
-        generation = networkGenerationRef.current,
+        generation = networkGenerationRef.current
     ) => {
         if (!isCurrentNetworkGeneration(generation)) {
             return;
@@ -100,20 +100,21 @@ export function useArenaNetworkTransportSupport(
             void promise.catch((error) =>
                 recordNetworkSendFailure(
                     generation,
-                    error instanceof Error ? error : new Error(String(error)),
+                    error instanceof Error ? error : new Error(String(error))
                 )
             );
-        } catch (error) {
+        }
+        catch (error) {
             recordNetworkSendFailure(
                 generation,
-                error instanceof Error ? error : new Error(String(error)),
+                error instanceof Error ? error : new Error(String(error))
             );
         }
     }, [isCurrentNetworkGeneration, recordNetworkSendFailure]);
 
     const sendReliableArenaSnapshot = useCallback((
         snapshot: ArenaSnapshot,
-        generation: number,
+        generation: number
     ) => {
         if (!isCurrentNetworkGeneration(generation)) {
             return;
@@ -132,13 +133,13 @@ export function useArenaNetworkTransportSupport(
         reliableSnapshotLastSentAtRef.current = Date.now();
         runBestEffortNetworkTask(() =>
             match.publishSnapshot(snapshot, {
-                reliable: true,
+                reliable: true
             }), generation);
     }, [isCurrentNetworkGeneration, runBestEffortNetworkTask]);
 
     const scheduleReliableArenaSnapshot = useCallback((
         snapshot: ArenaSnapshot,
-        generation: number,
+        generation: number
     ) => {
         const lastSentRevision = reliableSnapshotLastSentRevisionRef.current;
         if (lastSentRevision !== undefined && snapshot.revision <= lastSentRevision) {
@@ -175,7 +176,7 @@ export function useArenaNetworkTransportSupport(
         }, Math.max(0, ARENA_RELIABLE_SNAPSHOT_MIN_INTERVAL_MS - (now - lastSentAt)));
     }, [
         clearPendingReliableArenaSnapshot,
-        sendReliableArenaSnapshot,
+        sendReliableArenaSnapshot
     ]);
 
     return { runBestEffortNetworkTask, scheduleReliableArenaSnapshot };

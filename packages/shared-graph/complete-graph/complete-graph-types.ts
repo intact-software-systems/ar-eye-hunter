@@ -1,12 +1,12 @@
-import { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
 import { TreeGraph, VertexId } from '../graph-props.ts';
+import { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
 
 export const GraphAlgo = {
     COMPLETE_MEMBER_GRAPH: 'COMPLETE_MEMBER_GRAPH',
     COMPLETE_MEMBER_GRAPH_NEW_STEINER: 'COMPLETE_MEMBER_GRAPH_NEW_STEINER',
     COMPLETE_MEMBER_GRAPH_KEEP_STEINER: 'COMPLETE_MEMBER_GRAPH_KEEP_STEINER',
     COMPLETE_GRAPH: 'COMPLETE_GRAPH',
-    NO_GRAPH_ALGO: 'NO_GRAPH_ALGO',
+    NO_GRAPH_ALGO: 'NO_GRAPH_ALGO'
 } as const;
 
 export type GraphAlgo = (typeof GraphAlgo)[keyof typeof GraphAlgo];
@@ -28,7 +28,7 @@ export type CompleteGraphInputDto = {
             relativeSet: ReadonlySet<VertexId>,
             excludeSet: ReadonlySet<VertexId>,
             k: number,
-            algo: CoreSelectionAlgo,
+            algo: CoreSelectionAlgo
         ) => VertexId[];
         generateSizeOfSteinerSet: (groupSize: number) => number;
     };

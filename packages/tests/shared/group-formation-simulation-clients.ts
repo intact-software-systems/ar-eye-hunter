@@ -1,6 +1,5 @@
-import { vi } from 'vitest';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -8,6 +7,7 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { configureOverlayRepository, readableOverlayCache } from '@shared/repository/overlays-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
+import { vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 export type SimulatedClient = Readonly<{
@@ -28,7 +28,7 @@ export type CreateSimulatedClientOptions = Readonly<{
 export function createSimulatedClient(
     sessionId: string,
     allSessionIds: readonly string[],
-    options: CreateSimulatedClientOptions,
+    options: CreateSimulatedClientOptions
 ): SimulatedClient {
     const repositoryManager = new RepositoryManager();
     configureOverlayRepository({ ttlMs: 60_000 }, repositoryManager);
@@ -39,7 +39,7 @@ export function createSimulatedClient(
         clientCache.set(peerSessionId, {
             clientId: peerSessionId,
             sessionId: peerSessionId,
-            isOnline: true,
+            isOnline: true
         });
     }
 
@@ -56,7 +56,7 @@ export function createSimulatedClient(
         }),
         disconnectPeer: vi.fn((peerId: string) => {
             knownPeerIds.delete(peerId);
-        }),
+        })
     };
 
     const manager = new WebRtcGroupManager(
@@ -72,8 +72,8 @@ export function createSimulatedClient(
             ...(options.overlayTransitionGraceMs === undefined
                 ? {}
                 : { overlayTransitionGraceMs: options.overlayTransitionGraceMs }),
-            ...(options.now === undefined ? {} : { now: options.now }),
-        },
+            ...(options.now === undefined ? {} : { now: options.now })
+        }
     );
 
     return {
@@ -81,7 +81,7 @@ export function createSimulatedClient(
         repositoryManager,
         manager,
         dialedPeerIds: () => dialedPeerIds,
-        connectedPeerIds: () => knownPeerIds,
+        connectedPeerIds: () => knownPeerIds
     };
 }
 
@@ -96,13 +96,12 @@ export function createRingTopologySnapshot(
         version: number;
         degreeLimit: number;
         ringShift?: number;
-    }>,
+    }>
 ): RallarOverlayTopologySnapshot {
     const shift = identity.ringShift ?? 1;
     const nextHopsBySessionId: Record<string, readonly string[]> = {};
     for (let index = 0; index < sessionIds.length; index++) {
-        const previous =
-            sessionIds[(index + sessionIds.length - shift) % sessionIds.length];
+        const previous = sessionIds[(index + sessionIds.length - shift) % sessionIds.length];
         const next = sessionIds[(index + shift) % sessionIds.length];
         nextHopsBySessionId[sessionIds[index]] = [...new Set([previous, next])].sort();
     }
@@ -120,14 +119,14 @@ export function createRingTopologySnapshot(
         version: identity.version,
         createdByClientId: 'server',
         createdAtEpochMs: 1,
-        updatedAtEpochMs: 1 + identity.version,
+        updatedAtEpochMs: 1 + identity.version
     };
 }
 
 export function createSimulationGroupSnapshot(
     groupId: string,
     snapshotVersion: number,
-    sessionIds: readonly string[],
+    sessionIds: readonly string[]
 ): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
@@ -137,7 +136,7 @@ export function createSimulationGroupSnapshot(
         stateRevision: snapshotVersion * 2,
         causalRevision: {
             groupRevision: snapshotVersion,
-            presenceRevision: snapshotVersion,
+            presenceRevision: snapshotVersion
         },
         group: createTestGroup({
             applicationId,
@@ -151,7 +150,7 @@ export function createSimulationGroupSnapshot(
             created: simulationAuditStamp(1),
             updated: simulationAuditStamp(snapshotVersion),
             activeMemberCount: sessionIds.length,
-            ownerPrincipalId,
+            ownerPrincipalId
         }),
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
@@ -166,7 +165,7 @@ export function createSimulationGroupSnapshot(
             removed: null,
             banned: null,
             invitedByPrincipalId: null,
-            invitationExpiresAtEpochMs: null,
+            invitationExpiresAtEpochMs: null
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId,
@@ -181,10 +180,10 @@ export function createSimulationGroupSnapshot(
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         })),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
+        onlineMemberCount: sessionIds.length
     };
 }
 
@@ -194,6 +193,6 @@ export function simulationAuditStamp(atEpochMs: number): AuditStamp {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

@@ -1,12 +1,7 @@
-import type { AnalyzeImportedArtifactIdentity } from
-    '../analyze/analyze-identity-policy.ts';
-import {
-    analyzeArtifactIdentityIssues,
-    safeAnalyzeArtifactIdentity,
-} from '../analyze/analyze-identity-policy.ts';
+import type { AnalyzeImportedArtifactIdentity } from '../analyze/analyze-identity-policy.ts';
+import { analyzeArtifactIdentityIssues, safeAnalyzeArtifactIdentity } from '../analyze/analyze-identity-policy.ts';
 import { createAnalyzeLegacyRunsHref } from '../analyze/analyze-legacy-links.ts';
-import { createDistributedRunArtifactDownload } from
-    '../control/distributed-run-artifact-download.ts';
+import { createDistributedRunArtifactDownload } from '../control/distributed-run-artifact-download.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type TuneIdentitySurfaces = Readonly<{
@@ -22,7 +17,7 @@ export type TuneIdentitySurfaces = Readonly<{
 
 export function projectTuneIdentitySurfaces(
     identity: AnalyzeImportedArtifactIdentity,
-    sourceSearch = '',
+    sourceSearch = ''
 ): TuneIdentitySurfaces {
     const safe = safeAnalyzeArtifactIdentity(identity);
     const issues = analyzeArtifactIdentityIssues(identity);
@@ -36,14 +31,14 @@ export function projectTuneIdentitySurfaces(
     const distributedRunId = safe.distributedRunId as string;
     const candidateFilename = createDistributedRunArtifactDownload(
         {},
-        distributedRunId,
+        distributedRunId
     ).filename.replace(/-artifact\.json$/, '-tuning-candidate.json');
     const legacyState: RecipeConsoleUrlState = {
         v: 1,
         experience: 'recipe-console',
         view: 'tune',
         distributedRunId,
-        controlRunId: safe.controlRunId,
+        controlRunId: safe.controlRunId
     };
     return {
         quarantined: false,
@@ -53,6 +48,6 @@ export function projectTuneIdentitySurfaces(
         compareValue: distributedRunId,
         reactKey: `tune-run:${distributedRunId}`,
         candidateFilename,
-        legacyRunsHref: createAnalyzeLegacyRunsHref(legacyState, sourceSearch),
+        legacyRunsHref: createAnalyzeLegacyRunsHref(legacyState, sourceSearch)
     };
 }

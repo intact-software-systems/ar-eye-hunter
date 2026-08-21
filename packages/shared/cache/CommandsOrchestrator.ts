@@ -1,16 +1,12 @@
-import {
-    Command,
-    type CommandOptions,
-    type LoanedValueSupplier,
-} from './Command.ts';
+import { Command, type CommandOptions, type LoanedValueSupplier } from './Command.ts';
+import { LoanedRepository } from './LoanedRepository.ts';
+import { LoanedValue } from './LoanedValue.ts';
 import {
     PullPushCommand,
     type PullPushCommandOptions,
     type PullSupplier,
-    type PushConsumer,
+    type PushConsumer
 } from './PullPushCommand.ts';
-import { LoanedValue } from './LoanedValue.ts';
-import { LoanedRepository } from './LoanedRepository.ts';
 
 export type OrchestratorResults<K, V> = ReadonlyMap<K, V>;
 export type OrchestratorMutableResults<K, V> = Map<K, V>;
@@ -18,7 +14,7 @@ export type OrchestratorMutableResults<K, V> = Map<K, V>;
 export type OrchestratorEntry<K, V> = readonly [K, V];
 
 export type OrchestratorStep<K, V> = (
-    results: OrchestratorResults<K, V>,
+    results: OrchestratorResults<K, V>
 ) => Promise<OrchestratorEntry<K, V>>;
 
 export interface CommandsOrchestratorPolicies<V> {
@@ -34,19 +30,17 @@ type Phase<K, V> = {
 
 export class CommandsOrchestrator<K, V> {
     private readonly phases: Array<Phase<K, V>> = [];
-    private readonly afterPhaseCallbacks: Array<
-        (results: OrchestratorResults<K, V>) => void | Promise<void>
-    > = [];
+    private readonly afterPhaseCallbacks: Array<(results: OrchestratorResults<K, V>) => void | Promise<void>> = [];
     private readonly policies: CommandsOrchestratorPolicies<V>;
 
     private constructor(
-        policies: CommandsOrchestratorPolicies<V> = {},
+        policies: CommandsOrchestratorPolicies<V> = {}
     ) {
         this.policies = policies;
     }
 
     public static withPolicies<K, V>(
-        policies: CommandsOrchestratorPolicies<V> = {},
+        policies: CommandsOrchestratorPolicies<V> = {}
     ): CommandsOrchestrator<K, V> {
         return new CommandsOrchestrator<K, V>(policies);
     }
@@ -59,7 +53,7 @@ export class CommandsOrchestrator<K, V> {
     ): this {
         this.phases.push({
             mode: 'sequential',
-            steps: [...steps],
+            steps: [...steps]
         });
         return this;
     }
@@ -72,7 +66,7 @@ export class CommandsOrchestrator<K, V> {
     ): this {
         this.phases.push({
             mode: 'parallel',
-            steps: [...steps],
+            steps: [...steps]
         });
         return this;
     }
@@ -82,7 +76,7 @@ export class CommandsOrchestrator<K, V> {
      * The callback can inspect the accumulated results.
      */
     public then(
-        callback: (results: OrchestratorResults<K, V>) => void | Promise<void>,
+        callback: (results: OrchestratorResults<K, V>) => void | Promise<void>
     ): this {
         this.afterPhaseCallbacks.push(callback);
         return this;
@@ -99,7 +93,8 @@ export class CommandsOrchestrator<K, V> {
 
             if (phase.mode === 'sequential') {
                 await this.runSequentialPhase(phase, results);
-            } else {
+            }
+            else {
                 await this.runParallelPhase(phase, results);
             }
 
@@ -117,7 +112,7 @@ export class CommandsOrchestrator<K, V> {
 
     private async runSequentialPhase(
         phase: Phase<K, V>,
-        results: OrchestratorMutableResults<K, V>,
+        results: OrchestratorMutableResults<K, V>
     ): Promise<void> {
         for (const step of phase.steps) {
             const [key, value] = await step(results);
@@ -127,11 +122,11 @@ export class CommandsOrchestrator<K, V> {
 
     private async runParallelPhase(
         phase: Phase<K, V>,
-        results: OrchestratorMutableResults<K, V>,
+        results: OrchestratorMutableResults<K, V>
     ): Promise<void> {
         const snapshot = new Map(results);
         const entries = await Promise.all(
-            phase.steps.map((step) => step(snapshot)),
+            phase.steps.map((step) => step(snapshot))
         );
 
         for (const [key, value] of entries) {
@@ -146,11 +141,11 @@ export class CommandsOrchestrator<K, V> {
     public commandStep(
         key: K,
         supplier: LoanedValueSupplier<V>,
-        options?: CommandOptions<V>,
+        options?: CommandOptions<V>
     ): OrchestratorStep<K, V> {
         const mergedOptions: CommandOptions<V> = {
             ...this.policies.command,
-            ...options,
+            ...options
         };
 
         return async () => {
@@ -163,13 +158,13 @@ export class CommandsOrchestrator<K, V> {
         key: K,
         pull: PullSupplier<TPulled>,
         push: PushConsumer<TPulled, V>,
-        options?: PullPushCommandOptions<TPulled, V>,
+        options?: PullPushCommandOptions<TPulled, V>
     ): OrchestratorStep<K, V> {
         return async () => {
             const result = await new PullPushCommand<TPulled, V>(
                 pull,
                 push,
-                options,
+                options
             ).run();
             return [key, result.pushed] as const;
         };
@@ -177,7 +172,7 @@ export class CommandsOrchestrator<K, V> {
 
     public supplierStep(
         key: K,
-        supplier: () => V | Promise<V>,
+        supplier: () => V | Promise<V>
     ): OrchestratorStep<K, V> {
         return async () => {
             const value = await supplier();
@@ -187,7 +182,7 @@ export class CommandsOrchestrator<K, V> {
 
     public loanedValueGetStep(
         key: K,
-        loanedValue: LoanedValue<V>,
+        loanedValue: LoanedValue<V>
     ): OrchestratorStep<K, V> {
         return async () => {
             const value = await loanedValue.get();
@@ -197,7 +192,7 @@ export class CommandsOrchestrator<K, V> {
 
     public loanedValueRefreshStep(
         key: K,
-        loanedValue: LoanedValue<V>,
+        loanedValue: LoanedValue<V>
     ): OrchestratorStep<K, V> {
         return async () => {
             const value = await loanedValue.refresh();
@@ -207,7 +202,7 @@ export class CommandsOrchestrator<K, V> {
 
     public repositoryGetStep(
         repositoryKey: K,
-        repository: LoanedRepository<K, V>,
+        repository: LoanedRepository<K, V>
     ): OrchestratorStep<K, V> {
         return async () => {
             const value = await repository.get(repositoryKey);
@@ -217,7 +212,7 @@ export class CommandsOrchestrator<K, V> {
 
     public repositoryRefreshStep(
         repositoryKey: K,
-        repository: LoanedRepository<K, V>,
+        repository: LoanedRepository<K, V>
     ): OrchestratorStep<K, V> {
         return async () => {
             const value = await repository.refresh(repositoryKey);
@@ -227,8 +222,8 @@ export class CommandsOrchestrator<K, V> {
 
     public dynamicStep(
         factory: (
-            results: OrchestratorResults<K, V>,
-        ) => Promise<OrchestratorEntry<K, V>> | OrchestratorEntry<K, V>,
+            results: OrchestratorResults<K, V>
+        ) => Promise<OrchestratorEntry<K, V>> | OrchestratorEntry<K, V>
     ): OrchestratorStep<K, V> {
         return async (results) => await factory(results);
     }

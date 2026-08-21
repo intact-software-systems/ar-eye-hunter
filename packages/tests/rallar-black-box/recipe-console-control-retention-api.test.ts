@@ -1,31 +1,25 @@
-import { resolve } from 'node:path';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { resolve } from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { analyzeSourceFile } from '../helpers/source-analysis';
 import { ControlRunManagerHttpError as CanonicalHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { ControlRunManagerHttpError as LegacyHttpError } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import { createRecipeConsoleControlApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import {
-    createRecipeConsoleControlApi,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
-import type {
-    RecipeConsoleControlConnection,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import {
-    createControlLazyCapability,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-lazy-capability.ts';
+    recipeConsoleControlCredentialPolicyFromSearch,
+    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
+import { createControlLazyCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-lazy-capability.ts';
 import {
     requestControlRetentionConfirmation,
     requestControlRetentionPreview,
-    requestLegacyControlRetentionCleanup,
+    requestLegacyControlRetentionCleanup
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-request.ts';
 import {
     parseControlRetentionConfirmation,
-    parseControlRetentionPreview,
+    parseControlRetentionPreview
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts';
-import {
-    recipeConsoleControlCredentialPolicyFromSearch,
-    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
+import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import { analyzeSourceFile } from '../helpers/source-analysis';
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 
@@ -43,9 +37,9 @@ const PREVIEW = {
             issuedRunTokenCount: 1,
             distributedRuns: [
                 { distributedRunId: 'distributed-a-1', state: 'running' },
-                { distributedRunId: 'distributed-a-2', state: 'passed' },
+                { distributedRunId: 'distributed-a-2', state: 'passed' }
             ],
-            fleetReportIds: ['distributed-a-2'],
+            fleetReportIds: ['distributed-a-2']
         },
         {
             runId: 'run-b',
@@ -54,10 +48,10 @@ const PREVIEW = {
             connectedAgentCount: 0,
             issuedRunTokenCount: 0,
             distributedRuns: [
-                { distributedRunId: 'distributed-b', state: 'failed' },
+                { distributedRunId: 'distributed-b', state: 'failed' }
             ],
-            fleetReportIds: ['distributed-b'],
-        },
+            fleetReportIds: ['distributed-b']
+        }
     ],
     wouldDeleteRunIds: ['run-a', 'run-b'],
     // The server preserves global distributed insertion order, which may
@@ -65,21 +59,21 @@ const PREVIEW = {
     wouldDeleteDistributedRunIds: [
         'distributed-b',
         'distributed-a-1',
-        'distributed-a-2',
+        'distributed-a-2'
     ],
     wouldDeleteFleetReportIds: ['distributed-b', 'distributed-a-2'],
     projectedRetainedRuns: 2,
     preserves: {
         connectedAgentSockets: true,
-        storedArtifactFiles: true,
+        storedArtifactFiles: true
     },
-    planToken: 'opaque.v1_Abc-123',
+    planToken: 'opaque.v1_Abc-123'
 } as const;
 
 const CONFIRMATION = {
     deletedRunIds: ['run-a', 'run-b'],
     retainedRuns: 2,
-    maxRuns: 2,
+    maxRuns: 2
 } as const;
 
 function clonePreview(): Record<string, unknown> {
@@ -92,7 +86,7 @@ function authSession(clientId = 'client-a'): AuthSession {
         sessionId: `session-${clientId}`,
         username: clientId,
         accessToken: `access-${clientId}`,
-        expiresAtEpochMs: 4_000_000_000_000,
+        expiresAtEpochMs: 4_000_000_000_000
     };
 }
 
@@ -102,7 +96,7 @@ function authorization(init: RequestInit | undefined): string | null {
 
 describe('Recipe Console retention request wire format', () => {
     it('serializes preview, confirmation, and legacy compatibility without bodies or inherited secrets', async () => {
-        const requests: Array<{ url: URL; init?: RequestInit }> = [];
+        const requests: Array<{ url: URL; init?: RequestInit; }> = [];
         const fetchFn = async (input: RequestInfo | URL, init?: RequestInit) => {
             requests.push({ url: new URL(String(input)), init });
             return Response.json(PREVIEW);
@@ -113,14 +107,14 @@ describe('Recipe Console retention request wire format', () => {
         await requestControlRetentionConfirmation({
             baseUrl,
             planToken: 'opaque +&/token',
-            fetchFn,
+            fetchFn
         });
         await requestLegacyControlRetentionCleanup({ baseUrl, fetchFn });
 
         expect(requests.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
             '/retention/cleanup?dryRun=true',
             '/retention/cleanup?planToken=opaque+%2B%26%2Ftoken',
-            '/retention/cleanup',
+            '/retention/cleanup'
         ]);
         for (const request of requests) {
             expect(request.init?.method).toBe('POST');
@@ -135,16 +129,17 @@ describe('Recipe Console retention request wire format', () => {
     it.each([
         [400, 'Bad Request'],
         [409, 'Conflict'],
-        [413, 'Payload Too Large'],
+        [413, 'Payload Too Large']
     ])('retains canonical HTTP %s provenance', async (status, statusText) => {
-        const fetchFn = async () => Response.json(
-            { error: `retention-${status}` },
-            { status, statusText },
-        );
+        const fetchFn = async () =>
+            Response.json(
+                { error: `retention-${status}` },
+                { status, statusText }
+            );
 
         const failure = requestControlRetentionPreview({
             baseUrl: 'https://control.test',
-            fetchFn,
+            fetchFn
         });
 
         await expect(failure).rejects.toBeInstanceOf(CanonicalHttpError);
@@ -152,26 +147,27 @@ describe('Recipe Console retention request wire format', () => {
         await expect(failure).rejects.toMatchObject({
             message: `retention-${status}`,
             status,
-            statusText,
+            statusText
         });
     });
 
     it('keeps non-JSON success parse failures and non-JSON HTTP status separate', async () => {
         await expect(requestControlRetentionPreview({
             baseUrl: 'https://control.test',
-            fetchFn: async () => new Response('not-json'),
+            fetchFn: async () => new Response('not-json')
         })).rejects.toBeInstanceOf(SyntaxError);
 
         await expect(requestControlRetentionPreview({
             baseUrl: 'https://control.test',
-            fetchFn: async () => new Response('not-json', {
-                status: 409,
-                statusText: 'Conflict',
-            }),
+            fetchFn: async () =>
+                new Response('not-json', {
+                    status: 409,
+                    statusText: 'Conflict'
+                })
         })).rejects.toMatchObject({
             name: 'ControlRunManagerHttpError',
             status: 409,
-            statusText: 'Conflict',
+            statusText: 'Conflict'
         });
     });
 });
@@ -187,7 +183,7 @@ describe('Recipe Console retention response validation', () => {
 
         expect(parsed.wouldDeleteRuns[0].runId).toBe('  run\0/Δ  ');
         expect(parsed.wouldDeleteDistributedRunIds).toEqual(
-            PREVIEW.wouldDeleteDistributedRunIds,
+            PREVIEW.wouldDeleteDistributedRunIds
         );
         expect(Object.isFrozen(parsed)).toBe(true);
         expect(Object.isFrozen(parsed.wouldDeleteRuns)).toBe(true);
@@ -278,7 +274,7 @@ describe('Recipe Console retention response validation', () => {
         }],
         ['an oversize token', (value: Record<string, unknown>) => {
             value.planToken = 't'.repeat(513);
-        }],
+        }]
     ])('rejects %s', (_label, mutate) => {
         const value = clonePreview();
         mutate(value);
@@ -297,7 +293,7 @@ describe('Recipe Console retention response validation', () => {
         expect(parseControlRetentionPreview(value)).toMatchObject({
             maxRuns: 0,
             retainedRuns: 4,
-            projectedRetainedRuns: 4,
+            projectedRetainedRuns: 4
         });
     });
 
@@ -314,15 +310,13 @@ describe('Recipe Console retention response validation', () => {
                 { length: distributedPerCandidate },
                 (_, linked) => ({
                     distributedRunId: `distributed-${candidate}-${linked}`,
-                    state: 'passed',
-                }),
+                    state: 'passed'
+                })
             ),
-            fleetReportIds: [],
+            fleetReportIds: []
         }));
-        const runIds = candidates.map(candidate => candidate.runId);
-        const distributedIds = candidates.flatMap(candidate =>
-            candidate.distributedRuns.map(run => run.distributedRunId)
-        );
+        const runIds = candidates.map((candidate) => candidate.runId);
+        const distributedIds = candidates.flatMap((candidate) => candidate.distributedRuns.map((run) => run.distributedRunId));
         const value = {
             ...PREVIEW,
             retainedRuns: candidateCount + 1,
@@ -331,7 +325,7 @@ describe('Recipe Console retention response validation', () => {
             wouldDeleteRunIds: runIds,
             wouldDeleteDistributedRunIds: distributedIds,
             wouldDeleteFleetReportIds: [],
-            projectedRetainedRuns: 1,
+            projectedRetainedRuns: 1
         };
 
         expect(() => parseControlRetentionPreview(value)).toThrow(/bound|budget/i);
@@ -350,7 +344,7 @@ describe('Recipe Console retention response validation', () => {
         ['different IDs', { ...CONFIRMATION, deletedRunIds: ['run-b', 'run-a'] }],
         ['a retained mismatch', { ...CONFIRMATION, retainedRuns: 3 }],
         ['a cap mismatch', { ...CONFIRMATION, maxRuns: 1 }],
-        ['a fractional count', { ...CONFIRMATION, retainedRuns: 1.5 }],
+        ['a fractional count', { ...CONFIRMATION, retainedRuns: 1.5 }]
     ])('rejects confirmation with %s', (_label, value) => {
         const preview = parseControlRetentionPreview(clonePreview());
         expect(() => parseControlRetentionConfirmation(value, preview)).toThrow();
@@ -367,7 +361,7 @@ describe('Recipe Console authorized retention API', () => {
             fetchFn: async (input, init) => {
                 requests.push(`${new URL(String(input)).pathname}:${authorization(init)}`);
                 return Response.json(PREVIEW);
-            },
+            }
         });
 
         const first = await api.retention.load();
@@ -381,8 +375,8 @@ describe('Recipe Console authorized retention API', () => {
 
     it.each([401, 403])(
         'brokers a trusted anonymous %s preview once and sends confirmation with the cached credential immediately',
-        async challengeStatus => {
-            const requests: Array<{ path: string; query: string; auth: string | null }> = [];
+        async (challengeStatus) => {
+            const requests: Array<{ path: string; query: string; auth: string | null; }> = [];
             const api = createRecipeConsoleControlApi({
                 controlUrl: 'wss://control.test/control?token=never',
                 apiBaseUrl: 'https://api.test',
@@ -398,19 +392,19 @@ describe('Recipe Console authorized retention API', () => {
                             token: 'brokered-retention-secret',
                             issuedAtEpochMs: 3_000_000_000_000,
                             expiresAtEpochMs: 4_000_000_000_000,
-                            ttlMs: 1_000_000_000_000,
+                            ttlMs: 1_000_000_000_000
                         });
                     }
                     if (!auth) {
                         return Response.json(
                             { error: 'Operator token required.' },
-                            { status: challengeStatus },
+                            { status: challengeStatus }
                         );
                     }
                     return url.searchParams.has('planToken')
                         ? Response.json(CONFIRMATION)
                         : Response.json(PREVIEW);
-                },
+                }
             });
             const retention = await api.retention.load();
 
@@ -423,25 +417,25 @@ describe('Recipe Console authorized retention API', () => {
                 {
                     path: '/api/black-box/control-token',
                     query: '',
-                    auth: 'Bearer access-client-a',
+                    auth: 'Bearer access-client-a'
                 },
                 {
                     path: '/retention/cleanup',
                     query: '?dryRun=true',
-                    auth: 'Bearer brokered-retention-secret',
+                    auth: 'Bearer brokered-retention-secret'
                 },
                 {
                     path: '/retention/cleanup',
                     query: `?planToken=${encodeURIComponent(PREVIEW.planToken)}`,
-                    auth: 'Bearer brokered-retention-secret',
-                },
+                    auth: 'Bearer brokered-retention-secret'
+                }
             ]);
             expect(JSON.stringify(requests)).not.toContain('run-a');
-        },
+        }
     );
 
     it('uses a manual credential once and never brokers its authorization failure', async () => {
-        const requests: Array<{ path: string; auth: string | null }> = [];
+        const requests: Array<{ path: string; auth: string | null; }> = [];
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://control.test/control',
             manualToken: ' manual-retention-secret ',
@@ -452,19 +446,19 @@ describe('Recipe Console authorized retention API', () => {
                 const url = new URL(String(input));
                 requests.push({ path: url.pathname, auth: authorization(init) });
                 return Response.json({ error: 'Forbidden.' }, { status: 403 });
-            },
+            }
         });
         const retention = await api.retention.load();
 
         await expect(retention.preview({})).rejects.toMatchObject({ status: 403 });
         expect(requests).toEqual([{
             path: '/retention/cleanup',
-            auth: 'Bearer manual-retention-secret',
+            auth: 'Bearer manual-retention-secret'
         }]);
     });
 
     it('withholds ambient credentials from a URL-selected control origin', async () => {
-        const requests: Array<{ url: string; auth: string | null }> = [];
+        const requests: Array<{ url: string; auth: string | null; }> = [];
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://untrusted-control.test/control',
             manualToken: 'ambient-manual-secret',
@@ -472,26 +466,26 @@ describe('Recipe Console authorized retention API', () => {
             authSession: authSession('victim'),
             credentialPolicy: recipeConsoleControlCredentialPolicyFromSearch(
                 '?v=1&experience=recipe-console' +
-                    '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol',
+                    '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol'
             ),
             fetchFn: async (input, init) => {
                 requests.push({ url: String(input), auth: authorization(init) });
                 return Response.json({ error: 'Unauthorized.' }, { status: 401 });
-            },
+            }
         });
         const retention = await api.retention.load();
 
         await expect(retention.preview({})).rejects.toMatchObject({
-            credentialTrustRequired: true,
+            credentialTrustRequired: true
         });
         expect(requests).toEqual([{
             url: 'https://untrusted-control.test/retention/cleanup?dryRun=true',
-            auth: null,
+            auth: null
         }]);
     });
 
     it('allows only the caller-supplied token for the same URL-selected control origin', async () => {
-        const requests: Array<{ url: string; auth: string | null }> = [];
+        const requests: Array<{ url: string; auth: string | null; }> = [];
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://caller-control.test/control',
             manualToken: 'caller-control-token',
@@ -500,24 +494,24 @@ describe('Recipe Console authorized retention API', () => {
             credentialPolicy: recipeConsoleControlCredentialPolicyFromSearch(
                 '?v=1&experience=recipe-console' +
                     '&controlUrl=https%3A%2F%2Fcaller-control.test%2Fcontrol' +
-                    '&controlToken=caller-control-token',
+                    '&controlToken=caller-control-token'
             ),
             fetchFn: async (input, init) => {
                 requests.push({ url: String(input), auth: authorization(init) });
                 return Response.json(PREVIEW);
-            },
+            }
         });
 
         await (await api.retention.load()).preview({});
 
         expect(requests).toEqual([{
             url: 'https://caller-control.test/retention/cleanup?dryRun=true',
-            auth: 'Bearer caller-control-token',
+            auth: 'Bearer caller-control-token'
         }]);
         expect(JSON.stringify(requests)).not.toContain('access-victim');
     });
 
-    it.each([400, 409, 413])('does not broker or retry a retention HTTP %s', async status => {
+    it.each([400, 409, 413])('does not broker or retry a retention HTTP %s', async (status) => {
         const requests: string[] = [];
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://control.test',
@@ -527,31 +521,31 @@ describe('Recipe Console authorized retention API', () => {
             fetchFn: async (input) => {
                 requests.push(String(input));
                 return Response.json({ error: `failure-${status}` }, { status });
-            },
+            }
         });
         const retention = await api.retention.load();
 
         await expect(retention.preview({})).rejects.toMatchObject({ status });
         expect(requests).toEqual([
-            'https://control.test/retention/cleanup?dryRun=true',
+            'https://control.test/retention/cleanup?dryRun=true'
         ]);
     });
 
     it.each([
         ['invalid JSON', () => new Response('not-json')],
-        ['an invalid payload', () => Response.json({ ...PREVIEW, retainedRuns: -1 })],
+        ['an invalid payload', () => Response.json({ ...PREVIEW, retainedRuns: -1 })]
     ])('maps %s 2xx to a reachable protocol error', async (_label, response) => {
         const api = createRecipeConsoleControlApi({
             controlUrl: 'https://control.test',
             apiBaseUrl: 'https://api.test',
             credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-            fetchFn: async () => response(),
+            fetchFn: async () => response()
         });
         const retention = await api.retention.load();
 
         await expect(retention.preview({})).rejects.toMatchObject({
             name: 'RecipeConsoleControlProtocolError',
-            reachable: true,
+            reachable: true
         });
     });
 
@@ -564,14 +558,14 @@ describe('Recipe Console authorized retention API', () => {
             controlUrl: 'https://control.test',
             apiBaseUrl: 'https://api.test',
             credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-            fetchFn: async () => response,
+            fetchFn: async () => response
         });
         const retention = await api.retention.load();
 
         await expect(retention.preview({})).rejects.toMatchObject({
             name: 'RecipeConsoleControlProtocolError',
             reachable: true,
-            message: 'Response adapter failed while reading JSON.',
+            message: 'Response adapter failed while reading JSON.'
         });
     });
 
@@ -581,7 +575,7 @@ describe('Recipe Console authorized retention API', () => {
             controlUrl: 'https://control-a.test',
             apiBaseUrl: 'https://api.test',
             credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-            fetchFn: async () => Response.json(PREVIEW),
+            fetchFn: async () => Response.json(PREVIEW)
         });
         const secondApi = createRecipeConsoleControlApi({
             controlUrl: 'https://control-b.test',
@@ -590,17 +584,17 @@ describe('Recipe Console authorized retention API', () => {
             fetchFn: async () => {
                 endpointBRequests += 1;
                 return Response.json(CONFIRMATION);
-            },
+            }
         });
         const preview = await (await firstApi.retention.load()).preview({});
         const secondRetention = await secondApi.retention.load();
 
         await expect(secondRetention.confirm({ preview })).rejects.toThrow(
-            /current control connection/i,
+            /current control connection/i
         );
         expect(endpointBRequests).toBe(0);
         expect(firstApi.retention.generation).not.toBe(
-            secondApi.retention.generation,
+            secondApi.retention.generation
         );
     });
 
@@ -613,7 +607,7 @@ describe('Recipe Console authorized retention API', () => {
             controlUrl: 'https://control.test',
             apiBaseUrl: 'https://api.test',
             credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-            fetchFn: async () => response,
+            fetchFn: async () => response
         });
         const retention = await api.retention.load();
         const pending = retention.preview({});
@@ -634,21 +628,21 @@ describe('Recipe Console authorized retention API', () => {
             fetchFn: async (_input) => {
                 requests += 1;
                 return Response.json(PREVIEW);
-            },
+            }
         });
         const retention = await api.retention.load();
         const preview = await retention.preview({});
         api.close();
 
         await expect(retention.confirm({ preview })).rejects.toMatchObject({
-            name: 'AbortError',
+            name: 'AbortError'
         });
         expect(requests).toBe(1);
     });
 
     it('rejects a new preview while confirmation is in flight and never leaves a pre-cleanup preview current', async () => {
         let resolveConfirmation!: (response: Response) => void;
-        const confirmation = new Promise<Response>(resolve => {
+        const confirmation = new Promise<Response>((resolve) => {
             resolveConfirmation = resolve;
         });
         let requests = 0;
@@ -656,12 +650,12 @@ describe('Recipe Console authorized retention API', () => {
             controlUrl: 'https://control.test',
             apiBaseUrl: 'https://api.test',
             credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-            fetchFn: async input => {
+            fetchFn: async (input) => {
                 requests += 1;
                 return new URL(String(input)).searchParams.has('planToken')
                     ? confirmation
                     : Response.json(PREVIEW);
-            },
+            }
         });
         const retention = await api.retention.load();
         const preview = await retention.preview({});
@@ -673,7 +667,7 @@ describe('Recipe Console authorized retention API', () => {
         await expect(pendingConfirmation).resolves.toEqual(CONFIRMATION);
 
         await expect(retention.preview({})).resolves.toMatchObject({
-            planToken: PREVIEW.planToken,
+            planToken: PREVIEW.planToken
         });
         expect(requests).toBe(3);
     });
@@ -682,9 +676,9 @@ describe('Recipe Console authorized retention API', () => {
 describe('Recipe Console retention lazy boundary', () => {
     it('suppresses a deferred lazy result after its lifetime is aborted', async () => {
         const controller = new AbortController();
-        let resolveValue!: (value: { value: string }) => void;
+        let resolveValue!: (value: { value: string; }) => void;
         let loads = 0;
-        const deferred = new Promise<{ value: string }>((resolve) => {
+        const deferred = new Promise<{ value: string; }>((resolve) => {
             resolveValue = resolve;
         });
         const capability = createControlLazyCapability({
@@ -692,7 +686,7 @@ describe('Recipe Console retention lazy boundary', () => {
             load: async () => {
                 loads += 1;
                 return deferred;
-            },
+            }
         });
         const pending = capability.load();
         controller.abort();
@@ -710,9 +704,11 @@ describe('Recipe Console retention lazy boundary', () => {
             signal: controller.signal,
             load: async () => {
                 loads += 1;
-                if (loads === 1) throw new TypeError('Chunk temporarily unavailable.');
+                if (loads === 1) {
+                    throw new TypeError('Chunk temporarily unavailable.');
+                }
                 return { value: 'loaded' };
-            },
+            }
         });
 
         await expect(capability.load()).rejects.toThrow('temporarily unavailable');
@@ -720,8 +716,7 @@ describe('Recipe Console retention lazy boundary', () => {
         await expect(capability.load()).resolves.toEqual({ value: 'loaded' });
         expect(loads).toBe(2);
     });
-
-    });
+});
 
 function moduleImports(path: string): Array<{
     specifier: string;
@@ -731,19 +726,17 @@ function moduleImports(path: string): Array<{
     return [
         ...analysis.imports.map((entry) => ({
             specifier: entry.specifier,
-            typeOnly: entry.typeOnly,
+            typeOnly: entry.typeOnly
         })),
         ...analysis.exports.flatMap((entry) =>
             entry.specifier
                 ? [{ specifier: entry.specifier, typeOnly: entry.typeOnly }]
-                : [],
-        ),
+                : []
+        )
     ];
 }
 
 function dynamicImports(path: string): string[] {
     return analyzeSourceFile(resolve(repositoryRoot, path)).dynamicImports
-        .flatMap((entry) =>
-            entry.literal && entry.specifier ? [entry.specifier] : [],
-        );
+        .flatMap((entry) => entry.literal && entry.specifier ? [entry.specifier] : []);
 }

@@ -17,23 +17,23 @@ import type {
     RallarCallState,
     RallarCallStatus,
     RallarCallWaitOptions,
-    RallarIncomingCallInvite,
+    RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type {
     RallarMessage,
     RallarMessageSendResult,
-    RallarMessagesFacade,
+    RallarMessagesFacade
 } from '@shared-web/browser/rallar-messages-facade.ts';
 import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
-    RallarTargetSelector,
+    RallarTargetSelector
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type {
     RallarRtcFacade,
     RallarRtcLaneStatus,
-    RallarRtcPeerStatus,
+    RallarRtcPeerStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -55,7 +55,7 @@ export type CreateRallarCallsControllerOptions = Readonly<{
     resolveRoomRef(room?: string | GroupRef): GroupRef | undefined;
     resolveTargetPeerIds(input?: RallarTargetSelector): readonly string[];
     createTargetedChannel<T>(
-        definition: RallarTargetedChannelDefinition,
+        definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
     messages: RallarMessagesFacade;
     rtc: RallarRtcFacade;
@@ -69,7 +69,7 @@ export type CreateRallarCallsControllerOptions = Readonly<{
             topicId: string;
             contextId: string;
             resourceId?: string;
-        }>,
+        }>
     ): Promise<RallarMessageSendResult>;
 }>;
 
@@ -78,14 +78,14 @@ export type RallarCallsController = Readonly<{
 }>;
 
 export function createRallarCallsController(
-    options: CreateRallarCallsControllerOptions,
+    options: CreateRallarCallsControllerOptions
 ): RallarCallsController {
     const toSignalPayload = (
         kind: RallarCallSignalKind,
         callId: string,
         toPeerIds: readonly string[],
         input: Partial<RallarCallInviteInput>,
-        reason?: string,
+        reason?: string
     ): RallarCallSignalPayload => {
         const session = options.requireSession();
         return {
@@ -99,23 +99,23 @@ export function createRallarCallsController(
             data: {
                 laneIds: input.data?.lanes
                     ? [...new Set(input.data.lanes)]
-                    : [],
+                    : []
             },
             media: {
                 audio: input.media?.audio,
                 video: input.media?.video,
                 screen: options.mediaController.readSourceStatus('screen')
-                    ?.state === 'open',
+                    ?.state === 'open'
             },
             message: input.message,
             reason,
-            occurredAtEpochMs: Date.now(),
+            occurredAtEpochMs: Date.now()
         };
     };
 
     const sendSignals = async (
         peerIds: readonly string[],
-        payload: RallarCallSignalPayload,
+        payload: RallarCallSignalPayload
     ): Promise<readonly RallarCallSignalSend[]> => {
         const uniquePeerIds = [...new Set(peerIds)]
             .filter((peerId) => peerId !== options.requireSession().sessionId);
@@ -128,15 +128,15 @@ export function createRallarCallsController(
                     toCallSignalTypeId(payload.kind),
                     {
                         topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
-                        contextId: payload.callId,
-                    },
-                ),
-            })),
+                        contextId: payload.callId
+                    }
+                )
+            }))
         );
     };
 
     const isSignalForCurrentSession = (
-        payload: RallarCallSignalPayload,
+        payload: RallarCallSignalPayload
     ): boolean => {
         const sessionId = options.readSession()?.sessionId;
         if (!sessionId || payload.fromPeerId === sessionId) {
@@ -147,7 +147,7 @@ export function createRallarCallsController(
     };
 
     const toSignalEvent = (
-        message: RallarMessage<RallarCallSignalPayload>,
+        message: RallarMessage<RallarCallSignalPayload>
     ): RallarCallSignalEvent | undefined => {
         if (!isRallarCallSignalPayload(message.payload)) {
             return undefined;
@@ -168,14 +168,14 @@ export function createRallarCallsController(
             message: payload.message,
             reason: payload.reason,
             payload,
-            raw: message,
+            raw: message
         };
     };
 
     let startCall!: (input: RallarCallStartInput) => Promise<RallarCallHandle>;
 
     const toIncomingInvite = (
-        message: RallarMessage<RallarCallSignalPayload>,
+        message: RallarMessage<RallarCallSignalPayload>
     ): RallarIncomingCallInvite | undefined => {
         const event = toSignalEvent(message);
         if (!event || event.kind !== 'invite') {
@@ -185,7 +185,7 @@ export function createRallarCallsController(
             ...event,
             kind: 'invite',
             accept: async (
-                input: Partial<RallarCallStartInput> = {},
+                input: Partial<RallarCallStartInput> = {}
             ): Promise<RallarCallHandle> => {
                 await sendSignals(
                     [event.fromPeerId],
@@ -202,9 +202,9 @@ export function createRallarCallsController(
                                     ? { lanes: event.dataLaneIds }
                                     : undefined),
                             roomRef: input.roomRef ?? event.roomRef,
-                            membership: input.membership ?? event.membership,
-                        },
-                    ),
+                            membership: input.membership ?? event.membership
+                        }
+                    )
                 );
                 return await startCall({
                     ...input,
@@ -213,46 +213,45 @@ export function createRallarCallsController(
                     data: input.data ??
                         (event.dataLaneIds.length > 0
                             ? { lanes: event.dataLaneIds }
-                            : undefined),
+                            : undefined)
                 });
             },
-            decline: async (reason?: string) => await sendSignals(
-                [event.fromPeerId],
-                toSignalPayload(
-                    'declined',
-                    event.callId,
+            decline: async (reason?: string) =>
+                await sendSignals(
                     [event.fromPeerId],
-                    {
-                        peerId: event.fromPeerId,
-                        callId: event.callId,
-                        data: event.dataLaneIds.length > 0
-                            ? { lanes: event.dataLaneIds }
-                            : undefined,
-                        roomRef: event.roomRef,
-                        membership: event.membership,
-                    },
-                    reason,
-                ),
-            ),
+                    toSignalPayload(
+                        'declined',
+                        event.callId,
+                        [event.fromPeerId],
+                        {
+                            peerId: event.fromPeerId,
+                            callId: event.callId,
+                            data: event.dataLaneIds.length > 0
+                                ? { lanes: event.dataLaneIds }
+                                : undefined,
+                            roomRef: event.roomRef,
+                            membership: event.membership
+                        },
+                        reason
+                    )
+                )
         };
     };
 
     const toParticipantStatus = (
         peerId: string,
         laneIds: readonly string[],
-        ended: boolean,
+        ended: boolean
     ): RallarCallParticipantStatus => {
         const rtcStatus = options.rtc.status({
-            laneId: laneIds[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+            laneId: laneIds[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID
         });
-        const peer = rtcStatus.peers.find((candidate) =>
-            candidate.peerId === peerId
-        );
+        const peer = rtcStatus.peers.find((candidate) => candidate.peerId === peerId);
         const lanes = laneIds.length === 0
             ? peer?.lanes ?? []
             : laneIds.map((laneId) =>
                 peer?.lanes.find((lane) => lane.laneId === laneId) ??
-                toMissingRtcLaneStatus(peerId, laneId)
+                    toMissingRtcLaneStatus(peerId, laneId)
             );
         const readyLaneIds = lanes.filter((lane) => lane.isOpen)
             .map((lane) => lane.laneId);
@@ -266,32 +265,34 @@ export function createRallarCallsController(
                 peer,
                 laneCount: laneIds.length,
                 readyLaneCount: readyLaneIds.length,
-                failedLaneCount: failedLaneIds.length,
+                failedLaneCount: failedLaneIds.length
             }),
             lanes,
             readyLaneIds,
             failedLaneIds,
-            reason: toCallParticipantReason(peer, laneIds.length, failedLaneIds),
+            reason: toCallParticipantReason(peer, laneIds.length, failedLaneIds)
         };
     };
 
-    const toStatus = (input: Readonly<{
-        callId: string;
-        laneIds: readonly string[];
-        peerIds: readonly string[];
-        startedAtEpochMs: number;
-        endedAtEpochMs?: number;
-        media: Readonly<{
-            localStreamId?: string;
-            audioEnabled?: boolean;
-            videoEnabled?: boolean;
-        }>;
-    }>): RallarCallStatus => {
+    const toStatus = (
+        input: Readonly<{
+            callId: string;
+            laneIds: readonly string[];
+            peerIds: readonly string[];
+            startedAtEpochMs: number;
+            endedAtEpochMs?: number;
+            media: Readonly<{
+                localStreamId?: string;
+                audioEnabled?: boolean;
+                videoEnabled?: boolean;
+            }>;
+        }>
+    ): RallarCallStatus => {
         const participants = input.peerIds.map((peerId) =>
             toParticipantStatus(
                 peerId,
                 input.laneIds,
-                input.endedAtEpochMs !== undefined,
+                input.endedAtEpochMs !== undefined
             )
         );
         return {
@@ -304,8 +305,8 @@ export function createRallarCallsController(
             endedAtEpochMs: input.endedAtEpochMs,
             media: {
                 ...input.media,
-                sources: options.mediaController.readSourceStatuses(),
-            },
+                sources: options.mediaController.readSourceStatuses()
+            }
         };
     };
 
@@ -324,28 +325,29 @@ export function createRallarCallsController(
         } = {
             localStreamId: input.media?.stream?.id,
             audioEnabled: input.media?.audio,
-            videoEnabled: input.media?.video,
+            videoEnabled: input.media?.video
         };
         let endedAtEpochMs: number | undefined;
 
         const resolvePeerIds = (
-            targetOptions: RallarTargetSelector = {},
+            targetOptions: RallarTargetSelector = {}
         ): readonly string[] => {
             if (fixedPeerIds && !hasTargetSelectorOverride(targetOptions)) {
                 return fixedPeerIds;
             }
             return options.resolveTargetPeerIds({ ...input, ...targetOptions });
         };
-        const status = (): RallarCallStatus => toStatus({
-            callId,
-            laneIds,
-            peerIds: resolvePeerIds(),
-            startedAtEpochMs,
-            endedAtEpochMs,
-            media: mediaState,
-        });
+        const status = (): RallarCallStatus =>
+            toStatus({
+                callId,
+                laneIds,
+                peerIds: resolvePeerIds(),
+                startedAtEpochMs,
+                endedAtEpochMs,
+                media: mediaState
+            });
         const wait = async (
-            waitOptions: RallarCallWaitOptions = {},
+            waitOptions: RallarCallWaitOptions = {}
         ): Promise<RallarCallStatus> => {
             if (endedAtEpochMs !== undefined) {
                 return status();
@@ -360,12 +362,14 @@ export function createRallarCallsController(
                 return status();
             }
             await Promise.all(
-                peerIds.flatMap((peerId) => laneIds.map((laneId) =>
-                    options.rtc.waitForLane(peerId, laneId, {
-                        ...waitOptions,
-                        connect: true,
-                    })
-                )),
+                peerIds.flatMap((peerId) =>
+                    laneIds.map((laneId) =>
+                        options.rtc.waitForLane(peerId, laneId, {
+                            ...waitOptions,
+                            connect: true
+                        })
+                    )
+                )
             );
             return status();
         };
@@ -374,26 +378,26 @@ export function createRallarCallsController(
             status,
             wait,
             channel: <T>(
-                definition: Partial<RallarTargetedChannelDefinition> = {},
+                definition: Partial<RallarTargetedChannelDefinition> = {}
             ) => {
                 const membership = definition.membership ?? input.membership ??
                     'fixed';
                 const target = membership === 'live' &&
-                    (input.roomId !== undefined || input.roomRef !== undefined) &&
-                    !hasTargetSelectorOverride(definition)
+                        (input.roomId !== undefined || input.roomRef !== undefined) &&
+                        !hasTargetSelectorOverride(definition)
                     ? {
                         roomId: input.roomId,
                         roomRef: input.roomRef,
-                        membership,
+                        membership
                     }
                     : {
                         peerIds: resolvePeerIds(definition),
-                        membership,
+                        membership
                     };
                 return options.createTargetedChannel<T>({
                     ...definition,
                     ...target,
-                    laneId: definition.laneId ?? laneIds[0],
+                    laneId: definition.laneId ?? laneIds[0]
                 });
             },
             setLocalStream: async (stream) => {
@@ -423,10 +427,10 @@ export function createRallarCallsController(
             sources: {
                 microphone: options.media.microphone,
                 camera: options.media.camera,
-                screen: options.media.screen,
+                screen: options.media.screen
             },
             end: async (
-                endOptions: RallarCallEndOptions = {},
+                endOptions: RallarCallEndOptions = {}
             ): Promise<RallarCallStatus> => {
                 if (endedAtEpochMs === undefined) {
                     endedAtEpochMs = Date.now();
@@ -445,7 +449,7 @@ export function createRallarCallsController(
                     mediaState.videoEnabled = false;
                 }
                 return status();
-            },
+            }
         };
 
         if (input.media?.stream) {
@@ -463,8 +467,7 @@ export function createRallarCallsController(
 
     const operations: CreateRallarCallsFacadeOptions = {
         start: startCall,
-        invite: async (input: RallarCallInviteInput):
-            Promise<RallarCallInviteResult> => {
+        invite: async (input: RallarCallInviteInput): Promise<RallarCallInviteResult> => {
             await options.connect();
             const callId = input.callId ?? crypto.randomUUID();
             const peerIds = options.resolveTargetPeerIds(input);
@@ -472,7 +475,7 @@ export function createRallarCallsController(
             return {
                 callId,
                 peerIds,
-                signals: await sendSignals(peerIds, payload),
+                signals: await sendSignals(peerIds, payload)
             };
         },
         onSignal: (listener: RallarCallSignalListener): RallarUnsubscribe =>
@@ -483,21 +486,21 @@ export function createRallarCallsController(
                     if (event) {
                         await listener(event);
                     }
-                },
+                }
             ),
         onInvite: (listener: RallarCallInviteListener): RallarUnsubscribe =>
             options.messages.ws.onMessage<RallarCallSignalPayload>(
                 {
                     topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
-                    typeId: RALLAR_CALL_INVITE_TYPE_ID,
+                    typeId: RALLAR_CALL_INVITE_TYPE_ID
                 },
                 async (message) => {
                     const invite = toIncomingInvite(message);
                     if (invite) {
                         await listener(invite);
                     }
-                },
-            ),
+                }
+            )
     };
 
     return { operations };
@@ -521,18 +524,20 @@ function hasTargetSelectorOverride(input: RallarTargetSelector): boolean {
 
 function toMissingRtcLaneStatus(
     peerId: string,
-    laneId: string,
+    laneId: string
 ): RallarRtcLaneStatus {
     return { peerId, laneId, isOpen: false, isReconnectable: false };
 }
 
-function toCallParticipantState(input: Readonly<{
-    ended: boolean;
-    peer?: RallarRtcPeerStatus;
-    laneCount: number;
-    readyLaneCount: number;
-    failedLaneCount: number;
-}>): RallarCallParticipantState {
+function toCallParticipantState(
+    input: Readonly<{
+        ended: boolean;
+        peer?: RallarRtcPeerStatus;
+        laneCount: number;
+        readyLaneCount: number;
+        failedLaneCount: number;
+    }>
+): RallarCallParticipantState {
     if (input.ended) {
         return 'ended';
     }
@@ -542,7 +547,9 @@ function toCallParticipantState(input: Readonly<{
     if (input.laneCount === 0) {
         return input.peer.hasNoReconnectableLanes
             ? 'failed'
-            : input.peer.isActive ? 'open' : 'connecting';
+            : input.peer.isActive
+            ? 'open'
+            : 'connecting';
     }
     if (input.readyLaneCount === input.laneCount) {
         return 'open';
@@ -558,7 +565,7 @@ function toCallParticipantState(input: Readonly<{
 
 function toCallState(
     participants: readonly RallarCallParticipantStatus[],
-    endedAtEpochMs?: number,
+    endedAtEpochMs?: number
 ): RallarCallState {
     if (endedAtEpochMs !== undefined) {
         return 'ended';
@@ -569,9 +576,7 @@ function toCallState(
     if (participants.every((participant) => participant.state === 'open')) {
         return 'open';
     }
-    if (participants.some((participant) =>
-        participant.state === 'open' || participant.state === 'partial'
-    )) {
+    if (participants.some((participant) => participant.state === 'open' || participant.state === 'partial')) {
         return 'partial';
     }
     if (participants.every((participant) => participant.state === 'failed')) {
@@ -583,7 +588,7 @@ function toCallState(
 function toCallParticipantReason(
     peer: RallarRtcPeerStatus | undefined,
     laneCount: number,
-    failedLaneIds: readonly string[],
+    failedLaneIds: readonly string[]
 ): string | undefined {
     if (!peer) {
         return 'RTC peer has not been opened yet.';
@@ -611,7 +616,7 @@ function toCallSignalTypeId(kind: RallarCallSignalKind): string {
 }
 
 function isRallarCallSignalPayload(
-    value: unknown,
+    value: unknown
 ): value is RallarCallSignalPayload {
     if (typeof value !== 'object' || value === null) {
         return false;

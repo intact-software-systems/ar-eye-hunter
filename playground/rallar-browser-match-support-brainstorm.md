@@ -76,18 +76,18 @@ server validates and finalizes it.
 These operations are generic enough for an optional Rallar browser match
 library:
 
-| Operation | Why it fits Rallar | Notes |
-| --- | --- | --- |
-| Match lifecycle | Most room activities need lobby, starting, active, paused, complete, abandoned, and recovery states. | The phase names should be configurable. |
-| Participant registry | Rallar already knows principals, sessions, active room members, and presence. | The app decides whether one principal can have multiple seats. |
-| Ready checks | `rooms.waitForPresence(...)` and RTC lane readiness already exist. | A match layer can compose these into "ready to start" gates. |
-| Authority lease | Director appointment is already a Rallar concept. | Keep it session-bound and epoch-based. |
-| Host election | Existing Rallar Game capability scoring is generic enough as a default. | Apps can override scoring. |
-| Command/result envelope | Sequence, room, protocol, sender, authority epoch, and type IDs are reusable. | Payload validation remains app-owned. |
-| Snapshot/event fanout | Already present in browser-director and server-authority flows. | The match layer can standardize names and defaults. |
-| Scoreboard projection | Sorting rows, tie handling, ranks, display rows, and local-player highlighting are reusable. | Score calculation is not generic. |
-| Result envelope | A standard final result record is useful for storage, replay, and diagnostics. | Trust level must be explicit. |
-| Diagnostics | Stale authority, pending commands, no room, missing local peer, RTC not ready, and stale snapshot are generic. | Build on existing Rallar Game diagnostics. |
+| Operation               | Why it fits Rallar                                                                                             | Notes                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Match lifecycle         | Most room activities need lobby, starting, active, paused, complete, abandoned, and recovery states.           | The phase names should be configurable.                        |
+| Participant registry    | Rallar already knows principals, sessions, active room members, and presence.                                  | The app decides whether one principal can have multiple seats. |
+| Ready checks            | `rooms.waitForPresence(...)` and RTC lane readiness already exist.                                             | A match layer can compose these into "ready to start" gates.   |
+| Authority lease         | Director appointment is already a Rallar concept.                                                              | Keep it session-bound and epoch-based.                         |
+| Host election           | Existing Rallar Game capability scoring is generic enough as a default.                                        | Apps can override scoring.                                     |
+| Command/result envelope | Sequence, room, protocol, sender, authority epoch, and type IDs are reusable.                                  | Payload validation remains app-owned.                          |
+| Snapshot/event fanout   | Already present in browser-director and server-authority flows.                                                | The match layer can standardize names and defaults.            |
+| Scoreboard projection   | Sorting rows, tie handling, ranks, display rows, and local-player highlighting are reusable.                   | Score calculation is not generic.                              |
+| Result envelope         | A standard final result record is useful for storage, replay, and diagnostics.                                 | Trust level must be explicit.                                  |
+| Diagnostics             | Stale authority, pending commands, no room, missing local peer, RTC not ready, and stale snapshot are generic. | Build on existing Rallar Game diagnostics.                     |
 
 ## What Is Too Game Specific
 
@@ -136,7 +136,7 @@ const standings = deriveRallarMatchStandings({
     compare: (left, right) =>
         right.metrics.points - left.metrics.points ||
         right.metrics.objectives - left.metrics.objectives ||
-        left.participantId.localeCompare(right.participantId),
+        left.participantId.localeCompare(right.participantId)
 });
 ```
 
@@ -174,19 +174,19 @@ const match = createRallarBrowserMatch<Command, Snapshot, Event>({
     topicId: 'room.audit-sprint.match',
     authority: {
         mode: 'browser-director',
-        appointmentPolicy: 'metadata-owner-admin-or-member-fallback',
+        appointmentPolicy: 'metadata-owner-admin-or-member-fallback'
     },
     participants: {
-        participantId: ({ principalId }) => principalId,
+        participantId: ({ principalId }) => principalId
     },
     standings: {
         metrics: ['points', 'objectives'],
         compare: (left, right) =>
             right.metrics.points - left.metrics.points ||
-            right.metrics.objectives - left.metrics.objectives,
+            right.metrics.objectives - left.metrics.objectives
     },
     readSnapshot,
-    applyCommand,
+    applyCommand
 });
 
 await match.start();

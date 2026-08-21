@@ -1,13 +1,6 @@
-import {
-    distributedRunManifestContractIssues,
-} from './tune-run-catalog-safety.ts';
-import { deriveDistributedRunSnapshotPerformance } from
-    '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type {
-    TuneQuarantinedRun,
-    TuneRunCatalog,
-    TuneRunOption,
-} from './tune-run-catalog.ts';
+import { deriveDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { distributedRunManifestContractIssues } from './tune-run-catalog-safety.ts';
+import type { TuneQuarantinedRun, TuneRunCatalog, TuneRunOption } from './tune-run-catalog.ts';
 
 type SelectionValidation =
     | Readonly<{
@@ -31,16 +24,18 @@ const validations = new WeakMap<TuneRunCatalog, Map<string, SelectionValidation>
 /** Revalidates deferred truth before a directly injected catalog reaches consumers. */
 export function validateTuneCatalogSelections(
     catalog: TuneRunCatalog,
-    selectedRunIds: readonly string[],
+    selectedRunIds: readonly string[]
 ): TuneRunCatalog {
     const selected = [...new Set(selectedRunIds)].slice(0, 2);
-    const projections = selected.flatMap(runId => {
+    const projections = selected.flatMap((runId) => {
         const option = catalog.optionsByDistributedRunId.get(runId);
         return option?.manifestValidation === 'selection-required'
             ? [selectionValidation(catalog, option)]
             : [];
     });
-    if (projections.length === 0) return catalog;
+    if (projections.length === 0) {
+        return catalog;
+    }
 
     const optionsByDistributedRunId = new Map(catalog.optionsByDistributedRunId);
     const quarantined = new Map<string, Omit<TuneQuarantinedRun, 'key'>>();
@@ -51,19 +46,20 @@ export function validateTuneCatalogSelections(
         if (projection.kind === 'valid') {
             optionsByDistributedRunId.set(
                 projection.option.distributedRunId,
-                projection.option,
+                projection.option
             );
-        } else {
+        }
+        else {
             optionsByDistributedRunId.delete(projection.quarantine.distributedRunId);
             quarantined.set(
                 quarantineKey(projection.quarantine),
-                projection.quarantine,
+                projection.quarantine
             );
         }
     }
     return {
         ...catalog,
-        options: catalog.options.flatMap(option => {
+        options: catalog.options.flatMap((option) => {
             const validated = optionsByDistributedRunId.get(option.distributedRunId);
             return validated ? [validated] : [];
         }),
@@ -75,31 +71,29 @@ export function validateTuneCatalogSelections(
             )
             .map((row, index) => ({
                 key: `tune-quarantined:${index}`,
-                ...row,
+                ...row
             })),
         work: {
             ...catalog.work,
-            selectionBoundaryManifestValidations:
-                catalog.work.selectionBoundaryManifestValidations +
-                projections.filter(row => !row.reused).length,
-            selectionBoundaryPerformanceDerivations:
-                catalog.work.selectionBoundaryPerformanceDerivations +
+            selectionBoundaryManifestValidations: catalog.work.selectionBoundaryManifestValidations +
+                projections.filter((row) => !row.reused).length,
+            selectionBoundaryPerformanceDerivations: catalog.work.selectionBoundaryPerformanceDerivations +
                 projections.reduce(
-                    (count, row) => count + (row.reused
-                        ? 0
-                        : row.projection.performanceDerivationCount),
-                    0,
+                    (count, row) =>
+                        count + (row.reused
+                            ? 0
+                            : row.projection.performanceDerivationCount),
+                    0
                 ),
-            selectionBoundaryProjectionReuses:
-                catalog.work.selectionBoundaryProjectionReuses +
-                projections.filter(row => row.reused).length,
-        },
+            selectionBoundaryProjectionReuses: catalog.work.selectionBoundaryProjectionReuses +
+                projections.filter((row) => row.reused).length
+        }
     };
 }
 
 function selectionValidation(
     catalog: TuneRunCatalog,
-    option: TuneRunOption,
+    option: TuneRunOption
 ): SelectionValidationLookup {
     let byRun = validations.get(catalog);
     if (!byRun) {
@@ -107,7 +101,9 @@ function selectionValidation(
         validations.set(catalog, byRun);
     }
     const cached = byRun.get(option.distributedRunId);
-    if (cached) return { projection: cached, reused: true };
+    if (cached) {
+        return { projection: cached, reused: true };
+    }
     const issues = distributedRunManifestContractIssues(option.distributedRun);
     let projection: SelectionValidation;
     if (issues.length === 0) {
@@ -118,7 +114,7 @@ function selectionValidation(
         const performance = derivesPerformance
             ? deriveDistributedRunSnapshotPerformance({
                 distributedRun: option.distributedRun,
-                controlRun,
+                controlRun
             })
             : option.performance;
         projection = {
@@ -132,22 +128,23 @@ function selectionValidation(
                     : {
                         controlEvidence: {
                             ...option.controlEvidence,
-                            ...(performance === undefined ? {} : { performance }),
-                        },
-                    }),
+                            ...(performance === undefined ? {} : { performance })
+                        }
+                    })
             },
-            performanceDerivationCount: derivesPerformance ? 1 : 0,
+            performanceDerivationCount: derivesPerformance ? 1 : 0
         };
-    } else {
+    }
+    else {
         projection = {
             kind: 'invalid',
             quarantine: {
                 distributedRunId: option.distributedRunId,
                 controlRunId: option.controlRunId,
                 codes: ['invalid-manifest'],
-                issues,
+                issues
             },
-            performanceDerivationCount: 0,
+            performanceDerivationCount: 0
         };
     }
     byRun.set(option.distributedRunId, projection);
@@ -155,7 +152,7 @@ function selectionValidation(
 }
 
 function quarantineKey(
-    row: Pick<TuneQuarantinedRun, 'distributedRunId' | 'controlRunId'>,
+    row: Pick<TuneQuarantinedRun, 'distributedRunId' | 'controlRunId'>
 ): string {
     return JSON.stringify([row.distributedRunId, row.controlRunId ?? null]);
 }

@@ -1,15 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
-import {
-    DequeueResourceEntryController,
-    ResourceInboxFinalizedByHandlerError,
-    ResilienceDto,
-} from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { DequeueResourceEntryController, ResilienceDto, ResourceInboxFinalizedByHandlerError } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from
-    '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('ResourceInbox attempt release telemetry', () => {
     it.each([[1, 1], [2, 2], [3, 4], [4, 8], [5, 16]])(
@@ -23,15 +18,15 @@ describe('ResourceInbox attempt release telemetry', () => {
                     attempts: attempt,
                     startTs: Temporal.Instant.fromEpochMilliseconds(1_000),
                     endTs: Temporal.Instant.fromEpochMilliseconds(2_000),
-                    nextTs: Temporal.Instant.fromEpochMilliseconds(2_000 + persistedDelayMs),
-                },
+                    nextTs: Temporal.Instant.fromEpochMilliseconds(2_000 + persistedDelayMs)
+                }
             } satisfies ResourceEntry;
             const observations: unknown[] = [];
             const repository = repo({
                 reserveEntries: vi.fn()
                     .mockResolvedValueOnce(new Map([[reserved.key, reserved]]))
                     .mockResolvedValue(new Map()),
-                releaseEntries: async () => new Map([[released.key, released]]),
+                releaseEntries: async () => new Map([[released.key, released]])
             });
 
             await dequeuer(repository, observations).dequeueForCompute(async () => {
@@ -46,9 +41,9 @@ describe('ResourceInbox attempt release telemetry', () => {
                 selectedLane: Reservator.NEW,
                 classification: 'retryable',
                 status: EntityStatus.RETRY,
-                retryDelayMs: persistedDelayMs,
+                retryDelayMs: persistedDelayMs
             })]);
-        },
+        }
     );
 
     it('emits a terminal observation from a handler-finalized AppInbox row', async () => {
@@ -59,14 +54,14 @@ describe('ResourceInbox attempt release telemetry', () => {
             dequeueAudit: {
                 attempts: 1,
                 startTs: Temporal.Instant.fromEpochMilliseconds(1_000),
-                endTs: Temporal.Instant.fromEpochMilliseconds(2_000),
-            },
+                endTs: Temporal.Instant.fromEpochMilliseconds(2_000)
+            }
         } satisfies ResourceEntry;
         const observations: unknown[] = [];
         const repository = repo({
             reserveEntries: vi.fn()
                 .mockResolvedValueOnce(new Map([[reserved.key, reserved]]))
-                .mockResolvedValue(new Map()),
+                .mockResolvedValue(new Map())
         });
 
         await dequeuer(repository, observations).dequeueForCompute(async () => {
@@ -78,7 +73,7 @@ describe('ResourceInbox attempt release telemetry', () => {
             attempt: 1,
             classification: 'accepted',
             status: EntityStatus.COMPLETED,
-            retryDelayMs: 0,
+            retryDelayMs: 0
         })]);
     });
 });
@@ -93,8 +88,8 @@ function dequeuer(repository: unknown, observations: unknown[]) {
         resilience(),
         {
             jitterUnit: () => 0.5,
-            onAttemptReleaseTelemetry: (event: unknown) => observations.push(event),
-        },
+            onAttemptReleaseTelemetry: (event: unknown) => observations.push(event)
+        }
     );
 }
 
@@ -107,10 +102,10 @@ function entry(resourceId: string, status: EntityStatus, attempts: number): Reso
             date: Temporal.PlainTime.from('00:00:00'),
             createdBy: 'test',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T01:00:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T01:00:00Z')
         },
         status,
-        dequeueAudit: { attempts },
+        dequeueAudit: { attempts }
     };
 }
 
@@ -121,7 +116,7 @@ function repo(overrides: Record<string, unknown>) {
         reserveOverdueRetryEntries: async () => new Map(),
         reserveTimeoutEntries: async () => new Map(),
         releaseEntries: async () => new Map(),
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -134,6 +129,6 @@ function resilience(): ResilienceDto {
         1,
         1,
         ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
-        DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+        DEFAULT_RESOURCE_INBOX_RETRY_POLICY
     );
 }

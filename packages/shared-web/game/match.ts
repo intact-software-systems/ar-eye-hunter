@@ -1,4 +1,3 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus,
@@ -8,27 +7,24 @@ import type {
     RallarRtcRoomLaneWaitResult,
     RallarRtcRoomLaneWaitStatus,
     RallarRtcStatus,
-    RallarSubscriptionScope,
+    RallarSubscriptionScope
 } from '@shared-web/browser/rallar.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { deriveRallarGameDiagnostics } from './diagnostics.ts';
-import {
-    createRallarGameEnvelope,
-    createRallarGameSequenceTracker,
-    isRallarGameEnvelope,
-} from './envelopes.ts';
 import {
     DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS,
     electRallarGameHost,
-    scoreRallarGameHostCapability,
+    scoreRallarGameHostCapability
 } from './election.ts';
+import { createRallarGameEnvelope, createRallarGameSequenceTracker, isRallarGameEnvelope } from './envelopes.ts';
 import { resolveRallarGameLaneIds } from './lanes.ts';
 import type {
-    RallarGameEnvelope,
-    RallarGameEnvelopeHandler,
-    RallarGameEnvelopeKind,
     RallarGameDirectorAppointmentEligibility,
     RallarGameDirectorAppointmentPolicy,
     RallarGameEgressState,
+    RallarGameEnvelope,
+    RallarGameEnvelopeHandler,
+    RallarGameEnvelopeKind,
     RallarGameHostAppointResult,
     RallarGameHostCapability,
     RallarGameHostElectionResult,
@@ -44,14 +40,14 @@ import type {
     RallarGameRuntimeRelay,
     RallarGameSendResult,
     RallarGameStatusHandler,
-    RallarGameTypeIds,
+    RallarGameTypeIds
 } from './types.ts';
 
 const DEFAULT_RALLAR_GAME_HEARTBEAT_TTL_MS = 10_000;
 
 export function resolveRallarGameTypeIds(
     topicId: string,
-    typeIds: Partial<RallarGameTypeIds> = {},
+    typeIds: Partial<RallarGameTypeIds> = {}
 ): RallarGameTypeIds {
     return {
         capability: `${topicId}.capability.v1`,
@@ -60,18 +56,12 @@ export function resolveRallarGameTypeIds(
         snapshot: `${topicId}.snapshot.v1`,
         syncRequest: `${topicId}.sync-request.v1`,
         heartbeat: `${topicId}.heartbeat.v1`,
-        ...typeIds,
+        ...typeIds
     };
 }
 
-export function createRallarGameMatch<
-    TInput,
-    TIntent,
-    TSnapshot,
-    TEvent,
-    TPresence = TInput,
->(
-    config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>,
+export function createRallarGameMatch<TInput, TIntent, TSnapshot, TEvent, TPresence = TInput>(
+    config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>
 ): RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     const laneIds = resolveRallarGameLaneIds(config.laneIds);
     const typeIds = resolveRallarGameTypeIds(config.topicId, config.typeIds);
@@ -112,7 +102,7 @@ export function createRallarGameMatch<
                 rtcStatus: safeReadRtcStatus(laneIds.input),
                 wsStatus: safeReadWsStatus(),
                 realtimeHealth: safeReadRealtimeHealth(laneIds),
-                capabilities: [...capabilities.values()],
+                capabilities: [...capabilities.values()]
             }),
         canAppointDirector,
         reportCapability,
@@ -137,7 +127,7 @@ export function createRallarGameMatch<
             return () => {
                 statusHandlers.delete(handler);
             };
-        },
+        }
     };
 
     return handle;
@@ -164,15 +154,15 @@ export function createRallarGameMatch<
             }))
             .add(config.rallar.messages.ws.onMessage<RallarGameEnvelope<unknown>>(
                 { topicId: config.topicId, typeId: typeIds.capability },
-                handleCapabilityMessage,
+                handleCapabilityMessage
             ))
             .add(config.rallar.realtime.onJson<RallarGameEnvelope<TInput | TPresence>>(
                 laneIds.input,
-                handleRealtimeInputOrPresence,
+                handleRealtimeInputOrPresence
             ))
             .add(config.rallar.realtime.onJson<RallarGameEnvelope<TSnapshot>>(
                 laneIds.snapshot,
-                handleRealtimeSnapshot,
+                handleRealtimeSnapshot
             ))
             .add(() => relay?.stop());
 
@@ -200,7 +190,7 @@ export function createRallarGameMatch<
     }
 
     async function reportCapability(
-        capability: Partial<RallarGameHostCapability> = {},
+        capability: Partial<RallarGameHostCapability> = {}
     ): Promise<RallarGameSendResult> {
         if (stopped) {
             return stoppedResult();
@@ -210,7 +200,7 @@ export function createRallarGameMatch<
         if (!localPeerId) {
             return {
                 status: 'failed',
-                reason: 'Cannot report capability without a local session.',
+                reason: 'Cannot report capability without a local session.'
             };
         }
 
@@ -218,7 +208,7 @@ export function createRallarGameMatch<
         if (!room.roomId) {
             return {
                 status: 'failed',
-                reason: 'Cannot report capability without a room.',
+                reason: 'Cannot report capability without a room.'
             };
         }
 
@@ -232,7 +222,7 @@ export function createRallarGameMatch<
                 ? (capability.canHost ?? read.canHost)
                 : false,
             peerId: localPeerId,
-            reportedAtEpochMs,
+            reportedAtEpochMs
         };
         capabilities.set(localPeerId, report);
 
@@ -240,7 +230,7 @@ export function createRallarGameMatch<
             directorEpoch: currentStatus.directorEpoch ?? 0,
             roomId: room.roomId,
             senderId: localPeerId,
-            sentAtEpochMs: reportedAtEpochMs,
+            sentAtEpochMs: reportedAtEpochMs
         });
         const ws = await config.rallar.messages.ws.send({
             topicId: config.topicId,
@@ -250,7 +240,7 @@ export function createRallarGameMatch<
             roomId: room.roomRef ? undefined : room.roomId,
             roomRef: room.roomRef,
             reliability: 'best-effort',
-            ack: 'none',
+            ack: 'none'
         });
         refreshStatus();
 
@@ -258,7 +248,7 @@ export function createRallarGameMatch<
             status: isSuccessfulMessageStatus(ws.status) ? 'sent' : 'failed',
             transport: 'ws',
             ws,
-            reason: isSuccessfulMessageStatus(ws.status) ? undefined : ws.reason,
+            reason: isSuccessfulMessageStatus(ws.status) ? undefined : ws.reason
         };
     }
 
@@ -275,7 +265,7 @@ export function createRallarGameMatch<
                 ...previous,
                 peerId: appointment.localPeerId,
                 reportedAtEpochMs: Date.now(),
-                canHost: false,
+                canHost: false
             });
         }
 
@@ -283,7 +273,7 @@ export function createRallarGameMatch<
             peerIds,
             capabilities: capabilityValues,
             capabilityTtlMs,
-            scoreHost: config.scoreHost ?? scoreRallarGameHostCapability,
+            scoreHost: config.scoreHost ?? scoreRallarGameHostCapability
         });
     }
 
@@ -303,7 +293,7 @@ export function createRallarGameMatch<
             roomState,
             directorStatus,
             localPeerId,
-            localPrincipalId,
+            localPrincipalId
         };
 
         if (config.canAppointDirector) {
@@ -316,7 +306,7 @@ export function createRallarGameMatch<
                 status: 'allowed',
                 policy,
                 localPeerId,
-                localPrincipalId,
+                localPrincipalId
             };
         }
 
@@ -331,7 +321,7 @@ export function createRallarGameMatch<
             lastAppointmentResult = {
                 status: 'no-local-peer',
                 election: result,
-                reason: 'Cannot appoint a director without a local session.',
+                reason: 'Cannot appoint a director without a local session.'
             };
             return lastAppointmentResult;
         }
@@ -344,7 +334,7 @@ export function createRallarGameMatch<
                     ? 'no-local-peer'
                     : 'not-authorized',
                 election: result,
-                reason: appointment.reason,
+                reason: appointment.reason
             };
             refreshStatus();
             return lastAppointmentResult;
@@ -354,7 +344,7 @@ export function createRallarGameMatch<
             lastAppointmentResult = {
                 status: 'not-elected',
                 election: result,
-                reason: 'The local peer is not the elected host.',
+                reason: 'The local peer is not the elected host.'
             };
             return lastAppointmentResult;
         }
@@ -363,34 +353,35 @@ export function createRallarGameMatch<
             const room = readRoomTarget();
             const directorStatus = await config.rallar.director.appoint(
                 room.roomRef ?? room.roomId,
-                { heartbeatTtlMs },
+                { heartbeatTtlMs }
             );
             refreshStatus(directorStatus);
             lastAppointmentResult = {
                 status: 'appointed',
                 election: result,
-                directorStatus,
+                directorStatus
             };
             return lastAppointmentResult;
-        } catch (error) {
+        }
+        catch (error) {
             lastAppointmentResult = {
                 status: 'failed',
                 election: result,
-                reason: error instanceof Error ? error.message : String(error),
+                reason: error instanceof Error ? error.message : String(error)
             };
             return lastAppointmentResult;
         }
     }
 
     async function waitForReadyLanes(
-        options: RallarGameLaneReadyOptions = {},
+        options: RallarGameLaneReadyOptions = {}
     ): Promise<RallarGamePeerReadiness> {
         const selectedLaneIds = options.laneIds ?? [
             laneIds.input,
             laneIds.intent,
             laneIds.snapshot,
             laneIds.metrics,
-            laneIds.replication,
+            laneIds.replication
         ];
         if (stopped) {
             lastPeerReadiness = {
@@ -402,7 +393,7 @@ export function createRallarGameMatch<
                 extraPeerIds: [],
                 observedCount: 0,
                 lanes: [],
-                reason: 'Rallar Game match is stopped.',
+                reason: 'Rallar Game match is stopped.'
             };
             realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
             refreshStatus();
@@ -420,7 +411,7 @@ export function createRallarGameMatch<
                 extraPeerIds: [],
                 observedCount: 0,
                 lanes: [],
-                reason: 'Cannot wait for lanes without a room.',
+                reason: 'Cannot wait for lanes without a room.'
             };
             realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
             refreshStatus();
@@ -437,30 +428,30 @@ export function createRallarGameMatch<
                         connect: options.connect ?? true,
                         timeoutMs: options.timeoutMs,
                         signal: options.signal,
-                        expect: options.expect,
-                    },
+                        expect: options.expect
+                    }
                 )
-            ),
+            )
         );
         const readyPeerIds = uniqueSorted(
             lanes.flatMap((lane) =>
                 lane.readyPeerIds.length > 0
                     ? lane.readyPeerIds
                     : lane.ready.map((entry) => entry.peerId)
-            ),
+            )
         );
         const notReadyPeerIds = uniqueSorted(
             lanes.flatMap((lane) =>
                 lane.notReadyPeerIds.length > 0
                     ? lane.notReadyPeerIds
                     : lane.notReady.map((entry) => entry.peerId)
-            ),
+            )
         );
         const missingPeerIds = uniqueSorted(
-            lanes.flatMap((lane) => lane.missingPeerIds),
+            lanes.flatMap((lane) => lane.missingPeerIds)
         );
         const extraPeerIds = uniqueSorted(
-            lanes.flatMap((lane) => lane.extraPeerIds),
+            lanes.flatMap((lane) => lane.extraPeerIds)
         );
         const expectedCounts = lanes
             .map((lane) => lane.expectedCount)
@@ -478,7 +469,7 @@ export function createRallarGameMatch<
             expectedCount: expectedCounts.length > 0
                 ? Math.max(...expectedCounts)
                 : undefined,
-            lanes,
+            lanes
         };
         realtimeEgress = toRealtimeEgressState(lastPeerReadiness.status);
         refreshStatus();
@@ -487,7 +478,7 @@ export function createRallarGameMatch<
 
     async function sendPresence(
         presence: TPresence,
-        options: RallarGamePresenceSendOptions = {},
+        options: RallarGamePresenceSendOptions = {}
     ): Promise<RallarGameSendResult> {
         if (stopped) {
             return stoppedResult();
@@ -498,12 +489,12 @@ export function createRallarGameMatch<
             return {
                 status: 'not-ready',
                 transport: 'realtime',
-                reason: 'Cannot send presence without a room.',
+                reason: 'Cannot send presence without a room.'
             };
         }
 
         const envelope = createEnvelope('presence', presence, {
-            directorEpoch: currentStatus.directorEpoch ?? 0,
+            directorEpoch: currentStatus.directorEpoch ?? 0
         });
         const laneId = options.laneId ?? laneIds.input;
         const key = options.key ?? `presence:${envelope.senderId}`;
@@ -513,10 +504,10 @@ export function createRallarGameMatch<
             laneId,
             roomId: room.roomRef ? undefined : room.roomId,
             roomRef: room.roomRef,
-            openTimeoutMs,
+            openTimeoutMs
         }).send(envelope, {
             key,
-            maxAgeMs,
+            maxAgeMs
         });
 
         const roomResult = toRoomRealtimeSendResult(realtime);
@@ -531,7 +522,7 @@ export function createRallarGameMatch<
             ...realtime.desiredPeerIds,
             ...config.rallar.rooms.state().members
                 .filter((member) => member.isOnline)
-                .flatMap((member) => member.sessionIds),
+                .flatMap((member) => member.sessionIds)
         ]);
         if (roomScopedPeerIds.length === 0) {
             return roomResult;
@@ -545,7 +536,7 @@ export function createRallarGameMatch<
         const rtcReadyPeerIds = safeReadRtcStatus(laneId)?.readyPeerIds ?? [];
         const readyPeerIds = uniqueSorted([
             ...readinessReadyPeerIds,
-            ...rtcReadyPeerIds,
+            ...rtcReadyPeerIds
         ])
             .filter((peerId) => peerId !== localPeerId)
             .filter((peerId) => roomScopedPeerIdSet.has(peerId));
@@ -561,7 +552,7 @@ export function createRallarGameMatch<
             data: envelope,
             key,
             maxAgeMs,
-            openTimeoutMs,
+            openTimeoutMs
         });
         const fallbackResult = toRealtimeSendResult(fallbackRealtime);
         if (
@@ -585,7 +576,7 @@ export function createRallarGameMatch<
         }
 
         const envelope = createEnvelope('input', input, {
-            directorEpoch: director.appointment.epoch,
+            directorEpoch: director.appointment.epoch
         });
         if (director.isDirector) {
             await routeEnvelope(envelope, 'input', config.onInput);
@@ -597,7 +588,7 @@ export function createRallarGameMatch<
             peerIds: [director.appointment.sessionId],
             data: envelope,
             key: `input:${envelope.senderId}`,
-            maxAgeMs: 250,
+            maxAgeMs: 250
         });
 
         return toRealtimeSendResult(realtime);
@@ -614,7 +605,7 @@ export function createRallarGameMatch<
         }
 
         const envelope = createEnvelope('intent', intent, {
-            directorEpoch: director.appointment.epoch,
+            directorEpoch: director.appointment.epoch
         });
         if (director.isDirector) {
             await routeEnvelope(envelope, 'intent', config.onIntent);
@@ -627,7 +618,7 @@ export function createRallarGameMatch<
 
     async function publishSnapshot(
         snapshot: TSnapshot,
-        options: { reliable?: boolean } = {},
+        options: { reliable?: boolean; } = {}
     ): Promise<RallarGameSendResult> {
         if (stopped) {
             return stoppedResult();
@@ -641,12 +632,12 @@ export function createRallarGameMatch<
         if (!director.isDirector) {
             return {
                 status: 'not-director',
-                reason: 'Only the fresh local director can publish snapshots.',
+                reason: 'Only the fresh local director can publish snapshots.'
             };
         }
 
         const envelope = createEnvelope('snapshot', snapshot, {
-            directorEpoch: director.appointment.epoch,
+            directorEpoch: director.appointment.epoch
         });
         if (options.reliable) {
             return toRelaySendResult(await ensureRelay().sendSnapshot(envelope));
@@ -656,10 +647,10 @@ export function createRallarGameMatch<
         const realtime = await config.rallar.realtime.room({
             laneId: laneIds.snapshot,
             roomId: room.roomRef ? undefined : room.roomId,
-            roomRef: room.roomRef,
+            roomRef: room.roomRef
         }).send(envelope, {
             key: `snapshot:${envelope.senderId}`,
-            maxAgeMs: 500,
+            maxAgeMs: 500
         });
         return toRoomRealtimeSendResult(realtime);
     }
@@ -677,18 +668,18 @@ export function createRallarGameMatch<
         if (!director.isDirector) {
             return {
                 status: 'not-director',
-                reason: 'Only the fresh local director can publish events.',
+                reason: 'Only the fresh local director can publish events.'
             };
         }
 
         const envelope = createEnvelope('event', event, {
-            directorEpoch: director.appointment.epoch,
+            directorEpoch: director.appointment.epoch
         });
         return toRelaySendResult(await ensureRelay().sendOutput(envelope));
     }
 
     async function requestSync(
-        payload: unknown = {},
+        payload: unknown = {}
     ): Promise<RallarGameSendResult> {
         if (stopped) {
             return stoppedResult();
@@ -700,11 +691,11 @@ export function createRallarGameMatch<
         }
 
         const envelope = createEnvelope('sync-request', payload, {
-            directorEpoch: director.appointment.epoch,
+            directorEpoch: director.appointment.epoch
         });
         recovery = {
             ...recovery,
-            lastSyncRequestedAtEpochMs: envelope.sentAtEpochMs,
+            lastSyncRequestedAtEpochMs: envelope.sentAtEpochMs
         };
         refreshStatus();
 
@@ -748,7 +739,7 @@ export function createRallarGameMatch<
                         return undefined;
                     }
                     return createEnvelope('snapshot', snapshot, {
-                        directorEpoch: director.appointment.epoch,
+                        directorEpoch: director.appointment.epoch
                     });
                 }
                 : undefined,
@@ -756,7 +747,7 @@ export function createRallarGameMatch<
                 await handleRelayEnvelope(
                     message,
                     'intent',
-                    config.onIntent,
+                    config.onIntent
                 );
             },
             onOutput: async (message) => {
@@ -764,7 +755,7 @@ export function createRallarGameMatch<
                     message,
                     'event',
                     config.onEvent,
-                    { requireFreshDirectorSender: true },
+                    { requireFreshDirectorSender: true }
                 );
             },
             onSnapshot: async (message) => {
@@ -772,18 +763,16 @@ export function createRallarGameMatch<
                     message,
                     'snapshot',
                     config.onSnapshot,
-                    { requireFreshDirectorSender: true },
+                    { requireFreshDirectorSender: true }
                 );
             },
             onSyncRequest: async (message) => {
                 await handleRelayEnvelope(
-                    message as RallarDirectorRelayMessage<
-                        RallarGameEnvelope<unknown>
-                    >,
+                    message as RallarDirectorRelayMessage<RallarGameEnvelope<unknown>>,
                     'sync-request',
-                    config.onSyncRequest,
+                    config.onSyncRequest
                 );
-            },
+            }
         });
     }
 
@@ -791,7 +780,7 @@ export function createRallarGameMatch<
         message: {
             senderId: string;
             payload: RallarGameEnvelope<unknown>;
-        },
+        }
     ): Promise<void> {
         if (stopped || !isRallarGameEnvelope(message.payload, config.protocol)) {
             return;
@@ -799,7 +788,7 @@ export function createRallarGameMatch<
 
         const accepted = acceptEnvelope(message.payload, 'capability', {
             senderId: message.senderId,
-            checkDirectorEpoch: false,
+            checkDirectorEpoch: false
         });
         if (!accepted) {
             return;
@@ -818,7 +807,7 @@ export function createRallarGameMatch<
         message: {
             peerId: string;
             data: RallarGameEnvelope<TInput | TPresence>;
-        },
+        }
     ): Promise<void> {
         const envelope = message.data;
         if (!isRallarGameEnvelope(envelope, config.protocol)) {
@@ -828,7 +817,7 @@ export function createRallarGameMatch<
         if (envelope.kind === 'presence') {
             await handleRealtimePresence(
                 message.peerId,
-                envelope as RallarGameEnvelope<TPresence>,
+                envelope as RallarGameEnvelope<TPresence>
             );
             return;
         }
@@ -854,13 +843,13 @@ export function createRallarGameMatch<
 
     async function handleRealtimePresence(
         peerId: string,
-        envelope: RallarGameEnvelope<TPresence>,
+        envelope: RallarGameEnvelope<TPresence>
     ): Promise<void> {
         if (
             stopped ||
             !acceptEnvelope(envelope, 'presence', {
                 senderId: peerId,
-                checkDirectorEpoch: false,
+                checkDirectorEpoch: false
             })
         ) {
             return;
@@ -876,7 +865,7 @@ export function createRallarGameMatch<
         message: {
             peerId: string;
             data: RallarGameEnvelope<TSnapshot>;
-        },
+        }
     ): Promise<void> {
         if (stopped || !currentStatus.directorIsFresh) {
             return;
@@ -892,7 +881,7 @@ export function createRallarGameMatch<
             !isRallarGameEnvelope(envelope, config.protocol) ||
             !acceptEnvelope(envelope, 'snapshot', {
                 senderId: directorPeerId,
-                requireFreshDirectorSender: true,
+                requireFreshDirectorSender: true
             })
         ) {
             return;
@@ -900,7 +889,7 @@ export function createRallarGameMatch<
 
         recovery = {
             status: recovery.status === 'recovering' ? 'synced' : recovery.status,
-            lastSnapshotAtEpochMs: envelope.sentAtEpochMs,
+            lastSnapshotAtEpochMs: envelope.sentAtEpochMs
         };
         refreshStatus();
         await config.onSnapshot?.(envelope);
@@ -912,7 +901,7 @@ export function createRallarGameMatch<
         handler: RallarGameEnvelopeHandler<T> | undefined,
         options: Readonly<{
             requireFreshDirectorSender?: boolean;
-        }> = {},
+        }> = {}
     ): Promise<void> {
         if (stopped || !isRallarGameEnvelope(message.data, config.protocol)) {
             return;
@@ -921,7 +910,7 @@ export function createRallarGameMatch<
         if (
             !acceptEnvelope(message.data, kind, {
                 senderId: message.senderId,
-                requireFreshDirectorSender: options.requireFreshDirectorSender,
+                requireFreshDirectorSender: options.requireFreshDirectorSender
             })
         ) {
             return;
@@ -930,7 +919,7 @@ export function createRallarGameMatch<
         if (kind === 'snapshot') {
             recovery = {
                 status: recovery.status === 'recovering' ? 'synced' : recovery.status,
-                lastSnapshotAtEpochMs: message.data.sentAtEpochMs,
+                lastSnapshotAtEpochMs: message.data.sentAtEpochMs
             };
             refreshStatus();
         }
@@ -945,7 +934,7 @@ export function createRallarGameMatch<
             senderId?: string;
             checkDirectorEpoch?: boolean;
             requireFreshDirectorSender?: boolean;
-        }> = {},
+        }> = {}
     ): boolean {
         const room = readRoomTarget();
         const directorEpoch = options.checkDirectorEpoch === false
@@ -960,7 +949,7 @@ export function createRallarGameMatch<
             matchId: config.matchId,
             senderId,
             minDirectorEpoch: directorEpoch,
-            kinds: [kind],
+            kinds: [kind]
         });
 
         return accepted.accepted;
@@ -969,12 +958,12 @@ export function createRallarGameMatch<
     async function routeEnvelope<T>(
         envelope: RallarGameEnvelope<T>,
         kind: RallarGameEnvelopeKind,
-        handler: RallarGameEnvelopeHandler<T> | undefined,
+        handler: RallarGameEnvelopeHandler<T> | undefined
     ): Promise<void> {
         if (
             !stopped &&
             acceptEnvelope(envelope, kind, {
-                senderId: envelope.senderId,
+                senderId: envelope.senderId
             })
         ) {
             await handler?.(envelope);
@@ -982,7 +971,7 @@ export function createRallarGameMatch<
     }
 
     function refreshStatus(
-        directorStatus: RallarDirectorStatus = readDirectorStatus(),
+        directorStatus: RallarDirectorStatus = readDirectorStatus()
     ): void {
         if (stopped) {
             return;
@@ -1001,12 +990,13 @@ export function createRallarGameMatch<
                     ? recovery.sinceEpochMs
                     : Date.now(),
                 lastSyncRequestedAtEpochMs: recovery.lastSyncRequestedAtEpochMs,
-                lastSnapshotAtEpochMs: recovery.lastSnapshotAtEpochMs,
+                lastSnapshotAtEpochMs: recovery.lastSnapshotAtEpochMs
             };
-        } else if (directorStatus.isFresh && recovery.status === 'recovering') {
+        }
+        else if (directorStatus.isFresh && recovery.status === 'recovering') {
             recovery = {
                 status: 'idle',
-                lastSnapshotAtEpochMs: recovery.lastSnapshotAtEpochMs,
+                lastSnapshotAtEpochMs: recovery.lastSnapshotAtEpochMs
             };
         }
 
@@ -1025,11 +1015,12 @@ export function createRallarGameMatch<
                 room.roomRef ?? room.roomId,
                 {
                     expect: { min: 1 },
-                    timeoutMs: 0,
-                },
+                    timeoutMs: 0
+                }
             );
             reliableEgress = toReliableEgressState(presence.status);
-        } catch {
+        }
+        catch {
             reliableEgress = 'failed';
         }
     }
@@ -1037,7 +1028,7 @@ export function createRallarGameMatch<
     function setStatus(
         phase: RallarGameMatchPhase,
         directorStatus: RallarDirectorStatus = readDirectorStatus(),
-        reason?: string,
+        reason?: string
     ): void {
         currentStatus = createStatus(phase, directorStatus, reason);
         emitStatus(currentStatus);
@@ -1046,7 +1037,7 @@ export function createRallarGameMatch<
     function createStatus(
         phase: RallarGameMatchPhase,
         directorStatus: RallarDirectorStatus = readDirectorStatus(),
-        reason?: string,
+        reason?: string
     ): RallarGameMatchStatus {
         const room = readRoomTarget(directorStatus);
         return {
@@ -1062,18 +1053,18 @@ export function createRallarGameMatch<
             directorAuthority: toDirectorAuthority(directorStatus),
             egress: {
                 reliable: reliableEgress,
-                realtime: realtimeEgress,
+                realtime: realtimeEgress
             },
             recovery,
             started,
             stopped,
             updatedAtEpochMs: Date.now(),
-            reason,
+            reason
         };
     }
 
     function toDirectorAuthority(
-        directorStatus: RallarDirectorStatus,
+        directorStatus: RallarDirectorStatus
     ): RallarGameMatchStatus['directorAuthority'] {
         const localPeerId = readLocalPeerId();
         if (
@@ -1090,9 +1081,11 @@ export function createRallarGameMatch<
         return 'none';
     }
 
-    function readFreshDirectorStatus(): (RallarDirectorStatus & {
-        appointment: NonNullable<RallarDirectorStatus['appointment']>;
-    }) | undefined {
+    function readFreshDirectorStatus():
+        | (RallarDirectorStatus & {
+            appointment: NonNullable<RallarDirectorStatus['appointment']>;
+        })
+        | undefined {
         const status = readDirectorStatus();
         if (!status.isFresh || !status.appointment) {
             refreshStatus(status);
@@ -1110,7 +1103,7 @@ export function createRallarGameMatch<
     }
 
     function readRoomTarget(
-        directorStatus?: RallarDirectorStatus,
+        directorStatus?: RallarDirectorStatus
     ): Readonly<{
         roomId?: string;
         roomRef?: GroupRef;
@@ -1138,7 +1131,7 @@ export function createRallarGameMatch<
             roomId?: string;
             senderId?: string;
             sentAtEpochMs?: number;
-        }>,
+        }>
     ): RallarGameEnvelope<T> {
         const room = readRoomTarget();
         const roomId = options.roomId ?? room.roomId;
@@ -1148,7 +1141,7 @@ export function createRallarGameMatch<
         }
         if (!senderId) {
             throw new Error(
-                'Cannot create Rallar Game envelope without a local session.',
+                'Cannot create Rallar Game envelope without a local session.'
             );
         }
 
@@ -1161,7 +1154,7 @@ export function createRallarGameMatch<
             seq: nextSeq++,
             directorEpoch: options.directorEpoch,
             sentAtEpochMs: options.sentAtEpochMs,
-            payload,
+            payload
         });
     }
 
@@ -1181,7 +1174,8 @@ export function createRallarGameMatch<
     function safeReadRtcStatus(laneId: string): RallarRtcStatus | undefined {
         try {
             return config.rallar.rtc.status({ laneId });
-        } catch {
+        }
+        catch {
             return undefined;
         }
     }
@@ -1189,7 +1183,8 @@ export function createRallarGameMatch<
     function safeReadWsStatus() {
         try {
             return config.rallar.ws.status();
-        } catch {
+        }
+        catch {
             return undefined;
         }
     }
@@ -1202,10 +1197,11 @@ export function createRallarGameMatch<
                     lanes.intent,
                     lanes.snapshot,
                     lanes.metrics,
-                    lanes.replication,
-                ],
+                    lanes.replication
+                ]
             });
-        } catch {
+        }
+        catch {
             return [];
         }
     }
@@ -1218,14 +1214,14 @@ export function createRallarGameMatch<
 }
 
 function resolveDefaultPeerIds(
-    roomState: { members: readonly { isOnline: boolean; sessionIds: readonly string[] }[] },
-    localPeerId: string | undefined,
+    roomState: { members: readonly { isOnline: boolean; sessionIds: readonly string[]; }[]; },
+    localPeerId: string | undefined
 ): readonly string[] {
     return uniqueSorted([
         ...roomState.members
             .filter((member) => member.isOnline)
             .flatMap((member) => member.sessionIds),
-        ...(localPeerId ? [localPeerId] : []),
+        ...(localPeerId ? [localPeerId] : [])
     ]);
 }
 
@@ -1255,7 +1251,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
         directorStatus: RallarDirectorStatus;
         localPeerId?: string;
         localPrincipalId?: string;
-    }>,
+    }>
 ): RallarGameDirectorAppointmentEligibility {
     if (!context.localPeerId || !context.localPrincipalId) {
         return {
@@ -1264,15 +1260,12 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             policy: context.policy,
             reason: 'Cannot appoint a director without a local session.',
             localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
+            localPrincipalId: context.localPrincipalId
         };
     }
 
-    const member = context.roomState.members.find((entry) =>
-        entry.principalId === context.localPrincipalId
-    ) ?? context.roomState.currentRoom?.members.find((entry) =>
-        entry.principalId === context.localPrincipalId
-    );
+    const member = context.roomState.members.find((entry) => entry.principalId === context.localPrincipalId) ??
+        context.roomState.currentRoom?.members.find((entry) => entry.principalId === context.localPrincipalId);
 
     if (!member) {
         return {
@@ -1281,14 +1274,14 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             policy: context.policy,
             reason: 'Cannot confirm local room membership yet.',
             localPeerId: context.localPeerId,
-            localPrincipalId: context.localPrincipalId,
+            localPrincipalId: context.localPrincipalId
         };
     }
 
     const localSessionActive = hasActiveLocalRoomSession(
         context.roomState,
         context.localPrincipalId,
-        context.localPeerId,
+        context.localPeerId
     );
     if (member.status !== 'active' || !localSessionActive) {
         return {
@@ -1299,7 +1292,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             localPeerId: context.localPeerId,
             localPrincipalId: context.localPrincipalId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -1311,7 +1304,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             localPeerId: context.localPeerId,
             localPrincipalId: context.localPrincipalId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -1324,7 +1317,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             localPeerId: context.localPeerId,
             localPrincipalId: context.localPrincipalId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -1337,7 +1330,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             localPeerId: context.localPeerId,
             localPrincipalId: context.localPrincipalId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -1350,7 +1343,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
             localPeerId: context.localPeerId,
             localPrincipalId: context.localPrincipalId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -1361,7 +1354,7 @@ function resolveMetadataOwnerAdminAppointmentEligibility(
         localPeerId: context.localPeerId,
         localPrincipalId: context.localPrincipalId,
         localRole: member.role,
-        localMemberStatus: member.status,
+        localMemberStatus: member.status
     };
 }
 
@@ -1379,7 +1372,7 @@ function hasActiveLocalRoomSession(
         };
     }>,
     principalId: string,
-    sessionId: string,
+    sessionId: string
 ): boolean {
     return roomState.members.some((member) =>
         member.principalId === principalId &&
@@ -1411,31 +1404,29 @@ function hasOnlineOwnerOrAdmin(
                 sessionId: string;
             }[];
         };
-    }>,
+    }>
 ): boolean {
     const ownerAdminIds = new Set(
         [
             ...roomState.members,
-            ...(roomState.currentRoom?.members ?? []),
+            ...(roomState.currentRoom?.members ?? [])
         ]
             .filter((member) =>
                 member.status === 'active' &&
                 (member.role === 'owner' || member.role === 'admin')
             )
-            .map((member) => member.principalId),
+            .map((member) => member.principalId)
     );
 
     return roomState.members.some((member) =>
         ownerAdminIds.has(member.principalId) &&
         (member.isOnline === true || (member.sessionIds?.length ?? 0) > 0)
     ) ||
-        (roomState.currentRoom?.activeSessions ?? []).some((session) =>
-            ownerAdminIds.has(session.principalId)
-        );
+        (roomState.currentRoom?.activeSessions ?? []).some((session) => ownerAdminIds.has(session.principalId));
 }
 
 function toHostCapability(
-    envelope: RallarGameEnvelope<unknown>,
+    envelope: RallarGameEnvelope<unknown>
 ): RallarGameHostCapability | undefined {
     if (
         typeof envelope.payload !== 'object' ||
@@ -1451,12 +1442,12 @@ function toHostCapability(
         peerId: envelope.senderId,
         reportedAtEpochMs: typeof payload.reportedAtEpochMs === 'number'
             ? payload.reportedAtEpochMs
-            : envelope.sentAtEpochMs,
+            : envelope.sentAtEpochMs
     };
 }
 
 function combineLaneStatuses(
-    lanes: readonly RallarRtcRoomLaneWaitResult[],
+    lanes: readonly RallarRtcRoomLaneWaitResult[]
 ): RallarGamePeerReadiness['status'] {
     if (lanes.length === 0) {
         return 'empty';
@@ -1526,7 +1517,7 @@ function toReliableEgressState(status: string): RallarGameEgressState {
 }
 
 function toRealtimeEgressState(
-    status: RallarGamePeerReadiness['status'],
+    status: RallarGamePeerReadiness['status']
 ): RallarGameEgressState {
     switch (status) {
         case 'open':
@@ -1552,7 +1543,7 @@ function toRelaySendResult(
     relay: {
         status: 'sent' | 'partial' | 'no-director' | 'not-director' | 'stale-director' | 'failed';
         reason?: string;
-    },
+    }
 ): RallarGameSendResult {
     if (relay.status === 'sent') {
         return { status: 'sent', transport: 'director-relay', relay };
@@ -1563,7 +1554,7 @@ function toRelaySendResult(
             status: 'partial',
             transport: 'director-relay',
             relay,
-            reason: relay.reason,
+            reason: relay.reason
         };
     }
 
@@ -1572,7 +1563,7 @@ function toRelaySendResult(
             status: 'no-director',
             transport: 'director-relay',
             relay,
-            reason: relay.reason,
+            reason: relay.reason
         };
     }
 
@@ -1581,7 +1572,7 @@ function toRelaySendResult(
             status: 'not-director',
             transport: 'director-relay',
             relay,
-            reason: relay.reason,
+            reason: relay.reason
         };
     }
 
@@ -1589,19 +1580,19 @@ function toRelaySendResult(
         status: 'failed',
         transport: 'director-relay',
         relay,
-        reason: relay.reason,
+        reason: relay.reason
     };
 }
 
 function toRealtimeSendResult(
-    realtime: readonly RallarRealtimeSendResult[],
+    realtime: readonly RallarRealtimeSendResult[]
 ): RallarGameSendResult {
     if (realtime.length === 0) {
         return {
             status: 'not-ready',
             transport: 'realtime',
             realtime,
-            reason: 'No realtime peers were targeted.',
+            reason: 'No realtime peers were targeted.'
         };
     }
 
@@ -1618,7 +1609,7 @@ function toRealtimeSendResult(
             status: 'partial',
             transport: 'realtime',
             realtime,
-            reason: 'Some realtime sends did not succeed.',
+            reason: 'Some realtime sends did not succeed.'
         };
     }
 
@@ -1626,18 +1617,18 @@ function toRealtimeSendResult(
         status: 'not-ready',
         transport: 'realtime',
         realtime,
-        reason: 'Realtime lane is not ready.',
+        reason: 'Realtime lane is not ready.'
     };
 }
 
 function toRoomRealtimeSendResult(
-    realtime: RallarRoomRealtimeSendResult,
+    realtime: RallarRoomRealtimeSendResult
 ): RallarGameSendResult {
     if (realtime.status === 'sent') {
         return {
             status: 'sent',
             transport: 'realtime',
-            realtime: realtime.results,
+            realtime: realtime.results
         };
     }
 
@@ -1646,7 +1637,7 @@ function toRoomRealtimeSendResult(
             status: 'partial',
             transport: 'realtime',
             realtime: realtime.results,
-            reason: realtime.reason ?? 'Some room realtime sends did not succeed.',
+            reason: realtime.reason ?? 'Some room realtime sends did not succeed.'
         };
     }
 
@@ -1658,7 +1649,7 @@ function toRoomRealtimeSendResult(
             status: 'not-ready',
             transport: 'realtime',
             realtime: realtime.results,
-            reason: realtime.reason ?? 'Room realtime transport is not ready.',
+            reason: realtime.reason ?? 'Room realtime transport is not ready.'
         };
     }
 
@@ -1666,14 +1657,14 @@ function toRoomRealtimeSendResult(
         status: 'failed',
         transport: 'realtime',
         realtime: realtime.results,
-        reason: realtime.reason ?? 'Room realtime send failed.',
+        reason: realtime.reason ?? 'Room realtime send failed.'
     };
 }
 
 function noDirectorResult(): RallarGameSendResult {
     return {
         status: 'no-director',
-        reason: 'No fresh director is available.',
+        reason: 'No fresh director is available.'
     };
 }
 
@@ -1690,11 +1681,12 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
 
 async function notifyStatusHandler(
     handler: RallarGameStatusHandler,
-    status: RallarGameMatchStatus,
+    status: RallarGameMatchStatus
 ): Promise<void> {
     try {
         await handler(status);
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Error notifying Rallar Game status handler', error);
     }
 }

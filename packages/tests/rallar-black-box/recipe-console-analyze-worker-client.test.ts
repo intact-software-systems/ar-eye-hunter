@@ -1,31 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-    type AnalyzeWorkerResponse,
-} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
-import {
-    createAnalyzeWorkerClient,
-} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-client.ts';
-import {
-    createAnalyzeExportBlobRetention,
-} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-export-blob.ts';
-import {
-    createAnalyzeWorkerFactory,
-    type AnalyzeWorkerPort,
-} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-factory.ts';
-import type {
-    AnalyzeEvidenceWindowProjection,
-} from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
+import { createAnalyzeControlIdentityDigest } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-control-identity-digest.ts';
+import { createAnalyzeExportBlobRetention } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-export-blob.ts';
+import { createAnalyzeWorkerClient } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-client.ts';
+import { type AnalyzeWorkerResponse } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import { createAnalyzeWorkerFactory, type AnalyzeWorkerPort } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-factory.ts';
 import {
     ANALYZE_WORKER_PERFORMANCE_NAMES,
     recordAnalyzeWorkerPerformance,
-    type AnalyzeWorkerPerformancePort,
+    type AnalyzeWorkerPerformancePort
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-performance.ts';
-import { createAnalyzeControlIdentityDigest } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-control-identity-digest.ts';
+import type { AnalyzeEvidenceWindowProjection } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import {
     ANALYZE_WORKER_MAX_LABEL_BYTES,
-    ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES,
+    ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-request-boundary.ts';
 
 describe('Recipe Console Analyze worker client boundaries', () => {
@@ -35,25 +22,26 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const order: string[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => {
+            requestAnimationFrame: (callback) => {
                 frames.push(callback);
                 return frames.length;
             },
             callbacks: {
                 onAccepted: () => order.push('accepted'),
                 onPendingPaint: () => order.push('pending-painted'),
-                onComplete: () => order.push('complete'),
-            },
+                onComplete: () => order.push('complete')
+            }
         });
         const bytes = new TextEncoder().encode('{}').buffer as ArrayBuffer;
 
         const generation = client.offer({
-            source: 'local-files', label: 'artifact',
-            files: [{ name: 'manifest.json', bytes }],
+            source: 'local-files',
+            label: 'artifact',
+            files: [{ name: 'manifest.json', bytes }]
         });
         expect(worker.posts[0]).toEqual({
             message: expect.objectContaining({ type: 'offer', operationGeneration: generation }),
-            transfer: [bytes],
+            transfer: [bytes]
         });
         worker.emitMessage({ type: 'accepted', operationGeneration: generation });
         expect(order).toEqual(['accepted']);
@@ -65,7 +53,8 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         frames.shift()?.(16);
         expect(order).toEqual(['accepted', 'pending-painted']);
         expect(worker.posts.at(-1)?.message).toEqual({
-            type: 'start', operationGeneration: generation,
+            type: 'start',
+            operationGeneration: generation
         });
 
         worker.emitMessage(completeResponse(generation, 11));
@@ -79,20 +68,24 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const frames: FrameRequestCallback[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length)
         });
         const controlEnvelope = new TextEncoder().encode('{"files":{}}').buffer as ArrayBuffer;
 
         client.offer({
-            source: 'control', label: 'raw control', files: [], controlEnvelope,
+            source: 'control',
+            label: 'raw control',
+            files: [],
+            controlEnvelope,
             expectedControlIdentity: await createAnalyzeControlIdentityDigest({
-                distributedRunId: 'dist',
-            }),
+                distributedRunId: 'dist'
+            })
         });
 
         expect(worker.posts[0]?.transfer).toEqual([controlEnvelope]);
         expect(worker.posts[0]?.message).toMatchObject({
-            type: 'offer', artifact: { files: [], controlEnvelope },
+            type: 'offer',
+            artifact: { files: [], controlEnvelope }
         });
         client.dispose();
     });
@@ -105,15 +98,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const unavailable: string[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => workers.shift()!,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
             callbacks: {
-                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`),
-            },
+                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`)
+            }
         });
 
         const first = client.offer({ source: 'local-files', label: 'first', files: [] });
         acceptedWorker.emitMessage({ type: 'accepted', operationGeneration: first });
-        frames.shift()?.(0); frames.shift()?.(16);
+        frames.shift()?.(0);
+        frames.shift()?.(16);
         acceptedWorker.emitMessage(completeResponse(first, 1));
         const acceptedExport = client.currentExport();
 
@@ -132,15 +126,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const unavailable: string[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
             callbacks: {
-                onSearchComplete: response => searches.push(response.requestId),
-                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`),
-            },
+                onSearchComplete: (response) => searches.push(response.requestId),
+                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`)
+            }
         });
         const operation = client.offer({ source: 'local-files', label: 'artifact', files: [] });
         worker.emitMessage({ type: 'accepted', operationGeneration: operation });
-        frames.shift()?.(0); frames.shift()?.(16);
+        frames.shift()?.(0);
+        frames.shift()?.(16);
         worker.emitMessage(completeResponse(operation, 4));
 
         const first = client.search({ query: 'first' });
@@ -167,22 +162,23 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const failures: string[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
             callbacks: {
-                onWindowComplete: response => windows.push(response.requestId),
-                onSelectionComplete: response => selections.push(response.requestId),
-                onTuneComplete: response => tunes.push(response.requestId),
-                onFailure: (error, _operationGeneration, request) => failures.push(
-                    `${error.stage}:${request?.kind}:${request?.requestId}`,
-                ),
-            },
+                onWindowComplete: (response) => windows.push(response.requestId),
+                onSelectionComplete: (response) => selections.push(response.requestId),
+                onTuneComplete: (response) => tunes.push(response.requestId),
+                onFailure: (error, _operationGeneration, request) =>
+                    failures.push(
+                        `${error.stage}:${request?.kind}:${request?.requestId}`
+                    )
+            }
         });
         accept(client, worker, frames, 5);
 
         const searchRequest = client.search({ query: 'bounded' });
         worker.emitMessage(searchResponse(searchRequest!, 5, 1, {
             ...emptyWindow(),
-            nextCursor: 'cursor-a',
+            nextCursor: 'cursor-a'
         }));
         const firstWindow = client.window({ query: { query: 'bounded' }, cursor: 'cursor-a' });
         const secondWindow = client.window({ query: { query: 'bounded' }, cursor: 'cursor-b' });
@@ -202,15 +198,17 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const staleSearch = client.search({ query: 'stale-error' });
         const currentSearch = client.search({ query: 'current' });
         worker.emitMessage({
-            type: 'failed', requestId: staleSearch,
-            error: { code: 'invalid-request', stage: 'search', recoverable: true },
+            type: 'failed',
+            requestId: staleSearch,
+            error: { code: 'invalid-request', stage: 'search', recoverable: true }
         });
         worker.emitMessage(searchResponse(currentSearch!, 5, 3));
 
         const failedCurrent = client.search({ query: 'current-error' });
         worker.emitMessage({
-            type: 'failed', requestId: failedCurrent,
-            error: { code: 'invalid-request', stage: 'search', recoverable: true },
+            type: 'failed',
+            requestId: failedCurrent,
+            error: { code: 'invalid-request', stage: 'search', recoverable: true }
         });
 
         expect(windows).toEqual([secondWindow]);
@@ -230,27 +228,31 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         let rejectGeneration = -1;
         const client = createAnalyzeWorkerClient({
             createWorker: () => workers.shift()!,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
-            validateComplete: response => response.operationGeneration !== rejectGeneration,
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
+            validateComplete: (response) => response.operationGeneration !== rejectGeneration,
             callbacks: {
-                onComplete: response => completed.push(response.operationGeneration),
-                onFailure: error => failures.push(error.code),
-            },
+                onComplete: (response) => completed.push(response.operationGeneration),
+                onFailure: (error) => failures.push(error.code)
+            }
         });
         const acceptedGeneration = accept(client, acceptedWorker, frames, 7);
         const acceptedExport = client.currentExport();
 
         rejectGeneration = client.offer({
-            source: 'control', label: 'wrong identity', files: [],
+            source: 'control',
+            label: 'wrong identity',
+            files: [],
             controlEnvelope: new TextEncoder().encode('{}').buffer as ArrayBuffer,
             expectedControlIdentity: await createAnalyzeControlIdentityDigest({
-                distributedRunId: 'wrong',
-            }),
+                distributedRunId: 'wrong'
+            })
         });
         rejectedWorker.emitMessage({
-            type: 'accepted', operationGeneration: rejectGeneration,
+            type: 'accepted',
+            operationGeneration: rejectGeneration
         });
-        frames.shift()?.(32); frames.shift()?.(48);
+        frames.shift()?.(32);
+        frames.shift()?.(48);
         rejectedWorker.emitMessage(completeResponse(rejectGeneration, rejectGeneration));
 
         expect(completed).toEqual([acceptedGeneration]);
@@ -271,7 +273,7 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const frames: FrameRequestCallback[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length)
         });
         accept(client, acceptedWorker, frames, 21);
         const postsBefore = acceptedWorker.posts.length;
@@ -283,19 +285,25 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         expect(client.tune({ focusRunId: oversized })).toBeUndefined();
         expect(acceptedWorker.posts).toHaveLength(postsBefore);
 
-        expect(() => client.offer({
-            source: 'local-files',
-            label: 'l'.repeat(ANALYZE_WORKER_MAX_LABEL_BYTES + 1),
-            files: [],
-        })).toThrow(/bounded|metadata|offer/i);
-        expect(() => client.offer({
-            source: 'local-files', label: 'too many ignored files', files: [],
-            ignoredFiles: Array.from({ length: 25 }, (_, index) => ({
-                basename: `ignored-${index}.txt`,
-                sourcePath: `ignored-${index}.txt`,
-                reason: 'unsupported-extension',
-            })),
-        })).toThrow(/bounded|metadata|offer/i);
+        expect(() =>
+            client.offer({
+                source: 'local-files',
+                label: 'l'.repeat(ANALYZE_WORKER_MAX_LABEL_BYTES + 1),
+                files: []
+            })
+        ).toThrow(/bounded|metadata|offer/i);
+        expect(() =>
+            client.offer({
+                source: 'local-files',
+                label: 'too many ignored files',
+                files: [],
+                ignoredFiles: Array.from({ length: 25 }, (_, index) => ({
+                    basename: `ignored-${index}.txt`,
+                    sourcePath: `ignored-${index}.txt`,
+                    reason: 'unsupported-extension'
+                }))
+            })
+        ).toThrow(/bounded|metadata|offer/i);
         expect(createWorker).toHaveBeenCalledOnce();
         expect(acceptedWorker.terminate).not.toHaveBeenCalled();
         client.dispose();
@@ -310,20 +318,27 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             createWorker: () => workers.shift()!,
             setTimeout: timers.set,
             clearTimeout: timers.clear,
-            requestAnimationFrame: () => 1,
+            requestAnimationFrame: () => 1
         });
 
-        expect(() => client.offer({
-            source: 'local-files', label: 'first', files: [],
-        })).toThrow('post failed');
+        expect(() =>
+            client.offer({
+                source: 'local-files',
+                label: 'first',
+                files: []
+            })
+        ).toThrow('post failed');
         expect(throwingWorker.terminate).toHaveBeenCalledOnce();
         expect(timers.callbacks.size).toBe(0);
 
         expect(client.offer({
-            source: 'local-files', label: 'replacement', files: [],
+            source: 'local-files',
+            label: 'replacement',
+            files: []
         })).toBe(2);
         expect(replacementWorker.posts.at(-1)?.message).toMatchObject({
-            type: 'offer', operationGeneration: 2,
+            type: 'offer',
+            operationGeneration: 2
         });
         client.dispose();
     });
@@ -338,15 +353,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const searches: number[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => workers.shift()!,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
             setTimeout: timers.set,
             clearTimeout: timers.clear,
             callbacks: {
-                onUnavailable: (reason, scope, request) => unavailable.push(
-                    `${scope}:${reason}:${request?.kind ?? 'none'}:${request?.requestId ?? 'none'}`,
-                ),
-                onSearchComplete: response => searches.push(response.requestId),
-            },
+                onUnavailable: (reason, scope, request) =>
+                    unavailable.push(
+                        `${scope}:${reason}:${request?.kind ?? 'none'}:${request?.requestId ?? 'none'}`
+                    ),
+                onSearchComplete: (response) => searches.push(response.requestId)
+            }
         });
         accept(client, acceptedWorker, frames, 9);
         const retained = client.currentExport();
@@ -365,7 +381,7 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         expect(client.currentExport()).toBe(retained);
         expect(unavailable).toEqual([
             `accepted-request:timeout:search:${request}`,
-            'candidate:timeout:none:none',
+            'candidate:timeout:none:none'
         ]);
         client.dispose();
     });
@@ -377,17 +393,18 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const unavailable: string[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
             setTimeout: timers.set,
             clearTimeout: timers.clear,
             callbacks: {
-                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`),
-            },
+                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`)
+            }
         });
         accept(client, worker, frames, 12);
         const initial = client.search({ query: 'first query' });
         worker.emitMessage(searchResponse(initial!, 12, 1, {
-            ...emptyWindow(), nextCursor: 'first-next',
+            ...emptyWindow(),
+            nextCursor: 'first-next'
         }));
 
         client.window({ query: { query: 'first query' }, cursor: 'first-next' });
@@ -423,10 +440,10 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         createAnalyzeWorkerFactory()();
 
         expect(String(constructed.mock.calls[0]?.[0])).toMatch(
-            /\/analyze-artifact\.worker\.ts$/,
+            /\/analyze-artifact\.worker\.ts$/
         );
         expect(constructed.mock.calls[0]?.[1]).toEqual(
-            { name: 'rallar-recipe-console-analyze', type: 'module' },
+            { name: 'rallar-recipe-console-analyze', type: 'module' }
         );
         vi.unstubAllGlobals();
     });
@@ -437,18 +454,18 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const performance = new FakePerformance();
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
-            performance,
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
+            performance
         });
 
         accept(client, worker, frames, 14);
 
-        expect(performance.measures.map(row => [
+        expect(performance.measures.map((row) => [
             row.name,
-            row.options.duration,
+            row.options.duration
         ])).toEqual([
             [ANALYZE_WORKER_PERFORMANCE_NAMES.parse, 0.25],
-            [ANALYZE_WORKER_PERFORMANCE_NAMES.model, 1],
+            [ANALYZE_WORKER_PERFORMANCE_NAMES.model, 1]
         ]);
         client.dispose();
     });
@@ -459,20 +476,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const performance = new FakePerformance();
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
-            performance,
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
+            performance
         });
         accept(client, worker, frames, 15);
 
         const requestId = client.search({ query: 'one measure' });
         worker.emitMessage(searchResponse(requestId!, 15, 1));
 
-        expect(performance.clearedMarks.filter(name =>
-            name === ANALYZE_WORKER_PERFORMANCE_NAMES.search
-        )).toHaveLength(1);
-        expect(performance.measures.filter(row =>
-            row.name === ANALYZE_WORKER_PERFORMANCE_NAMES.search
-        )).toHaveLength(1);
+        expect(performance.clearedMarks.filter((name) => name === ANALYZE_WORKER_PERFORMANCE_NAMES.search)).toHaveLength(1);
+        expect(performance.measures.filter((row) => row.name === ANALYZE_WORKER_PERFORMANCE_NAMES.search)).toHaveLength(1);
         client.dispose();
     });
 
@@ -481,13 +494,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const frames: FrameRequestCallback[] = [];
         const client = createAnalyzeWorkerClient({
             createWorker: () => worker,
-            requestAnimationFrame: callback => (frames.push(callback), frames.length),
+            requestAnimationFrame: (callback) => (frames.push(callback), frames.length)
         });
         const generation = client.offer({
-            source: 'local-files', label: 'unsafe identity', files: [],
+            source: 'local-files',
+            label: 'unsafe identity',
+            files: []
         });
         worker.emitMessage({ type: 'accepted', operationGeneration: generation });
-        frames.shift()?.(0); frames.shift()?.(16);
+        frames.shift()?.(0);
+        frames.shift()?.(16);
         const complete = completeResponse(generation, generation);
         const distributedRunId = `../dist-\u202e/${'x'.repeat(300)}`;
         worker.emitMessage({
@@ -495,8 +511,8 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             projection: {
                 ...complete.projection,
                 distributedRunId,
-                identity: { ...complete.projection.identity, distributedRunId },
-            },
+                identity: { ...complete.projection.identity, distributedRunId }
+            }
         });
 
         const filename = client.currentExport()?.filename ?? '';
@@ -527,12 +543,12 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         retention.stage({
             generation: 1,
             blob: new Blob(['first']),
-            filename: 'first.json',
+            filename: 'first.json'
         });
         retention.stage({
             generation: 2,
             blob: new Blob(['second']),
-            filename: 'second.json',
+            filename: 'second.json'
         });
 
         expect(retention.commit(1)).toBe(false);
@@ -554,8 +570,8 @@ describe('Recipe Console Analyze worker client boundaries', () => {
                 indexCount: 500,
                 matchCount: 64,
                 mountedCount: 64,
-                renderCount: 2,
-            },
+                renderCount: 2
+            }
         });
         recordAnalyzeWorkerPerformance(performance, {
             name: 'model',
@@ -565,8 +581,8 @@ describe('Recipe Console Analyze worker client boundaries', () => {
                 indexCount: 500,
                 matchCount: 12,
                 mountedCount: 12,
-                renderCount: 3,
-            },
+                renderCount: 3
+            }
         });
 
         expect(performance.measures).toEqual([{
@@ -579,35 +595,37 @@ describe('Recipe Console Analyze worker client boundaries', () => {
                     indexCount: 500,
                     matchCount: 12,
                     mountedCount: 12,
-                    renderCount: 3,
-                },
-            },
+                    renderCount: 3
+                }
+            }
         }]);
         expect(performance.clearedMarks).toEqual([
             ANALYZE_WORKER_PERFORMANCE_NAMES.model,
-            ANALYZE_WORKER_PERFORMANCE_NAMES.model,
+            ANALYZE_WORKER_PERFORMANCE_NAMES.model
         ]);
         expect(Object.keys(ANALYZE_WORKER_PERFORMANCE_NAMES)).toEqual([
             'parse',
             'model',
             'search',
             'window',
-            'tune',
+            'tune'
         ]);
         expect(JSON.stringify(performance.measures)).not.toMatch(
-            /token|payload|secret|artifact|filename|query/i,
+            /token|payload|secret|artifact|filename|query/i
         );
-        expect(() => recordAnalyzeWorkerPerformance(performance, {
-            name: 'search',
-            durationMs: Number.NaN,
-            counts: {
-                sourceCount: 1,
-                indexCount: 1,
-                matchCount: 1,
-                mountedCount: 1,
-                renderCount: 1,
-            },
-        })).not.toThrow();
+        expect(() =>
+            recordAnalyzeWorkerPerformance(performance, {
+                name: 'search',
+                durationMs: Number.NaN,
+                counts: {
+                    sourceCount: 1,
+                    indexCount: 1,
+                    matchCount: 1,
+                    mountedCount: 1,
+                    renderCount: 1
+                }
+            })
+        ).not.toThrow();
         expect(performance.measures).toHaveLength(1);
     });
 });
@@ -617,18 +635,18 @@ function fakeWorker(): AnalyzeWorkerPort {
         postMessage: vi.fn(),
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-        terminate: vi.fn(),
+        terminate: vi.fn()
     };
 }
 
 class FakeWorkerPort implements AnalyzeWorkerPort {
-    readonly posts: Array<{ message: unknown; transfer: readonly Transferable[] }> = [];
+    readonly posts: Array<{ message: unknown; transfer: readonly Transferable[]; }> = [];
     readonly terminate = vi.fn();
     readonly #listeners = new Map<string, Set<EventListener>>();
 
     postMessage(
         message: unknown,
-        transfer: Transferable[] | StructuredSerializeOptions = [],
+        transfer: Transferable[] | StructuredSerializeOptions = []
     ): void {
         this.posts.push({ message, transfer: toTransferList(transfer) });
     }
@@ -643,7 +661,9 @@ class FakeWorkerPort implements AnalyzeWorkerPort {
     }
 
     removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-        if (typeof listener === 'function') this.#listeners.get(type)?.delete(listener);
+        if (typeof listener === 'function') {
+            this.#listeners.get(type)?.delete(listener);
+        }
     }
 
     emitMessage(message: AnalyzeWorkerResponse): void {
@@ -656,12 +676,14 @@ class FakeWorkerPort implements AnalyzeWorkerPort {
     }
 
     private emitEvent(event: Event): void {
-        for (const listener of this.#listeners.get(event.type) ?? []) listener(event);
+        for (const listener of this.#listeners.get(event.type) ?? []) {
+            listener(event);
+        }
     }
 }
 
 function toTransferList(
-    transfer: Transferable[] | StructuredSerializeOptions,
+    transfer: Transferable[] | StructuredSerializeOptions
 ): readonly Transferable[] {
     return Array.isArray(transfer) ? transfer : transfer.transfer ?? [];
 }
@@ -674,34 +696,52 @@ class ThrowingWorkerPort extends FakeWorkerPort {
 
 function completeResponse(
     operationGeneration: number,
-    modelGeneration: number,
-): Extract<AnalyzeWorkerResponse, { type: 'complete' }> {
+    modelGeneration: number
+): Extract<AnalyzeWorkerResponse, { type: 'complete'; }> {
     const exportBytes = new TextEncoder().encode('{"portable":true}').buffer as ArrayBuffer;
     return {
-        type: 'complete', operationGeneration, modelGeneration, exportBytes,
+        type: 'complete',
+        operationGeneration,
+        modelGeneration,
+        exportBytes,
         projection: {
-            distributedRunId: 'dist', controlRunId: 'control',
+            distributedRunId: 'dist',
+            controlRunId: 'control',
             identity: { distributedRunId: 'dist', controlRunId: 'control' },
             workspace: {
-                source: 'loose-files', support: 'supported', generatedAtEpochMs: 1,
-                artifactSchemaVersion: 1, inventory: [], issues: [],
+                source: 'loose-files',
+                support: 'supported',
+                generatedAtEpochMs: 1,
+                artifactSchemaVersion: 1,
+                inventory: [],
+                issues: []
             },
             analysis: {
-                generatedAtEpochMs: 1, distributedRunId: 'dist', controlRunId: 'control',
-                status: 'passed', ok: true,
+                generatedAtEpochMs: 1,
+                distributedRunId: 'dist',
+                controlRunId: 'control',
+                status: 'passed',
+                ok: true,
                 summary: { agents: 1, passRate: 1, failureGroups: 0, blockingFailures: 0 },
-                parseWarnings: [], summaryMarkdown: 'summary',
+                parseWarnings: [],
+                summaryMarkdown: 'summary'
             },
             issueMarkdown: 'issue',
             provenance: {
-                source: 'local-files', label: 'artifact', workspaceSource: 'loose-files',
-                generatedAtEpochMs: 1, selectedFileCount: 1, artifactFileCount: 1,
-                loadedFileCount: 1, ignoredFileCount: 0, workspaceIgnoredFileCount: 0,
-                ignoredFiles: [],
-            },
+                source: 'local-files',
+                label: 'artifact',
+                workspaceSource: 'loose-files',
+                generatedAtEpochMs: 1,
+                selectedFileCount: 1,
+                artifactFileCount: 1,
+                loadedFileCount: 1,
+                ignoredFileCount: 0,
+                workspaceIgnoredFileCount: 0,
+                ignoredFiles: []
+            }
         },
         initialWindow: emptyWindow(),
-        telemetry: telemetry(),
+        telemetry: telemetry()
     };
 }
 
@@ -709,11 +749,15 @@ function searchResponse(
     requestId: number,
     modelGeneration: number,
     queryGeneration: number,
-    window = emptyWindow(),
-): Extract<AnalyzeWorkerResponse, { type: 'search-complete' }> {
+    window = emptyWindow()
+): Extract<AnalyzeWorkerResponse, { type: 'search-complete'; }> {
     return {
-        type: 'search-complete', requestId, modelGeneration, queryGeneration,
-        window, telemetry: telemetry(),
+        type: 'search-complete',
+        requestId,
+        modelGeneration,
+        queryGeneration,
+        window,
+        telemetry: telemetry()
     };
 }
 
@@ -721,70 +765,99 @@ function windowResponse(
     requestId: number,
     modelGeneration: number,
     queryGeneration: number,
-    windowGeneration: number,
-): Extract<AnalyzeWorkerResponse, { type: 'window-complete' }> {
+    windowGeneration: number
+): Extract<AnalyzeWorkerResponse, { type: 'window-complete'; }> {
     return {
-        type: 'window-complete', requestId, modelGeneration, queryGeneration,
-        windowGeneration, window: emptyWindow(), telemetry: telemetry(),
+        type: 'window-complete',
+        requestId,
+        modelGeneration,
+        queryGeneration,
+        windowGeneration,
+        window: emptyWindow(),
+        telemetry: telemetry()
     };
 }
 
 function selectionResponse(
     requestId: number,
     modelGeneration: number,
-    selectionGeneration: number,
-): Extract<AnalyzeWorkerResponse, { type: 'selection-complete' }> {
+    selectionGeneration: number
+): Extract<AnalyzeWorkerResponse, { type: 'selection-complete'; }> {
     return {
-        type: 'selection-complete', requestId, modelGeneration,
-        selectionGeneration,
+        type: 'selection-complete',
+        requestId,
+        modelGeneration,
+        selectionGeneration
     };
 }
 
 function tuneResponse(
     requestId: number,
     modelGeneration: number,
-    tuneGeneration: number,
-): Extract<AnalyzeWorkerResponse, { type: 'tune-complete' }> {
+    tuneGeneration: number
+): Extract<AnalyzeWorkerResponse, { type: 'tune-complete'; }> {
     const complete = completeResponse(modelGeneration, modelGeneration);
     return {
-        type: 'tune-complete', requestId, modelGeneration, tuneGeneration,
+        type: 'tune-complete',
+        requestId,
+        modelGeneration,
+        tuneGeneration,
         facade: {
             identity: complete.projection.identity,
-            support: 'supported', generatedAtEpochMs: 1,
+            support: 'supported',
+            generatedAtEpochMs: 1,
             manifestSummary: {
-                distributedRunId: 'dist', controlRunId: 'control',
+                distributedRunId: 'dist',
+                controlRunId: 'control',
                 group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
                 recipeIds: { entries: [], total: 0, omitted: 0 },
                 targetPolicy: {
-                    mode: 'selected-agents', configuredAgentCount: 0,
-                    configuredRoleCount: 0,
+                    mode: 'selected-agents',
+                    configuredAgentCount: 0,
+                    configuredRoleCount: 0
                 },
-                roleAssignmentCount: 0,
+                roleAssignmentCount: 0
             },
             tuningInventory: {
-                totalKnobs: 0, knobs: [], omittedKnobs: 0,
-                totalLimitations: 0, limitations: [], omittedLimitations: 0,
+                totalKnobs: 0,
+                knobs: [],
+                omittedKnobs: 0,
+                totalLimitations: 0,
+                limitations: [],
+                omittedLimitations: 0
             },
             selection: { focusRunId: 'dist', artifactRole: 'focus' },
             distributedRun: {
-                distributedRunId: 'dist', controlRunId: 'control', state: 'passed',
+                distributedRunId: 'dist',
+                controlRunId: 'control',
+                state: 'passed',
                 updatedAtEpochMs: 1,
                 targetAgentIds: { entries: [], total: 0, omitted: 0 },
                 rollup: {
-                    state: 'passed', ok: true, failures: [],
+                    state: 'passed',
+                    ok: true,
+                    failures: [],
                     summary: {
-                        participants: 0, requiredParticipants: 0, readyParticipants: 0,
-                        passedParticipants: 0, failedParticipants: 0, recipes: 0,
-                        requiredRecipes: 0, passedRecipes: 0, failedRecipes: 0,
-                        groupAssertions: 0, passedGroupAssertions: 0, failedGroupAssertions: 0,
-                        blockingFailures: 0,
-                    },
-                },
+                        participants: 0,
+                        requiredParticipants: 0,
+                        readyParticipants: 0,
+                        passedParticipants: 0,
+                        failedParticipants: 0,
+                        recipes: 0,
+                        requiredRecipes: 0,
+                        passedRecipes: 0,
+                        failedRecipes: 0,
+                        groupAssertions: 0,
+                        passedGroupAssertions: 0,
+                        failedGroupAssertions: 0,
+                        blockingFailures: 0
+                    }
+                }
             },
             analysis: complete.projection.analysis,
-            receivedMessageDeltas: { entries: [], total: 0, omitted: 0 },
+            receivedMessageDeltas: { entries: [], total: 0, omitted: 0 }
         },
-        telemetry: telemetry(),
+        telemetry: telemetry()
     };
 }
 
@@ -792,47 +865,66 @@ function accept(
     client: ReturnType<typeof createAnalyzeWorkerClient>,
     worker: FakeWorkerPort,
     frames: FrameRequestCallback[],
-    modelGeneration: number,
+    modelGeneration: number
 ): number {
     const generation = client.offer({
-        source: 'local-files', label: 'artifact', files: [],
+        source: 'local-files',
+        label: 'artifact',
+        files: []
     });
     worker.emitMessage({ type: 'accepted', operationGeneration: generation });
-    frames.shift()?.(0); frames.shift()?.(16);
+    frames.shift()?.(0);
+    frames.shift()?.(16);
     worker.emitMessage(completeResponse(generation, modelGeneration));
     return generation;
 }
 
 function emptyWindow(): AnalyzeEvidenceWindowProjection {
     return {
-        entries: [], rangeStart: 0, rangeEnd: 0,
+        entries: [],
+        rangeStart: 0,
+        rangeEnd: 0,
         counts: {
-            totalEntries: 0, indexedEntries: 0, indexOmittedEntries: 0,
-            retainedMatches: 0, queryExcludedEntries: 0,
-            renderedMatches: 0, renderOmittedMatches: 0,
+            totalEntries: 0,
+            indexedEntries: 0,
+            indexOmittedEntries: 0,
+            retainedMatches: 0,
+            queryExcludedEntries: 0,
+            renderedMatches: 0,
+            renderOmittedMatches: 0
         },
         totalMatchesIsComplete: true,
-        windowSize: 64,
+        windowSize: 64
     };
 }
 
 function telemetry() {
     return {
-        durationMs: 1, parseDurationMs: 0.25,
-        sourceFileCount: 1, sourceBytes: 2,
-        pipelinePassCount: 1, sourceCollectionPassCount: 1,
+        durationMs: 1,
+        parseDurationMs: 0.25,
+        sourceFileCount: 1,
+        sourceBytes: 2,
+        pipelinePassCount: 1,
+        sourceCollectionPassCount: 1,
         sourceFileVisitCount: 1,
-        documentParseCount: 1, jsonlFilePassCount: 0, jsonlRowParseCount: 0,
-        totalEntryCount: 0, retainedEntryCount: 0, indexOmittedEntryCount: 0,
-        matchedEntryCount: 0, projectedEntryCount: 0,
+        documentParseCount: 1,
+        jsonlFilePassCount: 0,
+        jsonlRowParseCount: 0,
+        totalEntryCount: 0,
+        retainedEntryCount: 0,
+        indexOmittedEntryCount: 0,
+        matchedEntryCount: 0,
+        projectedEntryCount: 0
     } as const;
 }
 
 class FakePerformance implements AnalyzeWorkerPerformancePort {
-    readonly measures: Array<Readonly<{
-        name: string;
-        options: PerformanceMeasureOptions;
-    }>> = [];
+    readonly measures: Array<
+        Readonly<{
+            name: string;
+            options: PerformanceMeasureOptions;
+        }>
+    > = [];
     readonly clearedMarks: string[] = [];
 
     clearMarks(name: string): void {
@@ -840,7 +932,7 @@ class FakePerformance implements AnalyzeWorkerPerformancePort {
     }
 
     clearMeasures(name: string): void {
-        const retained = this.measures.filter(measure => measure.name !== name);
+        const retained = this.measures.filter((measure) => measure.name !== name);
         this.measures.splice(0, this.measures.length, ...retained);
     }
 
@@ -868,7 +960,9 @@ class FakeTimers {
         const entry = this.callbacks.entries().next().value as
             | readonly [number, () => void]
             | undefined;
-        if (!entry) throw new Error('No pending timer.');
+        if (!entry) {
+            throw new Error('No pending timer.');
+        }
         this.callbacks.delete(entry[0]);
         entry[1]();
     }

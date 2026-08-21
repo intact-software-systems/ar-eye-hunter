@@ -1,20 +1,18 @@
-import { isDistributedRunTerminalState } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     rebindControlAgentFromSelectionIndex,
     rebindControlRunFromSelectionIndex,
     rebindDistributedRunFromSelectionIndex,
     rebindDistributedRunsFromSelectionIndex,
-    type ControlSnapshotSelectionIndex,
+    type ControlSnapshotSelectionIndex
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../control-run-manager.ts';
-import { isControlSelectionIndexBoundToSnapshot } from
-    '../../control-selection-index-binding.ts';
+import { isControlSelectionIndexBoundToSnapshot } from '../../control-selection-index-binding.ts';
 
 export type IndexedRecipeConsoleControlSelectionWork = Readonly<{
     indexed: true;
@@ -26,12 +24,11 @@ export type IndexedRecipeConsoleControlSelectionWork = Readonly<{
 }>;
 
 type MutableWork = {
-    -readonly [Key in keyof IndexedRecipeConsoleControlSelectionWork]:
-        IndexedRecipeConsoleControlSelectionWork[Key];
+    -readonly [Key in keyof IndexedRecipeConsoleControlSelectionWork]: IndexedRecipeConsoleControlSelectionWork[Key];
 };
 
 export type ControlSelectionIndexProjection =
-    | Readonly<{ kind: 'fallback' }>
+    | Readonly<{ kind: 'fallback'; }>
     | Readonly<{
         kind: 'indexed';
         index: ControlSnapshotSelectionIndex;
@@ -39,19 +36,21 @@ export type ControlSelectionIndexProjection =
         valid(): boolean;
         findControlRun(runId: string): ControlRunSnapshot | undefined;
         findDistributedRun(
-            distributedRunId: string,
+            distributedRunId: string
         ): ControlDistributedRunSnapshot | undefined;
         findAgent(
             controlRunId: string,
-            agentId: string,
+            agentId: string
         ): ControlAgentSnapshot | undefined;
         activeRuns(controlRunId: string): readonly ControlDistributedRunSnapshot[];
     }>;
 
-export function createControlSelectionIndexProjection(input: Readonly<{
-    snapshot: ControlServerSnapshot;
-    index: ControlSnapshotSelectionIndex;
-}>): ControlSelectionIndexProjection {
+export function createControlSelectionIndexProjection(
+    input: Readonly<{
+        snapshot: ControlServerSnapshot;
+        index: ControlSnapshotSelectionIndex;
+    }>
+): ControlSelectionIndexProjection {
     const { index, snapshot } = input;
     const distributedRuns = snapshot.distributedRuns ?? [];
     if (
@@ -71,7 +70,7 @@ export function createControlSelectionIndexProjection(input: Readonly<{
         controlRunLookupCount: 0,
         distributedRunLookupCount: 0,
         agentLookupCount: 0,
-        activeRunProjectionCount: 0,
+        activeRunProjectionCount: 0
     };
     return {
         kind: 'indexed',
@@ -80,9 +79,13 @@ export function createControlSelectionIndexProjection(input: Readonly<{
         valid: () => valid,
         findControlRun(runId) {
             work.controlRunLookupCount += 1;
-            if (!index.firstControlRunOrdinalById.has(runId)) return undefined;
+            if (!index.firstControlRunOrdinalById.has(runId)) {
+                return undefined;
+            }
             const run = rebindControlRunFromSelectionIndex(index, snapshot, runId);
-            if (!run) valid = false;
+            if (!run) {
+                valid = false;
+            }
             return run;
         },
         findDistributedRun(distributedRunId) {
@@ -93,23 +96,29 @@ export function createControlSelectionIndexProjection(input: Readonly<{
             const run = rebindDistributedRunFromSelectionIndex(
                 index,
                 snapshot,
-                distributedRunId,
+                distributedRunId
             );
-            if (!run) valid = false;
+            if (!run) {
+                valid = false;
+            }
             return run;
         },
         findAgent(controlRunId, agentId) {
             work.agentLookupCount += 1;
             const hasAgent = index.firstAgentOrdinalByControlRunId
                 .get(controlRunId)?.has(agentId) === true;
-            if (!hasAgent) return undefined;
+            if (!hasAgent) {
+                return undefined;
+            }
             const agent = rebindControlAgentFromSelectionIndex(
                 index,
                 snapshot,
                 controlRunId,
-                agentId,
+                agentId
             );
-            if (!agent) valid = false;
+            if (!agent) {
+                valid = false;
+            }
             return agent;
         },
         activeRuns(controlRunId) {
@@ -118,23 +127,23 @@ export function createControlSelectionIndexProjection(input: Readonly<{
             const runs = rebindDistributedRunsFromSelectionIndex(
                 index,
                 snapshot,
-                ordinals,
+                ordinals
             );
             work.activeRunProjectionCount += runs.length;
             if (
                 runs.length !== ordinals.length ||
-                runs.some(run => isDistributedRunTerminalState(run.state)) ||
+                runs.some((run) => isDistributedRunTerminalState(run.state)) ||
                 !isUpdatedRunOrder(runs)
             ) {
                 valid = false;
             }
             return runs;
-        },
+        }
     };
 }
 
 function isUpdatedRunOrder(
-    runs: readonly ControlDistributedRunSnapshot[],
+    runs: readonly ControlDistributedRunSnapshot[]
 ): boolean {
     for (let ordinal = 1; ordinal < runs.length; ordinal += 1) {
         const previous = runs[ordinal - 1]!;
@@ -143,7 +152,9 @@ function isUpdatedRunOrder(
             previous.updatedAtEpochMs < current.updatedAtEpochMs ||
             previous.updatedAtEpochMs === current.updatedAtEpochMs &&
                 previous.distributedRunId.localeCompare(current.distributedRunId) > 0
-        ) return false;
+        ) {
+            return false;
+        }
     }
     return true;
 }

@@ -1,24 +1,20 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    createCachedClientStateService as createPackageCachedClientStateService,
+    createClientStateSnapshotReadThroughCache as createPackageClientStateSnapshotReadThroughCache
+} from '@shared-server/mod.ts';
+import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
+import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import { createCachedClientStateService as createLegacyCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
+import {
+    createClientStateSnapshotReadThroughCache as createLegacyClientStateSnapshotReadThroughCache
+} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
+import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
-import {
-    createCachedClientStateService as createPackageCachedClientStateService,
-    createClientStateSnapshotReadThroughCache as createPackageClientStateSnapshotReadThroughCache,
-} from '@shared-server/mod.ts';
-import type { ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
-import {
-    createClientStateSnapshotReadThroughCache,
-} from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
-import {
-    createCachedClientStateService as createLegacyCachedClientStateService,
-} from '@shared-server/rallar-system/services/cached-client-state-service.ts';
-import {
-    createClientStateSnapshotReadThroughCache as createLegacyClientStateSnapshotReadThroughCache,
-} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('cached state services', () => {
@@ -36,14 +32,14 @@ describe('cached state services', () => {
     it('does not expose a legacy direct group mutation from its durable dependency', () => {
         const durable = {
             ...createGroupPhaseService(),
-            createGroup: vi.fn(),
+            createGroup: vi.fn()
         } as unknown as GroupStateService;
         const service = createCachedGroupStateService({
             durable,
             cache: {
                 findOrLoadByRef: vi.fn(),
-                observe: vi.fn(),
-            },
+                observe: vi.fn()
+            }
         });
 
         expect('createGroup' in service).toBe(false);
@@ -55,14 +51,14 @@ describe('cached state services', () => {
         const findOrLoadByRef = vi.fn();
         const durable = {
             ...createGroupPhaseService(),
-            readSnapshot: vi.fn().mockResolvedValue(revisioned),
+            readSnapshot: vi.fn().mockResolvedValue(revisioned)
         } as unknown as GroupStateService;
         const service = createCachedGroupStateService({
             durable,
             cache: {
                 findOrLoadByRef,
-                observe,
-            },
+                observe
+            }
         });
 
         const result = await service.readCurrentSnapshot(revisioned.group);
@@ -78,14 +74,14 @@ describe('cached state services', () => {
             ...createGroupPhaseService(),
             connectPresenceSession: vi.fn(),
             heartbeatPresenceSession: vi.fn(),
-            disconnectPresenceSession: vi.fn(),
+            disconnectPresenceSession: vi.fn()
         } as unknown as GroupStateService;
         const service = createCachedGroupStateService({
             durable,
             cache: {
                 findOrLoadByRef: vi.fn(),
-                observe: vi.fn(),
-            },
+                observe: vi.fn()
+            }
         });
 
         expect('connectPresenceSession' in service).toBe(false);
@@ -97,7 +93,7 @@ describe('cached state services', () => {
         const snapshot = createGroupSnapshot(6);
         const conflict = new StateSnapshotRevisionConflictError(
             'Group',
-            snapshot.stateRevision,
+            snapshot.stateRevision
         );
         const service = createCachedGroupStateService({
             durable: createGroupPhaseService(),
@@ -105,8 +101,8 @@ describe('cached state services', () => {
                 findOrLoadByRef: vi.fn(),
                 observe: vi.fn(() => {
                     throw conflict;
-                }),
-            },
+                })
+            }
         });
 
         await expect(service.observeSnapshot(snapshot)).rejects.toBe(conflict);
@@ -117,11 +113,11 @@ describe('cached state services', () => {
         const findOrLoadByRef = vi.fn().mockResolvedValue(snapshot);
         const observe = vi.fn();
         const durable = {
-            readSnapshot: vi.fn(),
+            readSnapshot: vi.fn()
         } as unknown as ClientStateService;
         const service = createCachedClientStateService({
             durable,
-            cache: { findOrLoadByRef, observe },
+            cache: { findOrLoadByRef, observe }
         });
 
         await expect(service.readSnapshot(snapshot.principal)).resolves.toBe(snapshot);
@@ -139,15 +135,15 @@ describe('cached state services', () => {
         const findOrLoadByRef = vi.fn();
         const observe = vi.fn();
         const durable = {
-            readSnapshot: vi.fn().mockResolvedValue(snapshot),
+            readSnapshot: vi.fn().mockResolvedValue(snapshot)
         } as unknown as ClientStateService;
         const service = createCachedClientStateService({
             durable,
-            cache: { findOrLoadByRef, observe },
+            cache: { findOrLoadByRef, observe }
         }) as DurableCurrentClientReader;
 
         await expect(
-            service.readCurrentSnapshot?.(snapshot.principal),
+            service.readCurrentSnapshot?.(snapshot.principal)
         ).resolves.toBe(snapshot);
         expect(durable.readSnapshot).toHaveBeenCalledOnce();
         expect(durable.readSnapshot).toHaveBeenCalledWith(snapshot.principal);
@@ -171,7 +167,7 @@ function createGroupPhaseService(): GroupStateService {
         readStateRevision: vi.fn(),
         readCausalRevision: vi.fn(),
         listEvents: vi.fn(),
-        listEventPage: vi.fn(),
+        listEventPage: vi.fn()
     } as unknown as GroupStateService;
 }
 
@@ -181,7 +177,7 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
         stateRevision,
         causalRevision: {
             groupRevision: stateRevision,
-            presenceRevision: 1,
+            presenceRevision: 1
         },
         group: createTestGroup({
             applicationId: 'app-1',
@@ -195,12 +191,12 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             activeMemberCount: 0,
             ownerPrincipalId: 'alice',
             created: audit,
-            updated: audit,
+            updated: audit
         }),
         members: [],
         activeSessions: [],
         memberCount: 0,
-        onlineMemberCount: 0,
+        onlineMemberCount: 0
     };
 }
 
@@ -227,13 +223,13 @@ function createClientSnapshot(stateRevision: number): ClientSnapshot {
             presenceVersion: 1,
             created: audit,
             updated: audit,
-            lastSeenAtEpochMs: null,
+            lastSeenAtEpochMs: null
         },
         instances: [],
         activeSessions: [],
         isOnline: false,
         activeSessionCount: 0,
-        lastSeenAtEpochMs: null,
+        lastSeenAtEpochMs: null
     };
 }
 
@@ -243,6 +239,6 @@ function createAuditStamp(atEpochMs: number): AuditStamp {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

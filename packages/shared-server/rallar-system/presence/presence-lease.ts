@@ -13,5 +13,5 @@
 export const MAX_PRESENCE_TIMESTAMP_SKEW_MS = 5 * 60 * 1_000;
 
 export function isPresenceTimestampWithinSkew(valueEpochMs: number, nowEpochMs: number): boolean {
-  return valueEpochMs <= nowEpochMs + MAX_PRESENCE_TIMESTAMP_SKEW_MS;
+    return valueEpochMs <= nowEpochMs + MAX_PRESENCE_TIMESTAMP_SKEW_MS;
 }

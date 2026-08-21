@@ -10,25 +10,25 @@ export type CommandCenterActionFeedback = Readonly<{
 }>;
 
 export function idleActionFeedback(
-    message: string,
+    message: string
 ): CommandCenterActionFeedback {
     return {
         state: 'idle',
-        message,
+        message
     };
 }
 
 export function runningActionFeedback(
     label: string,
     target?: string,
-    message = 'Action is running.',
+    message = 'Action is running.'
 ): CommandCenterActionFeedback {
     return {
         state: 'running',
         label,
         target,
         message,
-        atEpochMs: Date.now(),
+        atEpochMs: Date.now()
     };
 }
 
@@ -42,7 +42,7 @@ export function completedActionFeedback(
         statusText?: string;
         durationMs?: number;
         message?: string;
-    }>,
+    }>
 ): CommandCenterActionFeedback {
     return {
         state: input.ok ? 'success' : 'error',
@@ -50,10 +50,9 @@ export function completedActionFeedback(
         target: input.target,
         status: input.status,
         statusText: input.statusText,
-        durationMs:
-            input.durationMs ??
+        durationMs: input.durationMs ??
             Math.max(0, Date.now() - input.startedAtEpochMs),
         message: input.message,
-        atEpochMs: Date.now(),
+        atEpochMs: Date.now()
     };
 }

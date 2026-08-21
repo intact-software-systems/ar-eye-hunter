@@ -16,7 +16,7 @@ export type ClientSessionExpiryCandidate = Readonly<{
 }>;
 
 export function toClientSessionExpiryCandidate(
-    session: ClientSession,
+    session: ClientSession
 ): ClientSessionExpiryCandidate {
     return {
         applicationId: session.applicationId,
@@ -26,19 +26,19 @@ export function toClientSessionExpiryCandidate(
         sessionId: session.sessionId,
         generationId: session.generationId,
         generationVersion: session.generationVersion,
-        observedExpiresAtEpochMs: session.expiresAtEpochMs,
+        observedExpiresAtEpochMs: session.expiresAtEpochMs
     };
 }
 
 export function toSessionPurgeAfterEpochMs(
     expiresAtEpochMs: number,
-    disconnectedAtEpochMs?: number | null,
+    disconnectedAtEpochMs?: number | null
 ): number {
     const logicalExpiry = Math.max(expiresAtEpochMs, disconnectedAtEpochMs ?? 0);
 
     if (
         logicalExpiry >=
-        NEVER_EXPIRE_AT_TIMESTAMP - STATE_SESSION_PURGE_GRACE_MSECS
+            NEVER_EXPIRE_AT_TIMESTAMP - STATE_SESSION_PURGE_GRACE_MSECS
     ) {
         return NEVER_EXPIRE_AT_TIMESTAMP;
     }
@@ -48,7 +48,7 @@ export function toSessionPurgeAfterEpochMs(
 
 export function isLogicallyActiveSession(
     expiresAtEpochMs: number,
-    timestamp: number = Date.now(),
+    timestamp: number = Date.now()
 ): boolean {
     return expiresAtEpochMs > timestamp;
 }

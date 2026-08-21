@@ -4,241 +4,240 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { toCanonicalJson } from './governance-decisions/canonical-json.mjs';
-import { verifyGovernanceDecisionCommit } from './governance-decisions/governance-decision-commit-verification.mjs';
-import { decodeGovernanceDecisionCommand } from './governance-decisions/governance-decision-command.mjs';
+import { readGitRepositorySnapshot } from './governance-decisions/git-repository-snapshot.mjs';
+import { createGitHubGovernanceApi } from './governance-decisions/github-governance-api.mjs';
 import {
-  createGovernanceDecisionReceipt,
-  serializeGovernanceDecisionReceipt,
+    authenticateGitHubAdministrator,
+    publishGovernanceDecisionCommit,
+    publishImmutableGitBlob,
+    validateLocalGovernancePublicationState
+} from './governance-decisions/github-governance-publication.mjs';
+import { decodeGovernanceDecisionCommand } from './governance-decisions/governance-decision-command.mjs';
+import { verifyGovernanceDecisionCommit } from './governance-decisions/governance-decision-commit-verification.mjs';
+import {
+    createGovernanceDecisionReceipt,
+    serializeGovernanceDecisionReceipt
 } from './governance-decisions/governance-decision-receipt.mjs';
 import {
-  trustedGovernanceAppSlug,
-  verifyPublishedGovernanceDecisionCommit,
+    trustedGovernanceAppSlug,
+    verifyPublishedGovernanceDecisionCommit
 } from './governance-decisions/governance-decision-remote-verification.mjs';
 import { decodeGovernanceDecisionRequest } from './governance-decisions/governance-decision-request.mjs';
 import { computeGovernanceDecisionTransition } from './governance-decisions/governance-decision-transition.mjs';
-import { createGitHubGovernanceApi } from './governance-decisions/github-governance-api.mjs';
-import {
-  authenticateGitHubAdministrator,
-  publishGovernanceDecisionCommit,
-  publishImmutableGitBlob,
-  validateLocalGovernancePublicationState,
-} from './governance-decisions/github-governance-publication.mjs';
-import { readGitRepositorySnapshot } from './governance-decisions/git-repository-snapshot.mjs';
 import { readChangedPathsBetweenRevisions } from './repository-changes/read-git-changes.mjs';
 
 try {
-  const command = decodeGovernanceDecisionCommand(process.argv.slice(2));
-  const result = runCommand(command);
-  process.stdout.write(`${toCanonicalJson(result)}\n`);
-} catch (error) {
-  process.stderr.write(`${toError(error).message}\n`);
-  process.exitCode = 1;
+    const command = decodeGovernanceDecisionCommand(process.argv.slice(2));
+    const result = runCommand(command);
+    process.stdout.write(`${toCanonicalJson(result)}\n`);
+}
+catch (error) {
+    process.stderr.write(`${toError(error).message}\n`);
+    process.exitCode = 1;
 }
 
 function runCommand(command) {
-  if (command.command === 'preview') {
-    return previewDecision(command);
-  }
-  if (command.command === 'apply') {
-    return applyDecision(command);
-  }
-  if (command.command === 'publish-request') {
-    return publishRequest(command);
-  }
-  return verifyCommit(command);
+    if (command.command === 'preview') {
+        return previewDecision(command);
+    }
+    if (command.command === 'apply') {
+        return applyDecision(command);
+    }
+    if (command.command === 'publish-request') {
+        return publishRequest(command);
+    }
+    return verifyCommit(command);
 }
 
 function previewDecision(command) {
-  const request = decodeCurrentGovernanceRequest(command.requestPath);
-  const github = createGitHubGovernanceApi(command.repoRoot);
-  const snapshot = readGitRepositorySnapshot({
-    repoRoot: command.repoRoot,
-    commitOid: request.expectedHeadOid,
-  });
-  return computeGovernanceDecisionTransition({
-    request,
-    snapshot,
-    readChanges: (baseOid, headOid) =>
-      readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
-    readSnapshot: (commitOid) =>
-      readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
-    ...(request.operation === 'gate.accept-deviation'
-      ? { readGateEvidence: readGateEvidenceForTransition(command, github) }
-      : {}),
-    ...(request.operation === 'plan.supersede'
-      ? {
-          readBlob: github.readBlob,
-        }
-      : {}),
-  });
+    const request = decodeCurrentGovernanceRequest(command.requestPath);
+    const github = createGitHubGovernanceApi(command.repoRoot);
+    const snapshot = readGitRepositorySnapshot({
+        repoRoot: command.repoRoot,
+        commitOid: request.expectedHeadOid
+    });
+    return computeGovernanceDecisionTransition({
+        request,
+        snapshot,
+        readChanges: (baseOid, headOid) => readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
+        readSnapshot: (commitOid) => readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
+        ...(request.operation === 'gate.accept-deviation'
+            ? { readGateEvidence: readGateEvidenceForTransition(command, github) }
+            : {}),
+        ...(request.operation === 'plan.supersede'
+            ? {
+                readBlob: github.readBlob
+            }
+            : {})
+    });
 }
 
 function readGateEvidenceForTransition(command, github) {
-  const evidencePath = process.env.GOVERNANCE_GATE_EVIDENCE_PATH;
-  if (evidencePath === undefined) {
-    return github.readGateEvidence;
-  }
-  requireTrustedWorkflowIdentity();
-  return () => readJson(evidencePath);
+    const evidencePath = process.env.GOVERNANCE_GATE_EVIDENCE_PATH;
+    if (evidencePath === undefined) {
+        return github.readGateEvidence;
+    }
+    requireTrustedWorkflowIdentity();
+    return () => readJson(evidencePath);
 }
 
 function verifyCommit(command) {
-  const github = createGitHubGovernanceApi(command.repoRoot);
-  const structuralVerification = verifyGovernanceDecisionCommit({
-    commitOid: command.commitOid,
-    readRepositoryChanges: (baseOid, headOid) =>
-      readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
-    readRepositorySnapshot: (commitOid) =>
-      readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
-    readGateEvidence: github.readGateEvidence,
-  });
-  return verifyPublishedGovernanceDecisionCommit({
-    commitOid: command.commitOid,
-    structuralVerification,
-    appSlug: process.env.GOVERNANCE_APP_SLUG,
-    readCommit: github.readCommit,
-    readWorkflowRun: github.readWorkflowRun,
-    readPermission: github.readPermission,
-  });
+    const github = createGitHubGovernanceApi(command.repoRoot);
+    const structuralVerification = verifyGovernanceDecisionCommit({
+        commitOid: command.commitOid,
+        readRepositoryChanges: (baseOid, headOid) =>
+            readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
+        readRepositorySnapshot: (commitOid) => readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
+        readGateEvidence: github.readGateEvidence
+    });
+    return verifyPublishedGovernanceDecisionCommit({
+        commitOid: command.commitOid,
+        structuralVerification,
+        appSlug: process.env.GOVERNANCE_APP_SLUG,
+        readCommit: github.readCommit,
+        readWorkflowRun: github.readWorkflowRun,
+        readPermission: github.readPermission
+    });
 }
 
 function applyDecision(command) {
-  const request = decodeCurrentGovernanceRequest(command.requestPath);
-  const github = createGitHubGovernanceApi(command.repoRoot);
-  const publicationIdentity = readPublicationIdentity(github);
-  validateLocalGovernancePublicationState({
-    request,
-    readCheckoutState: () => readCheckoutState(command.repoRoot, github),
-  });
-  const transition = previewDecision(command);
-  const receipt = createGovernanceDecisionReceipt({
-    request,
-    actor: publicationIdentity.actor,
-    transport: publicationIdentity.transport,
-    result: transition.result,
-    bypassedInvariants: transition.bypassedInvariants,
-    stateChanges: transition.stateChanges,
-  });
-  return publishGovernanceDecisionCommit({
-    expectedHeadOid: request.expectedHeadOid,
-    operation: request.operation,
-    decisionId: transition.decisionId,
-    additions: [
-      ...transition.additions,
-      { path: transition.receiptPath, content: serializeGovernanceDecisionReceipt(receipt) },
-    ],
-    deletions: transition.deletions,
-    writeCommit: github.writeCommit,
-  });
+    const request = decodeCurrentGovernanceRequest(command.requestPath);
+    const github = createGitHubGovernanceApi(command.repoRoot);
+    const publicationIdentity = readPublicationIdentity(github);
+    validateLocalGovernancePublicationState({
+        request,
+        readCheckoutState: () => readCheckoutState(command.repoRoot, github)
+    });
+    const transition = previewDecision(command);
+    const receipt = createGovernanceDecisionReceipt({
+        request,
+        actor: publicationIdentity.actor,
+        transport: publicationIdentity.transport,
+        result: transition.result,
+        bypassedInvariants: transition.bypassedInvariants,
+        stateChanges: transition.stateChanges
+    });
+    return publishGovernanceDecisionCommit({
+        expectedHeadOid: request.expectedHeadOid,
+        operation: request.operation,
+        decisionId: transition.decisionId,
+        additions: [
+            ...transition.additions,
+            { path: transition.receiptPath, content: serializeGovernanceDecisionReceipt(receipt) }
+        ],
+        deletions: transition.deletions,
+        writeCommit: github.writeCommit
+    });
 }
 
 function publishRequest(command) {
-  const github = createGitHubGovernanceApi(command.repoRoot);
-  authenticateGitHubAdministrator(github);
-  const request = decodeCurrentGovernanceRequest(command.requestPath);
-  return publishImmutableGitBlob({
-    bytes: Buffer.from(toCanonicalJson(request)),
-    writeBlob: github.writeBlob,
-  });
+    const github = createGitHubGovernanceApi(command.repoRoot);
+    authenticateGitHubAdministrator(github);
+    const request = decodeCurrentGovernanceRequest(command.requestPath);
+    return publishImmutableGitBlob({
+        bytes: Buffer.from(toCanonicalJson(request)),
+        writeBlob: github.writeBlob
+    });
 }
 
 function decodeCurrentGovernanceRequest(requestPath) {
-  const request = decodeGovernanceDecisionRequest(readJson(requestPath));
-  if (request.operation.startsWith('plan.')) {
-    throw new Error('active plan governance operations are retired');
-  }
-  if (request.operation === 'gate.accept-deviation' || request.operation === 'exception.decide') {
-    throw new Error('ordinary pull request governance operations are retired');
-  }
-  return request;
+    const request = decodeGovernanceDecisionRequest(readJson(requestPath));
+    if (request.operation.startsWith('plan.')) {
+        throw new Error('active plan governance operations are retired');
+    }
+    if (request.operation === 'gate.accept-deviation' || request.operation === 'exception.decide') {
+        throw new Error('ordinary pull request governance operations are retired');
+    }
+    return request;
 }
 
 function readPublicationIdentity(github) {
-  if (process.env.GITHUB_ACTIONS !== 'true') {
+    if (process.env.GITHUB_ACTIONS !== 'true') {
+        return {
+            actor: authenticateGitHubAdministrator(github),
+            transport: { kind: 'local-gh' }
+        };
+    }
+    requireTrustedWorkflowIdentity();
+    const expectedWorkflowRef = trustedWorkflowRef();
+    if (
+        process.env.GOVERNANCE_PREFLIGHT_ACTOR !== process.env.GITHUB_ACTOR ||
+        process.env.GOVERNANCE_PREFLIGHT_SHA !== process.env.GITHUB_SHA ||
+        process.env.GOVERNANCE_PREFLIGHT_WORKFLOW_REF !== process.env.GITHUB_WORKFLOW_REF ||
+        process.env.GOVERNANCE_APP_SLUG !== trustedGovernanceAppSlug ||
+        process.env.GOVERNANCE_CONFIGURED_APP_SLUG !== process.env.GOVERNANCE_APP_SLUG ||
+        !/^[0-9a-f]{40}$/u.test(process.env.GITHUB_SHA ?? '') ||
+        typeof process.env.GITHUB_ACTOR !== 'string' ||
+        process.env.GITHUB_ACTOR.trim() === ''
+    ) {
+        throw new Error('workflow publication requires the exact trusted main workflow identity');
+    }
     return {
-      actor: authenticateGitHubAdministrator(github),
-      transport: { kind: 'local-gh' },
+        actor: { login: process.env.GITHUB_ACTOR, permission: 'admin' },
+        transport: {
+            kind: 'workflow-dispatch',
+            runId: toPositiveInteger(process.env.GITHUB_RUN_ID, 'GITHUB_RUN_ID'),
+            runAttempt: toPositiveInteger(process.env.GITHUB_RUN_ATTEMPT, 'GITHUB_RUN_ATTEMPT'),
+            workflowRef: process.env.GITHUB_WORKFLOW_REF,
+            workflowSha: process.env.GITHUB_WORKFLOW_SHA
+        }
     };
-  }
-  requireTrustedWorkflowIdentity();
-  const expectedWorkflowRef = trustedWorkflowRef();
-  if (
-    process.env.GOVERNANCE_PREFLIGHT_ACTOR !== process.env.GITHUB_ACTOR ||
-    process.env.GOVERNANCE_PREFLIGHT_SHA !== process.env.GITHUB_SHA ||
-    process.env.GOVERNANCE_PREFLIGHT_WORKFLOW_REF !== process.env.GITHUB_WORKFLOW_REF ||
-    process.env.GOVERNANCE_APP_SLUG !== trustedGovernanceAppSlug ||
-    process.env.GOVERNANCE_CONFIGURED_APP_SLUG !== process.env.GOVERNANCE_APP_SLUG ||
-    !/^[0-9a-f]{40}$/u.test(process.env.GITHUB_SHA ?? '') ||
-    typeof process.env.GITHUB_ACTOR !== 'string' ||
-    process.env.GITHUB_ACTOR.trim() === ''
-  ) {
-    throw new Error('workflow publication requires the exact trusted main workflow identity');
-  }
-  return {
-    actor: { login: process.env.GITHUB_ACTOR, permission: 'admin' },
-    transport: {
-      kind: 'workflow-dispatch',
-      runId: toPositiveInteger(process.env.GITHUB_RUN_ID, 'GITHUB_RUN_ID'),
-      runAttempt: toPositiveInteger(process.env.GITHUB_RUN_ATTEMPT, 'GITHUB_RUN_ATTEMPT'),
-      workflowRef: process.env.GITHUB_WORKFLOW_REF,
-      workflowSha: process.env.GITHUB_WORKFLOW_SHA,
-    },
-  };
 }
 
 function requireTrustedWorkflowIdentity() {
-  if (
-    process.env.GITHUB_ACTIONS !== 'true' ||
-    process.env.GITHUB_REPOSITORY !== 'intact-software-systems/ar-eye-hunter' ||
-    process.env.GITHUB_REF !== 'refs/heads/main' ||
-    process.env.GITHUB_WORKFLOW_REF !== trustedWorkflowRef() ||
-    process.env.GITHUB_WORKFLOW_SHA !== process.env.GITHUB_SHA ||
-    !/^[0-9a-f]{40}$/u.test(process.env.GITHUB_SHA ?? '')
-  ) {
-    throw new Error('workflow publication requires the exact trusted main workflow identity');
-  }
+    if (
+        process.env.GITHUB_ACTIONS !== 'true' ||
+        process.env.GITHUB_REPOSITORY !== 'intact-software-systems/ar-eye-hunter' ||
+        process.env.GITHUB_REF !== 'refs/heads/main' ||
+        process.env.GITHUB_WORKFLOW_REF !== trustedWorkflowRef() ||
+        process.env.GITHUB_WORKFLOW_SHA !== process.env.GITHUB_SHA ||
+        !/^[0-9a-f]{40}$/u.test(process.env.GITHUB_SHA ?? '')
+    ) {
+        throw new Error('workflow publication requires the exact trusted main workflow identity');
+    }
 }
 
 function trustedWorkflowRef() {
-  return (
-    'intact-software-systems/ar-eye-hunter/' +
-    '.github/workflows/governance-decision.yml@refs/heads/main'
-  );
+    return (
+        'intact-software-systems/ar-eye-hunter/' +
+        '.github/workflows/governance-decision.yml@refs/heads/main'
+    );
 }
 
 function readCheckoutState(repoRoot, github) {
-  const remoteMain = github.readRemoteMain();
-  return {
-    headOid: runGit(repoRoot, ['rev-parse', 'HEAD']).trim(),
-    remoteMainOid: remoteMain?.object?.sha,
-    status: runGit(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all']),
-  };
+    const remoteMain = github.readRemoteMain();
+    return {
+        headOid: runGit(repoRoot, ['rev-parse', 'HEAD']).trim(),
+        remoteMainOid: remoteMain?.object?.sha,
+        status: runGit(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all'])
+    };
 }
 
 function runGit(repoRoot, arguments_) {
-  return execFileSync('git', arguments_, {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+    return execFileSync('git', arguments_, {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
 }
 
 function toPositiveInteger(value, name) {
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return parsed;
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+    return parsed;
 }
 
 function readJson(filePath) {
-  try {
-    return JSON.parse(readFileSync(filePath, 'utf8'));
-  } catch (error) {
-    throw new Error(`request file is invalid: ${toError(error).message}`);
-  }
+    try {
+        return JSON.parse(readFileSync(filePath, 'utf8'));
+    }
+    catch (error) {
+        throw new Error(`request file is invalid: ${toError(error).message}`);
+    }
 }
 
 function toError(value) {
-  return value instanceof Error ? value : new Error(String(value));
+    return value instanceof Error ? value : new Error(String(value));
 }

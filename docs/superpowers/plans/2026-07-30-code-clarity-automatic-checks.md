@@ -34,10 +34,10 @@
 
 ```js
 export const constructionRuleIds = Object.freeze({
-  forwardCapture: 'construction.forward-capture',
-  definiteAssignment: 'construction.definite-assignment',
-  nestedCallbackDepth: 'control.nested-callback-depth',
-  passThrough: 'abstraction.pass-through',
+    forwardCapture: 'construction.forward-capture',
+    definiteAssignment: 'construction.definite-assignment',
+    nestedCallbackDepth: 'control.nested-callback-depth',
+    passThrough: 'abstraction.pass-through'
 });
 
 export function scanConstructionRules(source, options) {}
@@ -51,20 +51,20 @@ Add fixture tests that expect `construction.forward-capture` for both forms:
 
 ```ts
 export function createRuntime() {
-  let service!: Service;
-  const consumer = createConsumer({ readService: () => service });
-  service = createService();
-  return { consumer, service };
+    let service!: Service;
+    const consumer = createConsumer({ readService: () => service });
+    service = createService();
+    return { consumer, service };
 }
 ```
 
 ```ts
 export function createRuntime() {
-  let send!: Send;
-  const inbound = createInbound((message) => send(message));
-  const outbound = createOutbound();
-  send = outbound.send;
-  return { inbound, outbound };
+    let send!: Send;
+    const inbound = createInbound((message) => send(message));
+    const outbound = createOutbound();
+    send = outbound.send;
+    return { inbound, outbound };
 }
 ```
 
@@ -82,7 +82,7 @@ const consumer = createConsumer({ readService: () => service });
 ```ts
 let resolveDone!: () => void;
 const done = new Promise<void>((resolve) => {
-  resolveDone = resolve;
+    resolveDone = resolve;
 });
 ```
 

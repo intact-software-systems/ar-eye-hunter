@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { mergeControlRunDetails, recipeConsoleDetailRunIds } from '../../../apps/rallar-black-box/src/recipe-console/control/control-detail-run-ids.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    mergeControlRunDetails,
-    recipeConsoleDetailRunIds,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-detail-run-ids.ts';
 
 function controlRun(runId: string, eventId?: string): ControlRunSnapshot {
     return {
@@ -25,19 +22,19 @@ function controlRun(runId: string, eventId?: string): ControlRunSnapshot {
                 agentId: 'agent-a',
                 eventId,
                 atEpochMs: 2,
-                payload: {},
+                payload: {}
             }]
             : [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
 function distributedRun(
     distributedRunId: string,
     controlRunId: string,
-    state: ControlDistributedRunSnapshot['state'],
+    state: ControlDistributedRunSnapshot['state']
 ): ControlDistributedRunSnapshot {
     return {
         distributedRunId,
@@ -49,15 +46,15 @@ function distributedRun(
             group: {
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
             recipes: [],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: [],
+                agentIds: []
             },
             startMode: 'manual',
-            ackTimeoutMs: 15_000,
+            ackTimeoutMs: 15_000
         },
         state,
         createdAtEpochMs: 1,
@@ -80,10 +77,10 @@ function distributedRun(
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: 0,
+                blockingFailures: 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 }
 
@@ -96,17 +93,17 @@ describe('Recipe Console detailed control-run selection', () => {
             'left-owner',
             'right-owner',
             'active-owner',
-            'terminal-owner',
+            'terminal-owner'
         ];
         const snapshot: ControlServerSnapshot = {
-            runs: runIds.map(runId => controlRun(runId)),
+            runs: runIds.map((runId) => controlRun(runId)),
             distributedRuns: [
                 distributedRun('selected-distributed', 'selected-owner', 'running'),
                 distributedRun('left-distributed', 'left-owner', 'passed'),
                 distributedRun('right-distributed', 'right-owner', 'failed'),
                 distributedRun('active-distributed', 'active-owner', 'waiting-for-ack'),
-                distributedRun('terminal-distributed', 'terminal-owner', 'cancelled'),
-            ],
+                distributedRun('terminal-distributed', 'terminal-owner', 'cancelled')
+            ]
         };
 
         expect(recipeConsoleDetailRunIds({
@@ -119,15 +116,15 @@ describe('Recipe Console detailed control-run selection', () => {
                 controlRunId: 'explicit-run',
                 distributedRunId: 'selected-distributed',
                 compareLeft: 'left-distributed',
-                compareRight: 'right-distributed',
-            },
+                compareRight: 'right-distributed'
+            }
         })).toEqual([
             'explicit-run',
             'bootstrap-run',
             'selected-owner',
             'left-owner',
             'right-owner',
-            'active-owner',
+            'active-owner'
         ]);
     });
 
@@ -137,8 +134,8 @@ describe('Recipe Console detailed control-run selection', () => {
             distributedRuns: [
                 distributedRun('selected', 'run-a', 'running'),
                 distributedRun('same-owner-active', 'run-a', 'staging'),
-                distributedRun('terminal', 'run-b', 'passed'),
-            ],
+                distributedRun('terminal', 'run-b', 'passed')
+            ]
         };
 
         expect(recipeConsoleDetailRunIds({
@@ -150,21 +147,21 @@ describe('Recipe Console detailed control-run selection', () => {
                 view: 'monitor',
                 controlRunId: 'missing-explicit',
                 distributedRunId: 'selected',
-                compareLeft: 'missing-distributed',
-            },
+                compareLeft: 'missing-distributed'
+            }
         })).toEqual(['run-a']);
     });
 
     it('replaces only matching index runs without changing index order', () => {
         const index: ControlServerSnapshot = {
             runs: [controlRun('run-a'), controlRun('run-b')],
-            distributedRuns: [],
+            distributedRuns: []
         };
         const detailed = controlRun('run-b', 'event-b');
 
         const merged = mergeControlRunDetails(index, [detailed]);
 
-        expect(merged.runs.map(run => run.runId)).toEqual(['run-a', 'run-b']);
+        expect(merged.runs.map((run) => run.runId)).toEqual(['run-a', 'run-b']);
         expect(merged.runs[0]).toBe(index.runs[0]);
         expect(merged.runs[1]).toBe(detailed);
         expect(merged.distributedRuns).toBe(index.distributedRuns);

@@ -13,7 +13,7 @@ export interface ALDedupStore extends ALDedupStoreLike, ALReadyable {
     mark(
         key: string,
         ttlMs: number,
-        nowMs?: number,
+        nowMs?: number
     ): Promise<void>;
 
     deleteExpired(nowMs?: number): Promise<number>;
@@ -42,7 +42,7 @@ export class InMemoryALDedupStore implements ALDedupStore {
     async mark(
         key: string,
         ttlMs: number,
-        nowMs: number = Date.now(),
+        nowMs: number = Date.now()
     ): Promise<void> {
         this.expiresAtMsByKey.set(key, nowMs + Math.max(0, ttlMs));
     }
@@ -69,7 +69,7 @@ export class PersistentALDedupStore implements ALDedupStore {
     private readonly persistence: PersistenceProvider<string, number>;
 
     constructor(
-        persistence: PersistenceProvider<string, number>,
+        persistence: PersistenceProvider<string, number>
     ) {
         this.persistence = persistence;
         this.readyPromise = this.hydrate();
@@ -89,7 +89,7 @@ export class PersistentALDedupStore implements ALDedupStore {
 
         if (expiresAtMs <= nowMs) {
             this.expiresAtMsByKey.delete(key);
-            void this.persistence.removeItem(key).catch(error => {
+            void this.persistence.removeItem(key).catch((error) => {
                 logPersistenceError(`Failed to remove expired dedup key ${key}`, error);
             });
             return false;
@@ -101,7 +101,7 @@ export class PersistentALDedupStore implements ALDedupStore {
     async mark(
         key: string,
         ttlMs: number,
-        nowMs: number = Date.now(),
+        nowMs: number = Date.now()
     ): Promise<void> {
         await this.ready();
 
@@ -111,8 +111,8 @@ export class PersistentALDedupStore implements ALDedupStore {
             key,
             expiresAtMs,
             {
-                expireAtTimestamp: expiresAtMs,
-            },
+                expireAtTimestamp: expiresAtMs
+            }
         );
     }
 
@@ -127,7 +127,7 @@ export class PersistentALDedupStore implements ALDedupStore {
             }
         }
 
-        await Promise.all(keysToDelete.map(async key => {
+        await Promise.all(keysToDelete.map(async (key) => {
             await this.persistence.removeItem(key);
         }));
 
@@ -185,7 +185,7 @@ export interface ALOrderingStoreLike {
 export interface ALOrderingStore extends ALOrderingStoreLike, ALReadyable {
     accept(
         msg: ALMessage,
-        nowMs?: number,
+        nowMs?: number
     ): Promise<ALOrderingObservation>;
 
     deleteExpired(nowMs?: number): Promise<number>;
@@ -219,7 +219,7 @@ export interface ALSupersedenceStoreLike {
 export interface ALSupersedenceStore extends ALSupersedenceStoreLike, ALReadyable {
     accept(
         input: ALSupersedenceInput,
-        nowMs?: number,
+        nowMs?: number
     ): Promise<ALSupersedenceObservation>;
 
     deleteExpired(nowMs?: number): Promise<number>;
@@ -253,17 +253,17 @@ type ALSupersedenceReplacementState = {
 
 type PersistedALSupersedenceValue =
     | Readonly<{
-    kind: 'latest';
-    latestMsgId: string;
-    latestSeq?: number;
-    latestTs: number;
-    updatedAtMs: number;
-}>
+        kind: 'latest';
+        latestMsgId: string;
+        latestSeq?: number;
+        latestTs: number;
+        updatedAtMs: number;
+    }>
     | Readonly<{
-    kind: 'replacement';
-    byMsgId: string;
-    updatedAtMs: number;
-}>;
+        kind: 'replacement';
+        byMsgId: string;
+        updatedAtMs: number;
+    }>;
 
 export type ALSupersedencePersistenceValue = PersistedALSupersedenceValue;
 
@@ -273,7 +273,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
     private readonly trackTtlMs: number;
 
     constructor(
-        trackTtlMs: number = 5 * 60_000,
+        trackTtlMs: number = 5 * 60_000
     ) {
         this.trackTtlMs = trackTtlMs;
     }
@@ -315,7 +315,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
     private computeObservation(
         msg: ALMessage,
         nowMs: number,
-        apply: boolean,
+        apply: boolean
     ): ALOrderingObservation {
         const trackKey = toALOrderingTrackKey(msg);
         const seq = msg.ordering?.seq;
@@ -324,7 +324,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
             return {
                 status: 'untracked',
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -339,8 +339,8 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                         {
                             lastContiguousSeq: 0,
                             bufferedSeqs: new Set<number>([seq]),
-                            updatedAtMs: nowMs,
-                        },
+                            updatedAtMs: nowMs
+                        }
                     );
                 }
 
@@ -351,7 +351,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                     expectedSeq: 1,
                     lastContiguousSeq: 0,
                     missingSeqs,
-                    releasableSeqs: [],
+                    releasableSeqs: []
                 };
             }
 
@@ -361,8 +361,8 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                     {
                         lastContiguousSeq: seq,
                         bufferedSeqs: new Set<number>(),
-                        updatedAtMs: nowMs,
-                    },
+                        updatedAtMs: nowMs
+                    }
                 );
             }
 
@@ -373,7 +373,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                 expectedSeq: seq,
                 lastContiguousSeq: seq,
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -385,7 +385,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                 expectedSeq: state.lastContiguousSeq + 1,
                 lastContiguousSeq: state.lastContiguousSeq,
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -397,7 +397,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                 expectedSeq: state.lastContiguousSeq + 1,
                 lastContiguousSeq: state.lastContiguousSeq,
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -412,7 +412,8 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                     releasableSeqs.push(state.lastContiguousSeq);
                 }
                 state.updatedAtMs = nowMs;
-            } else {
+            }
+            else {
                 let candidate = seq;
                 while (state.bufferedSeqs.has(candidate + 1)) {
                     candidate += 1;
@@ -427,7 +428,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
                 expectedSeq: state.lastContiguousSeq + 1,
                 lastContiguousSeq: apply ? state.lastContiguousSeq : seq,
                 missingSeqs: [],
-                releasableSeqs,
+                releasableSeqs
             };
         }
 
@@ -452,7 +453,7 @@ export class InMemoryALOrderingStore implements ALOrderingStore {
             expectedSeq,
             lastContiguousSeq: state.lastContiguousSeq,
             missingSeqs,
-            releasableSeqs: [],
+            releasableSeqs: []
         };
     }
 }
@@ -467,7 +468,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
 
     constructor(
         persistence: PersistenceProvider<string, PersistedALOrderingTrackState>,
-        trackTtlMs: number = 5 * 60_000,
+        trackTtlMs: number = 5 * 60_000
     ) {
         this.persistence = persistence;
         this.trackTtlMs = trackTtlMs;
@@ -495,8 +496,8 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                     observation.trackKey,
                     serializeOrderingTrackState(state),
                     {
-                        expireAtTimestamp: state.updatedAtMs + this.trackTtlMs,
-                    },
+                        expireAtTimestamp: state.updatedAtMs + this.trackTtlMs
+                    }
                 );
             }
         }
@@ -508,7 +509,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
         await this.ready();
 
         const keysToDelete = this.deleteExpiredLocally(nowMs);
-        await Promise.all(keysToDelete.map(async trackKey => {
+        await Promise.all(keysToDelete.map(async (trackKey) => {
             await this.persistence.removeItem(trackKey);
         }));
         return keysToDelete.length;
@@ -560,7 +561,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
     private computeObservation(
         msg: ALMessage,
         nowMs: number,
-        apply: boolean,
+        apply: boolean
     ): ALOrderingObservation {
         const trackKey = toALOrderingTrackKey(msg);
         const seq = msg.ordering?.seq;
@@ -569,7 +570,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
             return {
                 status: 'untracked',
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -584,8 +585,8 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                         {
                             lastContiguousSeq: 0,
                             bufferedSeqs: new Set<number>([seq]),
-                            updatedAtMs: nowMs,
-                        },
+                            updatedAtMs: nowMs
+                        }
                     );
                 }
 
@@ -596,7 +597,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                     expectedSeq: 1,
                     lastContiguousSeq: 0,
                     missingSeqs,
-                    releasableSeqs: [],
+                    releasableSeqs: []
                 };
             }
 
@@ -606,8 +607,8 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                     {
                         lastContiguousSeq: seq,
                         bufferedSeqs: new Set<number>(),
-                        updatedAtMs: nowMs,
-                    },
+                        updatedAtMs: nowMs
+                    }
                 );
             }
 
@@ -618,7 +619,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                 expectedSeq: seq,
                 lastContiguousSeq: seq,
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -630,7 +631,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                 expectedSeq: state.lastContiguousSeq + 1,
                 lastContiguousSeq: state.lastContiguousSeq,
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -642,7 +643,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                 expectedSeq: state.lastContiguousSeq + 1,
                 lastContiguousSeq: state.lastContiguousSeq,
                 missingSeqs: [],
-                releasableSeqs: [],
+                releasableSeqs: []
             };
         }
 
@@ -657,7 +658,8 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                     releasableSeqs.push(state.lastContiguousSeq);
                 }
                 state.updatedAtMs = nowMs;
-            } else {
+            }
+            else {
                 let candidate = seq;
                 while (state.bufferedSeqs.has(candidate + 1)) {
                     candidate += 1;
@@ -672,7 +674,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
                 expectedSeq: state.lastContiguousSeq + 1,
                 lastContiguousSeq: apply ? state.lastContiguousSeq : seq,
                 missingSeqs: [],
-                releasableSeqs,
+                releasableSeqs
             };
         }
 
@@ -697,7 +699,7 @@ export class PersistentALOrderingStore implements ALOrderingStore {
             expectedSeq,
             lastContiguousSeq: state.lastContiguousSeq,
             missingSeqs,
-            releasableSeqs: [],
+            releasableSeqs: []
         };
     }
 }
@@ -709,7 +711,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
     private readonly trackTtlMs: number;
 
     constructor(
-        trackTtlMs: number = 5 * 60_000,
+        trackTtlMs: number = 5 * 60_000
     ) {
         this.trackTtlMs = trackTtlMs;
     }
@@ -719,13 +721,13 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
 
     peek(
         input: ALSupersedenceInput,
-        nowMs: number = Date.now(),
+        nowMs: number = Date.now()
     ): ALSupersedenceObservation {
         this.deleteExpiredLocally(nowMs);
 
         if (!input.key) {
             return {
-                status: 'untracked',
+                status: 'untracked'
             };
         }
 
@@ -735,7 +737,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 status: 'superseded',
                 key: input.key,
                 latestMsgId: replacement.byMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -745,7 +747,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 status: 'current',
                 key: input.key,
                 latestMsgId: input.msgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -754,7 +756,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 status: 'current',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -763,7 +765,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 status: 'replaces-current',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -771,7 +773,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
             input.seq,
             input.ts,
             current.latestSeq,
-            current.latestTs,
+            current.latestTs
         );
 
         return comparison >= 0
@@ -779,19 +781,19 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 status: 'replaces-current',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             }
             : {
                 status: 'superseded',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
     }
 
     async accept(
         input: ALSupersedenceInput,
-        nowMs: number = Date.now(),
+        nowMs: number = Date.now()
     ): Promise<ALSupersedenceObservation> {
         await this.deleteExpired(nowMs);
 
@@ -809,8 +811,8 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 latestMsgId: input.msgId,
                 latestSeq: input.seq,
                 latestTs: input.ts,
-                updatedAtMs: nowMs,
-            },
+                updatedAtMs: nowMs
+            }
         );
 
         if (latestMsgId && latestMsgId !== input.msgId) {
@@ -818,8 +820,8 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 latestMsgId,
                 {
                     byMsgId: input.msgId,
-                    updatedAtMs: nowMs,
-                },
+                    updatedAtMs: nowMs
+                }
             );
         }
 
@@ -828,8 +830,8 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
                 input.replacesMsgId,
                 {
                     byMsgId: input.msgId,
-                    updatedAtMs: nowMs,
-                },
+                    updatedAtMs: nowMs
+                }
             );
         }
 
@@ -837,7 +839,7 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
             status: 'current',
             key: input.key,
             latestMsgId: input.msgId,
-            replacesMsgId: input.replacesMsgId,
+            replacesMsgId: input.replacesMsgId
         };
     }
 
@@ -877,7 +879,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
 
     constructor(
         persistence: PersistenceProvider<string, PersistedALSupersedenceValue>,
-        trackTtlMs: number = 5 * 60_000,
+        trackTtlMs: number = 5 * 60_000
     ) {
         this.persistence = persistence;
         this.trackTtlMs = trackTtlMs;
@@ -890,14 +892,14 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
 
     peek(
         input: ALSupersedenceInput,
-        nowMs: number = Date.now(),
+        nowMs: number = Date.now()
     ): ALSupersedenceObservation {
         this.assertReady();
         this.deleteExpiredLocally(nowMs);
 
         if (!input.key) {
             return {
-                status: 'untracked',
+                status: 'untracked'
             };
         }
 
@@ -907,7 +909,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 status: 'superseded',
                 key: input.key,
                 latestMsgId: replacement.byMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -917,7 +919,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 status: 'current',
                 key: input.key,
                 latestMsgId: input.msgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -926,7 +928,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 status: 'current',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -935,7 +937,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 status: 'replaces-current',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
         }
 
@@ -943,7 +945,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
             input.seq,
             input.ts,
             current.latestSeq,
-            current.latestTs,
+            current.latestTs
         );
 
         return comparison >= 0
@@ -951,19 +953,19 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 status: 'replaces-current',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             }
             : {
                 status: 'superseded',
                 key: input.key,
                 latestMsgId: current.latestMsgId,
-                replacesMsgId: input.replacesMsgId,
+                replacesMsgId: input.replacesMsgId
             };
     }
 
     async accept(
         input: ALSupersedenceInput,
-        nowMs: number = Date.now(),
+        nowMs: number = Date.now()
     ): Promise<ALSupersedenceObservation> {
         await this.deleteExpired(nowMs);
 
@@ -981,8 +983,8 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 latestMsgId: input.msgId,
                 latestSeq: input.seq,
                 latestTs: input.ts,
-                updatedAtMs: nowMs,
-            },
+                updatedAtMs: nowMs
+            }
         );
         await this.persistence.setItem(
             this.toLatestPersistenceKey(input.key),
@@ -991,11 +993,11 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 latestMsgId: input.msgId,
                 latestSeq: input.seq,
                 latestTs: input.ts,
-                updatedAtMs: nowMs,
+                updatedAtMs: nowMs
             },
             {
-                expireAtTimestamp: nowMs + this.trackTtlMs,
-            },
+                expireAtTimestamp: nowMs + this.trackTtlMs
+            }
         );
 
         if (previousLatestMsgId && previousLatestMsgId !== input.msgId) {
@@ -1003,19 +1005,19 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 previousLatestMsgId,
                 {
                     byMsgId: input.msgId,
-                    updatedAtMs: nowMs,
-                },
+                    updatedAtMs: nowMs
+                }
             );
             await this.persistence.setItem(
                 this.toReplacementPersistenceKey(previousLatestMsgId),
                 {
                     kind: 'replacement',
                     byMsgId: input.msgId,
-                    updatedAtMs: nowMs,
+                    updatedAtMs: nowMs
                 },
                 {
-                    expireAtTimestamp: nowMs + this.trackTtlMs,
-                },
+                    expireAtTimestamp: nowMs + this.trackTtlMs
+                }
             );
         }
 
@@ -1024,19 +1026,19 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                 input.replacesMsgId,
                 {
                     byMsgId: input.msgId,
-                    updatedAtMs: nowMs,
-                },
+                    updatedAtMs: nowMs
+                }
             );
             await this.persistence.setItem(
                 this.toReplacementPersistenceKey(input.replacesMsgId),
                 {
                     kind: 'replacement',
                     byMsgId: input.msgId,
-                    updatedAtMs: nowMs,
+                    updatedAtMs: nowMs
                 },
                 {
-                    expireAtTimestamp: nowMs + this.trackTtlMs,
-                },
+                    expireAtTimestamp: nowMs + this.trackTtlMs
+                }
             );
         }
 
@@ -1044,7 +1046,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
             status: 'current',
             key: input.key,
             latestMsgId: input.msgId,
-            replacesMsgId: input.replacesMsgId,
+            replacesMsgId: input.replacesMsgId
         };
     }
 
@@ -1052,7 +1054,7 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
         await this.ready();
 
         const keysToDelete = this.deleteExpiredLocally(nowMs);
-        await Promise.all(keysToDelete.map(async key => {
+        await Promise.all(keysToDelete.map(async (key) => {
             await this.persistence.removeItem(key);
         }));
         return keysToDelete.length;
@@ -1079,8 +1081,8 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                         latestMsgId: stored.latestMsgId,
                         latestSeq: stored.latestSeq,
                         latestTs: stored.latestTs,
-                        updatedAtMs: stored.updatedAtMs,
-                    },
+                        updatedAtMs: stored.updatedAtMs
+                    }
                 );
             }
 
@@ -1089,8 +1091,8 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
                     key.slice('replacement:'.length),
                     {
                         byMsgId: stored.byMsgId,
-                        updatedAtMs: stored.updatedAtMs,
-                    },
+                        updatedAtMs: stored.updatedAtMs
+                    }
                 );
             }
         }
@@ -1149,22 +1151,22 @@ function shouldPersistOrderingObservation(status: ALOrderingObservationStatus): 
 }
 
 function serializeOrderingTrackState(
-    state: ALOrderingTrackState,
+    state: ALOrderingTrackState
 ): PersistedALOrderingTrackState {
     return {
         lastContiguousSeq: state.lastContiguousSeq,
         bufferedSeqs: [...state.bufferedSeqs].sort((left, right) => left - right),
-        updatedAtMs: state.updatedAtMs,
+        updatedAtMs: state.updatedAtMs
     };
 }
 
 function deserializeOrderingTrackState(
-    state: PersistedALOrderingTrackState,
+    state: PersistedALOrderingTrackState
 ): ALOrderingTrackState {
     return {
         lastContiguousSeq: state.lastContiguousSeq,
         bufferedSeqs: new Set<number>(state.bufferedSeqs),
-        updatedAtMs: state.updatedAtMs,
+        updatedAtMs: state.updatedAtMs
     };
 }
 
@@ -1172,7 +1174,7 @@ function compareSupersedenceVersion(
     leftSeq: number | undefined,
     leftTs: number,
     rightSeq: number | undefined,
-    rightTs: number,
+    rightTs: number
 ): number {
     if (leftSeq !== undefined || rightSeq !== undefined) {
         const seqComparison = (leftSeq ?? Number.NEGATIVE_INFINITY) - (rightSeq ?? Number.NEGATIVE_INFINITY);

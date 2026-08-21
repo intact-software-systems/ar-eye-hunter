@@ -11,11 +11,11 @@ import {
     RECIPE_CONSOLE_VIEWS,
     type ParsedRecipeConsoleUrl,
     type RecipeConsoleUrlIssue,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleUrlState
 } from './url-state-contract.ts';
 import {
-    OPTIONAL_STRING_FIELDS,
     deleteSensitiveUrlKeys,
+    OPTIONAL_STRING_FIELDS,
     readEnum,
     readEpoch,
     readFleetLayers,
@@ -23,7 +23,7 @@ import {
     requiredValue,
     safeEpoch,
     setOptionalString,
-    toSearch,
+    toSearch
 } from './url-state-helpers.ts';
 
 type MutableState = {
@@ -32,7 +32,7 @@ type MutableState = {
 
 export function serializeRecipeConsoleUrl(
     state: RecipeConsoleUrlState,
-    baseSearch = '',
+    baseSearch = ''
 ): string {
     const params = new URLSearchParams(baseSearch);
     deleteSensitiveUrlKeys(params);
@@ -49,7 +49,7 @@ export function serializeRecipeConsoleUrl(
         'view',
         (RECIPE_CONSOLE_VIEWS as readonly string[]).includes(state.view)
             ? state.view
-            : 'execute',
+            : 'execute'
     );
     for (const field of OPTIONAL_STRING_FIELDS) {
         setOptionalString(params, field, state[field]);
@@ -87,7 +87,7 @@ export function serializeRecipeConsoleUrl(
 
     if (state.fleetMapLayers) {
         const selected = new Set(state.fleetMapLayers);
-        const layers = RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter(layer => selected.has(layer));
+        const layers = RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter((layer) => selected.has(layer));
         params.set('fleetMapLayers', layers.length > 0 ? layers.join(',') : 'none');
     }
     if (state.view === 'advanced') {
@@ -103,7 +103,7 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
     const state: MutableState = {
         v: RECIPE_CONSOLE_URL_VERSION,
         experience: 'recipe-console',
-        view: 'execute',
+        view: 'execute'
     };
     const hasRouteDiscriminator = params.has('v') ||
         params.has('experience') ||
@@ -117,7 +117,7 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
             field: 'v',
             code: 'invalid',
             value: version,
-            message: 'v is not a supported Recipe Console URL version.',
+            message: 'v is not a supported Recipe Console URL version.'
         });
     }
     const experience = hasRouteDiscriminator
@@ -128,7 +128,7 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
             field: 'experience',
             code: 'invalid',
             value: experience,
-            message: 'experience must select recipe-console.',
+            message: 'experience must select recipe-console.'
         });
     }
     const view = hasRouteDiscriminator
@@ -137,12 +137,13 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
     if (view !== undefined) {
         if ((RECIPE_CONSOLE_VIEWS as readonly string[]).includes(view)) {
             state.view = view as RecipeConsoleUrlState['view'];
-        } else {
+        }
+        else {
             issues.push({
                 field: 'view',
                 code: 'invalid',
                 value: view,
-                message: 'view is not a supported Recipe Console view.',
+                message: 'view is not a supported Recipe Console view.'
             });
         }
     }
@@ -157,7 +158,7 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
         params,
         'diagnosticSeverity',
         RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES,
-        issues,
+        issues
     );
     state.transport = readEnum(params, 'transport', RECIPE_CONSOLE_TRANSPORTS, issues);
     state.status = readEnum(params, 'status', RECIPE_CONSOLE_RUN_STATUSES, issues);
@@ -165,13 +166,13 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
         params,
         'failureCategory',
         RECIPE_CONSOLE_FAILURE_CATEGORIES,
-        issues,
+        issues
     );
     state.timingMetric = readEnum(
         params,
         'timingMetric',
         RECIPE_CONSOLE_TIMING_METRICS,
-        issues,
+        issues
     );
     state.from = readEpoch(params, 'from', issues);
     state.to = readEpoch(params, 'to', issues);
@@ -180,7 +181,7 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
         issues.push({
             field: 'from,to',
             code: 'normalized',
-            message: 'The reversed time range was placed in ascending order.',
+            message: 'The reversed time range was placed in ascending order.'
         });
     }
     state.fleetMapLayers = readFleetLayers(params, issues);
@@ -189,12 +190,13 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
     if (legacySurface !== undefined) {
         if (state.view === 'advanced') {
             state.legacySurface = legacySurface;
-        } else {
+        }
+        else {
             issues.push({
                 field: 'legacySurface',
                 code: 'inapplicable',
                 value: legacySurface,
-                message: 'legacySurface applies only to the Advanced view.',
+                message: 'legacySurface applies only to the Advanced view.'
             });
         }
     }
@@ -210,7 +212,7 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
         state,
         issues,
         canonicalSearch,
-        needsReplace: canonicalSearch !== inputSearch,
+        needsReplace: canonicalSearch !== inputSearch
     };
 }
 
@@ -229,9 +231,9 @@ export function scrubRecipeConsoleHash(hash: string): string {
 
 export function createRecipeConsoleShareHref(
     location: Pick<Location, 'origin' | 'pathname' | 'search' | 'hash'>,
-    state: RecipeConsoleUrlState,
+    state: RecipeConsoleUrlState
 ): string {
-    return `${location.origin}${location.pathname}${
-        serializeRecipeConsoleUrl(state, location.search)
-    }${scrubRecipeConsoleHash(location.hash)}`;
+    return `${location.origin}${location.pathname}${serializeRecipeConsoleUrl(state, location.search)}${
+        scrubRecipeConsoleHash(location.hash)
+    }`;
 }

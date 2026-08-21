@@ -1,15 +1,12 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { OperationalStatus } from '../ui/StatusMark.tsx';
 import { CommandBarItem } from '../ui/CommandBarItem.tsx';
+import type { OperationalStatus } from '../ui/StatusMark.tsx';
 import type { ControlQuerySnapshot } from './control-query.ts';
-import type {
-    RecipeConsoleActiveRunContext,
-    RecipeConsoleControlSelection,
-} from './control-selection.ts';
+import type { RecipeConsoleActiveRunContext, RecipeConsoleControlSelection } from './control-selection.ts';
 
 export function controlCommandStatus(
-    query: ControlQuerySnapshot<ControlServerSnapshot>,
-): Readonly<{ status: OperationalStatus; label: string }> {
+    query: ControlQuerySnapshot<ControlServerSnapshot>
+): Readonly<{ status: OperationalStatus; label: string; }> {
     switch (query.status) {
         case 'connecting':
             return { status: 'running', label: `Connecting · ${query.reachability}` };
@@ -19,20 +16,20 @@ export function controlCommandStatus(
             return query.authorization === 'required'
                 ? {
                     status: 'warning',
-                    label: `Authorization required · ${query.reachability} · partial`,
+                    label: `Authorization required · ${query.reachability} · partial`
                 }
                 : { status: 'partial', label: `Partial · ${query.reachability}` };
         case 'stale':
             if (query.authorization === 'required') {
                 return {
                     status: 'warning',
-                    label: `Authorization required · ${query.reachability} · stale`,
+                    label: `Authorization required · ${query.reachability} · stale`
                 };
             }
             if (query.lastError?.kind === 'timeout') {
                 return {
                     status: 'stale',
-                    label: `${controlTimeoutLabel(query.lastError.message)} · last known`,
+                    label: `${controlTimeoutLabel(query.lastError.message)} · last known`
                 };
             }
             return { status: 'stale', label: `Stale · ${query.reachability}` };
@@ -40,13 +37,13 @@ export function controlCommandStatus(
             if (query.authorization === 'required') {
                 return {
                     status: 'warning',
-                    label: `Authorization required · ${query.reachability}`,
+                    label: `Authorization required · ${query.reachability}`
                 };
             }
             if (query.lastError?.kind === 'timeout') {
                 return {
                     status: 'failed',
-                    label: `${controlTimeoutLabel(query.lastError.message)} · ${query.reachability}`,
+                    label: `${controlTimeoutLabel(query.lastError.message)} · ${query.reachability}`
                 };
             }
             return query.reachability === 'reachable'
@@ -58,9 +55,11 @@ export function controlCommandStatus(
 function controlTimeoutLabel(message: string): string {
     const timeoutMs = Number.parseInt(
         message.match(/after\s+(\d+)\s*ms\b/i)?.[1] ?? '',
-        10,
+        10
     );
-    if (!Number.isFinite(timeoutMs)) return 'Control request timed out';
+    if (!Number.isFinite(timeoutMs)) {
+        return 'Control request timed out';
+    }
     return `Timed out after ${Number((timeoutMs / 1_000).toFixed(2))} s`;
 }
 
@@ -68,7 +67,7 @@ export function controlCommandActiveRunLabel(
     context: RecipeConsoleActiveRunContext,
     queryStatus: ControlQuerySnapshot<ControlServerSnapshot>['status'],
     distributedRunContextAvailable: boolean,
-    controlRunContextAvailable = true,
+    controlRunContextAvailable = true
 ): string {
     if (!distributedRunContextAvailable || !controlRunContextAvailable) {
         return 'Unknown';
@@ -88,14 +87,14 @@ export function ControlCommandContext({
     baseUrl,
     query,
     safeTargetLabel,
-    selection,
+    selection
 }: Readonly<{
     baseUrl: string;
     query: ControlQuerySnapshot<ControlServerSnapshot>;
     safeTargetLabel?: string;
     selection: RecipeConsoleControlSelection;
 }>) {
-    const connected = selection.boardRows.filter(row => row.connected).length;
+    const connected = selection.boardRows.filter((row) => row.connected).length;
     const controlRunContextAvailable = selection.controlRun !== undefined ||
         query.snapshot?.runs.length === 0;
     const connectedLabel = query.snapshot === undefined || !controlRunContextAvailable
@@ -107,13 +106,13 @@ export function ControlCommandContext({
         selection.activeRunContext,
         query.status,
         query.snapshot?.distributedRuns !== undefined,
-        controlRunContextAvailable,
+        controlRunContextAvailable
     );
     const safeLabel = controlCommandSafeTargetLabel({
         queryStatus: query.status,
         safeTargetableCount: selection.safeTargetableCount,
         lastKnownTargetableCount: selection.lastKnownTargetableCount,
-        override: safeTargetLabel,
+        override: safeTargetLabel
     });
 
     return (
@@ -129,23 +128,29 @@ export function ControlCommandContext({
     );
 }
 
-export function controlCommandSafeTargetLabel(input: Readonly<{
-    queryStatus: ControlQuerySnapshot<ControlServerSnapshot>['status'];
-    safeTargetableCount: number;
-    lastKnownTargetableCount: number;
-    override?: string;
-}>): string {
-    if (input.override) return input.override;
+export function controlCommandSafeTargetLabel(
+    input: Readonly<{
+        queryStatus: ControlQuerySnapshot<ControlServerSnapshot>['status'];
+        safeTargetableCount: number;
+        lastKnownTargetableCount: number;
+        override?: string;
+    }>
+): string {
+    if (input.override) {
+        return input.override;
+    }
     return input.queryStatus === 'stale'
         ? `0 current · ${input.lastKnownTargetableCount} last known`
         : String(input.safeTargetableCount);
 }
 
-function formatGroup(group: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    groupId: string;
-}>): string {
+function formatGroup(
+    group: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        groupId: string;
+    }>
+): string {
     return `${group.applicationId}/${group.workspaceId}/${group.groupId}`;
 }
 

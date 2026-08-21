@@ -1,9 +1,7 @@
 import type {
     DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceWindow,
+    DistributedArtifactEvidenceWindow
 } from '@shared-test/rallar-bb-test/mod.ts';
-import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
-import { ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE } from './analyze-worker-contract.ts';
 import {
     boundedText,
     finiteNumber,
@@ -11,15 +9,17 @@ import {
     MAX_METADATA_BYTES,
     MAX_SUMMARY_BYTES,
     projectOpaqueIdentifier,
-    withinSerializedLimit,
+    withinSerializedLimit
 } from './analyze-projection-bounds.ts';
+import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
+import { ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE } from './analyze-worker-contract.ts';
 
 /**
  * Normal IDs remain compatible. Oversized IDs become deterministic opaque
  * handles that the worker resolves against its private catalog.
  */
 export function projectAnalyzeEvidenceEntry(
-    entry: DistributedArtifactEvidenceEntry,
+    entry: DistributedArtifactEvidenceEntry
 ): DistributedArtifactEvidenceEntry {
     return {
         id: projectOpaqueIdentifier(entry.id),
@@ -33,9 +33,9 @@ export function projectAnalyzeEvidenceEntry(
             : {}),
         ...(entry.agentIds
             ? {
-                  agentIds: entry.agentIds.slice(0, MAX_EVIDENCE_AGENT_IDS)
-                      .map(value => projectOpaqueIdentifier(value)),
-              }
+                agentIds: entry.agentIds.slice(0, MAX_EVIDENCE_AGENT_IDS)
+                    .map((value) => projectOpaqueIdentifier(value))
+            }
             : {}),
         ...(entry.recipeId
             ? { recipeId: projectOpaqueIdentifier(entry.recipeId) }
@@ -48,11 +48,11 @@ export function projectAnalyzeEvidenceEntry(
             : {}),
         ...(entry.diagnosticType
             ? {
-                  diagnosticType: boundedText(
-                      entry.diagnosticType,
-                      MAX_METADATA_BYTES,
-                  ),
-              }
+                diagnosticType: boundedText(
+                    entry.diagnosticType,
+                    MAX_METADATA_BYTES
+                )
+            }
             : {}),
         ...(entry.severity
             ? { severity: boundedText(entry.severity, MAX_METADATA_BYTES) }
@@ -70,34 +70,35 @@ export function projectAnalyzeEvidenceEntry(
         payloadSummary: boundedText(entry.payloadSummary),
         ...(entry.failureDetails
             ? { failureDetails: projectFailureDetails(entry.failureDetails, true) }
-            : {}),
+            : {})
     };
 }
 
 export function projectAnalyzeEvidenceWindow(
-    window: DistributedArtifactEvidenceWindow,
+    window: DistributedArtifactEvidenceWindow
 ): AnalyzeEvidenceWindowProjection {
     const entries = window.entries
         .slice(0, ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE)
         .map(projectAnalyzeEvidenceEntry);
     const candidate = evidenceWindowProjection(window, entries);
-    return withinSerializedLimit(candidate, () => evidenceWindowProjection(
-        window,
-        entries.map(projectMinimalEvidenceEntry),
-    ));
+    return withinSerializedLimit(candidate, () =>
+        evidenceWindowProjection(
+            window,
+            entries.map(projectMinimalEvidenceEntry)
+        ));
 }
 
 /** Resolve a projected evidence handle without exposing raw catalog IDs. */
 export function analyzeEvidenceEntryMatchesProjectedId(
     entry: DistributedArtifactEvidenceEntry,
-    projectedId: string,
+    projectedId: string
 ): boolean {
     return projectOpaqueIdentifier(entry.id) === projectedId;
 }
 
 function evidenceWindowProjection(
     source: DistributedArtifactEvidenceWindow,
-    entries: readonly DistributedArtifactEvidenceEntry[],
+    entries: readonly DistributedArtifactEvidenceEntry[]
 ): AnalyzeEvidenceWindowProjection {
     return {
         entries,
@@ -118,16 +119,16 @@ function evidenceWindowProjection(
             renderedMatches: entries.length,
             renderOmittedMatches: Math.max(
                 0,
-                finiteNumber(source.counts.retainedMatches) - entries.length,
-            ),
+                finiteNumber(source.counts.retainedMatches) - entries.length
+            )
         },
         totalMatchesIsComplete: source.totalMatchesIsComplete,
-        windowSize: ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE,
+        windowSize: ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE
     };
 }
 
 function projectMinimalEvidenceEntry(
-    entry: DistributedArtifactEvidenceEntry,
+    entry: DistributedArtifactEvidenceEntry
 ): DistributedArtifactEvidenceEntry {
     return {
         id: entry.id,
@@ -137,13 +138,13 @@ function projectMinimalEvidenceEntry(
         payloadSummary: '',
         ...(entry.failureDetails
             ? { failureDetails: projectFailureDetails(entry.failureDetails, false) }
-            : {}),
+            : {})
     };
 }
 
 function projectFailureDetails(
     details: NonNullable<DistributedArtifactEvidenceEntry['failureDetails']>,
-    includeStack: boolean,
+    includeStack: boolean
 ): NonNullable<DistributedArtifactEvidenceEntry['failureDetails']> {
     return {
         ...(details.code
@@ -157,6 +158,6 @@ function projectFailureDetails(
             : {}),
         ...(includeStack && details.stack
             ? { stack: boundedText(details.stack) }
-            : {}),
+            : {})
     };
 }

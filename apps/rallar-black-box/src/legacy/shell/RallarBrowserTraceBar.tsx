@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
 import {
     eventPayloadText,
     isRallarBrowserEvent,
     traceMetaText,
-    traceTimingText,
+    traceTimingText
 } from '../diagnostics/events/event-presentation.ts';
 import { formatTime } from '../shared/time-format.ts';
 import { useNow } from '../shared/use-now.ts';
@@ -17,7 +17,7 @@ export function RallarBrowserTraceBar({
     state,
     status,
     onOpenTrace,
-    onOpenEvents,
+    onOpenEvents
 }: {
     mode: AppModeId;
     state: RallarBlackBoxTestState;
@@ -28,36 +28,32 @@ export function RallarBrowserTraceBar({
     const events = selectRallarBlackBoxEvents(state);
     const rallarEvents = useMemo(
         () => events.filter(isRallarBrowserEvent),
-        [events],
+        [events]
     );
     const recentEvents = rallarEvents.slice(-4).reverse();
     const latestEvent = rallarEvents.at(-1);
     const errorCount = rallarEvents.filter(
-        (event) => event.severity === 'error',
+        (event) => event.severity === 'error'
     ).length;
     const warningCount = rallarEvents.filter(
-        (event) => event.severity === 'warning',
+        (event) => event.severity === 'warning'
     ).length;
     const hasWarningOrError = errorCount > 0 || warningCount > 0;
-    const tone =
-        latestEvent?.severity === 'error'
-            ? 'bad'
-            : latestEvent?.severity === 'warning'
-              ? 'warn'
-              : latestEvent
-                ? 'good'
-                : 'muted';
-    const modeLabel =
-        mode === 'black-box-runner' ? 'black-box-runner mode' : 'Rallar mode';
-    const eventSource =
-        mode === 'black-box-runner'
-            ? 'Runner/control events'
-            : 'Live Rallar events';
+    const tone = latestEvent?.severity === 'error'
+        ? 'bad'
+        : latestEvent?.severity === 'warning'
+        ? 'warn'
+        : latestEvent
+        ? 'good'
+        : 'muted';
+    const modeLabel = mode === 'black-box-runner' ? 'black-box-runner mode' : 'Rallar mode';
+    const eventSource = mode === 'black-box-runner'
+        ? 'Runner/control events'
+        : 'Live Rallar events';
     const now = useNow(1_000);
     const eventIndexById = useMemo(
-        () =>
-            new Map(rallarEvents.map((event, index) => [event.eventId, index])),
-        [rallarEvents],
+        () => new Map(rallarEvents.map((event, index) => [event.eventId, index])),
+        [rallarEvents]
     );
     const manualToggleRef = useRef(false);
     const [expanded, setExpanded] = useState(false);
@@ -80,8 +76,7 @@ export function RallarBrowserTraceBar({
                     {latestEvent?.severity ?? (latestEvent ? 'info' : 'idle')}
                 </span>
                 <span className="trace-compact-summary">
-                    {status.signalingLabel} / {status.rtcLabel} /{' '}
-                    {rallarEvents.length} events
+                    {status.signalingLabel} / {status.rtcLabel} / {rallarEvents.length} events
                 </span>
                 <button
                     type="button"
@@ -129,12 +124,10 @@ export function RallarBrowserTraceBar({
                         </div>
                     )}
                     {recentEvents.map((event) => {
-                        const eventIndex =
-                            eventIndexById.get(event.eventId) ?? -1;
-                        const previousEvent =
-                            eventIndex > 0
-                                ? rallarEvents[eventIndex - 1]
-                                : undefined;
+                        const eventIndex = eventIndexById.get(event.eventId) ?? -1;
+                        const previousEvent = eventIndex > 0
+                            ? rallarEvents[eventIndex - 1]
+                            : undefined;
                         return (
                             <article
                                 className="rallar-trace-event"
@@ -145,8 +138,8 @@ export function RallarBrowserTraceBar({
                                         event.severity === 'error'
                                             ? 'failed'
                                             : event.severity === 'warning'
-                                              ? 'warning'
-                                              : 'completed'
+                                            ? 'warning'
+                                            : 'completed'
                                     }`}
                                 />
                                 <strong>{event.topic}</strong>

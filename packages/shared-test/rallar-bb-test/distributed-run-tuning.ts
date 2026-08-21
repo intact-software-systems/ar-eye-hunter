@@ -1,16 +1,13 @@
-import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
-    type RallarBlackBoxTestCommand,
-} from './types.ts';
 import {
     DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES,
     type DistributedRunTuningInventory,
     type DistributedRunTuningInventoryLimitation,
     type DistributedRunTuningKnob,
     type DistributedRunTuningKnobConstraint,
-    type DistributedRunTuningKnobName,
+    type DistributedRunTuningKnobName
 } from './distributed-run-tuning-types.ts';
+import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
+import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS, type RallarBlackBoxTestCommand } from './types.ts';
 export * from './distributed-run-tuning-types.ts';
 
 type CommandContext = Readonly<{
@@ -19,34 +16,44 @@ type CommandContext = Readonly<{
 }>;
 
 const POSITIVE_INTEGER: DistributedRunTuningKnobConstraint = {
-    type: 'integer', minimum: 1,
+    type: 'integer',
+    minimum: 1
 };
 const NON_NEGATIVE_INTEGER: DistributedRunTuningKnobConstraint = {
-    type: 'integer', minimum: 0,
+    type: 'integer',
+    minimum: 0
 };
 const POSITIVE_RATE: DistributedRunTuningKnobConstraint = {
-    type: 'number', exclusiveMinimum: 0,
+    type: 'number',
+    exclusiveMinimum: 0
 };
 const NON_NEGATIVE_NUMBER: DistributedRunTuningKnobConstraint = {
-    type: 'number', minimum: 0,
+    type: 'number',
+    minimum: 0
 };
 const RATIO: DistributedRunTuningKnobConstraint = {
-    type: 'number', minimum: 0, maximum: 1,
+    type: 'number',
+    minimum: 0,
+    maximum: 1
 };
 const BOUNDED_DURATION: DistributedRunTuningKnobConstraint = {
-    type: 'integer', minimum: 1,
-    maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+    type: 'integer',
+    minimum: 1,
+    maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
 };
 
 export function inventoryDistributedRunTuningKnobs(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): DistributedRunTuningInventory {
     const knobs: DistributedRunTuningKnob[] = [
         numericKnob({
-            name: 'ackTimeoutMs', tokens: ['ackTimeoutMs'], scope: 'manifest',
-            value: manifest.ackTimeoutMs, constraint: POSITIVE_INTEGER,
+            name: 'ackTimeoutMs',
+            tokens: ['ackTimeoutMs'],
+            scope: 'manifest',
+            value: manifest.ackTimeoutMs,
+            constraint: POSITIVE_INTEGER
         }),
-        barrierTimeoutKnob(manifest),
+        barrierTimeoutKnob(manifest)
     ];
     const limitations: DistributedRunTuningInventoryLimitation[] = [];
     let visitedCommands = 0;
@@ -62,8 +69,9 @@ export function inventoryDistributedRunTuningKnobs(
         limitReported = true;
         limitations.push({
             code: 'command-limit-exceeded',
-            message: `Tuning inventory stopped at the shared ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands}-command limit.`,
-            ...context,
+            message:
+                `Tuning inventory stopped at the shared ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands}-command limit.`,
+            ...context
         });
     };
 
@@ -84,7 +92,7 @@ export function inventoryDistributedRunTuningKnobs(
         commands: unknown,
         parentTokens: readonly (string | number)[],
         context: CommandContext,
-        depth = 0,
+        depth = 0
     ): void => {
         if (stopped) {
             return;
@@ -92,8 +100,9 @@ export function inventoryDistributedRunTuningKnobs(
         if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
             limitations.push({
                 code: 'depth-limit-exceeded',
-                message: `Tuning inventory stopped this branch at the shared composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`,
-                ...context,
+                message:
+                    `Tuning inventory stopped this branch at the shared composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`,
+                ...context
             });
             return;
         }
@@ -116,10 +125,11 @@ export function inventoryDistributedRunTuningKnobs(
             if (command.kind === 'loop') {
                 knobs.push(
                     commandKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
-                    commandKnob('intervalMs', command.intervalMs, NON_NEGATIVE_INTEGER, tokens, command, context),
+                    commandKnob('intervalMs', command.intervalMs, NON_NEGATIVE_INTEGER, tokens, command, context)
                 );
                 walk(command.commands, [...tokens, 'commands'], context, depth + 1);
-            } else if (command.kind === 'parallel') {
+            }
+            else if (command.kind === 'parallel') {
                 if (!Array.isArray(command.groups)) {
                     malformed('Tuning inventory skipped parallel.groups because it is not an array.', context);
                     continue;
@@ -132,14 +142,16 @@ export function inventoryDistributedRunTuningKnobs(
                         limit(context);
                         break;
                     }
-                    const group = command.groups[groupIndex] as { commands?: unknown } | null;
+                    const group = command.groups[groupIndex] as { commands?: unknown; } | null;
                     walk(group?.commands, [...tokens, 'groups', groupIndex, 'commands'], context, depth + 1);
                 }
-            } else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
+            }
+            else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
                 if (command.recipe) {
                     walk(command.recipe.commands, [...tokens, 'recipe', 'commands'], context, depth + 1);
                 }
-            } else if (command.kind === 'rtc.stream') {
+            }
+            else if (command.kind === 'rtc.stream') {
                 knobs.push(...streamCommandKnobs(command, tokens, context));
             }
         }
@@ -162,15 +174,19 @@ export function inventoryDistributedRunTuningKnobs(
         const recipeId = selection.recipe?.recipeId ?? selection.recipeId;
         if (!selection.recipe) {
             limitations.push({
-                code: 'reference-only-recipe', recipeIndex, recipeId,
-                message: `Recipe ${recipeId ?? recipeIndex + 1} is reference-only; no authoritative inline knobs are available.`,
+                code: 'reference-only-recipe',
+                recipeIndex,
+                recipeId,
+                message: `Recipe ${
+                    recipeId ?? recipeIndex + 1
+                } is reference-only; no authoritative inline knobs are available.`
             });
             continue;
         }
         walk(
             selection.recipe.commands,
             ['recipes', recipeIndex, 'recipe', 'commands'],
-            { recipeIndex, recipeId },
+            { recipeIndex, recipeId }
         );
         if (
             !stopped &&
@@ -184,9 +200,9 @@ export function inventoryDistributedRunTuningKnobs(
 }
 
 function streamCommandKnobs(
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream' }>,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream'; }>,
     tokens: readonly (string | number)[],
-    context: CommandContext,
+    context: CommandContext
 ): readonly DistributedRunTuningKnob[] {
     const rateShadowed = command.intervalMs !== undefined;
     const rows = [
@@ -196,9 +212,9 @@ function streamCommandKnobs(
             blocked: rateShadowed,
             reason: rateShadowed
                 ? 'intervalMs takes precedence over rateHz for RTC stream scheduling.'
-                : undefined,
+                : undefined
         }),
-        commandKnob('maxInFlight', command.maxInFlight, POSITIVE_INTEGER, tokens, command, context),
+        commandKnob('maxInFlight', command.maxInFlight, POSITIVE_INTEGER, tokens, command, context)
     ];
     for (const threshold of DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES) {
         rows.push(numericKnob({
@@ -211,7 +227,7 @@ function streamCommandKnobs(
             context,
             reason: command.thresholds === undefined
                 ? 'The optional thresholds object is not configured.'
-                : undefined,
+                : undefined
         }));
     }
     return rows;
@@ -222,39 +238,51 @@ function commandKnob(
     value: number | undefined,
     constraint: DistributedRunTuningKnobConstraint,
     tokens: readonly (string | number)[],
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'loop' | 'rtc.stream' }>,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'loop' | 'rtc.stream'; }>,
     context: CommandContext,
-    options: Readonly<{ blocked?: boolean; reason?: string }> = {},
+    options: Readonly<{ blocked?: boolean; reason?: string; }> = {}
 ): DistributedRunTuningKnob {
     return numericKnob({
-        name, tokens: [...tokens, name], scope: 'command', value, constraint,
-        command, context, blocked: options.blocked, reason: options.reason,
+        name,
+        tokens: [...tokens, name],
+        scope: 'command',
+        value,
+        constraint,
+        command,
+        context,
+        blocked: options.blocked,
+        reason: options.reason
     });
 }
 
 function barrierTimeoutKnob(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): DistributedRunTuningKnob {
     const enabled = manifest.barrier?.enabled === true;
     return numericKnob({
-        name: 'barrier.timeoutMs', tokens: ['barrier', 'timeoutMs'], scope: 'manifest',
-        value: manifest.barrier?.timeoutMs, constraint: POSITIVE_INTEGER,
+        name: 'barrier.timeoutMs',
+        tokens: ['barrier', 'timeoutMs'],
+        scope: 'manifest',
+        value: manifest.barrier?.timeoutMs,
+        constraint: POSITIVE_INTEGER,
         blocked: !enabled,
-        reason: enabled ? undefined : 'The distributed barrier is missing or disabled.',
+        reason: enabled ? undefined : 'The distributed barrier is missing or disabled.'
     });
 }
 
-function numericKnob(input: Readonly<{
-    name: DistributedRunTuningKnobName;
-    tokens: readonly (string | number)[];
-    scope: DistributedRunTuningKnob['scope'];
-    value?: number;
-    constraint: DistributedRunTuningKnobConstraint;
-    command?: Extract<RallarBlackBoxTestCommand, { kind: 'loop' | 'rtc.stream' }>;
-    context?: CommandContext;
-    blocked?: boolean;
-    reason?: string;
-}>): DistributedRunTuningKnob {
+function numericKnob(
+    input: Readonly<{
+        name: DistributedRunTuningKnobName;
+        tokens: readonly (string | number)[];
+        scope: DistributedRunTuningKnob['scope'];
+        value?: number;
+        constraint: DistributedRunTuningKnobConstraint;
+        command?: Extract<RallarBlackBoxTestCommand, { kind: 'loop' | 'rtc.stream'; }>;
+        context?: CommandContext;
+        blocked?: boolean;
+        reason?: string;
+    }>
+): DistributedRunTuningKnob {
     return {
         name: input.name,
         pointer: distributedRunTuningJsonPointer(input.tokens),
@@ -262,19 +290,21 @@ function numericKnob(input: Readonly<{
         currentValue: input.value,
         availability: input.blocked
             ? 'blocked'
-            : input.value === undefined ? 'unset' : 'configured',
+            : input.value === undefined
+            ? 'unset'
+            : 'configured',
         effective: input.blocked !== true,
         constraint: input.constraint,
         recipeIndex: input.context?.recipeIndex,
         recipeId: input.context?.recipeId,
         commandId: input.command?.commandId,
         commandKind: input.command?.kind,
-        reason: input.reason,
+        reason: input.reason
     };
 }
 
 export function distributedRunTuningJsonPointer(
-    tokens: readonly (string | number)[],
+    tokens: readonly (string | number)[]
 ): string {
-    return tokens.map(token => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
+    return tokens.map((token) => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
 }

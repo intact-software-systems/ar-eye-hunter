@@ -1,5 +1,5 @@
-import { PruneGraphAlgo } from './prune-graph.ts';
 import { GraphAlgo } from '../complete-graph/complete-graph-types.ts';
+import { PruneGraphAlgo } from './prune-graph.ts';
 
 export type GenerateSizeInputDto = {
     members: number;
@@ -18,7 +18,7 @@ export type GenerateSizeInputDto = {
 };
 
 export function generateSizeOfSteinerSet(
-    input: GenerateSizeInputDto,
+    input: GenerateSizeInputDto
 ): number {
     const {
         members,
@@ -28,7 +28,7 @@ export function generateSizeOfSteinerSet(
         degreeConstraintSP,
         simPruneAlgo,
         simGraphAlgo,
-        isSteinerAlgo,
+        isSteinerAlgo
     } = input;
 
     if (members <= 0) {
@@ -39,8 +39,7 @@ export function generateSizeOfSteinerSet(
         return steinerMemberSize;
     }
 
-    const usesSteinerSizing =
-        isSteinerAlgo || simGraphAlgo !== GraphAlgo.COMPLETE_MEMBER_GRAPH;
+    const usesSteinerSizing = isSteinerAlgo || simGraphAlgo !== GraphAlgo.COMPLETE_MEMBER_GRAPH;
 
     let numToAdd = 0;
 
@@ -48,17 +47,21 @@ export function generateSizeOfSteinerSet(
         if (usesSteinerSizing) {
             numToAdd = ceilDiv(members, degreeConstraintSP);
             numToAdd += ceilDiv(numToAdd + 2, degreeConstraintSP);
-        } else {
+        }
+        else {
             numToAdd = ceilDiv(members, degreeConstraint);
             numToAdd += ceilDiv(numToAdd + 2, degreeConstraint);
         }
-    } else {
+    }
+    else {
         if (steinerMemberRatio > 0 && usesSteinerSizing) {
             numToAdd = Math.floor(members * steinerMemberRatio);
-        } else if (usesSteinerSizing) {
+        }
+        else if (usesSteinerSizing) {
             numToAdd = ceilDiv(members, degreeConstraintSP);
             numToAdd += ceilDiv(numToAdd + 2, degreeConstraintSP);
-        } else {
+        }
+        else {
             numToAdd = ceilDiv(members, degreeConstraint);
             numToAdd += ceilDiv(numToAdd + 2, degreeConstraint);
         }
@@ -72,17 +75,14 @@ export function generateSizeOfSteinerSet(
 }
 
 export function generateRemainingSizeOfSteinerSet(
-    input: GenerateSizeInputDto,
+    input: GenerateSizeInputDto
 ): number {
     const alreadyHave = input.steiner ?? 0;
     return Math.max(generateSizeOfSteinerSet(input) - alreadyHave, 0);
 }
 
 export function generateSizeNonSteiner(
-    input: Pick<
-        GenerateSizeInputDto,
-        'members' | 'steinerMemberSize' | 'degreeConstraint'
-    >,
+    input: Pick<GenerateSizeInputDto, 'members' | 'steinerMemberSize' | 'degreeConstraint'>
 ): number {
     const { members, steinerMemberSize, degreeConstraint } = input;
 

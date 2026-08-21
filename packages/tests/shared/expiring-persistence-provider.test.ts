@@ -2,12 +2,12 @@
 
 import '../setup-browser-indexeddb.ts';
 
+import { IndexedDbStringPersistenceProvider, InMemoryPersistenceProvider } from '@shared/mod.ts';
 import { describe, expect, it } from 'vitest';
-import { IndexedDbStringPersistenceProvider, InMemoryPersistenceProvider, } from '@shared/mod.ts';
 
 describe('Expiring persistence providers', () => {
     it('lazy-evicts expired entries from InMemoryPersistenceProvider', async () => {
-        const provider = new InMemoryPersistenceProvider<string, { value: number }>();
+        const provider = new InMemoryPersistenceProvider<string, { value: number; }>();
         const now = Date.now();
 
         await provider.setItem('active', { value: 1 }, { expireAtTimestamp: now + 60_000 });
@@ -19,7 +19,7 @@ describe('Expiring persistence providers', () => {
     });
 
     it('deleteExpired removes only expired entries from InMemoryPersistenceProvider', async () => {
-        const provider = new InMemoryPersistenceProvider<string, { value: number }>();
+        const provider = new InMemoryPersistenceProvider<string, { value: number; }>();
         const now = Date.now();
 
         await provider.setItem('active', { value: 1 }, { expireAtTimestamp: now + 60_000 });
@@ -31,9 +31,9 @@ describe('Expiring persistence providers', () => {
     });
 
     it('lazy-evicts expired entries from IndexedDbStringPersistenceProvider', async () => {
-        const provider = new IndexedDbStringPersistenceProvider<{ value: number }>({
+        const provider = new IndexedDbStringPersistenceProvider<{ value: number; }>({
             dbName: `expiring-provider-${crypto.randomUUID()}`,
-            keyPrefix: 'inbound',
+            keyPrefix: 'inbound'
         });
         const now = Date.now();
 
@@ -47,13 +47,13 @@ describe('Expiring persistence providers', () => {
 
     it('deleteExpired is scoped to the IndexedDB key prefix', async () => {
         const dbName = `expiring-provider-${crypto.randomUUID()}`;
-        const inbound = new IndexedDbStringPersistenceProvider<{ value: number }>({
+        const inbound = new IndexedDbStringPersistenceProvider<{ value: number; }>({
             dbName,
-            keyPrefix: 'inbound',
+            keyPrefix: 'inbound'
         });
-        const outbound = new IndexedDbStringPersistenceProvider<{ value: number }>({
+        const outbound = new IndexedDbStringPersistenceProvider<{ value: number; }>({
             dbName,
-            keyPrefix: 'outbound',
+            keyPrefix: 'outbound'
         });
         const now = Date.now();
 

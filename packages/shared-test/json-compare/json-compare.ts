@@ -1,9 +1,11 @@
 import {
-    CompareConfig, compareJson,
+    CompareConfig,
+    compareJson,
     COMPARISON,
     Comparison,
     ComparisonResult,
-    JsonValue, toConfig
+    JsonValue,
+    toConfig
 } from './CompareJson.ts';
 
 export interface CompareJsonOptions {
@@ -17,17 +19,22 @@ export interface CompareJsonFacade {
     compatibleComplete(
         expected: JsonValue,
         actual: JsonValue,
-        options?: CompareJsonOptions,
+        options?: CompareJsonOptions
     ): ComparisonResult;
     exactStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): ComparisonResult;
     exact(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): ComparisonResult;
-    compare(expected: JsonValue, actual: JsonValue, comparison: Comparison | string, options?: CompareJsonOptions): ComparisonResult;
+    compare(
+        expected: JsonValue,
+        actual: JsonValue,
+        comparison: Comparison | string,
+        options?: CompareJsonOptions
+    ): ComparisonResult;
     assertCompatibleStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
     assertCompatible(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
     assertCompatibleComplete(
         expected: JsonValue,
         actual: JsonValue,
-        options?: CompareJsonOptions,
+        options?: CompareJsonOptions
     ): void;
     assertExactStructure(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
     assertExact(expected: JsonValue, actual: JsonValue, options?: CompareJsonOptions): void;
@@ -37,7 +44,7 @@ function toFacadeConfig(comparison: Comparison | string, options: CompareJsonOpt
     return toConfig(
         comparison,
         options.ignoreJsonKeys ?? [],
-        options.ignoreJsonPaths ?? [],
+        options.ignoreJsonPaths ?? []
     );
 }
 
@@ -59,7 +66,7 @@ export const CompareJson: CompareJsonFacade = {
     compatibleComplete(
         expected: JsonValue,
         actual: JsonValue,
-        options: CompareJsonOptions = {},
+        options: CompareJsonOptions = {}
     ): ComparisonResult {
         const config = toFacadeConfig(COMPARISON.COMPATIBLE_COMPLETE, options);
         return compareJson(expected, actual, config);
@@ -77,7 +84,7 @@ export const CompareJson: CompareJsonFacade = {
         expected: JsonValue,
         actual: JsonValue,
         comparison: Comparison | string,
-        options: CompareJsonOptions = {},
+        options: CompareJsonOptions = {}
     ): ComparisonResult {
         return compareJson(expected, actual, toFacadeConfig(comparison, options));
     },
@@ -93,7 +100,7 @@ export const CompareJson: CompareJsonFacade = {
     assertCompatibleComplete(
         expected: JsonValue,
         actual: JsonValue,
-        options: CompareJsonOptions = {},
+        options: CompareJsonOptions = {}
     ): void {
         assertComparisonResult(this.compatibleComplete(expected, actual, options));
     },
@@ -104,5 +111,5 @@ export const CompareJson: CompareJsonFacade = {
 
     assertExact(expected: JsonValue, actual: JsonValue, options: CompareJsonOptions = {}): void {
         assertComparisonResult(this.exact(expected, actual, options));
-    },
+    }
 };

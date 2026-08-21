@@ -105,7 +105,7 @@ type EnvelopeCandidate = Readonly<{
 
 export function parseDistributedArtifactPipeline(
     inputFiles: DistributedRunArtifactFiles,
-    options: DistributedArtifactPipelineOptions = {},
+    options: DistributedArtifactPipelineOptions = {}
 ): ParsedDistributedArtifactPipeline {
     const telemetry = createTelemetry();
     const jsonCache = nullRecord<CachedJsonParse>();
@@ -113,13 +113,13 @@ export function parseDistributedArtifactPipeline(
     const inputEntries = ownEntries(inputFiles)
         .sort(([left], [right]) => left.localeCompare(right));
     const definedInputEntries = inputEntries.filter(
-        (entry): entry is readonly [string, string] => typeof entry[1] === 'string',
+        (entry): entry is readonly [string, string] => typeof entry[1] === 'string'
     );
     const candidates: EnvelopeCandidate[] = [];
     const selectedInputControlResponseFile = selectedControlResponseFile(
         inputFiles,
         telemetry,
-        jsonCache,
+        jsonCache
     );
 
     for (const [fileName, text] of definedInputEntries) {
@@ -129,7 +129,7 @@ export function parseDistributedArtifactPipeline(
         const parsed = selectedInputControlResponseFile !== fileName &&
                 fileFormat(fileName) === 'jsonl'
             ? singleParsedJsonlValue(
-                parseJsonlFile(fileName, text, telemetry, jsonlCache),
+                parseJsonlFile(fileName, text, telemetry, jsonlCache)
             )
             : parseJsonValue(fileName, text, telemetry, jsonCache);
         if (
@@ -163,7 +163,7 @@ export function parseDistributedArtifactPipeline(
     const controlResponseFile = selectedControlResponseFile(
         projectedFiles,
         telemetry,
-        projectedJsonCache,
+        projectedJsonCache
     );
     const files = nullRecord<ParsedDistributedArtifactFile>();
     for (const [fileName, value] of sourceEntries) {
@@ -175,7 +175,7 @@ export function parseDistributedArtifactPipeline(
                 controlResponseFile === fileName,
                 telemetry,
                 projectedJsonCache,
-                projectedJsonlCache,
+                projectedJsonlCache
             );
         setRecordValue(files, fileName, file);
     }
@@ -186,13 +186,13 @@ export function parseDistributedArtifactPipeline(
         projection: resolved.projection,
         projectedFiles,
         files,
-        telemetry,
+        telemetry
     };
 }
 
 export function distributedArtifactPipelineFile(
     pipeline: ParsedDistributedArtifactPipeline,
-    fileName: string,
+    fileName: string
 ): ParsedDistributedArtifactFile {
     return hasOwn(pipeline.files, fileName)
         ? pipeline.files[fileName] as ParsedDistributedArtifactFile
@@ -201,7 +201,7 @@ export function distributedArtifactPipelineFile(
 
 export function distributedArtifactPipelineJsonValue(
     pipeline: ParsedDistributedArtifactPipeline,
-    fileName: string,
+    fileName: string
 ): unknown | undefined {
     const file = distributedArtifactPipelineFile(pipeline, fileName);
     return file.format === 'json' && file.status === 'parsed'
@@ -211,7 +211,7 @@ export function distributedArtifactPipelineJsonValue(
 
 export function distributedArtifactPipelineJsonRecord(
     pipeline: ParsedDistributedArtifactPipeline,
-    fileName: string,
+    fileName: string
 ): Record<string, unknown> {
     const value = distributedArtifactPipelineJsonValue(pipeline, fileName);
     return isRecord(value) ? value : {};
@@ -219,7 +219,7 @@ export function distributedArtifactPipelineJsonRecord(
 
 export function distributedArtifactPipelineJsonlRows(
     pipeline: ParsedDistributedArtifactPipeline,
-    fileName: string,
+    fileName: string
 ): readonly ParsedDistributedArtifactJsonlRow[] {
     const file = distributedArtifactPipelineFile(pipeline, fileName);
     return file.format === 'jsonl' ? file.rows : [];
@@ -228,7 +228,7 @@ export function distributedArtifactPipelineJsonlRows(
 function resolveProjection(
     inputEntries: readonly SourceEntry[],
     definedInputEntries: readonly (readonly [string, string])[],
-    candidates: readonly EnvelopeCandidate[],
+    candidates: readonly EnvelopeCandidate[]
 ): Readonly<{
     projection: DistributedArtifactEnvelopeProjection;
     envelope?: ParsedDistributedArtifactJsonFile;
@@ -242,7 +242,7 @@ function resolveProjection(
             setRecordValue(
                 projectedFiles,
                 fileName,
-                typeof value === 'string' ? value : undefined,
+                typeof value === 'string' ? value : undefined
             );
         }
         return {
@@ -250,10 +250,10 @@ function resolveProjection(
                 source: 'loose-files',
                 files: projectedFiles,
                 invalidFiles: nullRecord<string>(),
-                outerIgnoredFiles: [],
+                outerIgnoredFiles: []
             },
             sourceEntries: inputEntries,
-            invalidFiles: new Set(),
+            invalidFiles: new Set()
         };
     }
 
@@ -267,7 +267,8 @@ function resolveProjection(
     for (const [fileName, value] of sourceEntries) {
         if (typeof value === 'string') {
             setRecordValue(projectedFiles, fileName, value);
-        } else {
+        }
+        else {
             const message = `${fileName} must contain text in the artifact envelope.`;
             setRecordValue(invalidFiles, fileName, message);
             invalidFileNames.add(fileName);
@@ -297,7 +298,7 @@ function resolveProjection(
     const ambiguous = candidates.length > 1 || definedInputEntries.length > 1;
     const fatalMessage = ambiguous
         ? candidates.length > 1
-            ? `Select exactly one artifact envelope; found ${candidates.map(item => item.fileName).join(', ')}.`
+            ? `Select exactly one artifact envelope; found ${candidates.map((item) => item.fileName).join(', ')}.`
             : `Artifact envelope ${candidate.fileName} cannot be combined with loose files in one import.`
         : validationFailures.length > 0
         ? `${candidate.fileName} is not a compatible artifact envelope: ${validationFailures.join('; ')}.`
@@ -312,12 +313,12 @@ function resolveProjection(
         invalidFiles,
         outerIgnoredFiles: definedInputEntries
             .map(([fileName]) => fileName)
-            .filter(fileName => fileName !== candidate.fileName),
+            .filter((fileName) => fileName !== candidate.fileName),
         invalidSchemaMessage: artifactSchemaVersion === undefined
             ? `${candidate.fileName} has an invalid artifactSchemaVersion.`
             : undefined,
         fatalMessage,
-        fatalCode: ambiguous ? 'ambiguous-envelope' : 'incompatible-file',
+        fatalCode: ambiguous ? 'ambiguous-envelope' : 'incompatible-file'
     };
     return {
         projection,
@@ -326,17 +327,17 @@ function resolveProjection(
             format: 'json',
             status: 'parsed',
             text: candidate.text,
-            value: candidate.parsed,
+            value: candidate.parsed
         },
         sourceEntries,
-        invalidFiles: invalidFileNames,
+        invalidFiles: invalidFileNames
     };
 }
 
 function selectedControlResponseFile(
     files: DistributedRunArtifactFiles,
     telemetry: MutablePipelineTelemetry,
-    jsonCache: Record<string, CachedJsonParse>,
+    jsonCache: Record<string, CachedJsonParse>
 ): string | undefined {
     const fileName = 'control-post-error-metadata.json';
     if (!hasOwn(files, fileName)) {
@@ -359,7 +360,7 @@ function parseSourceFile(
     forceJson: boolean,
     telemetry: MutablePipelineTelemetry,
     jsonCache: Record<string, CachedJsonParse>,
-    jsonlCache: Record<string, CachedJsonlParse>,
+    jsonlCache: Record<string, CachedJsonlParse>
 ): ParsedDistributedArtifactFile {
     const format = forceJson ? 'json' : fileFormat(fileName);
     if (format === 'jsonl') {
@@ -381,7 +382,7 @@ function parseJsonDocument(
     fileName: string,
     text: string | undefined,
     telemetry: MutablePipelineTelemetry,
-    jsonCache: Record<string, CachedJsonParse>,
+    jsonCache: Record<string, CachedJsonParse>
 ): ParsedDistributedArtifactJsonFile {
     initializeCount(telemetry.jsonDocumentParseCountByFile, fileName);
     if (text === undefined) {
@@ -398,7 +399,7 @@ function parseJsonDocument(
             format: 'json',
             status: 'malformed',
             text,
-            message: `${fileName} is not valid JSON: ${parsed.detail}`,
+            message: `${fileName} is not valid JSON: ${parsed.detail}`
         };
 }
 
@@ -406,7 +407,7 @@ function parseJsonValue(
     fileName: string,
     text: string,
     telemetry: MutablePipelineTelemetry,
-    jsonCache: Record<string, CachedJsonParse>,
+    jsonCache: Record<string, CachedJsonParse>
 ): CachedJsonParse {
     initializeCount(telemetry.jsonDocumentParseCountByFile, fileName);
     const cached = hasOwn(jsonCache, fileName) ? jsonCache[fileName] : undefined;
@@ -419,11 +420,12 @@ function parseJsonValue(
         const parsed = { text, status: 'parsed' as const, value: JSON.parse(text) };
         setRecordValue(jsonCache, fileName, parsed);
         return parsed;
-    } catch (error) {
+    }
+    catch (error) {
         const parsed = {
             text,
             status: 'malformed' as const,
-            detail: errorMessage(error),
+            detail: errorMessage(error)
         };
         setRecordValue(jsonCache, fileName, parsed);
         return parsed;
@@ -434,7 +436,7 @@ function parseJsonlFile(
     fileName: string,
     text: string | undefined,
     telemetry: MutablePipelineTelemetry,
-    jsonlCache: Record<string, CachedJsonlParse>,
+    jsonlCache: Record<string, CachedJsonlParse>
 ): ParsedDistributedArtifactJsonlFile {
     initializeCount(telemetry.jsonlFilePassCountByFile, fileName);
     initializeCount(telemetry.jsonlRowParseCountByFile, fileName);
@@ -462,10 +464,11 @@ function parseJsonlFile(
                 rows: [{
                     lineNumber,
                     status: 'parsed',
-                    value: JSON.parse(text),
-                }],
+                    value: JSON.parse(text)
+                }]
             };
-        } catch (error) {
+        }
+        catch (error) {
             file = {
                 fileName,
                 format: 'jsonl',
@@ -474,8 +477,8 @@ function parseJsonlFile(
                 rows: [{
                     lineNumber,
                     status: 'malformed',
-                    message: `${fileName}:${lineNumber} is not valid JSON: ${errorMessage(error)}`,
-                }],
+                    message: `${fileName}:${lineNumber} is not valid JSON: ${errorMessage(error)}`
+                }]
             };
         }
         setRecordValue(jsonlCache, fileName, { text, file });
@@ -494,14 +497,15 @@ function parseJsonlFile(
             rows.push({
                 lineNumber: index + 1,
                 status: 'parsed',
-                value: JSON.parse(trimmed),
+                value: JSON.parse(trimmed)
             });
-        } catch (error) {
+        }
+        catch (error) {
             malformed = true;
             rows.push({
                 lineNumber: index + 1,
                 status: 'malformed',
-                message: `${fileName}:${index + 1} is not valid JSON: ${errorMessage(error)}`,
+                message: `${fileName}:${index + 1} is not valid JSON: ${errorMessage(error)}`
             });
         }
     }
@@ -510,7 +514,7 @@ function parseJsonlFile(
         format: 'jsonl',
         status: malformed ? 'malformed' : rows.length > 0 ? 'parsed' : 'empty',
         text,
-        rows,
+        rows
     };
     setRecordValue(jsonlCache, fileName, { text, file });
     return file;
@@ -518,7 +522,7 @@ function parseJsonlFile(
 
 function malformedEnvelopeFile(
     fileName: string,
-    telemetry: MutablePipelineTelemetry,
+    telemetry: MutablePipelineTelemetry
 ): ParsedDistributedArtifactFile {
     const format = fileFormat(fileName);
     if (format === 'json') {
@@ -527,7 +531,7 @@ function malformedEnvelopeFile(
             fileName,
             format,
             status: 'malformed',
-            message: `${fileName} must contain text in the artifact envelope.`,
+            message: `${fileName} must contain text in the artifact envelope.`
         };
     }
     if (format === 'jsonl') {
@@ -538,14 +542,14 @@ function malformedEnvelopeFile(
             format,
             status: 'malformed',
             rows: [],
-            message: `${fileName} must contain text in the artifact envelope.`,
+            message: `${fileName} must contain text in the artifact envelope.`
         };
     }
     return {
         fileName,
         format,
         status: 'malformed',
-        message: `${fileName} must contain text in the artifact envelope.`,
+        message: `${fileName} must contain text in the artifact envelope.`
     };
 }
 
@@ -568,7 +572,7 @@ function fileFormat(fileName: string): ParsedDistributedArtifactFile['format'] {
 }
 
 function singleParsedJsonlValue(
-    file: ParsedDistributedArtifactJsonlFile,
+    file: ParsedDistributedArtifactJsonlFile
 ): ParsedDistributedArtifactJsonlRow | undefined {
     return file.rows.length === 1 && file.rows[0]?.status === 'parsed'
         ? file.rows[0]
@@ -603,18 +607,22 @@ function isSingleTopLevelObjectText(text: string): boolean {
         if (inString) {
             if (escaped) {
                 escaped = false;
-            } else if (character === '\\') {
+            }
+            else if (character === '\\') {
                 escaped = true;
-            } else if (character === '"') {
+            }
+            else if (character === '"') {
                 inString = false;
             }
             continue;
         }
         if (character === '"') {
             inString = true;
-        } else if (character === '{') {
+        }
+        else if (character === '{') {
             objectDepth += 1;
-        } else if (character === '}') {
+        }
+        else if (character === '}') {
             objectDepth -= 1;
             if (objectDepth < 0) {
                 return false;
@@ -655,7 +663,7 @@ function createTelemetry(): MutablePipelineTelemetry {
         jsonlFilePassCount: 0,
         jsonlFilePassCountByFile: nullRecord<number>(),
         jsonlRowParseCount: 0,
-        jsonlRowParseCountByFile: nullRecord<number>(),
+        jsonlRowParseCountByFile: nullRecord<number>()
     };
 }
 
@@ -688,7 +696,7 @@ function setRecordValue<T>(record: Record<string, T>, key: string, value: T): vo
         configurable: true,
         enumerable: true,
         writable: true,
-        value,
+        value
     });
 }
 

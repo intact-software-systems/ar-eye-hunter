@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WriteBehindObservableLatestRepository, } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
-import { type ObservableKeyedValueEvent, ObservableValueEventType, } from '@shared/cache/RepositoryInterfaces.ts';
+import { ObservableValueEventType, type ObservableKeyedValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
+import { WriteBehindObservableLatestRepository } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
 import {
     InMemoryPersistenceProvider,
     NEVER_EXPIRE_AT_TIMESTAMP,
     type PersistenceProvider,
-    type PersistenceSetItemOptions,
+    type PersistenceSetItemOptions
 } from '@shared/persistence/PersistenceProvider.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-type Versioned = Readonly<{ version: number; payload: string }>;
+type Versioned = Readonly<{ version: number; payload: string; }>;
 
 describe('WriteBehindObservableLatestRepository', () => {
     afterEach(() => {
@@ -19,10 +19,10 @@ describe('WriteBehindObservableLatestRepository', () => {
     it('hydrates RAM from persistence and serves reads from memory', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>([
             ['a', 1],
-            ['b', 2],
+            ['b', 2]
         ]);
         const repository = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -34,11 +34,11 @@ describe('WriteBehindObservableLatestRepository', () => {
 
     it('does not mirror hydration writes back to disk', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>([
-            ['a', 1],
+            ['a', 1]
         ]);
         const setItem = vi.spyOn(persistence, 'setItem');
         const repository = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -50,7 +50,7 @@ describe('WriteBehindObservableLatestRepository', () => {
     it('mirrors created and updated writes to persistence', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -68,7 +68,7 @@ describe('WriteBehindObservableLatestRepository', () => {
         const setItem = vi.spyOn(persistence, 'setItem');
         const repository = new WriteBehindObservableLatestRepository<string, Versioned>({
             persistence,
-            equals: (left, right) => left.version === right.version,
+            equals: (left, right) => left.version === right.version
         });
 
         await repository.hydrate();
@@ -87,7 +87,7 @@ describe('WriteBehindObservableLatestRepository', () => {
     it('mirrors deletes via removeItem and clearAll wipes disk', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -109,7 +109,7 @@ describe('WriteBehindObservableLatestRepository', () => {
     it('survives a round trip: write, dispose, rehydrate restores the same data', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const writer = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
         await writer.hydrate();
 
@@ -118,7 +118,7 @@ describe('WriteBehindObservableLatestRepository', () => {
         await writer.dispose();
 
         const reader = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
         await reader.hydrate();
 
@@ -134,14 +134,14 @@ describe('WriteBehindObservableLatestRepository', () => {
             setItem: () => Promise.reject(new Error('boom')),
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
 
         const repository = new WriteBehindObservableLatestRepository<string, number>({
             persistence: failingPersistence,
             onPersistenceError: (_error, event) => {
                 failures.push(event);
-            },
+            }
         });
 
         await repository.hydrate();
@@ -152,7 +152,7 @@ describe('WriteBehindObservableLatestRepository', () => {
 
         expect(failures.map((e) => [e.key, e.type])).toEqual([
             ['a', ObservableValueEventType.Created],
-            ['a', ObservableValueEventType.Updated],
+            ['a', ObservableValueEventType.Updated]
         ]);
     });
 
@@ -169,12 +169,12 @@ describe('WriteBehindObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
 
         const repository = new WriteBehindObservableLatestRepository<string, number>({
             persistence,
-            ttlMs: 5_000,
+            ttlMs: 5_000
         });
         await repository.hydrate();
 
@@ -195,12 +195,12 @@ describe('WriteBehindObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
 
         const repository = new WriteBehindObservableLatestRepository<string, Versioned>({
             persistence,
-            expireAtFor: () => NEVER_EXPIRE_AT_TIMESTAMP,
+            expireAtFor: () => NEVER_EXPIRE_AT_TIMESTAMP
         });
         await repository.hydrate();
 
@@ -214,7 +214,7 @@ describe('WriteBehindObservableLatestRepository', () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const setItem = vi.spyOn(persistence, 'setItem');
         const repository = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -240,10 +240,10 @@ describe('WriteBehindObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
         const repository = new WriteBehindObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -258,7 +258,7 @@ describe('WriteBehindObservableLatestRepository', () => {
             'whenIdle-started',
             'setItem-resolved',
             'setItem-resolved',
-            'whenIdle-returned',
+            'whenIdle-returned'
         ]);
     });
 });

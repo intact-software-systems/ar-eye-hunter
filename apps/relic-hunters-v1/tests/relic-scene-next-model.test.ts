@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
+import { describe, expect, it } from 'vitest';
 import {
     blackHumourSignForRoom,
     calculateFacilityBounds,
@@ -13,7 +13,7 @@ import {
     planNeonTacticalCameraPose,
     projectFacilityMapPoint,
     RELIC_SCENE_NEXT_VISUAL_CONTRACT,
-    shouldShowFacilityMapLabel,
+    shouldShowFacilityMapLabel
 } from '../src/game/scene/relicSceneNextModel.ts';
 
 const map: readonly RelicRoom[] = [
@@ -21,7 +21,7 @@ const map: readonly RelicRoom[] = [
     { id: 'hall', name: 'Queue Optimization Hall', kind: 'hallway', x: 0, z: 0, neighbors: ['entrance', 'trap', 'exit'] },
     { id: 'trap', name: 'Safety Audit Floor', kind: 'trap', x: -1, z: 0, neighbors: ['hall'] },
     { id: 'treasure', name: 'Executive Bonus Vault', kind: 'treasure', x: 1, z: 0, neighbors: ['hall'] },
-    { id: 'exit', name: 'Gift Shop Evacuation', kind: 'exit', x: 0, z: 1, neighbors: ['hall'] },
+    { id: 'exit', name: 'Gift Shop Evacuation', kind: 'exit', x: 0, z: 1, neighbors: ['hall'] }
 ];
 
 describe('RelicSceneNext model helpers', () => {
@@ -39,19 +39,19 @@ describe('RelicSceneNext model helpers', () => {
             room: map[1],
             selectedRoomId: undefined,
             localRoomId: 'entrance',
-            exitRoomId: 'exit',
+            exitRoomId: 'exit'
         })).toBe(false);
         expect(shouldShowFacilityMapLabel({
             room: map[1],
             selectedRoomId: 'hall',
             localRoomId: 'entrance',
-            exitRoomId: 'exit',
+            exitRoomId: 'exit'
         })).toBe(true);
         expect(shouldShowFacilityMapLabel({
             room: map[4],
             selectedRoomId: undefined,
             localRoomId: 'entrance',
-            exitRoomId: 'exit',
+            exitRoomId: 'exit'
         })).toBe(true);
     });
 
@@ -66,7 +66,7 @@ describe('RelicSceneNext model helpers', () => {
             snapshot: snapshot(),
             localPlayerId: 'alice',
             selectedRoomId: 'trap',
-            aspectRatio: 16 / 9,
+            aspectRatio: 16 / 9
         });
 
         expect(pose.position.y).toBeGreaterThanOrEqual(13);
@@ -90,7 +90,7 @@ describe('RelicSceneNext model helpers', () => {
         const pose = planNeonFirstPersonCameraPose({
             avatarPosition,
             cameraYaw: Math.PI / 2,
-            cameraPitch: 0.28,
+            cameraPitch: 0.28
         });
 
         expect(pose.position.y).toBeCloseTo(2.3, 2);
@@ -104,7 +104,7 @@ describe('RelicSceneNext model helpers', () => {
             snapshot: snapshot(),
             localPlayerId: 'alice',
             selectedRoomId: 'trap',
-            aspectRatio: 16 / 9,
+            aspectRatio: 16 / 9
         });
         const overview = planNeonOverviewCameraPose({ snapshot: snapshot(), aspectRatio: 16 / 9 });
 
@@ -130,7 +130,7 @@ describe('RelicSceneNext model helpers', () => {
         expect(RELIC_SCENE_NEXT_VISUAL_CONTRACT).toMatchObject({
             minAverageLuma: expect.any(Number),
             maxDarkPixelRatio: expect.any(Number),
-            minNeonPixelRatio: expect.any(Number),
+            minNeonPixelRatio: expect.any(Number)
         });
         expect(RELIC_SCENE_NEXT_VISUAL_CONTRACT.maxDarkPixelRatio).toBeLessThan(0.7);
     });
@@ -158,10 +158,10 @@ function snapshot(): RelicPublicSnapshot {
             escaped: false,
             defeated: false,
             score: 0,
-            relicIds: [],
+            relicIds: []
         }],
         submittedPlayerIds: [],
         events: [],
-        winnerIds: [],
+        winnerIds: []
     };
 }

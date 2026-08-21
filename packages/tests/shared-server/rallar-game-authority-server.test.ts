@@ -1,36 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-    installRallarGameAuthorityServer,
-    type RallarGameAuthorityServerRallarFacade,
-} from '@shared-server/mod.ts';
-import {
-    createRallarGameAuthorityEnvelope,
-    type RallarGameAuthorityEnvelope,
-    type RallarGameAuthorityRef,
-} from '@shared/rallar-game/mod.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import { installRallarGameAuthorityServer, type RallarGameAuthorityServerRallarFacade } from '@shared-server/mod.ts';
 import type {
     RallarServerWsMessage,
     RallarServerWsMessageContext,
     RallarServerWsSelector,
-    RallarServerWsTopicDefinition,
+    RallarServerWsTopicDefinition
 } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { createRallarGameAuthorityEnvelope, type RallarGameAuthorityEnvelope, type RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
+import { describe, expect, it, vi } from 'vitest';
 
-type Command = Readonly<{ action: string }>;
-type Snapshot = Readonly<{ tick: number }>;
-type Event = Readonly<{ kind: string }>;
+type Command = Readonly<{ action: string; }>;
+type Snapshot = Readonly<{ tick: number; }>;
+type Event = Readonly<{ kind: string; }>;
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1',
-    groupId: 'room-1',
+    groupId: 'room-1'
 };
 
 const authority: RallarGameAuthorityRef = {
     kind: 'server',
     id: 'server-1',
-    epoch: 1,
+    epoch: 1
 };
 
 describe('Rallar Game Authority server installer', () => {
@@ -42,7 +35,7 @@ describe('Rallar Game Authority server installer', () => {
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand: async () => ({ status: 'accepted' }),
+            handleCommand: async () => ({ status: 'accepted' })
         });
 
         expect(fake.definitions).toMatchObject([
@@ -50,31 +43,31 @@ describe('Rallar Game Authority server installer', () => {
                 topicId: 'game.authority',
                 typeId: 'game.authority.command.v1',
                 scope: 'room',
-                fanout: 'none',
+                fanout: 'none'
             },
             {
                 topicId: 'game.authority',
                 typeId: 'game.authority.sync-request.v1',
                 scope: 'room',
-                fanout: 'none',
-            },
+                fanout: 'none'
+            }
         ]);
 
         const commandDefinition = fake.definition('game.authority.command.v1');
         expect(
             await commandDefinition.validate?.(
                 envelope('command', 'peer-a', { action: 'move' }, 1),
-                fake.context('peer-a'),
-            ),
+                fake.context('peer-a')
+            )
         ).toBe(true);
         expect(
             await commandDefinition.validate?.(
                 {
                     ...envelope('command', 'peer-a', { action: 'move' }, 1),
-                    senderId: 'peer-b',
+                    senderId: 'peer-b'
                 },
-                fake.context('peer-a'),
-            ),
+                fake.context('peer-a')
+            )
         ).toBe(false);
     });
 
@@ -86,7 +79,7 @@ describe('Rallar Game Authority server installer', () => {
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand,
+            handleCommand
         });
 
         await fake.emit(
@@ -94,8 +87,8 @@ describe('Rallar Game Authority server installer', () => {
             'peer-a',
             {
                 ...envelope('command', 'peer-a', { action: 'move' }, 1),
-                protocol: 'wrong.protocol',
-            },
+                protocol: 'wrong.protocol'
+            }
         );
 
         expect(handleCommand).not.toHaveBeenCalled();
@@ -107,52 +100,52 @@ describe('Rallar Game Authority server installer', () => {
         const handleCommand = vi.fn(async () => ({
             status: 'accepted' as const,
             snapshot: { tick: 7 },
-            events: [{ kind: 'cash-picked' }, { kind: 'score-changed' }],
+            events: [{ kind: 'cash-picked' }, { kind: 'score-changed' }]
         }));
         const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
             rallar: fake.rallar,
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand,
+            handleCommand
         });
 
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'move' }, 1),
+            envelope('command', 'peer-a', { action: 'move' }, 1)
         );
 
         expect(handleCommand).toHaveBeenCalledWith(
             expect.objectContaining({
                 command: { action: 'move' },
                 roomId: 'room-1',
-                senderId: 'peer-a',
-            }),
+                senderId: 'peer-a'
+            })
         );
         expect(fake.published.map((entry) => parseEnvelope(entry.message).kind))
             .toEqual(['command-result', 'snapshot', 'event', 'event']);
         expect(parseEnvelope(fake.published[0].message).payload).toEqual({
             commandSeq: 1,
-            status: 'accepted',
+            status: 'accepted'
         });
         expect(parseEnvelope(fake.published[1].message).payload).toEqual({
-            tick: 7,
+            tick: 7
         });
         expect(fake.published[0].message.targets).toEqual({
             mode: 'unicast',
-            toPeerId: 'peer-a',
+            toPeerId: 'peer-a'
         });
         expect(fake.published[1].message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
-            groupRef: roomRef,
+            groupRef: roomRef
         });
         expect(server.status()).toMatchObject({
             handledCommandCount: 1,
             rejectedCommandCount: 0,
             publishedSnapshotCount: 1,
-            publishedEventCount: 2,
+            publishedEventCount: 2
         });
     });
 
@@ -167,14 +160,14 @@ describe('Rallar Game Authority server installer', () => {
                 status: 'rejected',
                 reason: 'illegal-command',
                 snapshot: { tick: 999 },
-                events: [{ kind: 'should-not-publish' }],
-            }),
+                events: [{ kind: 'should-not-publish' }]
+            })
         });
 
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'cheat' }, 1),
+            envelope('command', 'peer-a', { action: 'cheat' }, 1)
         );
 
         expect(fake.published).toHaveLength(1);
@@ -183,8 +176,8 @@ describe('Rallar Game Authority server installer', () => {
             payload: {
                 commandSeq: 1,
                 status: 'rejected',
-                reason: 'illegal-command',
-            },
+                reason: 'illegal-command'
+            }
         });
     });
 
@@ -197,30 +190,30 @@ describe('Rallar Game Authority server installer', () => {
             topicId: 'game.authority',
             authority,
             handleCommand: async () => ({ status: 'accepted' }),
-            readSnapshot,
+            readSnapshot
         });
 
         await fake.emit(
             'game.authority.sync-request.v1',
             'peer-a',
-            envelope('sync-request', 'peer-a', { reason: 'late-join' }, 1),
+            envelope('sync-request', 'peer-a', { reason: 'late-join' }, 1)
         );
 
         expect(readSnapshot).toHaveBeenCalledWith(
             expect.objectContaining({
                 payload: { reason: 'late-join' },
                 roomId: 'room-1',
-                senderId: 'peer-a',
-            }),
+                senderId: 'peer-a'
+            })
         );
         expect(fake.published).toHaveLength(1);
         expect(parseEnvelope(fake.published[0].message)).toMatchObject({
             kind: 'snapshot',
-            payload: { tick: 42 },
+            payload: { tick: 42 }
         });
         expect(fake.published[0].message.targets).toEqual({
             mode: 'unicast',
-            toPeerId: 'peer-a',
+            toPeerId: 'peer-a'
         });
     });
 
@@ -232,14 +225,14 @@ describe('Rallar Game Authority server installer', () => {
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand,
+            handleCommand
         });
 
         server.stop();
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'late' }, 1),
+            envelope('command', 'peer-a', { action: 'late' }, 1)
         );
 
         expect(handleCommand).not.toHaveBeenCalled();
@@ -252,7 +245,7 @@ function envelope<T>(
     kind: RallarGameAuthorityEnvelope<T>['kind'],
     senderId: string,
     payload: T,
-    seq: number,
+    seq: number
 ): RallarGameAuthorityEnvelope<T> {
     return createRallarGameAuthorityEnvelope({
         protocol: 'test.authority.v1',
@@ -262,14 +255,14 @@ function envelope<T>(
         seq,
         sentAtEpochMs: 1_000 + seq,
         authority,
-        payload,
+        payload
     });
 }
 
 function createFakeServerRallar() {
     const definitions: RallarServerWsTopicDefinition<unknown>[] = [];
     const handlers: HandlerSubscription[] = [];
-    const published: Array<{ message: ALMessage; fanout?: string }> = [];
+    const published: Array<{ message: ALMessage; fanout?: string; }> = [];
     const ws = {
         defineTopic: vi.fn((definition: RallarServerWsTopicDefinition<unknown>) => {
             definitions.push(definition);
@@ -277,7 +270,7 @@ function createFakeServerRallar() {
         }),
         on: vi.fn((
             selector: RallarServerWsSelector,
-            handler: HandlerSubscription['handler'],
+            handler: HandlerSubscription['handler']
         ) => {
             const subscription = { selector, handler };
             handlers.push(subscription);
@@ -295,9 +288,9 @@ function createFakeServerRallar() {
                 sentCount: 1,
                 recipientCount: 1,
                 failedCount: 0,
-                entries: [],
+                entries: []
             };
-        }),
+        })
     };
 
     return {
@@ -307,9 +300,7 @@ function createFakeServerRallar() {
         ws,
         rallar: { ws } as unknown as RallarGameAuthorityServerRallarFacade,
         definition(typeId: string) {
-            const definition = definitions.find((candidate) =>
-                candidate.typeId === typeId
-            );
+            const definition = definitions.find((candidate) => candidate.typeId === typeId);
             if (!definition) {
                 throw new Error(`Missing definition for ${typeId}`);
             }
@@ -322,18 +313,18 @@ function createFakeServerRallar() {
                 roomId: 'room-1',
                 roomRef,
                 senderId,
-                proxy: {} as RallarServerWsMessageContext<unknown>['proxy'],
+                proxy: {} as RallarServerWsMessageContext<unknown>['proxy']
             };
         },
         async emit<T>(
             typeId: string,
             senderId: string,
-            payload: RallarGameAuthorityEnvelope<T>,
+            payload: RallarGameAuthorityEnvelope<T>
         ) {
             const message: RallarServerWsMessage<RallarGameAuthorityEnvelope<T>> = {
                 payload,
                 raw: {} as ALMessage,
-                receivedAtEpochMs: Date.now(),
+                receivedAtEpochMs: Date.now()
             };
             const context = this.context(senderId);
             await Promise.all(
@@ -342,9 +333,9 @@ function createFakeServerRallar() {
                         subscription.selector.topicId === 'game.authority' &&
                         subscription.selector.typeId === typeId
                     )
-                    .map((subscription) => subscription.handler(message, context)),
+                    .map((subscription) => subscription.handler(message, context))
             );
-        },
+        }
     };
 }
 
@@ -352,7 +343,7 @@ type HandlerSubscription = Readonly<{
     selector: RallarServerWsSelector;
     handler: (
         message: RallarServerWsMessage<unknown>,
-        context: RallarServerWsMessageContext<unknown>,
+        context: RallarServerWsMessageContext<unknown>
     ) => void | Promise<void>;
 }>;
 

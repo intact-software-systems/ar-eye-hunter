@@ -1,34 +1,37 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { RallarBlackBoxSharedTestParsedArtifactBundle } from
-    '../../../shared-test-handoff-fixtures.ts';
+import type { RallarBlackBoxSharedTestParsedArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';
 import {
     deriveSharedTestArtifactIndexPresentation,
     deriveSharedTestCompactionSummaryWindow,
     moveSharedTestCompactionSummaryWindow,
     SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE,
-    type SharedTestCompactionSummary,
+    type SharedTestCompactionSummary
 } from './shared-test-artifact-index-presentation.ts';
-type SharedTestArtifactIndex = NonNullable<RallarBlackBoxSharedTestParsedArtifactBundle[
-    'views']['artifactIndex']>;
+type SharedTestArtifactIndex = NonNullable<
+    RallarBlackBoxSharedTestParsedArtifactBundle[
+        'views'
+    ]['artifactIndex']
+>;
 export function SharedTestArtifactIndexPanel({
-    artifactIndex,
-}: Readonly<{ artifactIndex: SharedTestArtifactIndex }>) {
+    artifactIndex
+}: Readonly<{ artifactIndex: SharedTestArtifactIndex; }>) {
     const summaryListId = `shared-test-compaction-summaries-${useId()}`;
     const rangeFocusRef = useRef<HTMLSpanElement>(null);
     const recoverFocusRef = useRef(false);
     const presentation = useMemo(
         () => deriveSharedTestArtifactIndexPresentation(artifactIndex),
-        [artifactIndex],
+        [artifactIndex]
     );
     const [windowState, setWindowState] = useState(() => ({
         artifactIndex,
-        startIndex: 0,
+        startIndex: 0
     }));
     const requestedStartIndex = windowState.artifactIndex === artifactIndex
         ? windowState.startIndex
         : 0;
     const window = deriveSharedTestCompactionSummaryWindow(
-        presentation.compaction.summaries, requestedStartIndex,
+        presentation.compaction.summaries,
+        requestedStartIndex
     );
     const showWindow = presentation.compaction.status === 'compacted' &&
         presentation.compaction.summaries.length > 0;
@@ -41,10 +44,13 @@ export function SharedTestArtifactIndexPanel({
         'summaries-invalid': 'Compaction summaries are invalid.',
         'index-inconsistent': 'Artifact-index metadata is inconsistent.',
         compacted: presentation.compaction.summaryCount === 0
-            ? '0 compacted success groups reported.' : undefined,
+            ? '0 compacted success groups reported.'
+            : undefined
     } as const)[presentation.compaction.status];
     useLayoutEffect(() => {
-        if (!recoverFocusRef.current) return;
+        if (!recoverFocusRef.current) {
+            return;
+        }
         recoverFocusRef.current = false;
         rangeFocusRef.current?.focus();
     }, [window.startIndex]);
@@ -63,13 +69,15 @@ export function SharedTestArtifactIndexPanel({
         >
             <div className="section-heading">
                 <h3>Artifact Index Compaction</h3>
-                <span className={`pill ${
-                    presentation.truncation.truncated === true
-                        ? 'warn'
-                        : presentation.truncation.truncated === false
-                        ? 'good'
-                        : 'muted'
-                }`}>
+                <span
+                    className={`pill ${
+                        presentation.truncation.truncated === true
+                            ? 'warn'
+                            : presentation.truncation.truncated === false
+                            ? 'good'
+                            : 'muted'
+                    }`}
+                >
                     {presentation.truncation.truncated === true
                         ? 'truncated'
                         : presentation.truncation.truncated === false
@@ -78,8 +86,8 @@ export function SharedTestArtifactIndexPanel({
                 </span>
             </div>
             <p className="shared-test-description">
-                Generic black-box-runner artifact index. Its runner identity is
-                not authoritative distributed-run identity.
+                Generic black-box-runner artifact index. Its runner identity is not authoritative distributed-run
+                identity.
             </p>
             <div className="shared-test-summary-grid">
                 <IndexMetric
@@ -101,75 +109,85 @@ export function SharedTestArtifactIndexPanel({
                     dataName="data-shared-test-index-summary-count"
                     label="Compacted success groups"
                     value={presentation.compaction.summariesAvailable
-                        ? presentation.compaction.summaryCount : undefined}
+                        ? presentation.compaction.summaryCount
+                        : undefined}
                 />
             </div>
-            {compactionMessage ? (
-                <p className="shared-test-description" role="status">
-                    {compactionMessage}
-                </p>
-            ) : null}
-            {showWindow ? (
-                <>
-                    {presentation.compaction.summaries.length >
-                            SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE ? (
-                        <div
-                            aria-label="Compacted success summary window"
-                            className="heading-actions"
-                            data-shared-test-compaction-window
-                            role="group"
+            {compactionMessage
+                ? (
+                    <p className="shared-test-description" role="status">
+                        {compactionMessage}
+                    </p>
+                )
+                : null}
+            {showWindow
+                ? (
+                    <>
+                        {presentation.compaction.summaries.length >
+                                SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE
+                            ? (
+                                <div
+                                    aria-label="Compacted success summary window"
+                                    className="heading-actions"
+                                    data-shared-test-compaction-window
+                                    role="group"
+                                >
+                                    <button
+                                        aria-controls={summaryListId}
+                                        disabled={!window.canPrevious}
+                                        onClick={(event) =>
+                                            move(
+                                                'previous',
+                                                event.currentTarget.ownerDocument.activeElement === event.currentTarget
+                                            )}
+                                        type="button"
+                                    >
+                                        Previous
+                                    </button>
+                                    <span
+                                        aria-atomic="true"
+                                        aria-live="polite"
+                                        data-shared-test-compaction-range
+                                        ref={rangeFocusRef}
+                                        role="status"
+                                        tabIndex={-1}
+                                    >
+                                        Showing {number(window.displayStart)}–
+                                        {number(window.displayEnd)} of {number(window.total)} compacted success groups.
+                                    </span>
+                                    <button
+                                        aria-controls={summaryListId}
+                                        disabled={!window.canNext}
+                                        onClick={(event) =>
+                                            move(
+                                                'next',
+                                                event.currentTarget.ownerDocument.activeElement === event.currentTarget
+                                            )}
+                                        type="button"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            )
+                            : null}
+                        <ol
+                            className="artifact-event-list"
+                            id={summaryListId}
+                            start={window.displayStart}
                         >
-                            <button
-                                aria-controls={summaryListId}
-                                disabled={!window.canPrevious}
-                                onClick={event => move('previous',
-                                    event.currentTarget.ownerDocument.activeElement === event.currentTarget)}
-                                type="button"
-                            >
-                                Previous
-                            </button>
-                            <span
-                                aria-atomic="true"
-                                aria-live="polite"
-                                data-shared-test-compaction-range
-                                ref={rangeFocusRef}
-                                role="status"
-                                tabIndex={-1}
-                            >
-                                Showing {number(window.displayStart)}–
-                                {number(window.displayEnd)} of {number(window.total)}{' '}
-                                compacted success groups.
-                            </span>
-                            <button
-                                aria-controls={summaryListId}
-                                disabled={!window.canNext}
-                                onClick={event => move('next',
-                                    event.currentTarget.ownerDocument.activeElement === event.currentTarget)}
-                                type="button"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    ) : null}
-                    <ol
-                        className="artifact-event-list"
-                        id={summaryListId}
-                        start={window.displayStart}
-                    >
-                        {window.rows.map(summary => (
-                            <SummaryRow key={summary.sourceOrdinal} summary={summary} />
-                        ))}
-                    </ol>
-                </>
-            ) : null}
+                            {window.rows.map((summary) => <SummaryRow key={summary.sourceOrdinal} summary={summary} />)}
+                        </ol>
+                    </>
+                )
+                : null}
         </section>
     );
 }
 function IndexMetric({
     dataName,
     label,
-    value,
-}: Readonly<{ dataName: string; label: string; value?: number }>) {
+    value
+}: Readonly<{ dataName: string; label: string; value?: number; }>) {
     return (
         <div className="metric">
             <span>{label}</span>
@@ -179,7 +197,7 @@ function IndexMetric({
         </div>
     );
 }
-function SummaryRow({ summary }: Readonly<{ summary: SharedTestCompactionSummary }>) {
+function SummaryRow({ summary }: Readonly<{ summary: SharedTestCompactionSummary; }>) {
     return (
         <li
             className="event-row"
@@ -193,9 +211,15 @@ function SummaryRow({ summary }: Readonly<{ summary: SharedTestCompactionSummary
                 </strong>
             </div>
             <div className="event-meta">
-                <span>Transport <ExactValue value={summary.transport} /></span>
-                <span>Action <ExactValue value={summary.action} /></span>
-                <span>Connection <ExactValue value={summary.connection} /></span>
+                <span>
+                    Transport <ExactValue value={summary.transport} />
+                </span>
+                <span>
+                    Action <ExactValue value={summary.action} />
+                </span>
+                <span>
+                    Connection <ExactValue value={summary.connection} />
+                </span>
                 <span>Count {number(summary.count)}</span>
                 <span>
                     Sequence {number(summary.firstSequence)}–
@@ -205,7 +229,7 @@ function SummaryRow({ summary }: Readonly<{ summary: SharedTestCompactionSummary
         </li>
     );
 }
-function ExactValue({ value }: Readonly<{ value?: string }>) {
+function ExactValue({ value }: Readonly<{ value?: string; }>) {
     return <bdi dir="ltr">{value ?? 'unknown'}</bdi>;
 }
 function number(value: number | undefined): string {

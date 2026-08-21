@@ -17,12 +17,12 @@ function toCorrelationReportFields(interaction: any): any {
     return {
         runnerRunId: correlation.runnerRunId,
         runnerStepId: correlation.runnerStepId,
-        correlation,
+        correlation
     };
 }
 
 function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function toRetryPolicy(request: any): any {
@@ -33,7 +33,7 @@ function toRetryPolicy(request: any): any {
         backoffMs: Number.parseInt(retry.backoffMs || 0),
         backoffMultiplier: Number.parseFloat(retry.backoffMultiplier || 1),
         onStatus: retry.onStatus || [],
-        onException: retry.onException !== false,
+        onException: retry.onException !== false
     };
 }
 
@@ -71,7 +71,8 @@ async function fetchWithRetry(request: any): Promise<any> {
             }
 
             return response;
-        } catch (e) {
+        }
+        catch (e) {
             lastException = e instanceof Error
                 ? e
                 : new Error(String(e));
@@ -127,8 +128,8 @@ function fetchDataBasic(request: any): Promise<Response> {
             mode: request.mode ? request.mode : 'cors',
             headers: request.headers,
             body: toBody(request),
-            signal: controller?.signal,
-        },
+            signal: controller?.signal
+        }
     ).finally(() => {
         if (timeout) {
             clearTimeout(timeout);
@@ -152,17 +153,17 @@ function toHttpExceptionStatus(config: any, interaction: any, error: any): any {
         scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
         interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
         repeatIndex: config.interaction.request.repeatIndex,
-        ...config,
+        ...config
     };
 }
 
 function executeSingleHttpAttempt(interaction: any, config: any): Promise<any> {
     return fetchWithRetry(interaction.request)
-        .then(async response => {
+        .then(async (response) => {
             const actualJson = await toJson(response);
             return toHttpInteractionStatus(config, interaction, response, actualJson);
         })
-        .catch(e => {
+        .catch((e) => {
             return toHttpExceptionStatus(config, interaction, e);
         });
 }
@@ -179,7 +180,7 @@ function toPollUntilPolicy(request: any): any {
         maxAttempts: Number.parseInt(String(poll.maxAttempts ?? 10), 10),
         maxDurationMs: Number.parseInt(String(poll.maxDurationMs ?? 15000), 10),
         backoffMs: Number.parseInt(String(poll.backoffMs ?? 100), 10),
-        backoffMultiplier: Number.parseFloat(String(poll.backoffMultiplier ?? 2)),
+        backoffMultiplier: Number.parseFloat(String(poll.backoffMultiplier ?? 2))
     };
 }
 
@@ -188,7 +189,7 @@ function withPollReportFields(status: any, poll: any): any {
         ...status,
         pollAttempts: poll.attempts,
         pollExhausted: poll.exhausted,
-        pollElapsedMs: poll.elapsedMs,
+        pollElapsedMs: poll.elapsedMs
     };
 }
 
@@ -206,20 +207,20 @@ async function executePollUntilHttp(interaction: any, config: any): Promise<any>
             return withPollReportFields(lastStatus, {
                 attempts: attemptNumber,
                 exhausted: false,
-                elapsedMs: Date.now() - startedAtEpochMs,
+                elapsedMs: Date.now() - startedAtEpochMs
             });
         }
 
         const backoffMs = toBackoffMs(
             { backoffMs: policy.backoffMs, backoffMultiplier: policy.backoffMultiplier },
-            attemptNumber,
+            attemptNumber
         );
         const elapsedMs = Date.now() - startedAtEpochMs;
         if (attemptNumber >= policy.maxAttempts || elapsedMs + backoffMs > policy.maxDurationMs) {
             return withPollReportFields(lastStatus, {
                 attempts: attemptNumber,
                 exhausted: true,
-                elapsedMs,
+                elapsedMs
             });
         }
 
@@ -229,7 +230,7 @@ async function executePollUntilHttp(interaction: any, config: any): Promise<any>
     return withPollReportFields(lastStatus, {
         attempts: policy.maxAttempts,
         exhausted: true,
-        elapsedMs: Date.now() - startedAtEpochMs,
+        elapsedMs: Date.now() - startedAtEpochMs
     });
 }
 

@@ -2,7 +2,7 @@ import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
 import { Metric } from '../shared/Metric.tsx';
 
 export function RunnerModeBoundaryPanel({
-    control,
+    control
 }: {
     control: RallarBlackBoxControlSnapshot;
 }) {

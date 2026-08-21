@@ -3,7 +3,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestWaitCommand,
-    RallarBlackBoxTestWaitResultValue,
+    RallarBlackBoxTestWaitResultValue
 } from '../types.ts';
 
 import { findWaitEvent } from './wait-event-match.ts';
@@ -12,7 +12,7 @@ export const RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED = 'RALLAR_BLACK_BOX_WAIT_ABS
 
 const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 
-type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string }>;
+type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string; }>;
 
 export interface WaitForEventInput {
     readonly command: WaitCommandWithId;
@@ -26,7 +26,7 @@ export interface WaitForEventInput {
 }
 
 export async function waitForEvent(
-    input: WaitForEventInput,
+    input: WaitForEventInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     if (!command.match || Object.keys(command.match).length === 0) {
@@ -34,7 +34,7 @@ export async function waitForEvent(
     }
     if (command.absent !== undefined && command.absent !== true) {
         return waitInvalid(command, 'Wait absent must be true when present.', {
-            absent: command.absent,
+            absent: command.absent
         });
     }
 
@@ -72,7 +72,8 @@ export async function waitForEvent(
             if (unsubscribe) {
                 unsubscribe();
                 unsubscribe = undefined;
-            } else {
+            }
+            else {
                 cleanupAfterSubscribe = true;
             }
         };
@@ -115,7 +116,7 @@ export async function waitForEvent(
             settle(waitTimedOut(command, deadlineEpochMs));
         }, timeoutDelayMs);
         signal.addEventListener('abort', onAbort, {
-            once: true,
+            once: true
         });
         unsubscribe = input.subscribe(evaluate);
         if (cleanupAfterSubscribe && unsubscribe) {
@@ -129,14 +130,15 @@ export async function waitForEvent(
 // an absence claim is only as strong as the time the agent kept listening —
 // then the whole buffer is scanned once, so earlier events violate by design.
 async function holdForEventAbsence(
-    input: WaitForEventInput,
+    input: WaitForEventInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     const deadlineEpochMs = waitDeadlineEpochMs(command, input.now);
 
     try {
         await input.sleep(Math.max(0, deadlineEpochMs - input.now()), input.cancellationSignal);
-    } catch (_error) {
+    }
+    catch (_error) {
         return waitCancelled(command);
     }
     if (input.cancelRequested()) {
@@ -152,9 +154,9 @@ async function holdForEventAbsence(
         status: 'ok',
         value: toWaitResultValue(command, {
             matched: false,
-            absent: true,
+            absent: true
         }),
-        nextStatus: input.currentStatus(),
+        nextStatus: input.currentStatus()
     };
 }
 
@@ -185,41 +187,41 @@ function toWaitResultValue(
         timedOut?: boolean;
         cancelled?: boolean;
         event?: RallarBlackBoxTestEvent;
-    }>,
+    }>
 ): RallarBlackBoxTestWaitResultValue {
     return {
         commandId: command.commandId,
         match: command.match,
-        ...partial,
+        ...partial
     };
 }
 
 function waitMatched(
     command: WaitCommandWithId,
     event: RallarBlackBoxTestEvent,
-    nextStatus: RallarBlackBoxTestRuntimeStatus,
+    nextStatus: RallarBlackBoxTestRuntimeStatus
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'ok',
         value: toWaitResultValue(command, {
             matched: true,
-            event,
+            event
         }),
-        nextStatus,
+        nextStatus
     };
 }
 
 function waitAbsenceViolated(
     command: WaitCommandWithId,
     event: RallarBlackBoxTestEvent,
-    deadlineEpochMs: number,
+    deadlineEpochMs: number
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
         value: toWaitResultValue(command, {
             matched: true,
             absent: true,
-            event,
+            event
         }),
         error: {
             code: RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED,
@@ -228,22 +230,22 @@ function waitAbsenceViolated(
                 timeoutMs: command.timeoutMs,
                 deadlineEpochMs,
                 match: command.match,
-                event,
-            },
+                event
+            }
         },
-        nextStatus: 'failed',
+        nextStatus: 'failed'
     };
 }
 
 function waitTimedOut(
     command: WaitCommandWithId,
-    deadlineEpochMs: number,
+    deadlineEpochMs: number
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
         value: toWaitResultValue(command, {
             matched: false,
-            timedOut: true,
+            timedOut: true
         }),
         error: {
             code: 'RALLAR_BLACK_BOX_WAIT_TIMEOUT',
@@ -251,10 +253,10 @@ function waitTimedOut(
             details: {
                 timeoutMs: command.timeoutMs,
                 deadlineEpochMs,
-                match: command.match,
-            },
+                match: command.match
+            }
         },
-        nextStatus: 'failed',
+        nextStatus: 'failed'
     };
 }
 
@@ -264,27 +266,27 @@ function waitCancelled(command: WaitCommandWithId): RallarBlackBoxTestCommandOut
         value: toWaitResultValue(command, {
             matched: false,
             ...(command.absent === true ? { absent: true } : {}),
-            cancelled: true,
+            cancelled: true
         }),
-        nextStatus: 'cancelled',
+        nextStatus: 'cancelled'
     };
 }
 
 function waitInvalid(
     command: WaitCommandWithId,
     message: string,
-    details?: unknown,
+    details?: unknown
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
         value: toWaitResultValue(command, {
-            matched: false,
+            matched: false
         }),
         error: {
             code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
             message,
-            details,
+            details
         },
-        nextStatus: 'failed',
+        nextStatus: 'failed'
     };
 }

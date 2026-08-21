@@ -1,19 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import type { RallarBlackBoxTestSeverity, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type {
-    RallarBlackBoxTestSeverity,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
 import { createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
-import { Metric } from '../../shared/Metric.tsx';
 import { json, parseJsonText } from '../../shared/json-presentation.ts';
+import { Metric } from '../../shared/Metric.tsx';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
@@ -57,17 +51,13 @@ type RallarDataChangeRow = Readonly<{
     event: unknown;
 }>;
 
-type RallarDataUiStore = Awaited<
-    ReturnType<
-        Awaited<ReturnType<typeof loadBrowserRallarFacade>>['data']['open']
-    >
->;
+type RallarDataUiStore = Awaited<ReturnType<Awaited<ReturnType<typeof loadBrowserRallarFacade>>['data']['open']>>;
 
 export function RallarDataPanel({
     state,
     bootstrap,
     authSession,
-    globalValues,
+    globalValues
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -75,20 +65,16 @@ export function RallarDataPanel({
     globalValues: CommandCenterGlobalValues;
 }) {
     const [storeName, setStoreName] = useState('rallar-black-box-store');
-    const [scopeMode, setScopeMode] = useState<
-        'app' | 'principal' | 'session' | 'custom'
-    >('session');
+    const [scopeMode, setScopeMode] = useState<'app' | 'principal' | 'session' | 'custom'>('session');
     const [customScope, setCustomScope] = useState('custom:rallar-black-box');
-    const [durability, setDurability] = useState<
-        'write-through' | 'write-behind'
-    >('write-through');
+    const [durability, setDurability] = useState<'write-through' | 'write-behind'>('write-through');
     const [hydrateMode, setHydrateMode] = useState<'eager' | 'lazy'>('eager');
     const [key, setKey] = useState('probe');
     const [valueText, setValueText] = useState(() =>
         json({
             text: 'hello from Rallar Data',
-            seq: 1,
-        }),
+            seq: 1
+        })
     );
     const [expectedText, setExpectedText] = useState('');
     const [operation, setOperation] = useState<RallarDataOperation>('open');
@@ -103,35 +89,34 @@ export function RallarDataPanel({
     const providerMode = bootstrap.providerMode;
     const realBackendReady = providerMode === 'browser-rallar';
     const canRun = realBackendReady && !busyAction;
-    const resolvedScope =
-        scopeMode === 'app'
-            ? `app:${globalValues.applicationId}:${globalValues.workspaceId}`
-            : scopeMode === 'principal'
-              ? `principal:${globalValues.clientId || authSession?.clientId || bootstrap.actor}`
-              : scopeMode === 'session'
-                ? `session:${globalValues.sessionId || authSession?.sessionId || bootstrap.sessionId}`
-                : customScope;
+    const resolvedScope = scopeMode === 'app'
+        ? `app:${globalValues.applicationId}:${globalValues.workspaceId}`
+        : scopeMode === 'principal'
+        ? `principal:${globalValues.clientId || authSession?.clientId || bootstrap.actor}`
+        : scopeMode === 'session'
+        ? `session:${globalValues.sessionId || authSession?.sessionId || bootstrap.sessionId}`
+        : customScope;
 
     useEffect(
         () => () => {
             unsubscribeRef.current?.();
             void storeRef.current?.close();
         },
-        [],
+        []
     );
 
     const options = () => ({
         scope: resolvedScope,
         durability,
         hydrate: hydrateMode,
-        sync: true,
+        sync: true
     });
 
     const recordDataEvent = (
         topic: string,
         severity: RallarBlackBoxTestSeverity,
         payload: unknown,
-        lastAction: string,
+        lastAction: string
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
@@ -142,38 +127,35 @@ export function RallarDataPanel({
                     applicationId: globalValues.applicationId,
                     workspaceId: globalValues.workspaceId,
                     roomId: globalValues.roomId,
-                    actor:
-                        authSession?.username ??
+                    actor: authSession?.username ??
                         authSession?.clientId ??
                         bootstrap.actor,
                     connection: 'rallar-data',
                     authSession,
-                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
                 },
                 payload: {
                     storeName,
                     scope: resolvedScope,
-                    ...optionalRecord(payload),
+                    ...optionalRecord(payload)
                 },
-                severity,
+                severity
             }),
-            lastAction,
+            lastAction
         );
     };
 
-    const loadFacade = async (): Promise<
-        Awaited<ReturnType<typeof loadBrowserRallarFacade>>
-    > => {
+    const loadFacade = async (): Promise<Awaited<ReturnType<typeof loadBrowserRallarFacade>>> => {
         if (!realBackendReady) {
             throw new Error(
-                'Rallar Data console requires provider=browser-rallar.',
+                'Rallar Data console requires provider=browser-rallar.'
             );
         }
         const facade = await loadBrowserRallarFacade();
         facade.configure({ apiBaseUrl: globalValues.apiBaseUrl });
         facade.setDefaults({
             applicationId: globalValues.applicationId,
-            workspaceId: globalValues.workspaceId,
+            workspaceId: globalValues.workspaceId
         });
         return facade;
     };
@@ -184,14 +166,14 @@ export function RallarDataPanel({
             const row = {
                 rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                 atEpochMs: Date.now(),
-                event,
+                event
             };
             setChanges((current) => [...current, row].slice(-50));
             recordDataEvent(
                 'rallar.direct.data.change',
                 'info',
                 row,
-                'Rallar Data changed',
+                'Rallar Data changed'
             );
         });
     };
@@ -231,12 +213,14 @@ export function RallarDataPanel({
             let nextResult: unknown;
             if (operation === 'define') {
                 nextResult = facade.data.define(storeName, options());
-            } else if (operation === 'open') {
+            }
+            else if (operation === 'open') {
                 nextResult = await openStore();
-            } else if (operation === 'lookup') {
+            }
+            else if (operation === 'lookup') {
                 const lookedUp = facade.data.lookup<unknown>(
                     storeName,
-                    options(),
+                    options()
                 );
                 if (lookedUp) {
                     storeRef.current = lookedUp;
@@ -246,26 +230,32 @@ export function RallarDataPanel({
                 }
                 nextResult = lookedUp
                     ? {
-                          name: lookedUp.name,
-                          repositoryId: lookedUp.repositoryId,
-                          hydrated: lookedUp.isHydrated(),
-                      }
+                        name: lookedUp.name,
+                        repositoryId: lookedUp.repositoryId,
+                        hydrated: lookedUp.isHydrated()
+                    }
                     : undefined;
-            } else if (operation === 'close') {
+            }
+            else if (operation === 'close') {
                 nextResult = await facade.data.close(storeName, options());
                 resetOpenStore();
-            } else if (operation === 'destroy') {
+            }
+            else if (operation === 'destroy') {
                 nextResult = await facade.data.destroy(storeName, options());
                 resetOpenStore();
-            } else if (operation === 'close-scope') {
+            }
+            else if (operation === 'close-scope') {
                 nextResult = await facade.data.closeScope(resolvedScope);
                 resetOpenStore();
-            } else if (operation === 'clear-scope') {
+            }
+            else if (operation === 'clear-scope') {
                 nextResult = await facade.data.clearScope(resolvedScope);
-            } else if (operation === 'destroy-scope') {
+            }
+            else if (operation === 'destroy-scope') {
                 nextResult = await facade.data.destroyScope(resolvedScope);
                 resetOpenStore();
-            } else {
+            }
+            else {
                 const store = await openStore();
                 switch (operation) {
                     case 'hydrate':
@@ -305,25 +295,19 @@ export function RallarDataPanel({
                         nextResult = await store.get(key);
                         break;
                     case 'update':
-                        nextResult = await store.update(key, () =>
-                            parseValue(),
-                        );
+                        nextResult = await store.update(key, () => parseValue());
                         break;
                     case 'update-or-create':
-                        nextResult = await store.updateOrCreate(key, () =>
-                            parseValue(),
-                        );
+                        nextResult = await store.updateOrCreate(key, () => parseValue());
                         break;
                     case 'set-if-absent':
-                        nextResult = await store.setIfAbsent(key, () =>
-                            parseValue(),
-                        );
+                        nextResult = await store.setIfAbsent(key, () => parseValue());
                         break;
                     case 'compare-and-set':
                         nextResult = await store.compareAndSet(
                             key,
                             parseExpected(),
-                            parseValue(),
+                            parseValue()
                         );
                         break;
                     case 'get-and-set':
@@ -360,24 +344,25 @@ export function RallarDataPanel({
                 'info',
                 {
                     operation,
-                    result: nextResult,
+                    result: nextResult
                 },
-                `Rallar Data ${operation} completed`,
+                `Rallar Data ${operation} completed`
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             recordDataEvent(
                 'rallar.direct.data.operation.failed',
                 'error',
                 {
                     operation,
-                    error: message,
+                    error: message
                 },
-                `Rallar Data ${operation} failed`,
+                `Rallar Data ${operation} failed`
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -396,11 +381,11 @@ export function RallarDataPanel({
                     operation,
                     key,
                     result,
-                    changes: changes.slice(-8),
+                    changes: changes.slice(-8)
                 },
                 state,
-                authSession,
-            ),
+                authSession
+            )
         );
     };
 
@@ -434,7 +419,7 @@ export function RallarDataPanel({
         'destroy',
         'close-scope',
         'clear-scope',
-        'destroy-scope',
+        'destroy-scope'
     ];
 
     return (
@@ -447,8 +432,8 @@ export function RallarDataPanel({
                     {storeOpen
                         ? 'store open'
                         : realBackendReady
-                          ? 'idle'
-                          : 'real backend required'}
+                        ? 'idle'
+                        : 'real backend required'}
                 </span>
             </div>
             <div className="rallar-data-summary-grid">
@@ -493,7 +478,7 @@ export function RallarDataPanel({
                             onChange={(event) => {
                                 resetOpenStore();
                                 setScopeMode(
-                                    event.target.value as typeof scopeMode,
+                                    event.target.value as typeof scopeMode
                                 );
                             }}
                         >
@@ -507,9 +492,7 @@ export function RallarDataPanel({
                         <span>Custom Scope</span>
                         <input
                             value={customScope}
-                            onChange={(event) =>
-                                setCustomScope(event.target.value)
-                            }
+                            onChange={(event) => setCustomScope(event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -519,7 +502,7 @@ export function RallarDataPanel({
                             onChange={(event) => {
                                 resetOpenStore();
                                 setDurability(
-                                    event.target.value as typeof durability,
+                                    event.target.value as typeof durability
                                 );
                             }}
                         >
@@ -534,7 +517,7 @@ export function RallarDataPanel({
                             onChange={(event) => {
                                 resetOpenStore();
                                 setHydrateMode(
-                                    event.target.value as typeof hydrateMode,
+                                    event.target.value as typeof hydrateMode
                                 );
                             }}
                         >
@@ -548,9 +531,8 @@ export function RallarDataPanel({
                             value={operation}
                             onChange={(event) =>
                                 setOperation(
-                                    event.target.value as RallarDataOperation,
-                                )
-                            }
+                                    event.target.value as RallarDataOperation
+                                )}
                         >
                             {operations.map((entry) => (
                                 <option key={entry} value={entry}>
@@ -589,9 +571,7 @@ export function RallarDataPanel({
                         <span>Value JSON</span>
                         <textarea
                             value={valueText}
-                            onChange={(event) =>
-                                setValueText(event.target.value)
-                            }
+                            onChange={(event) => setValueText(event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -599,9 +579,7 @@ export function RallarDataPanel({
                         <span>Expected JSON</span>
                         <textarea
                             value={expectedText}
-                            onChange={(event) =>
-                                setExpectedText(event.target.value)
-                            }
+                            onChange={(event) => setExpectedText(event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -654,9 +632,7 @@ export function RallarDataPanel({
             </CollapsiblePanelSection>
             {(busyAction || localError || !realBackendReady) && (
                 <div
-                    className={
-                        localError ? 'workbench-error' : 'command-center-status'
-                    }
+                    className={localError ? 'workbench-error' : 'command-center-status'}
                     role="status"
                 >
                     {localError ??

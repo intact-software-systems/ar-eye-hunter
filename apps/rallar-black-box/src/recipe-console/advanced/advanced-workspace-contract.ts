@@ -1,9 +1,5 @@
-import type { RecipeConsoleControlSelection } from
-    '../control/control-selection-contract.ts';
-import type {
-    RecipeConsoleUrlIssue,
-    RecipeConsoleUrlState,
-} from '../routing/url-state-contract.ts';
+import type { RecipeConsoleControlSelection } from '../control/control-selection-contract.ts';
+import type { RecipeConsoleUrlIssue, RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type AdvancedWorkspaceProps = Readonly<{
     sourceSearch: string;

@@ -1,9 +1,9 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     formatJsonSchemaValidationErrors,
-    validateJsonSchema,
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+    validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 
 export function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
     const value = JSON.parse(text) as unknown;
@@ -12,11 +12,11 @@ export function parseRunManagerCommandText(text: string): RallarBlackBoxTestComm
     }
     const result = validateJsonSchema(
         RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-        value,
+        value
     );
     if (!result.ok) {
         throw new Error(
-            `Command JSON failed schema validation:\n${formatJsonSchemaValidationErrors(result.errors)}`,
+            `Command JSON failed schema validation:\n${formatJsonSchemaValidationErrors(result.errors)}`
         );
     }
     return value as RallarBlackBoxTestCommand;

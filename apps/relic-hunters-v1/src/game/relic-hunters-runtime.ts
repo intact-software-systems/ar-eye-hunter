@@ -1,18 +1,4 @@
 import {
-    rallar,
-    type RallarAuthChangeListener,
-    type RallarCreateRoomInput,
-    type RallarRoomState,
-    type RallarStartResult,
-    type RallarSubscriptionScope,
-    type RallarUnsubscribe,
-} from '@shared-web/browser/rallar.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    createRallarAiFunnyRoomName,
-    createRallarAiRoomNameSeed,
-} from '@shared/rallar-ai/mod.ts';
-import {
     RELIC_PROTOCOL_VERSION,
     RELIC_TOPICS,
     RELIC_TYPES,
@@ -20,15 +6,23 @@ import {
     type RelicCharacterId,
     type RelicCommand,
     type RelicPublicSnapshot,
-    type RelicServerEvent,
+    type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import {
+    rallar,
+    type RallarAuthChangeListener,
+    type RallarCreateRoomInput,
+    type RallarRoomState,
+    type RallarStartResult,
+    type RallarSubscriptionScope,
+    type RallarUnsubscribe
+} from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts';
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
+import { createRelicAuthorityClientBridge, type RelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
-import {
-    createRelicAuthorityClientBridge,
-    type RelicAuthorityClientBridge,
-} from './rallar-game-authority-adapter.ts';
 
 export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
 export const RELIC_COMMAND_TRANSPORT = 'rest' as const;
@@ -47,13 +41,13 @@ export type RelicHuntersRuntimePhase =
     | 'error';
 
 export type RelicCommandDraft =
-    | Readonly<{ kind: 'join-expedition'; characterId?: RelicCharacterId }>
-    | Readonly<{ kind: 'start-expedition' }>
-    | Readonly<{ kind: 'submit-action'; action: RelicActionInput }>
-    | Readonly<{ kind: 'force-resolve-round' }>
-    | Readonly<{ kind: 'pickup-relic'; relicId: string }>
-    | Readonly<{ kind: 'continue-review' }>
-    | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number }>;
+    | Readonly<{ kind: 'join-expedition'; characterId?: RelicCharacterId; }>
+    | Readonly<{ kind: 'start-expedition'; }>
+    | Readonly<{ kind: 'submit-action'; action: RelicActionInput; }>
+    | Readonly<{ kind: 'force-resolve-round'; }>
+    | Readonly<{ kind: 'pickup-relic'; relicId: string; }>
+    | Readonly<{ kind: 'continue-review'; }>
+    | Readonly<{ kind: 'set-round-limit'; timeLimitMs: number; }>;
 
 export type RelicRuntimeDiagnostics = Readonly<{
     phase: RelicHuntersRuntimePhase;
@@ -117,10 +111,7 @@ export type RelicJoinedRoom = Readonly<{
 
 type RelicCreateRoomOptions = Readonly<Pick<RallarCreateRoomInput, 'joinMode'>>;
 
-export type RelicRuntimeStartResult = Pick<
-    RallarStartResult,
-    'session' | 'connected' | 'roomState'
->;
+export type RelicRuntimeStartResult = Pick<RallarStartResult, 'session' | 'connected' | 'roomState'>;
 
 export type RelicHuntersRuntimeDeps = Readonly<{
     restoreSession(): AuthSession | undefined;
@@ -142,8 +133,8 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     publishRtcSnapshot(snapshot: RelicPublicSnapshot): Promise<boolean>;
     createRoom(
         displayName: string,
-        options?: RelicCreateRoomOptions,
-    ): Promise<{ group: { groupId: string } }>;
+        options?: RelicCreateRoomOptions
+    ): Promise<{ group: { groupId: string; }; }>;
     joinRoom(roomId: string): Promise<RelicJoinedRoom>;
     fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     sendCommand(roomId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined>;
@@ -168,7 +159,7 @@ export class RelicHuntersRuntime {
     async register(
         username: string,
         password: string,
-        displayName?: string,
+        displayName?: string
     ): Promise<AuthSession> {
         return this.deps.register(username, password, displayName);
     }
@@ -189,7 +180,7 @@ export class RelicHuntersRuntime {
     async connectAndHydrate(
         onSnapshot: (event: RelicServerEvent) => void,
         onRoomsChange: (state: RallarRoomState) => void,
-        onRtcSnapshot: (event: RelicServerEvent) => void = onSnapshot,
+        onRtcSnapshot: (event: RelicServerEvent) => void = onSnapshot
     ): Promise<RelicRuntimeHydration | undefined> {
         const started = await this.deps.start();
         const session = started.session;
@@ -213,7 +204,8 @@ export class RelicHuntersRuntime {
                     const joined = await this.deps.joinRoom(restoredRoomId);
                     roomId = joined.roomId;
                     roomState = await this.deps.refreshRooms();
-                } catch {
+                }
+                catch {
                     this.deps.clearRoomId();
                 }
             }
@@ -228,7 +220,7 @@ export class RelicHuntersRuntime {
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
-                authorityListenerReady: true,
+                authorityListenerReady: true
             };
         }
 
@@ -242,9 +234,10 @@ export class RelicHuntersRuntime {
                 snapshotListenerReady: true,
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
-                authorityListenerReady: true,
+                authorityListenerReady: true
             };
-        } catch (error) {
+        }
+        catch (error) {
             return {
                 session,
                 roomState,
@@ -253,7 +246,7 @@ export class RelicHuntersRuntime {
                 rtcSnapshotListenerReady: true,
                 roomListenerReady: true,
                 authorityListenerReady: true,
-                degradedError: toErrorMessage(error),
+                degradedError: toErrorMessage(error)
             };
         }
     }
@@ -271,10 +264,10 @@ export class RelicHuntersRuntime {
             baseName: RELIC_ROOM_NAME,
             theme: 'relic-hunters',
             seed: createRallarAiRoomNameSeed('relic-hunters'),
-            existingNames,
+            existingNames
         });
         const created = await this.deps.createRoom(displayName, {
-            joinMode: RELIC_ROOM_JOIN_MODE,
+            joinMode: RELIC_ROOM_JOIN_MODE
         });
         return this.hydrateRoom(created.group.groupId);
     }
@@ -287,7 +280,7 @@ export class RelicHuntersRuntime {
     async sendCommand(
         session: AuthSession,
         roomId: string,
-        input: RelicCommandDraft,
+        input: RelicCommandDraft
     ): Promise<RelicPublicSnapshot | undefined> {
         // Browser gameplay keeps REST as the authoritative command transport.
         // Rallar WS is used for live snapshot fanout and late-arriving updates.
@@ -295,7 +288,7 @@ export class RelicHuntersRuntime {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: roomId,
             username: session.username,
-            ...input,
+            ...input
         } as RelicCommand;
 
         return this.deps.sendCommand(roomId, command);
@@ -320,13 +313,13 @@ export class RelicHuntersRuntime {
         return {
             roomId,
             roomState,
-            snapshot,
+            snapshot
         };
     }
 }
 
 export function initialRelicDiagnostics(
-    session: AuthSession | undefined,
+    session: AuthSession | undefined
 ): RelicRuntimeDiagnostics {
     return {
         phase: session ? 'connecting' : 'signed-out',
@@ -350,7 +343,7 @@ export function initialRelicDiagnostics(
         lastIgnoredSnapshotReason: undefined,
         lastIgnoredSnapshot: undefined,
         lastHydratedAtEpochMs: undefined,
-        lastError: undefined,
+        lastError: undefined
     };
 }
 
@@ -366,12 +359,13 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
             rallar.auth.registerAndLogin({
                 username,
                 password,
-                displayName: displayName || username,
+                displayName: displayName || username
             }),
         logout: () => rallar.auth.logout(),
-        onAuthChange: (listener) => rallar.auth.onChange(listener, {
-            emitCurrent: true,
-        }),
+        onAuthChange: (listener) =>
+            rallar.auth.onChange(listener, {
+                emitCurrent: true
+            }),
         start: () => rallar.start({ refreshRooms: true }),
         subscriptions: () => rallar.subscriptions(),
         refreshRooms: () => rallar.rooms.refresh(),
@@ -380,17 +374,17 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
             rallar.messages.ws.onMessage<RelicServerEvent>(
                 {
                     topicId: RELIC_TOPICS.snapshot,
-                    typeId: RELIC_TYPES.snapshot,
+                    typeId: RELIC_TYPES.snapshot
                 },
-                (message) => handler(message.payload),
+                (message) => handler(message.payload)
             ),
         onRtcSnapshotMessage: (handler) =>
             rallar.messages.rtc.onMessage<RelicServerEvent>(
                 {
                     topicId: RELIC_TOPICS.snapshot,
-                    typeId: RELIC_TYPES.snapshot,
+                    typeId: RELIC_TYPES.snapshot
                 },
-                (message) => handler(message.payload),
+                (message) => handler(message.payload)
             ),
         onAuthoritySnapshotMessage: (handler) => authority.start(handler),
         authorityStatus: () => authority.status(),
@@ -401,7 +395,7 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
         joinRoom: (roomId) => rallar.rooms.enter(roomId),
         fetchSnapshot: (roomId) => fetchRelicSnapshot(roomId),
         sendCommand: (roomId, command) => sendRelicCommand(roomId, command),
-        resetGame: (roomId) => resetRelicGame(roomId),
+        resetGame: (roomId) => resetRelicGame(roomId)
     };
 }
 

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-    DEFAULT_APP_EXPERIENCE,
-    resolveAppExperience,
-} from '../../../apps/rallar-black-box/src/app/experience-route.ts';
+import { DEFAULT_APP_EXPERIENCE, resolveAppExperience } from '../../../apps/rallar-black-box/src/app/experience-route.ts';
 
 describe('rallar-black-box experience route', () => {
     it.each([
@@ -10,7 +7,7 @@ describe('rallar-black-box experience route', () => {
         ['?appMode=black-box-runner', 'appMode'],
         ['?tab=fleet', 'tab'],
         ['?advancedSurface=workbench', 'advancedSurface'],
-        ['?advanced=workbench', 'advanced'],
+        ['?advanced=workbench', 'advanced']
     ])('keeps the %s compatibility input in the legacy experience', (search) => {
         expect(resolveAppExperience(search)).toBe('legacy');
     });
@@ -32,7 +29,7 @@ describe('rallar-black-box experience route', () => {
     it.each([
         '?workspace=black-box-runner&tab=fleet&advanced=workbench&experience=recipe-console',
         '?workspace=black-box-runner&tab=fleet&advanced=workbench&v=1&experience=recipe-console',
-        '?mode=control-agent&v=1&experience=recipe-console',
+        '?mode=control-agent&v=1&experience=recipe-console'
     ])('lets a valid explicit experience win over stale legacy aliases: %s', (search) => {
         expect(resolveAppExperience(search)).toBe('recipe-console');
     });
@@ -49,7 +46,7 @@ describe('rallar-black-box experience route', () => {
 
     it.each([
         '?mode=control',
-        '?mode=control-agent',
+        '?mode=control-agent'
     ])('keeps the legacy %s launch mode under a future default', (search) => {
         expect(resolveAppExperience(search, 'recipe-console')).toBe('legacy');
     });
@@ -57,11 +54,11 @@ describe('rallar-black-box experience route', () => {
     it('does not let an invalid explicit experience inherit a future default', () => {
         expect(resolveAppExperience(
             '?experience=Recipe-Console',
-            'recipe-console',
+            'recipe-console'
         )).toBe('legacy');
         expect(resolveAppExperience(
             '?experience=unknown',
-            'recipe-console',
+            'recipe-console'
         )).toBe('legacy');
     });
 
@@ -70,7 +67,7 @@ describe('rallar-black-box experience route', () => {
 
         expect(resolveAppExperience(launchSearch)).toBe('legacy');
         expect(launchSearch).toBe(
-            '?mode=control&workspace=black-box-runner&tab=local-workbench&roomId=room-a',
+            '?mode=control&workspace=black-box-runner&tab=local-workbench&roomId=room-a'
         );
     });
 });

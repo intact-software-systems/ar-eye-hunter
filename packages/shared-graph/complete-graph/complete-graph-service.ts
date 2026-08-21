@@ -1,11 +1,11 @@
-import { type CompleteGraphInputDto, type CompleteGraphResult, GraphAlgo, } from './complete-graph-types.ts';
-import { createCMGraph, updateCMTree } from './complete-graph-member.ts';
-import { createCMGraphSteinerSet, updateCMGraphSteinerSet, } from './complete-graph-steiner.ts';
-import { cloneGraph } from '../graph/graph-algs.ts';
 import { TreeGraph, VertexId, VertexState } from '../graph-props.ts';
+import { cloneGraph } from '../graph/graph-algs.ts';
+import { createCMGraph, updateCMTree } from './complete-graph-member.ts';
+import { createCMGraphSteinerSet, updateCMGraphSteinerSet } from './complete-graph-steiner.ts';
+import { GraphAlgo, type CompleteGraphInputDto, type CompleteGraphResult } from './complete-graph-types.ts';
 
 export function compGraph(
-    input: CompleteGraphInputDto,
+    input: CompleteGraphInputDto
 ): CompleteGraphResult {
     const {
         globalGraph,
@@ -17,7 +17,7 @@ export function compGraph(
         algo,
         update,
         wcnAlgo,
-        deps,
+        deps
     } = input;
 
     let steinerSet = new Set<VertexId>();
@@ -33,13 +33,13 @@ export function compGraph(
                         groupMembers,
                         union(groupMembers, new Set(newMember ? [newMember] : [])),
                         numSteiner,
-                        wcnAlgo,
-                    ),
+                        wcnAlgo
+                    )
                 );
             }
-        } else if (algo === GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER) {
-            const numSteiner =
-                deps.generateSizeOfSteinerSet(groupMembers.size) - existingSteiner.size;
+        }
+        else if (algo === GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER) {
+            const numSteiner = deps.generateSizeOfSteinerSet(groupMembers.size) - existingSteiner.size;
 
             if (numSteiner > 0) {
                 const selected = deps.findWCNodes(
@@ -48,7 +48,7 @@ export function compGraph(
                     groupMembers,
                     union(groupMembers, union(existingSteiner, new Set(newMember ? [newMember] : []))),
                     numSteiner,
-                    wcnAlgo,
+                    wcnAlgo
                 );
                 steinerSet = new Set(selected);
             }
@@ -66,9 +66,9 @@ export function compGraph(
                         requiredCurrentGraph(currentGraph),
                         globalGraph,
                         groupMembers,
-                        requiredNewMember(newMember),
+                        requiredNewMember(newMember)
                     ),
-                steinerSet,
+                steinerSet
             };
 
         case GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER:
@@ -81,9 +81,9 @@ export function compGraph(
                         globalGraph,
                         groupMembers,
                         steinerSet,
-                        requiredNewMember(newMember),
+                        requiredNewMember(newMember)
                     ),
-                steinerSet,
+                steinerSet
             };
 
         case GraphAlgo.COMPLETE_GRAPH:
@@ -94,9 +94,9 @@ export function compGraph(
                         requiredCurrentGraph(currentGraph),
                         globalGraph,
                         groupMembers,
-                        requiredNewMember(newMember),
+                        requiredNewMember(newMember)
                     ),
-                steinerSet,
+                steinerSet
             };
 
         default:
@@ -106,7 +106,7 @@ export function compGraph(
 
 export function createCGraph(
     globalGraph: TreeGraph,
-    groupMembers: ReadonlySet<VertexId>,
+    groupMembers: ReadonlySet<VertexId>
 ): TreeGraph {
     return cloneGraph(globalGraph);
 }
@@ -115,7 +115,7 @@ export function updateCTree(
     currentGraph: TreeGraph,
     globalGraph: TreeGraph,
     groupMembers: ReadonlySet<VertexId>,
-    newVertex: VertexId,
+    newVertex: VertexId
 ): TreeGraph {
     const next = cloneGraph(currentGraph);
 
@@ -123,13 +123,14 @@ export function updateCTree(
         const attrs = next.getNodeAttributes(newVertex);
         next.replaceNodeAttributes(newVertex, {
             ...attrs,
-            state: VertexState.MEMBER,
+            state: VertexState.MEMBER
         });
-    } else if (next.hasNode(newVertex)) {
+    }
+    else if (next.hasNode(newVertex)) {
         const attrs = next.getNodeAttributes(newVertex);
         next.replaceNodeAttributes(newVertex, {
             ...attrs,
-            state: VertexState.STEINER,
+            state: VertexState.STEINER
         });
     }
 

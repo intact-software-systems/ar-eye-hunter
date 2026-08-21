@@ -1,5 +1,5 @@
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter, } from '@shared/resilience/Resilience.ts';
+import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
 
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
@@ -11,18 +11,18 @@ type HeaderReader = Readonly<{
 
 const rateLimiters = new LatestRepository<string, RateLimiter>({
     ttlMs: RATE_LIMITER_CACHE_TTL_MS,
-    deleteExpiredIntervalMs: RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS,
+    deleteExpiredIntervalMs: RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS
 });
 
 export function readRateLimiter(
     namespace: string,
     key: string,
-    policy: RateLimiterPolicy,
+    policy: RateLimiterPolicy
 ): RateLimiter {
     const limiterKey = toLimiterKey(namespace, key, policy);
     const limiter = rateLimiters.setIfAbsent(
         limiterKey,
-        () => createRateLimiter(policy),
+        () => createRateLimiter(policy)
     );
     rateLimiters.touch(limiterKey);
 
@@ -41,28 +41,28 @@ function createRateLimiter(policy: RateLimiterPolicy): RateLimiter {
     return new RateLimiter(
         SlidingWindowCounter.init(
             policy.timebasedFilterMs,
-            Math.floor(policy.timebasedFilterMs / 4),
+            Math.floor(policy.timebasedFilterMs / 4)
         ),
-        policy,
+        policy
     );
 }
 
 function toLimiterKey(
     namespace: string,
     key: string,
-    policy: RateLimiterPolicy,
+    policy: RateLimiterPolicy
 ): string {
     return [
         normaliseKey(namespace),
         policy.timebasedFilterMs,
         policy.maxNumberToAllow,
-        normaliseKey(key),
+        normaliseKey(key)
     ].join(':');
 }
 
 function readForwardedHeader(
     req: HeaderReader,
-    headerName: string,
+    headerName: string
 ): string | undefined {
     const raw = req.header(headerName);
     if (!raw) {

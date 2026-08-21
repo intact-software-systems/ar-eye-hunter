@@ -1,12 +1,10 @@
-import type { RallarBlackBoxDistributedGroupRef } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     DistributedRunFailureRow,
-    DistributedRunRuntimeDiagnosticRow,
+    DistributedRunRuntimeDiagnosticRow
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deriveAdvancedDiagnosticHandoffTargets } from '../../distributed-recipes.ts';
-import { createAdvancedLegacyHref } from
-    '../advanced/advanced-legacy-href.ts';
+import { createAdvancedLegacyHref } from '../advanced/advanced-legacy-href.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import styles from './MonitorDiagnosticHandoffs.module.css';
 
@@ -27,11 +25,11 @@ export function MonitorDiagnosticHandoffs({
     failure,
     group,
     sourceSearch = '',
-    state,
+    state
 }: MonitorDiagnosticHandoffsProps) {
     const targets = deriveAdvancedDiagnosticHandoffTargets({
         failure,
-        diagnostics,
+        diagnostics
     });
     if (targets.length === 0) {
         return null;
@@ -44,14 +42,14 @@ export function MonitorDiagnosticHandoffs({
         distributedRunId,
         agentId: failure.agentId,
         recipeId: failure.recipeId,
-        commandId: failure.commandId,
+        commandId: failure.commandId
     };
     const contextualSource = sourceSearchWithGroup(sourceSearch, group);
-    const links = targets.flatMap(target => {
+    const links = targets.flatMap((target) => {
         const href = createAdvancedLegacyHref({
             surface: target.surface,
             state: contextualState,
-            sourceSearch: contextualSource,
+            sourceSearch: contextualSource
         });
         return href ? [{ ...target, href }] : [];
     });
@@ -70,7 +68,7 @@ export function MonitorDiagnosticHandoffs({
                 <p>Open a preserved direct tool with this failure context.</p>
             </div>
             <ul className={styles.links}>
-                {links.map(link => (
+                {links.map((link) => (
                     <li key={link.surface}>
                         <a
                             aria-label={`Open ${link.label} with selected failure context`}
@@ -89,7 +87,7 @@ export function MonitorDiagnosticHandoffs({
 
 function sourceSearchWithGroup(
     sourceSearch: string,
-    group: RallarBlackBoxDistributedGroupRef,
+    group: RallarBlackBoxDistributedGroupRef
 ): string {
     const params = new URLSearchParams(sourceSearch);
     params.set('applicationId', group.applicationId);

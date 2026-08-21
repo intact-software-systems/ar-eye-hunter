@@ -4,17 +4,14 @@ import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
 import { useRecipeConsoleControlWorkspace } from '../control/use-control-workspace.ts';
 import { ExecuteWorkspace } from '../execute/ExecuteWorkspace.tsx';
+import { recipeConsoleMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
 import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';
-import { recipeConsoleMonitorControlRunSelectionPatch } from
-    '../monitor/monitor-selection.ts';
 import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
-import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
 import type { RecipeConsoleAccountSettings } from '../shell/AccountSettingsPanel.tsx';
-import { useRecipeConsolePresentation } from
-    '../shell/use-responsive-presentation.ts';
-import { owningWindowFocusAnchor } from
-    '../ui/owning-window-focus-anchor.ts';
+import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
+import { useRecipeConsolePresentation } from '../shell/use-responsive-presentation.ts';
+import { owningWindowFocusAnchor } from '../ui/owning-window-focus-anchor.ts';
 import { RecipeConsoleActiveWork } from './RecipeConsoleActiveWork.tsx';
 
 export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
@@ -25,27 +22,26 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
     const control = useRecipeConsoleControlWorkspace({
         urlState: urlState.state,
         navigate: urlState.navigate,
-        replace: urlState.replace,
+        replace: urlState.replace
     });
     const analyze = useAnalyzeWorkspace({
         connection: control.connection,
         selection: control.selection,
         urlState: urlState.state,
         navigate: urlState.navigate,
-        replace: urlState.replace,
+        replace: urlState.replace
     });
     const [inspectorOpen, setInspectorOpen] = useState(
-        () => urlState.state.view === 'execute' ||
+        () =>
+            urlState.state.view === 'execute' ||
             (urlState.state.view === 'monitor' &&
-                presentation.inspector === 'rail'),
+                presentation.inspector === 'rail')
     );
     const [inspectorContent, setInspectorContent] = useState<ReactNode>();
     const [selectionLabel, setSelectionLabel] = useState<string>();
     const [executeSafeTargetLabel, setExecuteSafeTargetLabel] = useState<string>();
-    const [inspectorTrigger, setInspectorTrigger] =
-        useState<HTMLElement | null>(null);
-    const [inspectorTriggerFallback, setInspectorTriggerFallback] =
-        useState<HTMLElement | null>(null);
+    const [inspectorTrigger, setInspectorTrigger] = useState<HTMLElement | null>(null);
+    const [inspectorTriggerFallback, setInspectorTriggerFallback] = useState<HTMLElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
 
     const inspectEvidence = useCallback((trigger: HTMLElement) => {
@@ -57,13 +53,12 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
         urlState.navigate(recipeConsoleMonitorControlRunSelectionPatch({
             state: urlState.state,
             controlRunId,
-            distributedRuns:
-                control.connection.query.snapshot?.distributedRuns ?? [],
+            distributedRuns: control.connection.query.snapshot?.distributedRuns ?? []
         }));
     }, [
         control.connection.query.snapshot?.distributedRuns,
         urlState.navigate,
-        urlState.state,
+        urlState.state
     ]);
 
     const monitorWork = (
@@ -106,7 +101,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
                 sourceSearch: window.location.search,
                 selection: control.selection,
                 urlIssues: urlState.issues,
-                urlState: urlState.state,
+                urlState: urlState.state
             }}
             analyzeWork={analyzeWork}
             executeWork={executeWork}
@@ -118,7 +113,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
                 replace: urlState.replace,
                 onInspect: inspectEvidence,
                 onInspectorChange: setInspectorContent,
-                onSelectionLabelChange: setSelectionLabel,
+                onSelectionLabelChange: setSelectionLabel
             }}
             monitorWork={monitorWork}
             tune={{
@@ -133,20 +128,21 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
                 retained: {
                     error: analyze.error,
                     model: analyze.tuneFacade,
-                    status: analyze.status,
+                    status: analyze.status
                 },
                 retention: control.connection.retention,
-                urlState: urlState.state,
+                urlState: urlState.state
             }}
             view={urlState.state.view}
         />
     );
 
-    useEffect(() => setInspectorOpen(
-        urlState.state.view === 'execute' ||
-        (urlState.state.view === 'monitor' &&
-            presentation.inspector === 'rail'),
-    ), [presentation.inspector, urlState.state.view]);
+    useEffect(() =>
+        setInspectorOpen(
+            urlState.state.view === 'execute' ||
+                (urlState.state.view === 'monitor' &&
+                    presentation.inspector === 'rail')
+        ), [presentation.inspector, urlState.state.view]);
 
     function navigate(view: RecipeConsoleView): void {
         urlState.navigate({ view });
@@ -154,8 +150,10 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
         setSelectionLabel(undefined);
         setInspectorTrigger(null);
         setInspectorTriggerFallback(null);
-        setInspectorOpen(view === 'execute' ||
-            (view === 'monitor' && presentation.inspector === 'rail'));
+        setInspectorOpen(
+            view === 'execute' ||
+                (view === 'monitor' && presentation.inspector === 'rail')
+        );
     }
 
     function copyLink(): void {
@@ -167,7 +165,9 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
         selectionLabel !== undefined;
     const selectionDockContent = inspectableSelection
         ? selectionLabel
-        : executeActive ? 'Recipe details selected' : undefined;
+        : executeActive
+        ? 'Recipe details selected'
+        : undefined;
     const inspectSelection = inspectableSelection || executeActive
         ? inspectEvidence
         : undefined;
@@ -185,8 +185,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
             <RecipeConsoleShell
                 accountSettings={{
                     ...accountSettings,
-                    lastControlError:
-                        control.connection.query.lastError?.message,
+                    lastControlError: control.connection.query.lastError?.message
                 }}
                 commandBarContext={commandBarContext}
                 commandBarStatus={control.status.status}
@@ -204,7 +203,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
                 restoreFocusRef={restoreFocusRef}
                 selectionDockContent={selectionDockContent}
                 urlIssues={urlState.issues}
-                workContent={(
+                workContent={
                     <section aria-labelledby="recipe-console-view-heading">
                         <h1 id="recipe-console-view-heading">
                             {urlState.state.view === 'execute'
@@ -213,7 +212,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
                         </h1>
                         {work}
                     </section>
-                )}
+                }
             />
         </div>
     );

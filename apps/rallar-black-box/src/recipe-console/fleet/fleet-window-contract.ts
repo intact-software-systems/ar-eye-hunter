@@ -16,19 +16,21 @@ export const FLEET_WINDOW_BUDGETS = {
     mapRoutes: 32,
     unresolvedAgents: 40,
     unresolvedRouteEndpoints: 40,
-    liveAgents: 40,
+    liveAgents: 40
 } as const;
 
 export type FleetWindowSection = keyof typeof FLEET_WINDOW_BUDGETS;
 
-export function createFleetWindowFingerprint(input: Readonly<{
-    contextKey: string;
-    section: FleetWindowSection;
-}>): string {
+export function createFleetWindowFingerprint(
+    input: Readonly<{
+        contextKey: string;
+        section: FleetWindowSection;
+    }>
+): string {
     return JSON.stringify([
         'fleet-window-v1',
         input.contextKey,
-        input.section,
+        input.section
     ]);
 }
 

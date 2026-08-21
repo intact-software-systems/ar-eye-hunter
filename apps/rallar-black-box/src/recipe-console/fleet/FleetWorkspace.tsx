@@ -1,9 +1,9 @@
+import type { FleetWorkspaceProps } from './fleet-workspace-contract.ts';
 import styles from './FleetWorkspace.module.css';
 import { FleetWorkspaceEvidence } from './FleetWorkspaceEvidence.tsx';
-import type { FleetWorkspaceProps } from './fleet-workspace-contract.ts';
 import { useFleetInspectionHost } from './use-fleet-inspection-host.tsx';
-import { useFleetWorkspace } from './use-fleet-workspace.ts';
 import { useFleetWorkspaceActions } from './use-fleet-workspace-actions.ts';
+import { useFleetWorkspace } from './use-fleet-workspace.ts';
 
 export default function FleetWorkspace(props: FleetWorkspaceProps) {
     const workspace = useFleetWorkspace(props);

@@ -87,16 +87,16 @@ Example ICE ordering during rollout:
 
 ```ts
 const iceServers = [
-  {
-    urls: [
-      'turn:turn-eu.example.com:3478?transport=udp',
-      'turn:turn-eu.example.com:3478?transport=tcp',
-      'turns:turn-eu.example.com:5349?transport=tcp',
-    ],
-    username,
-    credential,
-  },
-  ...meteredFallbackIceServers,
+    {
+        urls: [
+            'turn:turn-eu.example.com:3478?transport=udp',
+            'turn:turn-eu.example.com:3478?transport=tcp',
+            'turns:turn-eu.example.com:5349?transport=tcp'
+        ],
+        username,
+        credential
+    },
+    ...meteredFallbackIceServers
 ];
 ```
 

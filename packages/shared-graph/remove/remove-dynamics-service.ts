@@ -1,6 +1,6 @@
-import type { RemoveDynamicsContext, RemoveResult, } from './remove-dynamics-types.ts';
-import type { RemoveDispatcherDeps, RemoveDispatcherOptions, } from './remove-dynamics-dispatcher-types.ts';
-import { cleanupRemoveResult, defaultRemoveAlgorithm, removeAlgorithmRegistry, } from './remove-dynamics-registry.ts';
+import type { RemoveDispatcherDeps, RemoveDispatcherOptions } from './remove-dynamics-dispatcher-types.ts';
+import { cleanupRemoveResult, defaultRemoveAlgorithm, removeAlgorithmRegistry } from './remove-dynamics-registry.ts';
+import type { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 
 export type RemoveServiceResult = RemoveResult & {
     attemptedAlgo: RemoveDynamicsContext['treeAlgo'];
@@ -10,7 +10,7 @@ export type RemoveServiceResult = RemoveResult & {
 export function runRemoveAlgorithm(
     ctx: RemoveDynamicsContext,
     deps: RemoveDispatcherDeps = {},
-    options: RemoveDispatcherOptions = {},
+    options: RemoveDispatcherOptions = {}
 ): RemoveServiceResult {
     const cleanupUnusedSteiner = options.cleanupUnusedSteiner ?? true;
     const fallbackAlgo = options.fallbackAlgo ?? 'REMOVE_TRY_REPLACE_MDDL_NAIVE';
@@ -22,27 +22,31 @@ export function runRemoveAlgorithm(
     try {
         if (algorithm !== undefined) {
             result = algorithm(ctx, deps);
-        } else {
+        }
+        else {
             result = defaultRemoveAlgorithm(ctx);
         }
-    } catch (_error) {
+    }
+    catch (_error) {
         usedFallback = true;
 
         if (ctx.treeAlgo === fallbackAlgo) {
             result = defaultRemoveAlgorithm({
                 ...ctx,
-                treeAlgo: 'NO_DYNAMIC_TREE_ALGO',
+                treeAlgo: 'NO_DYNAMIC_TREE_ALGO'
             });
-        } else {
+        }
+        else {
             const fallbackCtx: RemoveDynamicsContext = {
                 ...ctx,
-                treeAlgo: fallbackAlgo,
+                treeAlgo: fallbackAlgo
             };
 
             const fallbackAlgorithm = removeAlgorithmRegistry[fallbackCtx.treeAlgo];
             if (fallbackAlgorithm !== undefined) {
                 result = fallbackAlgorithm(fallbackCtx, deps);
-            } else {
+            }
+            else {
                 result = defaultRemoveAlgorithm(fallbackCtx);
             }
         }
@@ -51,13 +55,13 @@ export function runRemoveAlgorithm(
     if (cleanupUnusedSteiner) {
         result = cleanupRemoveResult({
             ...ctx,
-            groupGraph: result.graph,
+            groupGraph: result.graph
         });
     }
 
     return {
         ...result,
         attemptedAlgo: ctx.treeAlgo,
-        usedFallback,
+        usedFallback
     };
 }

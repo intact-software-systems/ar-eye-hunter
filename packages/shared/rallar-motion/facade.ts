@@ -2,26 +2,14 @@ import { createRallarMotionAdaptiveDelay } from './adaptive-delay.ts';
 import { createRallarMotionBuffer } from './buffer.ts';
 import { createRallarMotionCorrectionBlender } from './correction-blender.ts';
 import { classifyRallarMotionDiscontinuity } from './discontinuity.ts';
-import {
-    deadReckonRallarMotion,
-    interpolateRallarMotion,
-    interpolateRallarMotionHermite,
-} from './interpolation.ts';
-import {
-    dequantizeRallarMotionVec3,
-    quantizeRallarMotionVec3,
-    roundRallarMotionVec3,
-} from './math.ts';
+import { deadReckonRallarMotion, interpolateRallarMotion, interpolateRallarMotionHermite } from './interpolation.ts';
 import {
     createRallarMotionKinematicsEstimator,
     estimateRallarMotionAcceleration,
-    estimateRallarMotionVelocity,
+    estimateRallarMotionVelocity
 } from './kinematics.ts';
-import {
-    createRallarMotionSendGate,
-    shouldSendRallarMotionSample,
-    shouldSendRallarMotionUpdate,
-} from './send-gate.ts';
+import { dequantizeRallarMotionVec3, quantizeRallarMotionVec3, roundRallarMotionVec3 } from './math.ts';
+import { createRallarMotionSendGate, shouldSendRallarMotionSample, shouldSendRallarMotionUpdate } from './send-gate.ts';
 
 export const RallarMotion = {
     createBuffer: createRallarMotionBuffer,
@@ -39,5 +27,5 @@ export const RallarMotion = {
     shouldSendUpdate: shouldSendRallarMotionUpdate,
     quantizeVec3: quantizeRallarMotionVec3,
     dequantizeVec3: dequantizeRallarMotionVec3,
-    roundVec3: roundRallarMotionVec3,
+    roundVec3: roundRallarMotionVec3
 } as const;

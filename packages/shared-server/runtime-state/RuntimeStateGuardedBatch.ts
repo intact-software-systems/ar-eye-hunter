@@ -1,6 +1,6 @@
 import {
     assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision
 } from './RuntimeStateRepository.ts';
 
 export type RuntimeStateGuardedBatchIdentity = Readonly<{
@@ -8,29 +8,33 @@ export type RuntimeStateGuardedBatchIdentity = Readonly<{
     key: string;
 }>;
 
-export type RuntimeStateGuardedBatchInsert = RuntimeStateGuardedBatchIdentity &
-    Readonly<{
+export type RuntimeStateGuardedBatchInsert =
+    & RuntimeStateGuardedBatchIdentity
+    & Readonly<{
         operation: 'insert';
         value: string;
         expireAtTimestamp: number;
     }>;
 
-export type RuntimeStateGuardedBatchUpdate = RuntimeStateGuardedBatchIdentity &
-    Readonly<{
+export type RuntimeStateGuardedBatchUpdate =
+    & RuntimeStateGuardedBatchIdentity
+    & Readonly<{
         operation: 'update';
         expectedRevision: number;
         value: string;
         expireAtTimestamp: number;
     }>;
 
-export type RuntimeStateGuardedBatchDelete = RuntimeStateGuardedBatchIdentity &
-    Readonly<{
+export type RuntimeStateGuardedBatchDelete =
+    & RuntimeStateGuardedBatchIdentity
+    & Readonly<{
         operation: 'delete';
         expectedRevision: number;
     }>;
 
-export type RuntimeStateGuardedBatchPut = RuntimeStateGuardedBatchIdentity &
-    Readonly<{
+export type RuntimeStateGuardedBatchPut =
+    & RuntimeStateGuardedBatchIdentity
+    & Readonly<{
         operation: 'put';
         value: string;
         expireAtTimestamp: number;
@@ -41,8 +45,9 @@ export type RuntimeStateGuardedBatchGuard =
     | RuntimeStateGuardedBatchUpdate
     | RuntimeStateGuardedBatchDelete;
 
-export type RuntimeStateGuardedBatchEffect = Readonly<{ effectId: string }> &
-    (
+export type RuntimeStateGuardedBatchEffect =
+    & Readonly<{ effectId: string; }>
+    & (
         | RuntimeStateGuardedBatchInsert
         | RuntimeStateGuardedBatchUpdate
         | RuntimeStateGuardedBatchDelete
@@ -119,32 +124,34 @@ export type RuntimeStateGuardedBatchResult = Readonly<{
 export type RuntimeStateGuardedBatchRepositoryLike = Readonly<{
     runtimeStateGuardedBatchCapability: true;
     executeGuardedBatch(
-        batch: RuntimeStateGuardedBatch,
+        batch: RuntimeStateGuardedBatch
     ): Promise<RuntimeStateGuardedBatchResult>;
 }>;
 
 export function isRuntimeStateGuardedBatchRepositoryLike(
-    repository: unknown,
+    repository: unknown
 ): repository is RuntimeStateGuardedBatchRepositoryLike {
-    if (typeof repository !== 'object' || repository === null) return false;
+    if (typeof repository !== 'object' || repository === null) {
+        return false;
+    }
     const candidate = repository as Readonly<Record<string, unknown>>;
     return candidate.runtimeStateGuardedBatchCapability === true &&
         typeof candidate.executeGuardedBatch === 'function';
 }
 
 export function validateRuntimeStateGuardedBatch(
-    input: unknown,
+    input: unknown
 ): RuntimeStateGuardedBatch {
     const batch = requireRecord(input, 'runtime state guarded batch');
     requireExactKeys(batch, ['guard', 'effects'], 'runtime state guarded batch');
     const guard = validateMutation(
         batch.guard,
         false,
-        'guard',
+        'guard'
     ) as RuntimeStateGuardedBatchGuard;
     const effects = requireDenseArray(
         batch.effects,
-        'runtime state guarded batch effects',
+        'runtime state guarded batch effects'
     );
     if (effects.length === 0) {
         throw invalidBatch('effects must not be empty');
@@ -156,7 +163,7 @@ export function validateRuntimeStateGuardedBatch(
         const validated = validateMutation(
             effect,
             true,
-            `effect ${index}`,
+            `effect ${index}`
         ) as RuntimeStateGuardedBatchEffect;
         if (effectIds.has(validated.effectId)) {
             throw invalidBatch(`duplicate effect ID: ${validated.effectId}`);
@@ -165,7 +172,7 @@ export function validateRuntimeStateGuardedBatch(
         const currentIdentity = identityKey(validated);
         if (identities.has(currentIdentity)) {
             throw invalidBatch(
-                `duplicate identity: ${validated.namespace}/${validated.key}`,
+                `duplicate identity: ${validated.namespace}/${validated.key}`
             );
         }
         identities.add(currentIdentity);
@@ -174,13 +181,13 @@ export function validateRuntimeStateGuardedBatch(
 
     return {
         guard,
-        effects: validatedEffects,
+        effects: validatedEffects
     };
 }
 
 export function validateRuntimeStateGuardedBatchResult(
     expectedBatch: RuntimeStateGuardedBatch,
-    input: unknown,
+    input: unknown
 ): RuntimeStateGuardedBatchResult {
     const batch = validateRuntimeStateGuardedBatch(expectedBatch);
     const result = requireResultRecord(input, 'root');
@@ -189,7 +196,7 @@ export function validateRuntimeStateGuardedBatchResult(
     const effectResults = requireDenseResultArray(result.effects, 'effects');
     if (effectResults.length !== batch.effects.length) {
         throw invalidResult(
-            `expected ${batch.effects.length} effects, received ${effectResults.length}`,
+            `expected ${batch.effects.length} effects, received ${effectResults.length}`
         );
     }
 
@@ -198,20 +205,20 @@ export function validateRuntimeStateGuardedBatchResult(
             effect,
             effectResults[index],
             guardResult.status,
-            index,
+            index
         )
     );
 
     return {
         guard: guardResult,
-        effects: validatedEffects,
+        effects: validatedEffects
     };
 }
 
 function validateMutation(
     input: unknown,
     isEffect: boolean,
-    label: string,
+    label: string
 ): RuntimeStateGuardedBatchGuard | RuntimeStateGuardedBatchEffect {
     const mutation = requireRecord(input, `runtime state guarded batch ${label}`);
     const operation = mutation.operation;
@@ -223,7 +230,7 @@ function validateMutation(
         : undefined;
     const namespace = requireNonEmptyString(
         mutation.namespace,
-        `${label} namespace`,
+        `${label} namespace`
     );
     const key = requireNonEmptyString(mutation.key, `${label} key`);
     const common = isEffect
@@ -235,7 +242,7 @@ function validateMutation(
             requireExactKeys(
                 mutation,
                 [...commonKeys, 'value', 'expireAtTimestamp'],
-                `runtime state guarded batch ${label}`,
+                `runtime state guarded batch ${label}`
             );
             return {
                 ...common,
@@ -243,10 +250,11 @@ function validateMutation(
                 value: requireString(mutation.value, `${label} value`),
                 expireAtTimestamp: requireExpiry(
                     mutation.expireAtTimestamp,
-                    label,
-                ),
-            } as RuntimeStateGuardedBatchInsert &
-                Partial<Readonly<{ effectId: string }>>;
+                    label
+                )
+            } as
+                & RuntimeStateGuardedBatchInsert
+                & Partial<Readonly<{ effectId: string; }>>;
         }
         case 'update': {
             requireExactKeys(
@@ -255,19 +263,20 @@ function validateMutation(
                     ...commonKeys,
                     'expectedRevision',
                     'value',
-                    'expireAtTimestamp',
+                    'expireAtTimestamp'
                 ],
-                `runtime state guarded batch ${label}`,
+                `runtime state guarded batch ${label}`
             );
             const expectedRevision = requireNumber(
                 mutation.expectedRevision,
-                `${label} expected revision`,
+                `${label} expected revision`
             );
             try {
                 assertRuntimeStateUpsertExpectedRevision(expectedRevision);
-            } catch {
+            }
+            catch {
                 throw invalidBatch(
-                    `${label} expected revision is invalid: ${expectedRevision}`,
+                    `${label} expected revision is invalid: ${expectedRevision}`
                 );
             }
             return {
@@ -277,34 +286,37 @@ function validateMutation(
                 value: requireString(mutation.value, `${label} value`),
                 expireAtTimestamp: requireExpiry(
                     mutation.expireAtTimestamp,
-                    label,
-                ),
-            } as RuntimeStateGuardedBatchUpdate &
-                Partial<Readonly<{ effectId: string }>>;
+                    label
+                )
+            } as
+                & RuntimeStateGuardedBatchUpdate
+                & Partial<Readonly<{ effectId: string; }>>;
         }
         case 'delete': {
             requireExactKeys(
                 mutation,
                 [...commonKeys, 'expectedRevision'],
-                `runtime state guarded batch ${label}`,
+                `runtime state guarded batch ${label}`
             );
             const expectedRevision = requireNumber(
                 mutation.expectedRevision,
-                `${label} expected revision`,
+                `${label} expected revision`
             );
             try {
                 assertRuntimeStateExpectedRevision(expectedRevision);
-            } catch {
+            }
+            catch {
                 throw invalidBatch(
-                    `${label} expected revision is invalid: ${expectedRevision}`,
+                    `${label} expected revision is invalid: ${expectedRevision}`
                 );
             }
             return {
                 ...common,
                 operation,
-                expectedRevision,
-            } as RuntimeStateGuardedBatchDelete &
-                Partial<Readonly<{ effectId: string }>>;
+                expectedRevision
+            } as
+                & RuntimeStateGuardedBatchDelete
+                & Partial<Readonly<{ effectId: string; }>>;
         }
         case 'put': {
             if (!isEffect) {
@@ -313,7 +325,7 @@ function validateMutation(
             requireExactKeys(
                 mutation,
                 [...commonKeys, 'value', 'expireAtTimestamp'],
-                `runtime state guarded batch ${label}`,
+                `runtime state guarded batch ${label}`
             );
             return {
                 ...common,
@@ -321,8 +333,8 @@ function validateMutation(
                 value: requireString(mutation.value, `${label} value`),
                 expireAtTimestamp: requireExpiry(
                     mutation.expireAtTimestamp,
-                    label,
-                ),
+                    label
+                )
             } as RuntimeStateGuardedBatchEffect;
         }
         default:
@@ -332,7 +344,7 @@ function validateMutation(
 
 function validateGuardResult(
     guard: RuntimeStateGuardedBatchGuard,
-    input: unknown,
+    input: unknown
 ): RuntimeStateGuardedBatchGuardResult {
     const result = requireResultRecord(input, 'guard');
     requireMatchingResultIdentity(guard, result, 'guard');
@@ -340,7 +352,7 @@ function validateGuardResult(
         requireExactResultKeys(
             result,
             ['status', 'operation', 'namespace', 'key', 'reason'],
-            'guard',
+            'guard'
         );
         if (result.reason !== 'condition-not-met') {
             throw invalidResult('guard conflict reason is invalid');
@@ -350,7 +362,7 @@ function validateGuardResult(
             operation: guard.operation,
             namespace: guard.namespace,
             key: guard.key,
-            reason: 'condition-not-met',
+            reason: 'condition-not-met'
         };
     }
     if (result.status !== 'applied') {
@@ -361,26 +373,26 @@ function validateGuardResult(
         requireExactResultKeys(
             result,
             ['status', 'operation', 'namespace', 'key', 'matchedRevision'],
-            'guard',
+            'guard'
         );
         requireExactRevision(
             result.matchedRevision,
             guard.expectedRevision,
-            'guard matched revision',
+            'guard matched revision'
         );
         return {
             status: 'applied',
             operation: guard.operation,
             namespace: guard.namespace,
             key: guard.key,
-            matchedRevision: guard.expectedRevision,
+            matchedRevision: guard.expectedRevision
         };
     }
 
     requireExactResultKeys(
         result,
         ['status', 'operation', 'namespace', 'key', 'resultingRevision'],
-        'guard',
+        'guard'
     );
     const expectedRevision = guard.operation === 'insert'
         ? 0
@@ -388,14 +400,14 @@ function validateGuardResult(
     requireExactRevision(
         result.resultingRevision,
         expectedRevision,
-        'guard resulting revision',
+        'guard resulting revision'
     );
     return {
         status: 'applied',
         operation: guard.operation,
         namespace: guard.namespace,
         key: guard.key,
-        resultingRevision: expectedRevision,
+        resultingRevision: expectedRevision
     };
 }
 
@@ -403,7 +415,7 @@ function validateEffectResult(
     effect: RuntimeStateGuardedBatchEffect,
     input: unknown,
     guardStatus: RuntimeStateGuardedBatchGuardResult['status'],
-    index: number,
+    index: number
 ): RuntimeStateGuardedBatchEffectResult {
     const label = `effect ${index}`;
     const result = requireResultRecord(input, label);
@@ -421,9 +433,9 @@ function validateEffectResult(
                 'operation',
                 'namespace',
                 'key',
-                'reason',
+                'reason'
             ],
-            label,
+            label
         );
         if (result.status !== 'skipped' || result.reason !== 'guard-conflict') {
             throw invalidResult(`${label} must be skipped after guard conflict`);
@@ -434,7 +446,7 @@ function validateEffectResult(
             operation: effect.operation,
             namespace: effect.namespace,
             key: effect.key,
-            reason: 'guard-conflict',
+            reason: 'guard-conflict'
         };
     }
 
@@ -447,9 +459,9 @@ function validateEffectResult(
                 'operation',
                 'namespace',
                 'key',
-                'reason',
+                'reason'
             ],
-            label,
+            label
         );
         if (effect.operation === 'put') {
             throw invalidResult(`${label} put must produce an applied result`);
@@ -463,7 +475,7 @@ function validateEffectResult(
             operation: effect.operation,
             namespace: effect.namespace,
             key: effect.key,
-            reason: 'condition-not-met',
+            reason: 'condition-not-met'
         };
     }
     if (result.status !== 'applied') {
@@ -479,14 +491,14 @@ function validateEffectResult(
                 'operation',
                 'namespace',
                 'key',
-                'matchedRevision',
+                'matchedRevision'
             ],
-            label,
+            label
         );
         requireExactRevision(
             result.matchedRevision,
             effect.expectedRevision,
-            `${label} matched revision`,
+            `${label} matched revision`
         );
         return {
             status: 'applied',
@@ -494,7 +506,7 @@ function validateEffectResult(
             operation: effect.operation,
             namespace: effect.namespace,
             key: effect.key,
-            matchedRevision: effect.expectedRevision,
+            matchedRevision: effect.expectedRevision
         };
     }
 
@@ -506,13 +518,13 @@ function validateEffectResult(
             'operation',
             'namespace',
             'key',
-            'resultingRevision',
+            'resultingRevision'
         ],
-        label,
+        label
     );
     const resultingRevision = requireResultRevision(
         result.resultingRevision,
-        `${label} resulting revision`,
+        `${label} resulting revision`
     );
     if (effect.operation === 'insert' && resultingRevision !== 0) {
         throw invalidResult(`${label} insert resulting revision must be 0`);
@@ -529,14 +541,14 @@ function validateEffectResult(
         operation: effect.operation,
         namespace: effect.namespace,
         key: effect.key,
-        resultingRevision,
+        resultingRevision
     };
 }
 
 function requireMatchingResultIdentity(
-    expected: RuntimeStateGuardedBatchIdentity & Readonly<{ operation: string }>,
+    expected: RuntimeStateGuardedBatchIdentity & Readonly<{ operation: string; }>,
     result: Readonly<Record<string, unknown>>,
-    label: string,
+    label: string
 ): void {
     if (
         result.operation !== expected.operation ||
@@ -578,7 +590,7 @@ function requireNumber(value: unknown, label: string): number {
 
 function requireRecord(
     value: unknown,
-    label: string,
+    label: string
 ): Readonly<Record<string, unknown>> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw invalidBatch(`${label} must be an object`);
@@ -588,7 +600,7 @@ function requireRecord(
 
 function requireResultRecord(
     value: unknown,
-    label: string,
+    label: string
 ): Readonly<Record<string, unknown>> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         throw invalidResult(`${label} must be an object`);
@@ -610,7 +622,7 @@ function requireDenseArray(value: unknown, label: string): readonly unknown[] {
 
 function requireDenseResultArray(
     value: unknown,
-    label: string,
+    label: string
 ): readonly unknown[] {
     if (!Array.isArray(value)) {
         throw invalidResult(`${label} must be an array`);
@@ -626,7 +638,7 @@ function requireDenseResultArray(
 function requireExactKeys(
     value: Readonly<Record<string, unknown>>,
     keys: readonly string[],
-    label: string,
+    label: string
 ): void {
     if (!hasExactKeys(value, keys)) {
         throw invalidBatch(`${label} fields are invalid`);
@@ -636,7 +648,7 @@ function requireExactKeys(
 function requireExactResultKeys(
     value: Readonly<Record<string, unknown>>,
     keys: readonly string[],
-    label: string,
+    label: string
 ): void {
     if (!hasExactKeys(value, keys)) {
         throw invalidResult(`${label} fields are invalid`);
@@ -645,7 +657,7 @@ function requireExactResultKeys(
 
 function hasExactKeys(
     value: Readonly<Record<string, unknown>>,
-    keys: readonly string[],
+    keys: readonly string[]
 ): boolean {
     const actual = Object.keys(value).sort();
     const expected = [...keys].sort();
@@ -656,7 +668,7 @@ function hasExactKeys(
 function requireExactRevision(
     value: unknown,
     expected: number,
-    label: string,
+    label: string
 ): void {
     const revision = requireResultRevision(value, label);
     if (revision !== expected) {

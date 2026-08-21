@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExecuteActionRunway } from './ExecuteActionRunway.tsx';
 import { ExecuteCancelDialog } from './ExecuteCancelDialog.tsx';
@@ -9,10 +9,10 @@ import { ExecuteManifestDisclosure } from './ExecuteManifestDisclosure.tsx';
 import { ExecutePreflight } from './ExecutePreflight.tsx';
 import { ExecuteRecipeInspector } from './ExecuteRecipeInspector.tsx';
 import { ExecuteRunStatus } from './ExecuteRunStatus.tsx';
-import { ExecuteTargets } from './ExecuteTargets.tsx';
 import { ExecuteStartDialog } from './ExecuteStartDialog.tsx';
-import { useExecuteWorkflow } from './use-execute-workflow.ts';
+import { ExecuteTargets } from './ExecuteTargets.tsx';
 import styles from './ExecuteWorkspace.module.css';
+import { useExecuteWorkflow } from './use-execute-workflow.ts';
 
 export function ExecuteWorkspace({
     connection,
@@ -22,7 +22,7 @@ export function ExecuteWorkspace({
     replace,
     onInspectorChange,
     onSelectControlRun,
-    onSafeTargetLabelChange,
+    onSafeTargetLabelChange
 }: Readonly<{
     connection: RecipeConsoleControlConnection;
     selection: RecipeConsoleControlSelection;
@@ -38,7 +38,7 @@ export function ExecuteWorkspace({
         selection,
         urlState,
         navigate,
-        replace,
+        replace
     });
     const refreshFocusRef = useRef<HTMLButtonElement>(null);
     const cancelFocusRef = useRef<HTMLButtonElement>(null);
@@ -52,14 +52,14 @@ export function ExecuteWorkspace({
                 manifest={workflow.manifest}
                 run={workflow.run}
                 selectedTargetCount={workflow.selectedAgentIds.length}
-            />,
+            />
         );
     }, [
         entry?.item.itemId,
         onInspectorChange,
         workflow.manifest?.fingerprint,
         workflow.run?.updatedAtEpochMs,
-        workflow.selectedAgentIds.length,
+        workflow.selectedAgentIds.length
     ]);
     useEffect(() => () => onInspectorChange(undefined), [onInspectorChange]);
     useEffect(() => {
@@ -84,7 +84,7 @@ export function ExecuteWorkspace({
                     controlConnection={connection}
                     controlRunId={selection.controlRunId}
                     controlRunIssue={selection.issues.find(
-                        issue => issue.field === 'controlRunId',
+                        (issue) => issue.field === 'controlRunId'
                     )?.message}
                     controlRuns={connection.query.snapshot?.runs ?? []}
                     disabled={workflow.busyAction !== undefined}
@@ -125,29 +125,33 @@ export function ExecuteWorkspace({
                 distributedRunId={workflow.run?.distributedRunId}
                 runState={workflow.run?.state}
             />
-            {workflow.run ? (
-                <ExecuteStartDialog
-                    busy={workflow.busyAction === 'start'}
-                    controlOrigin={connection.baseUrl}
-                    fallbackFocusTo={refreshFocusRef.current}
-                    onClose={workflow.closeStart}
-                    onConfirm={workflow.confirmStart}
-                    open={workflow.startOpen}
-                    restoreFocusTo={startFocusRef.current}
-                    run={workflow.run}
-                />
-            ) : null}
-            {workflow.run ? (
-                <ExecuteCancelDialog
-                    busy={workflow.busyAction === 'cancel'}
-                    fallbackFocusTo={refreshFocusRef.current}
-                    onClose={workflow.closeCancel}
-                    onConfirm={workflow.confirmCancel}
-                    open={workflow.cancelOpen}
-                    restoreFocusTo={cancelFocusRef.current}
-                    run={workflow.run}
-                />
-            ) : null}
+            {workflow.run
+                ? (
+                    <ExecuteStartDialog
+                        busy={workflow.busyAction === 'start'}
+                        controlOrigin={connection.baseUrl}
+                        fallbackFocusTo={refreshFocusRef.current}
+                        onClose={workflow.closeStart}
+                        onConfirm={workflow.confirmStart}
+                        open={workflow.startOpen}
+                        restoreFocusTo={startFocusRef.current}
+                        run={workflow.run}
+                    />
+                )
+                : null}
+            {workflow.run
+                ? (
+                    <ExecuteCancelDialog
+                        busy={workflow.busyAction === 'cancel'}
+                        fallbackFocusTo={refreshFocusRef.current}
+                        onClose={workflow.closeCancel}
+                        onConfirm={workflow.confirmCancel}
+                        open={workflow.cancelOpen}
+                        restoreFocusTo={cancelFocusRef.current}
+                        run={workflow.run}
+                    />
+                )
+                : null}
         </div>
     );
 }

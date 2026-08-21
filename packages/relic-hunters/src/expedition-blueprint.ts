@@ -4,14 +4,9 @@ import {
     validateRallarAiJsonSchemaValue,
     type RallarAiJsonSchema,
     type RallarAiValidationIssue,
-    type RallarAiValidationResult,
+    type RallarAiValidationResult
 } from '@shared/rallar-ai/mod.ts';
-import type {
-    RelicDefinition,
-    RelicExpeditionSetupSource,
-    RelicRoom,
-    RelicRoomKind,
-} from './model.ts';
+import type { RelicDefinition, RelicExpeditionSetupSource, RelicRoom, RelicRoomKind } from './model.ts';
 
 export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID = 'relic-hunters.expedition-blueprint';
 export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA_VERSION = '1';
@@ -28,21 +23,21 @@ export const RELIC_EXPEDITION_BLUEPRINT_LIMITS = {
     maxIdLength: 80,
     maxNameLength: 80,
     maxThemeLength: 80,
-    maxSeedLength: 120,
+    maxSeedLength: 120
 } as const;
 
 export const RELIC_EXPEDITION_VISUAL_THEMES = [
     'Morning Garden Keep',
     'Koi Courtyard Citadel',
     'Sunlit Lantern Castle',
-    'Breeze Watchtower',
+    'Breeze Watchtower'
 ] as const;
 
 export const RELIC_EXPEDITION_VISUAL_LIMITS = {
     maxAbsX: 6,
     maxAbsZ: 7,
     maxEdgeDistance: 5,
-    maxRoomNameLength: 42,
+    maxRoomNameLength: 42
 } as const;
 
 export const RELIC_ROOM_KINDS: readonly RelicRoomKind[] = [
@@ -53,7 +48,7 @@ export const RELIC_ROOM_KINDS: readonly RelicRoomKind[] = [
     'trap',
     'treasure',
     'monster',
-    'exit',
+    'exit'
 ];
 
 export type RelicExpeditionBlueprintRoom = Readonly<{
@@ -92,7 +87,7 @@ export type CreateProceduralRelicExpeditionBlueprintOptions = Readonly<{
 const ID_SCHEMA: RallarAiJsonSchema = {
     type: 'string',
     minLength: 1,
-    maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxIdLength,
+    maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxIdLength
 };
 
 export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA: RallarAiJsonSchema = {
@@ -104,16 +99,16 @@ export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA: RallarAiJsonSchema = {
         seed: {
             type: 'string',
             minLength: 1,
-            maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxSeedLength,
+            maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxSeedLength
         },
         theme: {
             type: 'string',
             minLength: 1,
-            maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxThemeLength,
+            maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxThemeLength
         },
         source: {
             type: 'string',
-            enum: ['default', 'procedural', 'rallar-ai', 'mock'],
+            enum: ['default', 'procedural', 'rallar-ai', 'mock']
         },
         rooms: {
             type: 'array',
@@ -128,27 +123,27 @@ export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA: RallarAiJsonSchema = {
                     name: {
                         type: 'string',
                         minLength: 1,
-                        maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxNameLength,
+                        maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxNameLength
                     },
                     kind: { type: 'string', enum: RELIC_ROOM_KINDS },
                     x: {
                         type: 'number',
                         minimum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.minCoordinate,
-                        maximum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxCoordinate,
+                        maximum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxCoordinate
                     },
                     z: {
                         type: 'number',
                         minimum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.minCoordinate,
-                        maximum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxCoordinate,
+                        maximum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxCoordinate
                     },
                     neighbors: {
                         type: 'array',
                         minItems: 1,
                         maxItems: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxRooms - 1,
-                        items: ID_SCHEMA,
-                    },
-                },
-            },
+                        items: ID_SCHEMA
+                    }
+                }
+            }
         },
         relics: {
             type: 'array',
@@ -163,26 +158,26 @@ export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA: RallarAiJsonSchema = {
                     name: {
                         type: 'string',
                         minLength: 1,
-                        maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxNameLength,
+                        maxLength: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxNameLength
                     },
                     value: {
                         type: 'integer',
                         minimum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.minRelicValue,
-                        maximum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxRelicValue,
+                        maximum: RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxRelicValue
                     },
-                    roomId: ID_SCHEMA,
-                },
-            },
-        },
-    },
+                    roomId: ID_SCHEMA
+                }
+            }
+        }
+    }
 };
 
 export function validateRelicExpeditionBlueprint(
-    value: unknown,
+    value: unknown
 ): RallarAiValidationResult {
     const schemaValidation = validateRallarAiJsonSchemaValue(
         RELIC_EXPEDITION_BLUEPRINT_SCHEMA,
-        value,
+        value
     );
     const issues = [...schemaValidation.issues];
 
@@ -201,18 +196,18 @@ export function validateRelicExpeditionBlueprint(
 }
 
 export function assertRelicExpeditionBlueprint(
-    value: unknown,
+    value: unknown
 ): asserts value is RelicExpeditionBlueprint {
     const validation = validateRelicExpeditionBlueprint(value);
     if (!validation.ok) {
         throw new Error(
-            `Invalid Relic expedition blueprint: ${validation.errors.join('; ')}`,
+            `Invalid Relic expedition blueprint: ${validation.errors.join('; ')}`
         );
     }
 }
 
 export function validateRelicExpeditionVisualFit(
-    value: unknown,
+    value: unknown
 ): RallarAiValidationResult {
     const baseValidation = validateRelicExpeditionBlueprint(value);
     const issues = [...baseValidation.issues];
@@ -224,13 +219,13 @@ export function validateRelicExpeditionVisualFit(
     if (
         typeof value.theme !== 'string' ||
         !RELIC_EXPEDITION_VISUAL_THEMES.includes(
-            value.theme as typeof RELIC_EXPEDITION_VISUAL_THEMES[number],
+            value.theme as typeof RELIC_EXPEDITION_VISUAL_THEMES[number]
         )
     ) {
         issues.push(issue(
             '$.theme',
             'visual-theme',
-            `Theme must be one of: ${RELIC_EXPEDITION_VISUAL_THEMES.join(', ')}.`,
+            `Theme must be one of: ${RELIC_EXPEDITION_VISUAL_THEMES.join(', ')}.`
         ));
     }
 
@@ -248,7 +243,7 @@ export function validateRelicExpeditionVisualFit(
             issues.push(issue(
                 `${path}.name`,
                 'visual-room-name-length',
-                `Room names must fit compact HUD labels (${RELIC_EXPEDITION_VISUAL_LIMITS.maxRoomNameLength} chars max).`,
+                `Room names must fit compact HUD labels (${RELIC_EXPEDITION_VISUAL_LIMITS.maxRoomNameLength} chars max).`
             ));
         }
         validateVisualCoordinate(room.x, `${path}.x`, RELIC_EXPEDITION_VISUAL_LIMITS.maxAbsX, issues);
@@ -270,7 +265,7 @@ export function validateRelicExpeditionVisualFit(
                 issues.push(issue(
                     `${path}.neighbors`,
                     'visual-edge-distance',
-                    `Neighbor edges must stay within ${RELIC_EXPEDITION_VISUAL_LIMITS.maxEdgeDistance} grid units for camera and map readability.`,
+                    `Neighbor edges must stay within ${RELIC_EXPEDITION_VISUAL_LIMITS.maxEdgeDistance} grid units for camera and map readability.`
                 ));
             }
         }
@@ -282,18 +277,18 @@ export function validateRelicExpeditionVisualFit(
 }
 
 export function assertRelicExpeditionVisualFit(
-    value: unknown,
+    value: unknown
 ): asserts value is RelicExpeditionBlueprint {
     const validation = validateRelicExpeditionVisualFit(value);
     if (!validation.ok) {
         throw new Error(
-            `Invalid Relic expedition visual fit: ${validation.errors.join('; ')}`,
+            `Invalid Relic expedition visual fit: ${validation.errors.join('; ')}`
         );
     }
 }
 
 export function createProceduralRelicExpeditionBlueprint(
-    options: CreateProceduralRelicExpeditionBlueprintOptions,
+    options: CreateProceduralRelicExpeditionBlueprintOptions
 ): RelicExpeditionBlueprint {
     const random = createSeededRandom(options.seed);
     const mirror = random() >= 0.5 ? -1 : 1;
@@ -305,52 +300,52 @@ export function createProceduralRelicExpeditionBlueprint(
     const rooms: RelicExpeditionBlueprintRoom[] = [
         room('entrance', themedName(theme, 'Gatehouse'), 'entrance', 0, -6 + verticalOffset, [
             'hallway',
-            'storage',
+            'storage'
         ]),
         room('hallway', themedName(theme, 'Long Gallery'), 'hallway', 0, -3 + verticalOffset, [
             'entrance',
             'shrine',
             'trap',
-            ...(includeGallery ? ['gallery'] : []),
+            ...(includeGallery ? ['gallery'] : [])
         ]),
         room('storage', themedName(theme, 'Armory Stores'), 'storage', -4 * mirror, -3 + verticalOffset, [
             'entrance',
-            'trap',
+            'trap'
         ]),
         room('shrine', themedName(theme, 'Lantern Shrine'), 'shrine', 4 * mirror, -3 + verticalOffset, [
             'hallway',
-            'treasure',
+            'treasure'
         ]),
         room('trap', themedName(theme, 'Pressure Cell'), 'trap', 0, verticalOffset, [
             'hallway',
             'storage',
             'treasure',
-            'monster',
+            'monster'
         ]),
         room('treasure', themedName(theme, 'Moon Vault'), 'treasure', 4 * mirror, verticalOffset, [
             'shrine',
             'trap',
-            ...(includeGallery ? ['gallery'] : []),
+            ...(includeGallery ? ['gallery'] : [])
         ]),
         room('monster', themedName(theme, 'Broken Barracks'), 'monster', 0, 3 + verticalOffset, [
             'trap',
             'exit',
-            ...(includeBarracks ? ['barracks'] : []),
+            ...(includeBarracks ? ['barracks'] : [])
         ]),
         room('exit', themedName(theme, 'Garden Watchtower'), 'exit', 0, 6 + verticalOffset, [
-            'monster',
-        ]),
+            'monster'
+        ])
     ];
 
     if (includeGallery) {
         rooms.push(room('gallery', themedName(theme, 'Painted Gallery'), 'hallway', 2 * mirror, -1 + verticalOffset, [
             'hallway',
-            'treasure',
+            'treasure'
         ]));
     }
     if (includeBarracks) {
         rooms.push(room('barracks', themedName(theme, 'Ash Barracks'), 'storage', -3 * mirror, 3 + verticalOffset, [
-            'monster',
+            'monster'
         ]));
     }
 
@@ -360,12 +355,12 @@ export function createProceduralRelicExpeditionBlueprint(
         theme,
         source: options.source ?? 'procedural',
         rooms,
-        relics: proceduralRelics(random, rooms),
+        relics: proceduralRelics(random, rooms)
     };
 }
 
 export function roomsFromRelicExpeditionBlueprint(
-    blueprint: RelicExpeditionBlueprint,
+    blueprint: RelicExpeditionBlueprint
 ): readonly RelicRoom[] {
     return blueprint.rooms.map((candidate) => ({
         id: candidate.id,
@@ -373,25 +368,25 @@ export function roomsFromRelicExpeditionBlueprint(
         kind: candidate.kind,
         x: candidate.x,
         z: candidate.z,
-        neighbors: [...candidate.neighbors],
+        neighbors: [...candidate.neighbors]
     }));
 }
 
 export function relicsFromRelicExpeditionBlueprint(
-    blueprint: RelicExpeditionBlueprint,
+    blueprint: RelicExpeditionBlueprint
 ): readonly RelicDefinition[] {
     const relics = blueprint.relics.map((candidate) => ({
         id: candidate.id,
         name: candidate.name,
         value: candidate.value,
-        roomId: candidate.roomId,
+        roomId: candidate.roomId
     }));
     return ensureRelicCoverage(blueprint.rooms, relics);
 }
 
 function validateRooms(
     rawRooms: readonly unknown[],
-    issues: RallarAiValidationIssue[],
+    issues: RallarAiValidationIssue[]
 ): void {
     const rooms = rawRooms.filter(isRecord);
     const roomIds = new Set<string>();
@@ -439,12 +434,14 @@ function validateRooms(
     const exit = rooms.find((room) => room.id === 'exit');
     if (!entrance) {
         issues.push(issue('$.rooms', 'missing-entrance', 'Blueprint must include room id entrance.'));
-    } else if (entrance.kind !== 'entrance') {
+    }
+    else if (entrance.kind !== 'entrance') {
         issues.push(issue('$.rooms.entrance.kind', 'invalid-entrance-kind', 'Entrance room must use entrance kind.'));
     }
     if (!exit) {
         issues.push(issue('$.rooms', 'missing-exit', 'Blueprint must include room id exit.'));
-    } else if (exit.kind !== 'exit') {
+    }
+    else if (exit.kind !== 'exit') {
         issues.push(issue('$.rooms.exit.kind', 'invalid-exit-kind', 'Exit room must use exit kind.'));
     }
 
@@ -458,11 +455,19 @@ function validateRooms(
             }
             const neighbor = rooms.find((candidate) => candidate.id === neighborId);
             if (!neighbor) {
-                issues.push(issue(`$.rooms.${room.id}.neighbors`, 'unknown-neighbor', `Unknown neighbor ${neighborId}.`));
+                issues.push(
+                    issue(`$.rooms.${room.id}.neighbors`, 'unknown-neighbor', `Unknown neighbor ${neighborId}.`)
+                );
                 continue;
             }
             if (!Array.isArray(neighbor.neighbors) || !neighbor.neighbors.includes(room.id)) {
-                issues.push(issue(`$.rooms.${room.id}.neighbors`, 'asymmetric-neighbor', `Neighbor ${neighborId} must link back to ${room.id}.`));
+                issues.push(
+                    issue(
+                        `$.rooms.${room.id}.neighbors`,
+                        'asymmetric-neighbor',
+                        `Neighbor ${neighborId} must link back to ${room.id}.`
+                    )
+                );
             }
         }
     }
@@ -487,7 +492,7 @@ function validateRooms(
 function validateRelics(
     rawRelics: readonly unknown[],
     rawRooms: readonly unknown[],
-    issues: RallarAiValidationIssue[],
+    issues: RallarAiValidationIssue[]
 ): void {
     const roomIds = new Set(rawRooms.filter(isRecord).map((room) => room.id).filter(isString));
     const relicIds = new Set<string>();
@@ -506,14 +511,16 @@ function validateRelics(
         }
         relicIds.add(relic.id);
         if (typeof relic.roomId === 'string' && !roomIds.has(relic.roomId)) {
-            issues.push(issue(`${path}.roomId`, 'unknown-relic-room', 'Relic roomId must refer to a room in the blueprint.'));
+            issues.push(
+                issue(`${path}.roomId`, 'unknown-relic-room', 'Relic roomId must refer to a room in the blueprint.')
+            );
         }
     }
 }
 
 function proceduralRelics(
     random: () => number,
-    rooms: readonly RelicExpeditionBlueprintRoom[],
+    rooms: readonly RelicExpeditionBlueprintRoom[]
 ): readonly RelicExpeditionBlueprintRelic[] {
     const candidateRooms = rooms;
     const names = shuffle([
@@ -532,12 +539,12 @@ function proceduralRelics(
         'Neon Shrine Receipt',
         'Predator Wellness Coupon',
         'Pressure Plate Apology Token',
-        'Gift Shop Escape Stub',
+        'Gift Shop Escape Stub'
     ], random);
     const relics: RelicExpeditionBlueprintRelic[] = [];
     const relicCount = Math.min(
         RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxRelics,
-        rooms.length + 4 + Math.floor(random() * 5),
+        rooms.length + 4 + Math.floor(random() * 5)
     );
 
     for (let index = 0; index < relicCount; index += 1) {
@@ -548,7 +555,7 @@ function proceduralRelics(
             name,
             value: RELIC_EXPEDITION_BLUEPRINT_LIMITS.minRelicValue +
                 Math.floor(random() * RELIC_EXPEDITION_BLUEPRINT_LIMITS.maxRelicValue),
-            roomId: targetRoom.id,
+            roomId: targetRoom.id
         });
     }
 
@@ -557,7 +564,7 @@ function proceduralRelics(
 
 function ensureRelicCoverage(
     rooms: readonly Pick<RelicExpeditionBlueprintRoom, 'id' | 'name' | 'kind'>[],
-    relics: readonly RelicDefinition[],
+    relics: readonly RelicDefinition[]
 ): readonly RelicDefinition[] {
     const coveredRoomIds = new Set(relics.map((relic) => relic.roomId));
     const usedIds = new Set(relics.map((relic) => relic.id));
@@ -577,14 +584,14 @@ function ensureRelicCoverage(
             id,
             name: fallbackRelicNameForRoom(room),
             value: room.kind === 'exit' ? 2 : room.kind === 'entrance' || room.kind === 'hallway' ? 1 : 3,
-            roomId: room.id,
+            roomId: room.id
         });
     }
     return [...relics, ...additions];
 }
 
 function fallbackRelicNameForRoom(
-    room: Pick<RelicExpeditionBlueprintRoom, 'name' | 'kind'>,
+    room: Pick<RelicExpeditionBlueprintRoom, 'name' | 'kind'>
 ): string {
     switch (room.kind) {
         case 'entrance':
@@ -612,7 +619,7 @@ function room(
     kind: RelicRoomKind,
     x: number,
     z: number,
-    neighbors: readonly string[],
+    neighbors: readonly string[]
 ): RelicExpeditionBlueprintRoom {
     return {
         id,
@@ -620,7 +627,7 @@ function room(
         kind,
         x,
         z,
-        neighbors,
+        neighbors
     };
 }
 
@@ -634,7 +641,7 @@ function themedName(theme: string, roomName: string): string {
 
 function reachableRoomIds(
     rooms: readonly Record<string, unknown>[],
-    startRoomId: string,
+    startRoomId: string
 ): Set<string> {
     const byId = new Map(rooms.map((room) => [room.id, room]));
     const reachable = new Set<string>();
@@ -710,7 +717,7 @@ function validateVisualCoordinate(
     value: unknown,
     path: string,
     maxAbsValue: number,
-    issues: RallarAiValidationIssue[],
+    issues: RallarAiValidationIssue[]
 ): void {
     if (!isNumber(value)) {
         return;
@@ -722,7 +729,7 @@ function validateVisualCoordinate(
         issues.push(issue(
             path,
             'visual-coordinate-footprint',
-            `Room coordinate must stay within +/-${maxAbsValue}.`,
+            `Room coordinate must stay within +/-${maxAbsValue}.`
         ));
     }
 }

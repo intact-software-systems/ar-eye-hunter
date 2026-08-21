@@ -19,13 +19,12 @@ export function useLatestRequestGuard(): LatestRequestGuard {
                 const requestGeneration = generation.current + 1;
                 generation.current = requestGeneration;
                 return {
-                    isCurrent: () =>
-                        generation.current === requestGeneration,
+                    isCurrent: () => generation.current === requestGeneration
                 };
             },
             invalidate: () => {
                 generation.current += 1;
-            },
+            }
         };
     }
 

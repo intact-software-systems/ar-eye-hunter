@@ -6,10 +6,7 @@ it, and subscribe to state.
 
 ```ts
 import { rallar } from '@shared-web/browser/rallar.ts';
-import {
-    createRallarAiFunnyRoomName,
-    createRallarAiRoomNameSeed,
-} from '@shared/rallar-ai/mod.ts';
+import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
 
 const started = await rallar.setup({
     apiBaseUrl: 'http://localhost:8080',
@@ -18,8 +15,8 @@ const started = await rallar.setup({
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
     rtc: { waitTimeoutMs: 1000, connectOnWait: true },
     start: {
-        refreshPeople: true,
-    },
+        refreshPeople: true
+    }
 });
 
 if (!started.session) {
@@ -36,7 +33,7 @@ const displayName = createRallarAiFunnyRoomName({
     baseName: 'Demo Arena',
     theme: 'ar-eye-hunter',
     seed: createRallarAiRoomNameSeed('demo-arena'),
-    existingNames,
+    existingNames
 });
 
 const created = await rallar.rooms.createAndSwitch({ displayName });

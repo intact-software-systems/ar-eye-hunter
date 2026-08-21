@@ -1,21 +1,21 @@
-import type { Dispatch, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { Dispatch, SetStateAction } from 'react';
 import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
+import type { BlackBoxControlTokenSession } from '../../../../control-operator-token.ts';
 import type { ControlRunSnapshot } from '../../../../control-run-manager.ts';
 import type { DistributedRecipeTargetRow } from '../../../../distributed-recipes.ts';
-import type { BlackBoxControlTokenSession } from '../../../../control-operator-token.ts';
 import type { RecipeLaunchState, RunnerReadinessStatus } from '../../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../../runtime-store.ts';
-import type { CommandCenterGlobalValues } from '../../../shell/global-context-model.ts';
 import { Metric } from '../../../shared/Metric.tsx';
 import { formatTime } from '../../../shared/time-format.ts';
+import type { CommandCenterGlobalValues } from '../../../shell/global-context-model.ts';
 import { ControlAgentBoardPanel } from '../../agents/ControlAgentBoardPanel.tsx';
-import { RunnerAgentSetupPanel } from '../RunnerAgentSetupPanel.tsx';
-import { RunnerReadinessPanel } from '../RunnerReadinessPanel.tsx';
-import type { RunnerRecipeCatalogEntry, RunnerRecipeSource } from '../runner-recipe-catalog.ts';
 import type { RunnerServiceProbe } from '../runner-launch-presentation.ts';
 import { runnerLaunchTone } from '../runner-launch-presentation.ts';
+import type { RunnerRecipeCatalogEntry, RunnerRecipeSource } from '../runner-recipe-catalog.ts';
+import { RunnerAgentSetupPanel } from '../RunnerAgentSetupPanel.tsx';
+import { RunnerReadinessPanel } from '../RunnerReadinessPanel.tsx';
 
 type RunnerRecipesOverviewProps = Readonly<{
     selectedRecipe?: RunnerRecipeCatalogEntry;
@@ -72,18 +72,57 @@ type RunnerRecipesOverviewProps = Readonly<{
 }>;
 
 export function RunnerRecipesOverview({
-    selectedRecipe, launchState, busyAction, localDisabledReason, localRunning,
-    distributedDisabledReason, runLocalRecipe, runDistributedRecipe, readiness,
-    refreshReadiness, openAgentTabs, groupRef, recipeAgentRows,
-    recipeAgentSummary, agentRunId, agentPrefix, agentCount,
-    agentRestoreSession, bootstrap, authSession, agentControlWsUrl, globalValues,
-    controlRun, agentIds, agentLaunchMessage, setAgentRunId,
-    setControlRunId, setControlRun, setAgentPrefix, setAgentCount,
-    setAgentRestoreSession, copyAgentLinks, query, setQuery, profile, setProfile,
-    profileOptions, sourceFilter, setSourceFilter, controlBaseUrl,
-    setControlBaseUrl, controlToken, setControlToken, brokeredControlToken,
-    brokeredControlTokenError, filteredRecipes, catalog, apiProbe, controlProbe,
-    targetableRows, connectedAgentCount,
+    selectedRecipe,
+    launchState,
+    busyAction,
+    localDisabledReason,
+    localRunning,
+    distributedDisabledReason,
+    runLocalRecipe,
+    runDistributedRecipe,
+    readiness,
+    refreshReadiness,
+    openAgentTabs,
+    groupRef,
+    recipeAgentRows,
+    recipeAgentSummary,
+    agentRunId,
+    agentPrefix,
+    agentCount,
+    agentRestoreSession,
+    bootstrap,
+    authSession,
+    agentControlWsUrl,
+    globalValues,
+    controlRun,
+    agentIds,
+    agentLaunchMessage,
+    setAgentRunId,
+    setControlRunId,
+    setControlRun,
+    setAgentPrefix,
+    setAgentCount,
+    setAgentRestoreSession,
+    copyAgentLinks,
+    query,
+    setQuery,
+    profile,
+    setProfile,
+    profileOptions,
+    sourceFilter,
+    setSourceFilter,
+    controlBaseUrl,
+    setControlBaseUrl,
+    controlToken,
+    setControlToken,
+    brokeredControlToken,
+    brokeredControlTokenError,
+    filteredRecipes,
+    catalog,
+    apiProbe,
+    controlProbe,
+    targetableRows,
+    connectedAgentCount
 }: RunnerRecipesOverviewProps) {
     return (
         <>
@@ -111,9 +150,7 @@ export function RunnerRecipesOverview({
                         </button>
                         <button
                             type="button"
-                            disabled={
-                                Boolean(distributedDisabledReason) || localRunning
-                            }
+                            disabled={Boolean(distributedDisabledReason) || localRunning}
                             title={distributedDisabledReason}
                             onClick={() => void runDistributedRecipe()}
                         >
@@ -138,11 +175,9 @@ export function RunnerRecipesOverview({
             />
             <ControlAgentBoardPanel
                 title="Targetable Agents"
-                subtitle={
-                    selectedRecipe
-                        ? `${selectedRecipe.title} against ${groupRef.groupId || 'missing group'}`
-                        : 'Select a recipe to resolve connected agents.'
-                }
+                subtitle={selectedRecipe
+                    ? `${selectedRecipe.title} against ${groupRef.groupId || 'missing group'}`
+                    : 'Select a recipe to resolve connected agents.'}
                 rows={recipeAgentRows}
                 summary={recipeAgentSummary}
                 emptyMessage="No control agents in the selected run. Open agent tabs, wait for registration, then refresh."
@@ -201,9 +236,8 @@ export function RunnerRecipesOverview({
                         value={sourceFilter}
                         onChange={(event) =>
                             setSourceFilter(
-                                event.target.value as RunnerRecipeSource | 'all',
-                            )
-                        }
+                                event.target.value as RunnerRecipeSource | 'all'
+                            )}
                     >
                         <option value="all">All sources</option>
                         <option value="app-local">App-local</option>
@@ -228,7 +262,7 @@ export function RunnerRecipesOverview({
                     {!controlToken.trim() && authSession && brokeredControlToken && (
                         <small className="runner-control-token-status">
                             Session control token valid until {formatTime(
-                                brokeredControlToken.expiresAtEpochMs,
+                                brokeredControlToken.expiresAtEpochMs
                             )}
                         </small>
                     )}
@@ -249,17 +283,29 @@ export function RunnerRecipesOverview({
                 <Metric
                     label="App-local"
                     value={String(
-                        catalog.filter((entry) => entry.source === 'app-local').length,
+                        catalog.filter((entry) => entry.source === 'app-local').length
                     )}
                 />
                 <Metric
                     label="Shared-test"
                     value={String(
-                        catalog.filter((entry) => entry.source === 'shared-test').length,
+                        catalog.filter((entry) => entry.source === 'shared-test').length
                     )}
                 />
-                <Metric label="API" value={apiProbe.detail} tone={apiProbe.status === 'online' ? 'good' : apiProbe.status === 'checking' ? 'active' : 'bad'} />
-                <Metric label="Control" value={controlProbe.detail} tone={controlProbe.status === 'online' ? 'good' : controlProbe.status === 'checking' ? 'active' : 'bad'} />
+                <Metric
+                    label="API"
+                    value={apiProbe.detail}
+                    tone={apiProbe.status === 'online' ? 'good' : apiProbe.status === 'checking' ? 'active' : 'bad'}
+                />
+                <Metric
+                    label="Control"
+                    value={controlProbe.detail}
+                    tone={controlProbe.status === 'online'
+                        ? 'good'
+                        : controlProbe.status === 'checking'
+                        ? 'active'
+                        : 'bad'}
+                />
                 <Metric
                     label="Agents"
                     value={`${targetableRows.length}/${connectedAgentCount}`}

@@ -1,18 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
-import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { newALMulticastMessage, newALUnicastMessage, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType, type OverlayInfo } from '@shared/api/api-config.ts';
-import {
-    newALMulticastMessage,
-    newALUnicastMessage,
-    newALUntargetedMessage,
-} from '@shared/al-contracts/al-contract.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
+import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 describe('WebRtc overlay services', () => {
@@ -25,7 +21,7 @@ describe('WebRtc overlay services', () => {
         const connectionService = createConnectionService(['peer-1', 'peer-2']);
         const service = new WebRtcOverlayMulticastService(
             'group-1',
-            connectionService as never,
+            connectionService as never
         );
         const msg = {
             ...newALMulticastMessage(
@@ -33,37 +29,37 @@ describe('WebRtc overlay services', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-1',
-                    contextId: 'group-1',
+                    contextId: 'group-1'
                 },
                 groupRef('group-1'),
                 'chat.message.v1',
                 {
-                    text: 'hello',
+                    text: 'hello'
                 },
                 {
                     ttlHops: 3,
                     qos: {
                         durability: {
-                            algo: 'volatile',
-                        },
-                    },
-                },
+                            algo: 'volatile'
+                        }
+                    }
+                }
             ),
             diagnostics: {
-                visitedPeerIds: ['peer-z'],
-            },
+                visitedPeerIds: ['peer-z']
+            }
         };
 
         const plan = service.createOriginatingPlan(
             msg,
-            createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2']),
+            createOverlayContext(['self', 'peer-1', 'peer-2'], ['peer-1', 'peer-2'])
         );
 
         expect(plan.handlingPlan.dropReason).toBeUndefined();
         expect(plan.transportMessages).toHaveLength(2);
         expect(plan.handlingPlan.forwarding.nextHopPeerIds).toEqual([
             'peer-1',
-            'peer-2',
+            'peer-2'
         ]);
 
         for (const transportMessage of plan.transportMessages) {
@@ -85,8 +81,8 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
 
         const msg = newALUnicastMessage(
@@ -94,25 +90,25 @@ describe('WebRtc overlay services', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-2',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'send if present',
-            },
+                text: 'send if present'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'no-route',
-            entries: [],
+            entries: []
         });
         expect(connectionService.readPeer).toHaveBeenCalledWith('peer-1');
 
         const reserved = await queue.reserveEntries(
             new Set([EnqueuedType.RTC_OUTBOX]),
             new Set([EntityStatus.NEW]),
-            10,
+            10
         );
 
         expect(reserved.size).toBe(0);
@@ -130,25 +126,25 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALUntargetedMessage(
             'sender-no-targets',
             {
                 topicId: 'chat',
                 resourceId: 'msg-no-targets',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'chat.private-text.v1',
             {
-                text: 'no target',
-            },
+                text: 'no target'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'no-route',
-            entries: [],
+            entries: []
         });
         expect(warn).not.toHaveBeenCalled();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -166,30 +162,30 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALMulticastMessage(
             'sender-missing-context',
             {
                 topicId: 'chat',
                 resourceId: 'msg-missing-context',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'missing context',
-            },
+                text: 'missing context'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'no-route',
-            entries: [],
+            entries: []
         });
         expect(warn).toHaveBeenCalledTimes(2);
         expect(warn).toHaveBeenCalledWith(
-            'No GroupSnapshot found for overlayId/groupId group-1',
+            'No GroupSnapshot found for overlayId/groupId group-1'
         );
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
@@ -207,26 +203,26 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALMulticastMessage(
             'sender-no-next-hop',
             {
                 topicId: 'chat',
                 resourceId: 'msg-no-next-hop',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'no next hop',
-            },
+                text: 'no next hop'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'no-route',
-            entries: [],
+            entries: []
         });
         expect(warn).not.toHaveBeenCalled();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -237,58 +233,58 @@ describe('WebRtc overlay services', () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
-                channel,
-            },
+                channel
+            }
         });
         const workspaceA = createOverlayContext(
             ['self', 'peer-a'],
             ['peer-a'],
             {
                 groupId: 'shared-room',
-                workspaceId: 'workspace-a',
-            },
+                workspaceId: 'workspace-a'
+            }
         );
         const workspaceB = createOverlayContext(
             ['self', 'peer-b'],
             ['peer-b'],
             {
                 groupId: 'shared-room',
-                workspaceId: 'workspace-b',
-            },
+                workspaceId: 'workspace-b'
+            }
         );
         const manager = new WebRtcOverlayMulticastManager(
             queue,
             connectionService as never,
             createReadableCache({
                 'shared-room': workspaceA.room,
-                'workspace-b-room': workspaceB.room,
+                'workspace-b-room': workspaceB.room
             }),
             createReadableCache({
-                'shared-room': workspaceB.overlay,
+                'shared-room': workspaceB.overlay
             }),
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALMulticastMessage(
             'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-scoped',
-                contextId: 'shared-room',
+                contextId: 'shared-room'
             },
             workspaceB.room.group,
             'chat.message.v1',
             {
-                text: 'scoped multicast',
-            },
+                text: 'scoped multicast'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'sent-immediate',
-            entries: [],
+            entries: []
         });
         expect(channel.send).toHaveBeenCalledOnce();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -300,65 +296,65 @@ describe('WebRtc overlay services', () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
-                channel,
-            },
+                channel
+            }
         });
         const workspaceA = createOverlayContext(
             ['self', 'peer-a'],
             ['peer-a'],
             {
                 groupId: 'shared-room',
-                workspaceId: 'workspace-a',
-            },
+                workspaceId: 'workspace-a'
+            }
         );
         const workspaceB = createOverlayContext(
             ['self', 'peer-b'],
             ['peer-b'],
             {
                 groupId: 'shared-room',
-                workspaceId: 'workspace-b',
-            },
+                workspaceId: 'workspace-b'
+            }
         );
         const manager = new WebRtcOverlayMulticastManager(
             queue,
             connectionService as never,
             createReadableCache({
                 'workspace-a-room': workspaceA.room,
-                'workspace-b-room': workspaceB.room,
+                'workspace-b-room': workspaceB.room
             }),
             createReadableCache({
                 'shared-room': {
                     ...workspaceA.overlay,
-                    groupRef: workspaceA.room.group,
-                },
+                    groupRef: workspaceA.room.group
+                }
             }),
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALMulticastMessage(
             'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-cross-workspace-overlay',
-                contextId: 'shared-room',
+                contextId: 'shared-room'
             },
             workspaceB.room.group,
             'chat.message.v1',
             {
-                text: 'must not leak',
-            },
+                text: 'must not leak'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'no-route',
-            entries: [],
+            entries: []
         });
         expect(channel.send).not.toHaveBeenCalled();
         expect(warn).toHaveBeenCalledWith(
-            expect.stringContaining('does not match scoped target'),
+            expect.stringContaining('does not match scoped target')
         );
     });
 
@@ -367,8 +363,8 @@ describe('WebRtc overlay services', () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
-                channel,
-            },
+                channel
+            }
         });
         const manager = new WebRtcOverlayMulticastManager(
             queue,
@@ -378,26 +374,26 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALUnicastMessage(
             'sender-immediate',
             {
                 topicId: 'chat',
                 resourceId: 'msg-immediate',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'send now',
-            },
+                text: 'send now'
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'sent-immediate',
-            entries: [],
+            entries: []
         });
         expect(channel.send).toHaveBeenCalledOnce();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -408,8 +404,8 @@ describe('WebRtc overlay services', () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
-                channel,
-            },
+                channel
+            }
         });
         const manager = new WebRtcOverlayMulticastManager(
             queue,
@@ -419,21 +415,21 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
+                    connectionService as never
                 ),
             {},
             CircuitBreaker.create(createCircuitBreakerPolicy()),
-            RateLimiter.init(1_000, 2),
+            RateLimiter.init(1_000, 2)
         );
 
         const first = await manager.enqueueIfAbsent(
-            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-1'),
+            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-1')
         );
         const second = await manager.enqueueIfAbsent(
-            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-2'),
+            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-2')
         );
         const third = await manager.enqueueIfAbsent(
-            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3'),
+            createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
         expect(first.status).toBe('sent-immediate');
@@ -441,7 +437,7 @@ describe('WebRtc overlay services', () => {
         expect(third).toMatchObject({
             status: 'rate-limited',
             entries: [],
-            reason: 'RTC enqueue rate limit exceeded',
+            reason: 'RTC enqueue rate limit exceeded'
         });
         expect(channel.send).toHaveBeenCalledTimes(2);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -452,8 +448,8 @@ describe('WebRtc overlay services', () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-1'], {
             'peer-1': {
-                channel,
-            },
+                channel
+            }
         });
         const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
         circuitBreaker.failureCount(2);
@@ -465,21 +461,21 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
+                    connectionService as never
                 ),
             {},
             circuitBreaker,
-            RateLimiter.init(1_000, 20),
+            RateLimiter.init(1_000, 20)
         );
 
         const result = await manager.enqueueIfAbsent(
-            createUnicastRtcMessage('sender-circuit-open', 'msg-circuit-open'),
+            createUnicastRtcMessage('sender-circuit-open', 'msg-circuit-open')
         );
 
         expect(result).toMatchObject({
             status: 'circuit-open',
             entries: [],
-            reason: 'RTC enqueue circuit breaker open',
+            reason: 'RTC enqueue circuit breaker open'
         });
         expect(channel.send).not.toHaveBeenCalled();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -496,28 +492,28 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALUnicastMessage(
             'sender-durable',
             {
                 topicId: 'chat',
                 resourceId: 'msg-durable',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'persist me',
+                text: 'persist me'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'local-outbox',
-                    },
-                },
-            },
+                        algo: 'local-outbox'
+                    }
+                }
+            }
         );
 
         const result = await manager.enqueueIfAbsent(msg);
@@ -540,28 +536,28 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALUnicastMessage(
             'sender-duplicate',
             {
                 topicId: 'chat',
                 resourceId: 'msg-duplicate',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'persist me once',
+                text: 'persist me once'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'local-outbox',
-                    },
-                },
-            },
+                        algo: 'local-outbox'
+                    }
+                }
+            }
         );
 
         const firstResult = await manager.enqueueIfAbsent(msg);
@@ -588,29 +584,29 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
         const msg = newALMulticastMessage(
             'sender-expired',
             {
                 topicId: 'chat',
                 resourceId: 'msg-expired',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'too late',
+                text: 'too late'
             },
             {
-                ttlMs: -10_000,
-            },
+                ttlMs: -10_000
+            }
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
             status: 'expired',
-            entries: [],
+            entries: []
         });
         expect(warn).not.toHaveBeenCalled();
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
@@ -620,9 +616,9 @@ describe('WebRtc overlay services', () => {
         vi.useFakeTimers();
 
         const queue = new InMemoryQueueBox(new Map());
-        const peer = {} as { channel?: ReturnType<typeof createOpenRtcChannel> };
+        const peer = {} as { channel?: ReturnType<typeof createOpenRtcChannel>; };
         const connectionService = createConnectionService(['peer-1'], {
-            'peer-1': peer,
+            'peer-1': peer
         });
         const manager = new WebRtcOverlayMulticastManager(
             queue,
@@ -632,8 +628,8 @@ describe('WebRtc overlay services', () => {
             (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
-                    connectionService as never,
-                ),
+                    connectionService as never
+                )
         );
 
         const msg = newALUnicastMessage(
@@ -641,46 +637,46 @@ describe('WebRtc overlay services', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-3',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'retry me',
+                text: 'retry me'
             },
             {
                 qos: {
                     delivery: {
-                        algo: 'at-least-once',
+                        algo: 'at-least-once'
                     },
                     durability: {
-                        algo: 'local-outbox',
+                        algo: 'local-outbox'
                     },
                     ack: {
                         algo: 'hop',
                         opts: {
-                            timeoutMs: 1_000,
-                        },
+                            timeoutMs: 1_000
+                        }
                     },
                     retry: {
                         algo: 'exp-backoff',
                         opts: {
-                            maxAttempts: 2,
-                        },
-                    },
-                },
-            },
+                            maxAttempts: 2
+                        }
+                    }
+                }
+            }
         );
 
         await manager.enqueueIfAbsent(msg);
         await manager.dequeue(
             WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto(),
+            createResilienceDto()
         );
 
         const storedEntry = [
-            ...((queue as unknown as { data: Map<string, ResourceEntry> }).data
-                .values()),
+            ...((queue as unknown as { data: Map<string, ResourceEntry>; }).data
+                .values())
         ][0];
 
         expect(connectionService.readPeer).toHaveBeenCalledWith('peer-1');
@@ -699,22 +695,22 @@ async function reserveRtcOutbox(queue: InMemoryQueueBox): Promise<readonly Resou
             await queue.reserveEntries(
                 WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
                 new Set([EntityStatus.NEW]),
-                10,
+                10
             )
-        ).values(),
+        ).values()
     ];
 }
 
 function createConnectionService(
     connectedPeerIds: readonly string[],
-    peersById: Record<string, unknown> = {},
+    peersById: Record<string, unknown> = {}
 ) {
     return {
         input: {
-            sessionId: 'self',
+            sessionId: 'self'
         },
         readyPeerIdsForLane: () => [...connectedPeerIds],
-        readPeer: vi.fn((peerId: string) => peersById[peerId]),
+        readPeer: vi.fn((peerId: string) => peersById[peerId])
     };
 }
 
@@ -722,8 +718,8 @@ function createOpenRtcChannel() {
     return {
         send: vi.fn(async () => Promise.resolve()),
         readHealth: () => ({
-            readyState: 'open' as const,
-        }),
+            readyState: 'open' as const
+        })
     };
 }
 
@@ -733,13 +729,13 @@ function createUnicastRtcMessage(senderId: string, resourceId: string) {
         {
             topicId: 'chat',
             resourceId,
-            contextId: 'conversation-1',
+            contextId: 'conversation-1'
         },
         'peer-1',
         'chat.private-text.v1',
         {
-            text: resourceId,
-        },
+            text: resourceId
+        }
     );
 }
 
@@ -750,7 +746,7 @@ function createOverlayContext(
         groupId?: string;
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ) {
     const applicationId = options.applicationId ?? 'app-1';
     const workspaceId = options.workspaceId ?? 'workspace-1';
@@ -760,7 +756,7 @@ function createOverlayContext(
         applicationId,
         workspaceId,
         groupId,
-        sessionIds: memberSessionIds,
+        sessionIds: memberSessionIds
     });
     const overlay: OverlayInfo = {
         sourceGroupStateCausalRevision: room.causalRevision,
@@ -775,13 +771,13 @@ function createOverlayContext(
         nextHopSessionIds,
         degreeLimit: Math.max(1, nextHopSessionIds.length),
         overlayVersion: 1,
-        updatedAtEpochMs: 1,
+        updatedAtEpochMs: 1
     };
 
     return {
         overlayId: groupId,
         room,
-        overlay,
+        overlay
     };
 }
 
@@ -805,8 +801,8 @@ function createReadableCache<T>(valuesByKey: Record<string, T>) {
         },
         readAllValues: (): Array<Exclude<T, undefined>> =>
             Object.values(valuesByKey).filter(
-                (value) => value !== undefined,
-            ) as Array<Exclude<T, undefined>>,
+                (value) => value !== undefined
+            ) as Array<Exclude<T, undefined>>
     };
 }
 
@@ -814,7 +810,7 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }
 
@@ -824,7 +820,7 @@ function createCircuitBreakerPolicy(maxConsecutiveFailures: number = 10) {
         maxConsecutiveFailures,
         duration,
         duration,
-        duration,
+        duration
     );
 }
 
@@ -834,6 +830,6 @@ function createResilienceDto() {
         1,
         10,
         1,
-        1,
+        1
     );
 }

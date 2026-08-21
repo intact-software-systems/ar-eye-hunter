@@ -18,7 +18,7 @@ export type RttReportingPeerSelection = Readonly<{
 
 export function normalizeRttReportingDegreeLimit(
     value: number | undefined,
-    fallback = DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
+    fallback = DEFAULT_RTT_REPORTING_DEGREE_LIMIT
 ): number {
     const candidate = value ?? fallback;
     return Number.isInteger(candidate) && candidate > 0
@@ -27,17 +27,19 @@ export function normalizeRttReportingDegreeLimit(
 }
 
 export function selectRttReportingPeers(
-    input: RttReportingPeerSelectionInput,
+    input: RttReportingPeerSelectionInput
 ): RttReportingPeerSelection {
     const degreeLimit = normalizeRttReportingDegreeLimit(
         input.degreeLimit,
-        input.fallbackDegreeLimit,
+        input.fallbackDegreeLimit
     );
     const selected: string[] = [];
     const seen = new Set<string>([input.localSessionId]);
 
     const add = (peerId: string): void => {
-        if (selected.length >= degreeLimit || seen.has(peerId)) return;
+        if (selected.length >= degreeLimit || seen.has(peerId)) {
+            return;
+        }
         seen.add(peerId);
         selected.push(peerId);
     };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     createAnalyzeLegacyRunsHref,
-    createAnalyzeLegacySharedTestHref,
+    createAnalyzeLegacySharedTestHref
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-legacy-links.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
@@ -13,14 +13,14 @@ const state: RecipeConsoleUrlState = {
     distributedRunId: 'distributed/one',
     agentId: 'agent-a',
     recipeId: 'recipe-a',
-    commandId: 'command-a',
+    commandId: 'command-a'
 };
 
 describe('Recipe Console Analyze legacy handoff links', () => {
     it('preserves selected run evidence in the legacy Runs deep link', () => {
         const href = createAnalyzeLegacyRunsHref(
             state,
-            '?provider=browser-rallar&controlToken=secret',
+            '?provider=browser-rallar&controlToken=secret'
         );
         const url = new URL(href, 'http://localhost');
 
@@ -36,7 +36,7 @@ describe('Recipe Console Analyze legacy handoff links', () => {
 
     it('opens the legacy Shared Test importer without leaking unsupported query data', () => {
         const href = createAnalyzeLegacySharedTestHref(
-            '?provider=evil&accessToken=secret',
+            '?provider=evil&accessToken=secret'
         );
         const url = new URL(href, 'http://localhost');
 

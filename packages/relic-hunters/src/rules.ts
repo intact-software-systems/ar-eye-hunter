@@ -1,28 +1,24 @@
-import {
-    type RelicActionInput,
-    type RelicCommand,
-    type RelicAnimationCue,
-    type RelicEvent,
-    type RelicEventType,
-    type RelicGameState,
-    type RelicPendingAction,
-    type RelicPlayer,
-    type RelicRoomInvestigationEffect,
-    type RelicRoomInvestigation,
-    type RelicRoom,
-    type RelicExpeditionSetupMetadata,
-} from './model.ts';
-import {
-    defaultRelicCharacterId,
-    findRelicCharacter,
-    type RelicCharacter,
-} from './characters.ts';
+import { defaultRelicCharacterId, findRelicCharacter, type RelicCharacter } from './characters.ts';
 import {
     assertRelicExpeditionBlueprint,
     relicsFromRelicExpeditionBlueprint,
     roomsFromRelicExpeditionBlueprint,
-    type RelicExpeditionBlueprint,
+    type RelicExpeditionBlueprint
 } from './expedition-blueprint.ts';
+import {
+    type RelicActionInput,
+    type RelicAnimationCue,
+    type RelicCommand,
+    type RelicEvent,
+    type RelicEventType,
+    type RelicExpeditionSetupMetadata,
+    type RelicGameState,
+    type RelicPendingAction,
+    type RelicPlayer,
+    type RelicRoom,
+    type RelicRoomInvestigation,
+    type RelicRoomInvestigationEffect
+} from './model.ts';
 import { RELIC_PROTOCOL_VERSION } from './protocol.ts';
 
 export type RelicApplyCommandOptions = Readonly<{
@@ -53,7 +49,7 @@ export const RELIC_MVP_MAP: readonly RelicRoom[] = [
     room('trap', 'Trap Room', 'trap', 0, 0, ['hallway', 'storage', 'treasure', 'monster']),
     room('treasure', 'Treasure Chamber', 'treasure', 4, 0, ['shrine', 'trap']),
     room('monster', 'Monster Lair', 'monster', 0, 3, ['trap', 'exit']),
-    room('exit', 'Exit', 'exit', 0, 6, ['monster']),
+    room('exit', 'Exit', 'exit', 0, 6, ['monster'])
 ];
 
 export const RELIC_MVP_RELICS = [
@@ -61,29 +57,29 @@ export const RELIC_MVP_RELICS = [
     { id: 'visitor-badge', name: 'Visitor Badge of Questionable Consent', value: 1, roomId: 'entrance' },
     { id: 'gift-shop-receipt', name: 'Gift Shop Exit Receipt', value: 2, roomId: 'exit' },
     // Treasure Chamber — three prizes of descending value
-    { id: 'golden-idol',   name: 'Golden Idol',      value: 5, roomId: 'treasure' },
-    { id: 'jade-dragon',   name: 'Jade Dragon',       value: 3, roomId: 'treasure' },
-    { id: 'pearl-netsuke', name: 'Pearl Netsuke',     value: 2, roomId: 'treasure' },
+    { id: 'golden-idol', name: 'Golden Idol', value: 5, roomId: 'treasure' },
+    { id: 'jade-dragon', name: 'Jade Dragon', value: 3, roomId: 'treasure' },
+    { id: 'pearl-netsuke', name: 'Pearl Netsuke', value: 2, roomId: 'treasure' },
     // Shrine — two sacred artefacts
-    { id: 'oracle-stone',  name: 'Oracle Stone',      value: 4, roomId: 'shrine' },
-    { id: 'moonstone',     name: 'Moonstone Pendant', value: 3, roomId: 'shrine' },
+    { id: 'oracle-stone', name: 'Oracle Stone', value: 4, roomId: 'shrine' },
+    { id: 'moonstone', name: 'Moonstone Pendant', value: 3, roomId: 'shrine' },
     // Storage — hidden cache, second piece buried deeper
-    { id: 'sun-disk',      name: 'Sun Disk',          value: 6, roomId: 'storage' },
-    { id: 'bronze-mirror', name: 'Bronze Mirror',     value: 3, roomId: 'storage' },
+    { id: 'sun-disk', name: 'Sun Disk', value: 6, roomId: 'storage' },
+    { id: 'bronze-mirror', name: 'Bronze Mirror', value: 3, roomId: 'storage' },
     // Monster Lair — great risk, two rewards
-    { id: 'cursed-mask',   name: 'Cursed Mask',       value: 8, roomId: 'monster' },
-    { id: 'bone-seal',     name: 'Bone Seal',         value: 4, roomId: 'monster' },
+    { id: 'cursed-mask', name: 'Cursed Mask', value: 8, roomId: 'monster' },
+    { id: 'bone-seal', name: 'Bone Seal', value: 4, roomId: 'monster' },
     // Trap Room — two relics worth braving the spikes
-    { id: 'serpent-crown', name: 'Serpent Crown',     value: 7, roomId: 'trap' },
-    { id: 'rusted-tanto',  name: 'Rusted Tantō',      value: 3, roomId: 'trap' },
+    { id: 'serpent-crown', name: 'Serpent Crown', value: 7, roomId: 'trap' },
+    { id: 'rusted-tanto', name: 'Rusted Tantō', value: 3, roomId: 'trap' },
     // Hallway — scattered find for sharp-eyed hunters
-    { id: 'copper-coin',   name: 'Copper Coin',       value: 2, roomId: 'hallway' },
+    { id: 'copper-coin', name: 'Copper Coin', value: 2, roomId: 'hallway' }
 ] as const;
 
 export function createRelicGame(
     gameId: string,
     roomId: string,
-    now: number = Date.now(),
+    now: number = Date.now()
 ): RelicGameState {
     return createRelicGameState({
         gameId,
@@ -96,8 +92,8 @@ export function createRelicGame(
             source: 'default',
             seed: 'relic-static-v1',
             theme: 'Castle of Yamashiro',
-            blueprintId: 'relic-static-v1',
-        },
+            blueprintId: 'relic-static-v1'
+        }
     });
 }
 
@@ -106,7 +102,7 @@ export function createRelicGameFromBlueprint(
     roomId: string,
     blueprint: RelicExpeditionBlueprint,
     now: number = Date.now(),
-    setup?: Partial<RelicExpeditionSetupMetadata>,
+    setup?: Partial<RelicExpeditionSetupMetadata>
 ): RelicGameState {
     assertRelicExpeditionBlueprint(blueprint);
     return createRelicGameState({
@@ -120,19 +116,19 @@ export function createRelicGameFromBlueprint(
             source: setup?.source ?? blueprint.source ?? 'procedural',
             seed: setup?.seed ?? blueprint.seed,
             theme: setup?.theme ?? blueprint.theme,
-            blueprintId: setup?.blueprintId,
-        },
+            blueprintId: setup?.blueprintId
+        }
     });
 }
 
 function createRelicGameState({
-                                  gameId,
-                                  roomId,
-                                  now,
-                                  map,
-                                  relics,
-                                  setup,
-                              }: Readonly<{
+    gameId,
+    roomId,
+    now,
+    map,
+    relics,
+    setup
+}: Readonly<{
     gameId: string;
     roomId: string;
     now: number;
@@ -160,11 +156,11 @@ function createRelicGameState({
         events: [
             toEvent(1, 'The expedition is waiting for hunters.', now, {
                 type: 'game_waiting',
-                tone: 'mystery',
-            }),
+                tone: 'mystery'
+            })
         ],
         winnerIds: [],
-        setup,
+        setup
     };
 }
 
@@ -177,14 +173,14 @@ function normalizeGameState(state: RelicGameState): RelicGameState {
         ...state,
         roomInvestigations: maybeLegacy.roomInvestigations ?? [],
         adminPlayerId: state.adminPlayerId ?? state.players[0]?.playerId,
-        roundTimeLimitMs: maybeLegacy.roundTimeLimitMs ?? 60_000,
+        roundTimeLimitMs: maybeLegacy.roundTimeLimitMs ?? 60_000
     };
 }
 
 export function applyRelicCommand(
     previous: RelicGameState | undefined,
     command: RelicCommand,
-    options: RelicApplyCommandOptions,
+    options: RelicApplyCommandOptions
 ): RelicApplyCommandResult {
     const now = options.now?.() ?? Date.now();
     const gameId = command.gameId;
@@ -194,13 +190,13 @@ export function applyRelicCommand(
         options.senderId,
         command.username,
         now,
-        command.kind === 'join-expedition' ? command.characterId : undefined,
+        command.kind === 'join-expedition' ? command.characterId : undefined
     );
 
     if (command.kind === 'join-expedition') {
         return {
             state: touch(joined.state, now),
-            resolvedRound: false,
+            resolvedRound: false
         };
     }
 
@@ -220,11 +216,11 @@ export function applyRelicCommand(
                     now,
                     {
                         type: 'round_started',
-                        tone: 'success',
-                    },
-                ),
+                        tone: 'success'
+                    }
+                )
             }, now),
-            resolvedRound: false,
+            resolvedRound: false
         };
     }
 
@@ -235,9 +231,9 @@ export function applyRelicCommand(
         return {
             state: touch({
                 ...joined.state,
-                roundTimeLimitMs: command.timeLimitMs,
+                roundTimeLimitMs: command.timeLimitMs
             }, now),
-            resolvedRound: false,
+            resolvedRound: false
         };
     }
 
@@ -259,7 +255,7 @@ export function applyRelicCommand(
 
         return {
             state: advanceReviewedRound(joined.state, now),
-            resolvedRound: false,
+            resolvedRound: false
         };
     }
 
@@ -279,14 +275,14 @@ export function applyRelicCommand(
 
         return {
             state: resolveRound(forceRoundResolutionState(joined.state, active, now), now),
-            resolvedRound: true,
+            resolvedRound: true
         };
     }
 
     if (command.kind === 'pickup-relic') {
         return {
             state: pickUpRelic(joined.state, joined.player, command.relicId, now),
-            resolvedRound: false,
+            resolvedRound: false
         };
     }
 
@@ -295,13 +291,11 @@ export function applyRelicCommand(
         playerId: joined.player.playerId,
         username: joined.player.username,
         action: command.action,
-        submittedAtEpochMs: now,
+        submittedAtEpochMs: now
     };
     const pendingActions = [
-        ...joined.state.pendingActions.filter((action) =>
-            action.playerId !== joined.player.playerId
-        ),
-        pendingAction,
+        ...joined.state.pendingActions.filter((action) => action.playerId !== joined.player.playerId),
+        pendingAction
     ];
     const submittedState = touch({
         ...joined.state,
@@ -312,21 +306,21 @@ export function applyRelicCommand(
             now,
             {
                 type: 'action_submitted',
-                tone: 'mystery',
-            },
-        ),
+                tone: 'mystery'
+            }
+        )
     }, now);
 
     if (pendingActions.length < active.length) {
         return {
             state: submittedState,
-            resolvedRound: false,
+            resolvedRound: false
         };
     }
 
     return {
         state: resolveRound(submittedState, now),
-        resolvedRound: true,
+        resolvedRound: true
     };
 }
 
@@ -338,7 +332,7 @@ function roundTimerExpired(state: RelicGameState, now: number): boolean {
 function forceRoundResolutionState(
     state: RelicGameState,
     active: readonly RelicPlayer[],
-    now: number,
+    now: number
 ): RelicGameState {
     const submittedIds = new Set(state.pendingActions.map((action) => action.playerId));
     const skipped = active.filter((player) => !submittedIds.has(player.playerId));
@@ -351,19 +345,17 @@ function forceRoundResolutionState(
         ...state,
         events: appendEvent(state, message, now, {
             type: 'action_revealed',
-            tone: 'mystery',
-        }),
+            tone: 'mystery'
+        })
     }, now);
 }
 
 export function legalMoveTargets(
     state: Pick<RelicGameState, 'map'>,
-    player: RelicPlayer,
+    player: RelicPlayer
 ): readonly string[] {
     const currentRoom = state.map.find((candidate) => candidate.id === player.roomId);
-    return currentRoom?.neighbors.filter((roomId) =>
-        !state.map.find((room) => room.id === roomId)?.collapsed
-    ) ?? [];
+    return currentRoom?.neighbors.filter((roomId) => !state.map.find((room) => room.id === roomId)?.collapsed) ?? [];
 }
 
 function resolveRound(state: RelicGameState, now: number): RelicGameState {
@@ -374,10 +366,10 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
             animationCue: {
                 type: 'noise_pulse',
                 durationMs: 620,
-                intensity: 'low',
+                intensity: 'low'
             },
-            tone: 'mystery',
-        }),
+            tone: 'mystery'
+        })
     };
 
     const orderedActions = [...next.pendingActions].sort((left, right) =>
@@ -390,7 +382,7 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
 
     const noise = next.pendingActions.reduce(
         (total, pending) => total + noiseForAction(next, pending),
-        0,
+        0
     );
     next = applyRuinPhase(next, noise, now);
     const reviewState = touch({
@@ -398,7 +390,7 @@ function resolveRound(state: RelicGameState, now: number): RelicGameState {
         phase: 'review',
         pendingActions: [],
         roundStartedAtEpochMs: undefined,
-        winnerIds: [],
+        winnerIds: []
     }, now);
 
     return scoreAllPlayers(reviewState);
@@ -419,14 +411,14 @@ function advanceReviewedRound(state: RelicGameState, now: number): RelicGameStat
                 animationCue: {
                     type: 'heart_relic_victory',
                     durationMs: 4_500,
-                    intensity: 'high',
+                    intensity: 'high'
                 },
-                tone: 'success',
+                tone: 'success'
             })
             : appendEvent(state, `Round ${nextRound} begins.`, now, {
                 type: 'round_started',
-                tone: 'mystery',
-            }),
+                tone: 'mystery'
+            })
     }, now);
 
     return finished ? scoreAllPlayers(advanced, true) : scoreAllPlayers(advanced);
@@ -435,7 +427,7 @@ function advanceReviewedRound(state: RelicGameState, now: number): RelicGameStat
 function resolveAction(
     state: RelicGameState,
     pending: RelicPendingAction,
-    now: number,
+    now: number
 ): RelicGameState {
     const player = state.players.find((candidate) => candidate.playerId === pending.playerId);
     if (!player || player.escaped || player.defeated) {
@@ -458,13 +450,13 @@ function resolveMove(
     state: RelicGameState,
     player: RelicPlayer,
     action: RelicActionInput,
-    now: number,
+    now: number
 ): RelicGameState {
     const targetRoomId = action.targetRoomId;
     if (!targetRoomId || !legalMoveTargets(state, player).includes(targetRoomId)) {
         return withEvent(state, `${player.username} failed to find a valid path.`, now, {
             type: 'player_moved',
-            tone: 'danger',
+            tone: 'danger'
         });
     }
 
@@ -481,32 +473,34 @@ function resolveMove(
                     fromRoomId: player.roomId,
                     roomId: targetRoomId,
                     durationMs: 750,
-                    intensity: 'medium',
+                    intensity: 'medium'
                 },
-                tone: 'neutral',
-            },
+                tone: 'neutral'
+            }
         ),
         {
             ...player,
-            roomId: targetRoomId,
-        },
+            roomId: targetRoomId
+        }
     );
 }
 
 function resolveSearch(
     state: RelicGameState,
     player: RelicPlayer,
-    now: number,
+    now: number
 ): RelicGameState {
     const hasUnfoundRelics = state.relics.some(
-        (r) => r.roomId === player.roomId && !r.foundBy,
+        (r) => r.roomId === player.roomId && !r.foundBy
     );
 
     // Block further searching only once the room is fully looted
     if (!hasUnfoundRelics && state.roomInvestigations.some((i) => i.roomId === player.roomId)) {
         return withEvent(
             state,
-            `${player.username} searched ${roomName(state, player.roomId)} again, but the useful clues were already marked.`,
+            `${player.username} searched ${
+                roomName(state, player.roomId)
+            } again, but the useful clues were already marked.`,
             now,
             {
                 type: 'player_searched',
@@ -515,16 +509,14 @@ function resolveSearch(
                     playerId: player.playerId,
                     roomId: player.roomId,
                     durationMs: 520,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
-                tone: 'neutral',
-            },
+                tone: 'neutral'
+            }
         );
     }
 
-    const relic = state.relics.find((candidate) =>
-        candidate.roomId === player.roomId && !candidate.foundBy
-    );
+    const relic = state.relics.find((candidate) => candidate.roomId === player.roomId && !candidate.foundBy);
     if (!relic) {
         return withEvent(
             markRoomInvestigated(state, player, now, 'empty'),
@@ -537,10 +529,10 @@ function resolveSearch(
                     playerId: player.playerId,
                     roomId: player.roomId,
                     durationMs: 700,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
-                tone: 'mystery',
-            },
+                tone: 'mystery'
+            }
         );
     }
 
@@ -571,15 +563,15 @@ function resolveSearch(
                     roomId: player.roomId,
                     relicId: relic.id,
                     durationMs: 1_200,
-                    intensity: 'high',
+                    intensity: 'high'
                 },
-                tone: 'success',
-            },
+                tone: 'success'
+            }
         ),
         {
             ...player,
-            relicIds: [...player.relicIds, relic.id],
-        },
+            relicIds: [...player.relicIds, relic.id]
+        }
     );
 }
 
@@ -587,7 +579,7 @@ function pickUpRelic(
     state: RelicGameState,
     player: RelicPlayer,
     relicId: string,
-    now: number,
+    now: number
 ): RelicGameState {
     if (state.phase !== 'planning') {
         throw new Error('Relics can only be picked up during planning.');
@@ -609,7 +601,7 @@ function pickUpRelic(
             ? {
                 ...candidate,
                 foundBy: candidate.foundBy ?? player.playerId,
-                carriedBy: player.playerId,
+                carriedBy: player.playerId
             }
             : candidate
     );
@@ -620,7 +612,7 @@ function pickUpRelic(
         withEvent(
             {
                 ...state,
-                relics,
+                relics
             },
             `${player.username} picked up the ${relic.name}. Asset Recovery has filed a polite panic.`,
             now,
@@ -632,15 +624,15 @@ function pickUpRelic(
                     roomId: player.roomId,
                     relicId: relic.id,
                     durationMs: 760,
-                    intensity: 'high',
+                    intensity: 'high'
                 },
-                tone: 'success',
-            },
+                tone: 'success'
+            }
         ),
         {
             ...player,
-            relicIds: playerRelicIds,
-        },
+            relicIds: playerRelicIds
+        }
     );
 
     return touch(pickedState, now);
@@ -671,7 +663,7 @@ function markRoomInvestigated(
     player: RelicPlayer,
     now: number,
     result: RelicRoomInvestigation['result'],
-    relicId?: string,
+    relicId?: string
 ): RelicGameState {
     const investigation: RelicRoomInvestigation = {
         roomId: player.roomId,
@@ -681,17 +673,15 @@ function markRoomInvestigated(
         searchedAtEpochMs: now,
         result,
         ...roomInvestigationDetails(state, player, result, relicId),
-        ...(relicId ? { relicId } : {}),
+        ...(relicId ? { relicId } : {})
     };
 
     return {
         ...state,
         roomInvestigations: [
-            ...state.roomInvestigations.filter((candidate) =>
-                candidate.roomId !== player.roomId
-            ),
-            investigation,
-        ],
+            ...state.roomInvestigations.filter((candidate) => candidate.roomId !== player.roomId),
+            investigation
+        ]
     };
 }
 
@@ -699,7 +689,7 @@ function roomInvestigationDetails(
     state: RelicGameState,
     player: RelicPlayer,
     result: RelicRoomInvestigation['result'],
-    relicId: string | undefined,
+    relicId: string | undefined
 ): Readonly<{
     summary: string;
     hint: string;
@@ -721,7 +711,7 @@ function roomInvestigationDetails(
             ...(room?.kind === 'trap' || room?.kind === 'monster'
                 ? { danger: 'The find stirred a dangerous room.' }
                 : {}),
-            ...(revealedRoomId ? { revealedRoomId } : {}),
+            ...(revealedRoomId ? { revealedRoomId } : {})
         };
     }
 
@@ -731,14 +721,14 @@ function roomInvestigationDetails(
                 summary: 'The crates held a torn supply map, but no relic.',
                 hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
                 effect: 'map-fragment',
-                revealedRoomId: revealedRoomId ?? 'trap',
+                revealedRoomId: revealedRoomId ?? 'trap'
             };
         case 'shrine':
             return {
                 summary: 'The altar runes were read and the empty glyph path was marked.',
                 hint: 'The shrine points toward treasure, but the party should watch the remaining rounds.',
                 effect: 'rune-reading',
-                revealedRoomId: revealedRoomId ?? 'treasure',
+                revealedRoomId: revealedRoomId ?? 'treasure'
             };
         case 'trap':
             return {
@@ -746,14 +736,14 @@ function roomInvestigationDetails(
                 hint: 'Move carefully from here; repeated noise can make the room punish the party.',
                 effect: 'safe-path',
                 danger: 'Pressure plates remain unstable.',
-                revealedRoomId: revealedRoomId ?? 'monster',
+                revealedRoomId: revealedRoomId ?? 'monster'
             };
         case 'treasure':
             return {
                 summary: 'The chest and mirror were checked, but the prize trail was cold.',
                 hint: 'The mirror scratches point back toward rooms the party may have skipped.',
                 effect: 'treasure-trail',
-                revealedRoomId,
+                revealedRoomId
             };
         case 'monster':
             return {
@@ -761,20 +751,20 @@ function roomInvestigationDetails(
                 hint: 'The next useful choice is usually the Exit unless the party needs one last relic.',
                 effect: 'monster-trace',
                 danger: 'Bones and ash suggest the room can turn costly.',
-                revealedRoomId: revealedRoomId ?? 'exit',
+                revealedRoomId: revealedRoomId ?? 'exit'
             };
         case 'exit':
             return {
                 summary: 'The exit runes were read and the way out was marked.',
                 hint: 'Prime Escape here to bank carried relics and the escape bonus.',
-                effect: 'exit-route',
+                effect: 'exit-route'
             };
         default:
             return {
                 summary: `${roomName(state, player.roomId)} was searched clear.`,
                 hint: 'Move toward a stronger clue or the Exit.',
                 effect: 'ordinary-search',
-                ...(revealedRoomId ? { revealedRoomId } : {}),
+                ...(revealedRoomId ? { revealedRoomId } : {})
             };
     }
 }
@@ -800,7 +790,7 @@ function investigationEffect(room: RelicRoom | undefined): RelicRoomInvestigatio
 
 function revealedRoomForInvestigation(
     state: RelicGameState,
-    roomId: string,
+    roomId: string
 ): string | undefined {
     const room = state.map.find((candidate) => candidate.id === roomId);
     if (!room) {
@@ -815,12 +805,12 @@ function revealedRoomForInvestigation(
 
 function highestValueRelicNeighbor(
     state: RelicGameState,
-    neighbors: readonly RelicRoom[],
+    neighbors: readonly RelicRoom[]
 ): RelicRoom | undefined {
     return neighbors
         .map((neighbor) => ({
             neighbor,
-            value: highestUnfoundRelicValue(state, neighbor.id),
+            value: highestUnfoundRelicValue(state, neighbor.id)
         }))
         .filter((candidate) => candidate.value > 0)
         .sort((left, right) => right.value - left.value)[0]?.neighbor;
@@ -828,7 +818,7 @@ function highestValueRelicNeighbor(
 
 function highestUnfoundRelicValue(
     state: RelicGameState,
-    roomId: string,
+    roomId: string
 ): number {
     return Math.max(
         0,
@@ -839,7 +829,7 @@ function highestUnfoundRelicValue(
                 !relic.carriedBy &&
                 !relic.escapedBy
             )
-            .map((relic) => relic.value),
+            .map((relic) => relic.value)
     );
 }
 
@@ -847,7 +837,7 @@ function resolveSteal(
     state: RelicGameState,
     player: RelicPlayer,
     action: RelicActionInput,
-    now: number,
+    now: number
 ): RelicGameState {
     const target = state.players.find((candidate) =>
         candidate.playerId === action.targetPlayerId &&
@@ -865,9 +855,9 @@ function resolveSteal(
                 targetPlayerId: action.targetPlayerId,
                 roomId: player.roomId,
                 durationMs: 650,
-                intensity: 'medium',
+                intensity: 'medium'
             },
-            tone: 'danger',
+            tone: 'danger'
         });
     }
 
@@ -883,17 +873,17 @@ function resolveSteal(
                 if (candidate.playerId === player.playerId) {
                     return {
                         ...candidate,
-                        relicIds: [...candidate.relicIds, stolenRelicId],
+                        relicIds: [...candidate.relicIds, stolenRelicId]
                     };
                 }
                 if (candidate.playerId === target.playerId) {
                     return {
                         ...candidate,
-                        relicIds: candidate.relicIds.filter((id) => id !== stolenRelicId),
+                        relicIds: candidate.relicIds.filter((id) => id !== stolenRelicId)
                     };
                 }
                 return candidate;
-            }),
+            })
         },
         `${player.username} stole from ${target.username}.`,
         now,
@@ -906,22 +896,22 @@ function resolveSteal(
                 roomId: player.roomId,
                 relicId: stolenRelicId,
                 durationMs: 800,
-                intensity: 'high',
+                intensity: 'high'
             },
-            tone: 'success',
-        },
+            tone: 'success'
+        }
     );
 }
 
 function resolveEscape(
     state: RelicGameState,
     player: RelicPlayer,
-    now: number,
+    now: number
 ): RelicGameState {
     if (player.roomId !== 'exit') {
         return withEvent(state, `${player.username} tried to escape too early.`, now, {
             type: 'escape_failed',
-            tone: 'danger',
+            tone: 'danger'
         });
     }
 
@@ -935,7 +925,7 @@ function resolveEscape(
         withEvent(
             {
                 ...state,
-                relics,
+                relics
             },
             `${player.username} escaped the ruin.`,
             now,
@@ -946,20 +936,18 @@ function resolveEscape(
                     playerId: player.playerId,
                     roomId: player.roomId,
                     durationMs: 1_400,
-                    intensity: 'high',
+                    intensity: 'high'
                 },
-                tone: 'success',
-            },
+                tone: 'success'
+            }
         ),
         {
             ...player,
             escaped: true,
             relicIds: player.relicIds.filter((relicId) =>
-                !relics.some((relic) =>
-                    relic.id === relicId && relic.escapedBy === player.playerId
-                )
-            ),
-        },
+                !relics.some((relic) => relic.id === relicId && relic.escapedBy === player.playerId)
+            )
+        }
     );
 }
 
@@ -969,16 +957,16 @@ function applyRuinPhase(state: RelicGameState, noise: number, now: number): Reli
         animationCue: {
             type: 'noise_pulse',
             durationMs: 900,
-            intensity: noise >= 5 ? 'high' : noise >= 3 ? 'medium' : 'low',
+            intensity: noise >= 5 ? 'high' : noise >= 3 ? 'medium' : 'low'
         },
-        tone: noise >= 5 ? 'danger' : 'mystery',
+        tone: noise >= 5 ? 'danger' : 'mystery'
     });
     if (noise >= 5) {
         const target = activePlayers(next).find((player) => player.roomId !== 'entrance');
         if (target) {
             const damaged = {
                 ...target,
-                health: Math.max(0, target.health - 1),
+                health: Math.max(0, target.health - 1)
             };
             next = updatePlayer(
                 withEvent(next, `${target.username} is hurt by falling stones.`, now, {
@@ -988,22 +976,20 @@ function applyRuinPhase(state: RelicGameState, noise: number, now: number): Reli
                         playerId: target.playerId,
                         roomId: target.roomId,
                         durationMs: 900,
-                        intensity: 'high',
+                        intensity: 'high'
                     },
-                    tone: 'danger',
+                    tone: 'danger'
                 }),
                 {
                     ...damaged,
-                    defeated: damaged.health <= 0,
-                },
+                    defeated: damaged.health <= 0
+                }
             );
         }
     }
 
     if (state.round >= 5) {
-        const candidates = next.map.filter((room) =>
-            room.id !== 'entrance' && room.id !== 'exit' && !room.collapsed
-        );
+        const candidates = next.map.filter((room) => room.id !== 'entrance' && room.id !== 'exit' && !room.collapsed);
         const roomToMark = candidates[state.round % candidates.length];
         if (roomToMark && !roomToMark.unstable) {
             next = {
@@ -1013,13 +999,11 @@ function applyRuinPhase(state: RelicGameState, noise: number, now: number): Reli
                         type: 'noise_pulse',
                         roomId: roomToMark.id,
                         durationMs: 900,
-                        intensity: 'medium',
+                        intensity: 'medium'
                     },
-                    tone: 'danger',
+                    tone: 'danger'
                 }),
-                map: next.map.map((room) =>
-                    room.id === roomToMark.id ? { ...room, unstable: true } : room
-                ),
+                map: next.map.map((room) => room.id === roomToMark.id ? { ...room, unstable: true } : room)
             };
         }
     }
@@ -1034,18 +1018,16 @@ function applyRuinPhase(state: RelicGameState, noise: number, now: number): Reli
                         type: 'room_collapse',
                         roomId: roomToCollapse.id,
                         durationMs: 1_300,
-                        intensity: 'high',
+                        intensity: 'high'
                     },
-                    tone: 'danger',
+                    tone: 'danger'
                 }),
-                map: next.map.map((room) =>
-                    room.id === roomToCollapse.id ? { ...room, collapsed: true } : room
-                ),
+                map: next.map.map((room) => room.id === roomToCollapse.id ? { ...room, collapsed: true } : room),
                 players: next.players.map((player) =>
                     player.roomId === roomToCollapse.id && !player.escaped
                         ? { ...player, health: 0, defeated: true }
                         : player
-                ),
+                )
             };
         }
     }
@@ -1058,8 +1040,8 @@ function ensurePlayer(
     playerId: string,
     username: string,
     now: number,
-    characterId: RelicPlayer['characterId'] | undefined,
-): Readonly<{ state: RelicGameState; player: RelicPlayer }> {
+    characterId: RelicPlayer['characterId'] | undefined
+): Readonly<{ state: RelicGameState; player: RelicPlayer; }> {
     const existing = state.players.find((player) => player.playerId === playerId);
     if (existing) {
         const nextCharacterId = state.phase === 'lobby' && characterId
@@ -1073,11 +1055,11 @@ function ensurePlayer(
                 characterId: nextCharacterId,
                 health: state.phase === 'lobby' && characterId
                     ? startingHealth(nextCharacterId)
-                    : existing.health,
+                    : existing.health
             };
         return {
             state: updatePlayer(state, player),
-            player,
+            player
         };
     }
 
@@ -1099,7 +1081,7 @@ function ensurePlayer(
         escaped: false,
         defeated: false,
         score: 0,
-        relicIds: [],
+        relicIds: []
     };
 
     return {
@@ -1109,17 +1091,17 @@ function ensurePlayer(
             players: [...state.players, player],
             events: appendEvent(state, `${username} joined as ${findRelicCharacter(player.characterId).name}.`, now, {
                 type: 'player_joined',
-                tone: 'success',
-            }),
+                tone: 'success'
+            })
         },
-        player,
+        player
     };
 }
 
 function validateAction(
     state: RelicGameState,
     player: RelicPlayer,
-    action: RelicActionInput,
+    action: RelicActionInput
 ): void {
     if (action.kind === 'move' && !action.targetRoomId) {
         throw new Error('Move requires a target room.');
@@ -1167,7 +1149,7 @@ function noiseForAction(state: RelicGameState, pending: RelicPendingAction): num
 
 function characterForPending(
     state: RelicGameState,
-    pending: RelicPendingAction,
+    pending: RelicPendingAction
 ): RelicCharacter | undefined {
     const player = state.players.find((candidate) => candidate.playerId === pending.playerId);
     return player ? findRelicCharacter(player.characterId) : undefined;
@@ -1175,7 +1157,7 @@ function characterForPending(
 
 function characterRelicBonus(
     state: RelicGameState,
-    player: RelicPlayer,
+    player: RelicPlayer
 ): number {
     const relicBonus = findRelicCharacter(player.characterId).relicValueBonus ?? 0;
     if (relicBonus <= 0) {
@@ -1186,7 +1168,7 @@ function characterRelicBonus(
         ...player.relicIds,
         ...state.relics
             .filter((relic) => relic.escapedBy === player.playerId)
-            .map((relic) => relic.id),
+            .map((relic) => relic.id)
     ];
 
     return new Set(heldOrEscapedRelics).size * relicBonus;
@@ -1216,9 +1198,8 @@ function baseNoiseForAction(action: RelicActionInput): number {
 function scoreAllPlayers(state: RelicGameState, applyEndPenalty = false): RelicGameState {
     const players = state.players.map((player) => {
         const carriedScore = player.relicIds.reduce(
-            (total, relicId) =>
-                total + (state.relics.find((relic) => relic.id === relicId)?.value ?? 0),
-            0,
+            (total, relicId) => total + (state.relics.find((relic) => relic.id === relicId)?.value ?? 0),
+            0
         );
         const escapedScore = state.relics
             .filter((relic) => relic.escapedBy === player.playerId)
@@ -1229,14 +1210,14 @@ function scoreAllPlayers(state: RelicGameState, applyEndPenalty = false): RelicG
 
         return {
             ...player,
-            score: carriedScore + escapedScore + skillBonus + escapeBonus + penalty,
+            score: carriedScore + escapedScore + skillBonus + escapeBonus + penalty
         };
     });
 
     return {
         ...state,
         players,
-        winnerIds: state.phase === 'finished' ? calculateWinnerIds({ ...state, players }) : [],
+        winnerIds: state.phase === 'finished' ? calculateWinnerIds({ ...state, players }) : []
     };
 }
 
@@ -1250,9 +1231,7 @@ function calculateWinnerIds(state: Pick<RelicGameState, 'players'>): readonly st
 function updatePlayer(state: RelicGameState, player: RelicPlayer): RelicGameState {
     return {
         ...state,
-        players: state.players.map((candidate) =>
-            candidate.playerId === player.playerId ? player : candidate
-        ),
+        players: state.players.map((candidate) => candidate.playerId === player.playerId ? player : candidate)
     };
 }
 
@@ -1260,11 +1239,11 @@ function withEvent(
     state: RelicGameState,
     message: string,
     now: number,
-    options?: RelicEventOptions,
+    options?: RelicEventOptions
 ): RelicGameState {
     return {
         ...state,
-        events: appendEvent(state, message, now, options),
+        events: appendEvent(state, message, now, options)
     };
 }
 
@@ -1272,11 +1251,11 @@ function appendEvent(
     state: Pick<RelicGameState, 'events' | 'round'>,
     message: string,
     now: number,
-    options?: RelicEventOptions,
+    options?: RelicEventOptions
 ): readonly RelicEvent[] {
     return [
         ...state.events,
-        toEvent(state.round, message, now, options),
+        toEvent(state.round, message, now, options)
     ].slice(-64);
 }
 
@@ -1284,7 +1263,7 @@ function toEvent(
     round: number,
     message: string,
     now: number,
-    options?: RelicEventOptions,
+    options?: RelicEventOptions
 ): RelicEvent {
     return {
         id: `${round}:${now}:${toEventHash(message)}`,
@@ -1293,14 +1272,14 @@ function toEvent(
         message,
         animationCue: options?.animationCue,
         tone: options?.tone ?? 'neutral',
-        createdAtEpochMs: now,
+        createdAtEpochMs: now
     };
 }
 
 function touch(state: RelicGameState, now: number): RelicGameState {
     return scoreAllPlayers({
         ...state,
-        updatedAtEpochMs: now,
+        updatedAtEpochMs: now
     });
 }
 
@@ -1310,7 +1289,7 @@ function room(
     kind: RelicRoom['kind'],
     x: number,
     z: number,
-    neighbors: readonly string[],
+    neighbors: readonly string[]
 ): RelicRoom {
     return {
         id,
@@ -1318,7 +1297,7 @@ function room(
         kind,
         x,
         z,
-        neighbors,
+        neighbors
     };
 }
 

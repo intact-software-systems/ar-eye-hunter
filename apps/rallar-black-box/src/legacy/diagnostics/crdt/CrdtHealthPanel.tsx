@@ -1,12 +1,9 @@
 import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
-import { CrdtEditorPanel } from './CrdtEditorView.tsx';
 import type { CrdtPanelInput } from './crdt-contracts.ts';
-import {
-    useCrdtHealthController,
-    type CrdtHealthControllerModel,
-} from './use-crdt-health-controller.ts';
+import { CrdtEditorPanel } from './CrdtEditorView.tsx';
+import { useCrdtHealthController, type CrdtHealthControllerModel } from './use-crdt-health-controller.ts';
 
 export function CrdtHealthPanel(props: CrdtPanelInput) {
     const { state, bootstrap, authSession, globalValues } = props;
@@ -22,7 +19,7 @@ export function CrdtHealthPanel(props: CrdtPanelInput) {
         canCallAdmin,
         copyAdminRecipe,
         refresh,
-        runDocumentAction,
+        runDocumentAction
     } = model;
     return (
         <section className="panel crdt-health-panel">
@@ -214,27 +211,19 @@ export function CrdtHealthPanel(props: CrdtPanelInput) {
                         {documents.map((document) => (
                             <tr
                                 key={document.documentKey}
-                                className={
-                                    document.documentKey ===
-                                    selectedDocument?.documentKey
-                                        ? 'selected'
-                                        : ''
-                                }
-                                onClick={() =>
-                                    setSelectedDocumentKey(document.documentKey)
-                                }
+                                className={document.documentKey ===
+                                        selectedDocument?.documentKey
+                                    ? 'selected'
+                                    : ''}
+                                onClick={() => setSelectedDocumentKey(document.documentKey)}
                             >
                                 <td>
                                     <button
                                         type="button"
                                         className="crdt-row-selector"
-                                        aria-label={
-                                            `Select CRDT document ${document.documentKey}`
-                                        }
-                                        aria-pressed={
-                                            document.documentKey ===
-                                            selectedDocument?.documentKey
-                                        }
+                                        aria-label={`Select CRDT document ${document.documentKey}`}
+                                        aria-pressed={document.documentKey ===
+                                            selectedDocument?.documentKey}
                                     >
                                         {document.documentKey}
                                     </button>
@@ -264,13 +253,11 @@ export function CrdtHealthPanel(props: CrdtPanelInput) {
                         <Metric
                             label="Lifecycle"
                             value={selectedDocument.lifecycle}
-                            tone={
-                                selectedDocument.lifecycle === 'active'
-                                    ? 'good'
-                                    : selectedDocument.lifecycle === 'quarantined'
-                                      ? 'bad'
-                                      : 'warn'
-                            }
+                            tone={selectedDocument.lifecycle === 'active'
+                                ? 'good'
+                                : selectedDocument.lifecycle === 'quarantined'
+                                ? 'bad'
+                                : 'warn'}
                         />
                         <Metric
                             label="Rollout"
@@ -283,11 +270,9 @@ export function CrdtHealthPanel(props: CrdtPanelInput) {
                         <Metric
                             label="Quarantine"
                             value={selectedDocument.quarantineReason ?? '-'}
-                            tone={
-                                selectedDocument.quarantineReason
-                                    ? 'bad'
-                                    : 'muted'
-                            }
+                            tone={selectedDocument.quarantineReason
+                                ? 'bad'
+                                : 'muted'}
                         />
                     </div>
                 )}

@@ -1,5 +1,18 @@
-import { OnMessageCallback, OnOutboxWebRtcMessageCallback } from './InboxOutboxContracts.ts';
+import { ALMessage } from '../al-contracts/al-contract.ts';
+import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
+import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
+import type { ALOutboundEnqueueResult } from '../alm/ALOutboundMessageRuntime.ts';
+import { EnqueuedType, PeerId, RttMeasurementInfo } from '../api/api-config.ts';
+import { WebRtcOverlayMulticastManager } from '../multicast/WebRtcOverlayMulticastManager.ts';
+import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
+import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { OnQRtcMessageCallback, QRtcClientCallbacks } from '../webrtc/QRtcClientCallbacks.ts';
+import { QRtcMediaPolicy } from '../webrtc/QRtcPeerConnection.ts';
+import { OnMessageCallback, OnOutboxWebRtcMessageCallback } from './InboxOutboxContracts.ts';
+import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
+import { QRtcPeerDto } from './WebRtcConnectionService.ts';
 import {
     defaultMaxMissedPings,
     defaultPingFrequencyMsecs,
@@ -7,34 +20,21 @@ import {
     WebRtcHeartbeatCallbacks,
     WebRtcHeartbeatService
 } from './WebRtcHeartbeatService.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
-import { ALMessage } from '../al-contracts/al-contract.ts';
-import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
-import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { QRtcPeerDto } from './WebRtcConnectionService.ts';
-import { QRtcMediaPolicy } from '../webrtc/QRtcPeerConnection.ts';
-import { EnqueuedType, PeerId, RttMeasurementInfo } from '../api/api-config.ts';
-import { WebRtcOverlayMulticastManager } from '../multicast/WebRtcOverlayMulticastManager.ts';
-import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
-import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
-import { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
-import type { ALOutboundEnqueueResult } from '../alm/ALOutboundMessageRuntime.ts';
 
 export type WebRtcRxStreamerServiceInputDto = {
-    sessionId: string
-}
+    sessionId: string;
+};
 
 type WebRtcRxStreamerServiceStatus = {
-    localMediaStream: MediaStream | undefined
-    localAudioEnabled: boolean
-    localVideoEnabled: boolean
-    mediaPolicy: QRtcMediaPolicy | undefined
-}
+    localMediaStream: MediaStream | undefined;
+    localAudioEnabled: boolean;
+    localVideoEnabled: boolean;
+    mediaPolicy: QRtcMediaPolicy | undefined;
+};
 
 export type RttMeasurementCallbacks = {
-    onHeartbeat: (rtt: RttMeasurementInfo) => Promise<void>,
-}
+    onHeartbeat: (rtt: RttMeasurementInfo) => Promise<void>;
+};
 
 export type WebRtcRxStreamerServiceOptions = Readonly<{
     inboundStores?: ALInboundRuntimeStores;
@@ -51,7 +51,10 @@ export class WebRtcRxStreamerService {
     private readonly onRtcMessageCallbacks = new Map<string, OnQRtcMessageCallback>();
     private readonly onRttMeasurementCallbacks = new Map<string, RttMeasurementCallbacks>();
 
-    private readonly onRemoteStreamCallbacks: Map<string, (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>> = new Map();
+    private readonly onRemoteStreamCallbacks: Map<
+        string,
+        (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>
+    > = new Map();
 
     private status: WebRtcRxStreamerServiceStatus = {
         localMediaStream: undefined,
@@ -74,7 +77,7 @@ export class WebRtcRxStreamerService {
         inbox: QueueBoxResourceEntryRepository,
         multicast: WebRtcOverlayMulticastManager,
         input: WebRtcRxStreamerServiceInputDto,
-        options: WebRtcRxStreamerServiceOptions = {},
+        options: WebRtcRxStreamerServiceOptions = {}
     ) {
         this.inbox = inbox;
         this.multicast = multicast;
@@ -87,12 +90,11 @@ export class WebRtcRxStreamerService {
                 planIncomingMessage: (msg, fromPeerId, runtime) => {
                     return this.multicast.planIncomingMessage(msg, fromPeerId, runtime);
                 },
-                readStoredEntry: (entry) =>
-                    JSON.parse(entry.resource) as ALMessage,
+                readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
                 toInboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WebRtcRxStreamerService.ENQUEUE_TYPE,
+                        WebRtcRxStreamerService.ENQUEUE_TYPE
                     ),
                 dispatchInboxEntry: async (entry, plan) => {
                     await this.dispatchInboxEntry(entry, plan);
@@ -105,8 +107,8 @@ export class WebRtcRxStreamerService {
                 },
                 forwardMessage: async (msg, fromPeerId) => {
                     await this.multicast.forwardIfRequired(msg, fromPeerId);
-                },
-            },
+                }
+            }
         );
     }
 
@@ -156,7 +158,8 @@ export class WebRtcRxStreamerService {
                     for (const cb of this.onRemoteStreamCallbacks.values()) {
                         try {
                             await cb(peerDto.peerId, stream, event);
-                        } catch (e) {
+                        }
+                        catch (e) {
                             console.error('Error calling onRemoteStream callback', e);
                         }
                     }
@@ -165,11 +168,11 @@ export class WebRtcRxStreamerService {
 
         if (this.status.localMediaStream) {
             peerDto.media.setParameters(
-                    this.status.localMediaStream,
-                    this.status.localAudioEnabled,
-                    this.status.localVideoEnabled
-                )
-                .catch(e => console.error('Error setting local media parameters', e));
+                this.status.localMediaStream,
+                this.status.localAudioEnabled,
+                this.status.localVideoEnabled
+            )
+                .catch((e) => console.error('Error setting local media parameters', e));
         }
     }
 
@@ -248,7 +251,7 @@ export class WebRtcRxStreamerService {
             },
             onOpen: () => {
                 return this.startRtcHeartbeats(peerId);
-            },
+            }
         };
     }
 
@@ -296,17 +299,17 @@ export class WebRtcRxStreamerService {
                     sessionIdTo: peerId,
                     rttMs: result.rttMsecs,
                     createdAtEpochMs: Date.now(),
-                    version,
+                    version
                 };
                 for (const [_, cb] of this.onRttMeasurementCallbacks.entries()) {
                     cb.onHeartbeat(rtt)
                         .catch(
-                            e => console.error('Error calling onRttMeasurementCallback', e)
+                            (e) => console.error('Error calling onRttMeasurementCallback', e)
                         );
                 }
 
                 return Promise.resolve();
-            },
+            }
         };
 
         heartbeat.start(callbacks);
@@ -343,12 +346,12 @@ export class WebRtcRxStreamerService {
         let wildcard = undefined;
 
         if (plan?.ownership.exclusive) {
-            exclusiveCallback =
-                this.onInboxMessageCallbacks.get(message.payload.typeId)
-                ?? this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN);
+            exclusiveCallback = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
+                this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN);
 
             await this.onMessageIfPresent(exclusiveCallback, message, entry);
-        } else {
+        }
+        else {
             exclusiveCallback = this.onInboxMessageCallbacks.get(message.payload.typeId);
             await this.onMessageIfPresent(exclusiveCallback, message, entry);
 
@@ -368,7 +371,8 @@ export class WebRtcRxStreamerService {
     ) {
         try {
             await callback?.onMessage(message, entry);
-        } catch (e) {
+        }
+        catch (e) {
             console.error('Error calling onMessage callback', e);
         }
     }
@@ -413,7 +417,10 @@ export class WebRtcRxStreamerService {
         return this.onRtcMessageCallbacks.delete(id);
     }
 
-    onRemoteStreamDo(id: string, cb: (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>): WebRtcRxStreamerService {
+    onRemoteStreamDo(
+        id: string,
+        cb: (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>
+    ): WebRtcRxStreamerService {
         this.onRemoteStreamCallbacks.set(id, cb);
         return this;
     }
@@ -444,8 +451,8 @@ export class WebRtcRxStreamerService {
             typesToDequeue,
             resilience,
             QueueBoxUtilities.withRetryDisposition(
-                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry),
-            ),
+                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry)
+            )
         );
     }
 
@@ -457,7 +464,6 @@ export class WebRtcRxStreamerService {
         this.status.localMediaStream = stream;
 
         for (const peer of this.peerDtoByPeerId.values()) {
-
             if (peer?.media) {
                 await peer.media.setLocalMediaStream(stream);
 

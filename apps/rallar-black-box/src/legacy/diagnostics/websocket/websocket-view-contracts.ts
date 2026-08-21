@@ -2,7 +2,7 @@ import type { CommandCenterActionFeedback } from '../shared/action-feedback.ts';
 import type {
     WebSocketCommandCenterValues,
     WebSocketDiagnostic,
-    WebSocketRoutePreview,
+    WebSocketRoutePreview
 } from './websocket-contracts.ts';
 
 export type WebSocketCommandCenterViewModel = Readonly<{
@@ -13,29 +13,27 @@ export type WebSocketCommandCenterViewModel = Readonly<{
     busyAction?: string;
     actionFeedback: CommandCenterActionFeedback;
     waitStatus: string;
-    ticket?: Readonly<{ expiresAtEpochMs: number }>;
+    ticket?: Readonly<{ expiresAtEpochMs: number; }>;
     subscription?: Readonly<{
         label: string;
         groupId: string;
         subscribedAtEpochMs: number;
     }>;
     diagnostics: WebSocketDiagnostic;
-    activePreset: Readonly<{ label: string; description: string }>;
+    activePreset: Readonly<{ label: string; description: string; }>;
     canSendViaRallarSignaling: boolean;
     routePreview: WebSocketRoutePreview;
     subscriptionStatusLabel: string;
     subscriptionStatusTone: 'good' | 'muted';
     receiveStatusText: string;
-    payloadResult: Readonly<
-        { ok: true } | { ok: false; error: string }
-    >;
+    payloadResult: Readonly<{ ok: true; } | { ok: false; error: string; }>;
     updateValue<K extends keyof WebSocketCommandCenterValues>(
         key: K,
-        value: WebSocketCommandCenterValues[K],
+        value: WebSocketCommandCenterValues[K]
     ): void;
     updateGroupId(groupId: string): void;
     updateWsScope(
-        wsScope: WebSocketCommandCenterValues['wsScope'],
+        wsScope: WebSocketCommandCenterValues['wsScope']
     ): void;
     selectPayloadPreset(presetId: string): void;
     configure(): Promise<void>;

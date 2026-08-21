@@ -1,7 +1,7 @@
 import type {
     RallarAiDiagnosticEvent,
     RallarAiDiagnosticEventKind,
-    RallarAiDiagnosticsSink,
+    RallarAiDiagnosticsSink
 } from './rallar-ai-types.ts';
 
 export class RallarAiDiagnosticsCollector {
@@ -14,18 +14,18 @@ export class RallarAiDiagnosticsCollector {
 
 export function createRallarAiDiagnosticEvent(
     kind: RallarAiDiagnosticEventKind,
-    input: Omit<RallarAiDiagnosticEvent, 'kind' | 'createdAtEpochMs'> = {},
+    input: Omit<RallarAiDiagnosticEvent, 'kind' | 'createdAtEpochMs'> = {}
 ): RallarAiDiagnosticEvent {
     return {
         ...input,
         kind,
-        createdAtEpochMs: Date.now(),
+        createdAtEpochMs: Date.now()
     };
 }
 
 export async function emitRallarAiDiagnostic(
     sink: RallarAiDiagnosticsSink | undefined,
-    event: RallarAiDiagnosticEvent,
+    event: RallarAiDiagnosticEvent
 ): Promise<void> {
     await sink?.(event);
 }

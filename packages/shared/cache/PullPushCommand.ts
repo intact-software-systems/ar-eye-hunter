@@ -3,12 +3,12 @@ import type { RateLimiter } from '../resilience/Resilience.ts';
 import { Command, NullValueError } from './Command.ts';
 
 export type PullSupplier<T> = (
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ) => T | Promise<T>;
 
 export type PushConsumer<TPulled, TPushed> = (
     value: TPulled,
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ) => TPushed | Promise<TPushed>;
 
 export type PullPushCommandResult<TPulled, TPushed> = Readonly<{
@@ -18,7 +18,7 @@ export type PullPushCommandResult<TPulled, TPushed> = Readonly<{
 
 export type PullPushFallbackSupplier<TPulled, TPushed> = (
     error: unknown,
-    pulled: TPulled | undefined,
+    pulled: TPulled | undefined
 ) =>
     | PullPushCommandResult<TPulled, TPushed>
     | Promise<PullPushCommandResult<TPulled, TPushed>>;
@@ -31,14 +31,14 @@ export interface PullPushCommandHooks<TPulled, TPushed> {
     onFallback?: (
         value: PullPushCommandResult<TPulled, TPushed>,
         cause: unknown,
-        pulled: TPulled | undefined,
+        pulled: TPulled | undefined
     ) => void;
     onError?: (error: unknown, pulled: TPulled | undefined) => void;
     onComplete?: () => void;
     onAttemptError?: (
         error: unknown,
         attempt: number,
-        pulled: TPulled | undefined,
+        pulled: TPulled | undefined
     ) => void;
 }
 
@@ -62,7 +62,7 @@ export class PullPushCommand<TPulled, TPushed> {
     public constructor(
         pull: PullSupplier<TPulled>,
         push: PushConsumer<TPulled, TPushed>,
-        options: PullPushCommandOptions<TPulled, TPushed> = {},
+        options: PullPushCommandOptions<TPulled, TPushed> = {}
     ) {
         if (!pull) {
             throw new Error('pull is required');
@@ -99,7 +99,7 @@ export class PullPushCommand<TPulled, TPushed> {
 
                 return {
                     pulled: this.lastPulled,
-                    pushed: pushed as TPushed,
+                    pushed: pushed as TPushed
                 };
             },
             {
@@ -120,19 +120,18 @@ export class PullPushCommand<TPulled, TPushed> {
                         options.hooks?.onFallback?.(
                             value,
                             cause,
-                            this.lastPulled,
+                            this.lastPulled
                         ),
-                    onError: (error) =>
-                        options.hooks?.onError?.(error, this.lastPulled),
+                    onError: (error) => options.hooks?.onError?.(error, this.lastPulled),
                     onComplete: options.hooks?.onComplete,
                     onAttemptError: (error, attempt) =>
                         options.hooks?.onAttemptError?.(
                             error,
                             attempt,
-                            this.lastPulled,
-                        ),
-                },
-            },
+                            this.lastPulled
+                        )
+                }
+            }
         );
     }
 

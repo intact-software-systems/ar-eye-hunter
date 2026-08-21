@@ -10,30 +10,30 @@ import { readGitRepositorySnapshot } from '../../../../scripts/governance-decisi
 const roots: string[] = [];
 
 afterEach(() => {
-  for (const root of roots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
+    for (const root of roots.splice(0)) {
+        rmSync(root, { recursive: true, force: true });
+    }
 });
 
 describe('Git repository snapshot', () => {
-  it('reads tracked blobs larger than the Node child-process default buffer', () => {
-    const root = mkdtempSync(path.join(tmpdir(), 'governance-snapshot-'));
-    roots.push(root);
-    runGit(root, ['init', '--quiet']);
-    runGit(root, ['config', 'user.name', 'Fixture']);
-    runGit(root, ['config', 'user.email', 'fixture@example.com']);
-    const content = 'x'.repeat(1_200_000);
-    writeFileSync(path.join(root, 'large.txt'), content);
-    runGit(root, ['add', '.']);
-    runGit(root, ['commit', '--quiet', '-m', 'large blob']);
-    const head = runGit(root, ['rev-parse', 'HEAD']).trim();
+    it('reads tracked blobs larger than the Node child-process default buffer', () => {
+        const root = mkdtempSync(path.join(tmpdir(), 'governance-snapshot-'));
+        roots.push(root);
+        runGit(root, ['init', '--quiet']);
+        runGit(root, ['config', 'user.name', 'Fixture']);
+        runGit(root, ['config', 'user.email', 'fixture@example.com']);
+        const content = 'x'.repeat(1_200_000);
+        writeFileSync(path.join(root, 'large.txt'), content);
+        runGit(root, ['add', '.']);
+        runGit(root, ['commit', '--quiet', '-m', 'large blob']);
+        const head = runGit(root, ['rev-parse', 'HEAD']).trim();
 
-    const snapshot = readGitRepositorySnapshot({ repoRoot: root, commitOid: head });
+        const snapshot = readGitRepositorySnapshot({ repoRoot: root, commitOid: head });
 
-    expect(snapshot.entries).toEqual([expect.objectContaining({ path: 'large.txt', content })]);
-  });
+        expect(snapshot.entries).toEqual([expect.objectContaining({ path: 'large.txt', content })]);
+    });
 });
 
 function runGit(root: string, args: string[]) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 }

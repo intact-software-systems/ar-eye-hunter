@@ -1,15 +1,15 @@
-import type {
-    ControlRetentionConfirmation,
-    ControlRetentionPreview,
-} from '../control/control-retention-validation.ts';
-import {
-    projectHistoryRetentionCandidateRows,
-    type HistoryRetentionCandidateRow,
-} from './history-model.ts';
+import type { ControlRetentionConfirmation, ControlRetentionPreview } from '../control/control-retention-validation.ts';
+import { projectHistoryRetentionCandidateRows, type HistoryRetentionCandidateRow } from './history-model.ts';
 
 export type RetentionCleanupStatus =
-    | 'idle' | 'previewing' | 'preview-ready' | 'confirming'
-    | 'succeeded' | 'drift' | 'error' | 'unavailable';
+    | 'idle'
+    | 'previewing'
+    | 'preview-ready'
+    | 'confirming'
+    | 'succeeded'
+    | 'drift'
+    | 'error'
+    | 'unavailable';
 
 export type RetentionCleanupPreview = Readonly<{
     current: boolean;
@@ -39,24 +39,26 @@ export type RetentionCleanupController = Readonly<{
     canConfirm: boolean;
     busy: boolean;
     preview(): Promise<void>;
-    confirm(afterConfirmed?: (
-        confirmation: ControlRetentionConfirmation,
-        preview: RetentionCleanupPreview,
-        signal: AbortSignal,
-    ) => void | Promise<void>): Promise<void>;
+    confirm(
+        afterConfirmed?: (
+            confirmation: ControlRetentionConfirmation,
+            preview: RetentionCleanupPreview,
+            signal: AbortSignal
+        ) => void | Promise<void>
+    ): Promise<void>;
 }>;
 
 export function sanitizeRetentionCleanupPreview(
-    raw: ControlRetentionPreview,
+    raw: ControlRetentionPreview
 ): RetentionCleanupPreview {
     const candidates = projectHistoryRetentionCandidateRows(raw.wouldDeleteRuns)
-        .map(candidate => Object.freeze({
-            ...candidate,
-            distributedRuns: Object.freeze(candidate.distributedRuns.map(run =>
-                Object.freeze({ ...run })
-            )),
-            fleetReportIds: Object.freeze([...candidate.fleetReportIds]),
-        }));
+        .map((candidate) =>
+            Object.freeze({
+                ...candidate,
+                distributedRuns: Object.freeze(candidate.distributedRuns.map((run) => Object.freeze({ ...run }))),
+                fleetReportIds: Object.freeze([...candidate.fleetReportIds])
+            })
+        );
     return Object.freeze({
         current: true,
         retainedRuns: raw.retainedRuns,
@@ -65,66 +67,70 @@ export function sanitizeRetentionCleanupPreview(
         candidates: Object.freeze(candidates),
         wouldDeleteRunIds: Object.freeze([...raw.wouldDeleteRunIds]),
         wouldDeleteDistributedRunIds: Object.freeze([
-            ...raw.wouldDeleteDistributedRunIds,
+            ...raw.wouldDeleteDistributedRunIds
         ]),
         wouldDeleteFleetReportIds: Object.freeze([
-            ...raw.wouldDeleteFleetReportIds,
+            ...raw.wouldDeleteFleetReportIds
         ]),
-        preserves: Object.freeze({ ...raw.preserves }),
+        preserves: Object.freeze({ ...raw.preserves })
     });
 }
 
 export function staleRetentionCleanupPreview(
-    value: RetentionCleanupPreview,
+    value: RetentionCleanupPreview
 ): RetentionCleanupPreview {
     return value.current ? Object.freeze({ ...value, current: false }) : value;
 }
 
 export function invalidatedRetentionCleanupState(
     previous: RetentionCleanupState,
-    reason?: string,
+    reason?: string
 ): RetentionCleanupState {
     return freezeRetentionCleanupState({
         status: 'unavailable',
         message: reason ?? 'The control connection changed. Preview cleanup again.',
         ...(previous.preview
             ? { preview: staleRetentionCleanupPreview(previous.preview) }
-            : {}),
+            : {})
     });
 }
 
 export function unavailableRetentionCleanupState(
-    reason?: string,
+    reason?: string
 ): RetentionCleanupState {
     return freezeRetentionCleanupState({
         status: 'unavailable',
-        message: reason ?? 'Retention cleanup is unavailable.',
+        message: reason ?? 'Retention cleanup is unavailable.'
     });
 }
 
 export function freezeRetentionCleanupState(
-    value: RetentionCleanupState,
+    value: RetentionCleanupState
 ): RetentionCleanupState {
     return Object.freeze(value);
 }
 
 export function freezeRetentionConfirmation(
-    value: ControlRetentionConfirmation,
+    value: ControlRetentionConfirmation
 ): ControlRetentionConfirmation {
     return Object.freeze({
         ...value,
-        deletedRunIds: Object.freeze([...value.deletedRunIds]),
+        deletedRunIds: Object.freeze([...value.deletedRunIds])
     });
 }
 
 export function isRetentionAbortError(error: unknown): boolean {
-    return Boolean(error && typeof error === 'object' &&
-        (error as { name?: unknown }).name === 'AbortError');
+    return Boolean(
+        error && typeof error === 'object' &&
+            (error as { name?: unknown; }).name === 'AbortError'
+    );
 }
 
 export function isRetentionConflict(error: unknown): boolean {
-    return Boolean(error && typeof error === 'object' &&
-        (error as { status?: unknown }).status === 409);
+    return Boolean(
+        error && typeof error === 'object' &&
+            (error as { status?: unknown; }).status === 409
+    );
 }
 
 export function retentionErrorMessage(error: unknown): string {

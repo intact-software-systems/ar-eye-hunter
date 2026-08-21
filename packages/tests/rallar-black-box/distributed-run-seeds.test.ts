@@ -1,18 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
-    DISTRIBUTED_RUN_SEEDS,
-    createSyntheticDistributedRunSeed,
-    distributedRunSeedIdFromValue,
-} from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
-import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
-    deriveRunVerdictView,
+    deriveRunVerdictView
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    deriveRtcDiagnostics,
-    deriveRtcPerformanceView,
-} from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+    createSyntheticDistributedRunSeed,
+    DISTRIBUTED_RUN_SEEDS,
+    distributedRunSeedIdFromValue
+} from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
+import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 
 function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>[0]) {
@@ -20,12 +17,12 @@ function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>
     const monitor = deriveDistributedRunMonitor({
         distributedRun: seed.distributedRun,
         controlRun: seed.controlRun,
-        artifactBundle: seed.artifactBundle,
+        artifactBundle: seed.artifactBundle
     });
     const report = deriveDistributedRunAnalysisReport({
         distributedRun: seed.distributedRun,
         controlRun: seed.controlRun,
-        artifactBundle: seed.artifactBundle,
+        artifactBundle: seed.artifactBundle
     });
     return {
         seed,
@@ -36,8 +33,8 @@ function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>
             monitor,
             report,
             artifactBundle: seed.artifactBundle,
-            refreshedAtEpochMs: seed.generatedAtEpochMs,
-        }),
+            refreshedAtEpochMs: seed.generatedAtEpochMs
+        })
     };
 }
 
@@ -52,24 +49,24 @@ function emptyRtcState(): RallarBlackBoxTestState {
             roomId: 'seed-room',
             transport: 'realtime',
             control: {
-                providerMode: 'browser-rallar',
-            },
+                providerMode: 'browser-rallar'
+            }
         },
         commandHistory: [],
         events: [],
         failures: [],
-        resultCache: {},
+        resultCache: {}
     };
 }
 
 describe('synthetic distributed run seeds', () => {
     it('lists deterministic app-local seed metadata and normalizes seed ids', () => {
-        expect(DISTRIBUTED_RUN_SEEDS.map(seed => seed.id)).toEqual([
+        expect(DISTRIBUTED_RUN_SEEDS.map((seed) => seed.id)).toEqual([
             'passed-clean',
             'passed-warnings',
             'failed-command',
             'high-latency-rtc',
-            'artifact-missing',
+            'artifact-missing'
         ]);
 
         expect(distributedRunSeedIdFromValue('failed-command')).toBe('failed-command');
@@ -92,7 +89,7 @@ describe('synthetic distributed run seeds', () => {
             title: 'Outcome passed',
             verdict: 'passed',
             tone: 'good',
-            artifactStatus: 'valid',
+            artifactStatus: 'valid'
         });
         expect(verdict.warningSignals).toEqual([]);
         expect(monitor.artifact.status).toBe('valid');
@@ -104,7 +101,7 @@ describe('synthetic distributed run seeds', () => {
         expect(verdict).toMatchObject({
             title: 'Outcome passed; evidence needs review',
             verdict: 'passed',
-            tone: 'warn',
+            tone: 'warn'
         });
         expect(verdict.warningSignals.join(' ')).toContain('Evidence warning');
     });
@@ -116,14 +113,14 @@ describe('synthetic distributed run seeds', () => {
             title: 'Outcome failed',
             verdict: 'failed',
             tone: 'bad',
-            likelyCause: 'Receiver did not observe the RTC payload.',
+            likelyCause: 'Receiver did not observe the RTC payload.'
         });
         expect(verdict.causalTrail).toContainEqual(expect.objectContaining({
             kind: 'command-result',
             commandId: 'seed-start-receiver',
             agentId: 'seed-agent-b',
             targetKind: 'command',
-            targetId: 'seed-start-receiver',
+            targetId: 'seed-start-receiver'
         }));
     });
 
@@ -134,7 +131,7 @@ describe('synthetic distributed run seeds', () => {
             title: 'Outcome passed; evidence needs review',
             verdict: 'passed',
             tone: 'warn',
-            artifactStatus: 'not-loaded',
+            artifactStatus: 'not-loaded'
         });
         expect(verdict.warningSignals.join(' ')).toContain('Evidence warning: artifact not loaded');
     });
@@ -146,20 +143,20 @@ describe('synthetic distributed run seeds', () => {
             diagnostics: deriveRtcDiagnostics(state),
             state,
             distributedMonitor: monitor,
-            histogramBucketCount: 4,
+            histogramBucketCount: 4
         });
 
-        expect(performance.scatter.map(point => [point.commandId, point.source, point.agentId])).toEqual([
+        expect(performance.scatter.map((point) => [point.commandId, point.source, point.agentId])).toEqual([
             ['seed-agent-a', 'distributed-agent', 'seed-agent-a'],
             ['seed-agent-b', 'distributed-agent', 'seed-agent-b'],
-            ['seed-agent-c', 'distributed-agent', 'seed-agent-c'],
+            ['seed-agent-c', 'distributed-agent', 'seed-agent-c']
         ]);
         expect(performance.histogram.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(3);
         expect(performance.summary.p95Ms).toBeGreaterThanOrEqual(900);
-        expect(performance.agentMatrix.map(cell => [cell.laneId, cell.metric])).toEqual(expect.arrayContaining([
+        expect(performance.agentMatrix.map((cell) => [cell.laneId, cell.metric])).toEqual(expect.arrayContaining([
             ['seed-agent-a', 'expected'],
             ['seed-agent-b', 'active'],
-            ['seed-agent-c', 'observed'],
+            ['seed-agent-c', 'observed']
         ]));
     });
 });

@@ -1,6 +1,7 @@
-import type { ControlFleetFailureSignature } from
-    '@shared-test/rallar-bb-test/fleet-report.ts';
+import type { ControlFleetFailureSignature } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import { useCallback } from 'react';
+import type { RecipeConsoleFleetMapLayer } from '../routing/url-state-contract.ts';
+import { resolveFleetFailureRunEvidence } from './fleet-failure-evidence.ts';
 import {
     fleetAffectedAgentPatch,
     fleetMapLayerTogglePatch,
@@ -8,86 +9,86 @@ import {
     fleetReportAnalyzePatch,
     fleetReportMonitorPatch,
     fleetReportSelectionPatch,
-    fleetReportTuneHistoryPatch,
+    fleetReportTuneHistoryPatch
 } from './fleet-url-patches.ts';
 import type { FleetWorkspaceProps } from './fleet-workspace-contract.ts';
 import type { FleetWorkspaceController } from './use-fleet-workspace.ts';
-import type { RecipeConsoleFleetMapLayer } from
-    '../routing/url-state-contract.ts';
-import { resolveFleetFailureRunEvidence } from
-    './fleet-failure-evidence.ts';
 
 export function useFleetWorkspaceActions(
     input: FleetWorkspaceProps,
-    workspace: FleetWorkspaceController,
+    workspace: FleetWorkspaceController
 ) {
     const selectAgent = useCallback((
         agentId: string,
-        trigger: HTMLButtonElement,
+        trigger: HTMLButtonElement
     ) => {
         input.navigate(fleetAffectedAgentPatch(agentId));
         input.onInspect(trigger);
     }, [input.navigate, input.onInspect]);
     const selectRegion = useCallback((
         region: string | undefined,
-        trigger: HTMLButtonElement,
+        trigger: HTMLButtonElement
     ) => {
         input.navigate(fleetRegionSelectionPatch(region));
         input.onInspect(trigger);
     }, [input.navigate, input.onInspect]);
-    const selectReport = useCallback((report: Parameters<
-        typeof fleetReportSelectionPatch
-    >[0]) => input.navigate(fleetReportSelectionPatch(report)), [input.navigate]);
+    const selectReport = useCallback((
+        report: Parameters<typeof fleetReportSelectionPatch>[0]
+    ) => input.navigate(fleetReportSelectionPatch(report)), [input.navigate]);
     const selectReportAndInspect = useCallback((
         report: Parameters<typeof fleetReportSelectionPatch>[0],
-        trigger: HTMLButtonElement,
+        trigger: HTMLButtonElement
     ) => {
         input.navigate(fleetReportSelectionPatch(report));
         input.onInspect(trigger);
     }, [input.navigate, input.onInspect]);
     const openMonitor = useCallback((
         report: Parameters<typeof fleetReportMonitorPatch>[0],
-        agentId?: string,
+        agentId?: string
     ) => input.navigate(fleetReportMonitorPatch(report, agentId)), [input.navigate]);
     const openAnalyze = useCallback((
         report: Parameters<typeof fleetReportAnalyzePatch>[0],
-        agentId?: string,
+        agentId?: string
     ) => input.navigate(fleetReportAnalyzePatch(report, agentId)), [input.navigate]);
     const openFailureRun = useCallback((
         failure: ControlFleetFailureSignature,
         runId: string,
-        _trigger: HTMLButtonElement,
+        _trigger: HTMLButtonElement
     ) => {
         const evidence = resolveFleetFailureRunEvidence({
             failure,
             preferredRunId: runId,
-            reports: workspace.model.reports.items,
+            reports: workspace.model.reports.items
         });
-        if (evidence) input.navigate(fleetReportMonitorPatch(
-            evidence.report,
-            evidence.agentId,
-        ));
+        if (evidence) {
+            input.navigate(fleetReportMonitorPatch(
+                evidence.report,
+                evidence.agentId
+            ));
+        }
     }, [input.navigate, workspace.model.reports.items]);
     const openHistory = useCallback((
         failure: ControlFleetFailureSignature,
-        _trigger: HTMLButtonElement,
+        _trigger: HTMLButtonElement
     ) => {
         const evidence = resolveFleetFailureRunEvidence({
             failure,
-            reports: workspace.model.reports.items,
+            reports: workspace.model.reports.items
         });
-        if (evidence) input.navigate(fleetReportTuneHistoryPatch(
-            evidence.report,
-            failure,
-        ));
+        if (evidence) {
+            input.navigate(fleetReportTuneHistoryPatch(
+                evidence.report,
+                failure
+            ));
+        }
     }, [input.navigate, workspace.model.reports.items]);
     const toggleMapLayer = useCallback((
         layer: RecipeConsoleFleetMapLayer,
-        enabled: boolean,
+        enabled: boolean
     ) => input.navigate(fleetMapLayerTogglePatch(
         input.urlState.fleetMapLayers,
         layer,
-        enabled,
+        enabled
     )), [input.navigate, input.urlState.fleetMapLayers]);
 
     return {
@@ -99,6 +100,6 @@ export function useFleetWorkspaceActions(
         selectRegion,
         selectReport,
         selectReportAndInspect,
-        toggleMapLayer,
+        toggleMapLayer
     } as const;
 }

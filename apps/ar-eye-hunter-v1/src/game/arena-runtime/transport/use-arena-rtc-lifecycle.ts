@@ -1,17 +1,17 @@
-import { useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import { useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
+import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
     GAME_AI_LANE_ID,
     GAME_COMBAT_LANE_ID,
     GAME_FX_LANE_ID,
     GAME_MOTION_LANE_ID,
-    type RtcLaneStatus,
+    type RtcLaneStatus
 } from '../../types.ts';
-import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
 
 interface ArenaRtcLifecycleInput {
@@ -24,7 +24,7 @@ interface ArenaRtcLifecycleInput {
     readonly rtcLanes: readonly RtcLaneStatus[];
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
-        generation?: number,
+        generation?: number
     ) => void;
     readonly setGameDiagnostics: Dispatch<SetStateAction<RallarGameDiagnostics | undefined>>;
     readonly setRtcLanes: Dispatch<SetStateAction<readonly RtcLaneStatus[]>>;
@@ -43,7 +43,7 @@ export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
         runBestEffortNetworkTask,
         setGameDiagnostics,
         setRtcLanes,
-        snapshotLaneReadySyncKeyRef,
+        snapshotLaneReadySyncKeyRef
     } = input;
 
     useEffect(() => {
@@ -58,7 +58,7 @@ export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
             GAME_COMBAT_LANE_ID,
             GAME_SNAPSHOT_LANE_ID,
             GAME_FX_LANE_ID,
-            GAME_AI_LANE_ID,
+            GAME_AI_LANE_ID
         ] as const;
         const generation = networkGenerationRef.current;
         const controller = new AbortController();
@@ -77,7 +77,7 @@ export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
                     const readiness = await rallar.rtc.waitForRoomLane(roomId, laneId, {
                         connect: true,
                         timeoutMs: 650,
-                        signal,
+                        signal
                     });
                     next.push({
                         laneId,
@@ -87,14 +87,15 @@ export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
                             ? 'partial'
                             : 'closed',
                         readyPeers: readiness.ready.length,
-                        notReadyPeers: readiness.notReady.length,
+                        notReadyPeers: readiness.notReady.length
                     });
-                } catch {
+                }
+                catch {
                     next.push({
                         laneId,
                         status: 'unavailable',
                         readyPeers: 0,
-                        notReadyPeers: 0,
+                        notReadyPeers: 0
                     });
                 }
             }
@@ -139,7 +140,7 @@ export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
             const readiness = await match.waitForReadyLanes({
                 laneIds: [GAME_SNAPSHOT_LANE_ID],
                 expect: { min: 1 },
-                timeoutMs: 650,
+                timeoutMs: 650
             });
             if (
                 arenaMatchRef.current !== match ||
@@ -156,6 +157,6 @@ export function useArenaRtcLifecycle(input: ArenaRtcLifecycleInput): void {
         isCurrentNetworkGeneration,
         isNetworkEnabled,
         rtcLanes,
-        runBestEffortNetworkTask,
+        runBestEffortNetworkTask
     ]);
 }

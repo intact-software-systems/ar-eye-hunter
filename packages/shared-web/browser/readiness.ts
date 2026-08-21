@@ -1,7 +1,7 @@
 export type RallarReadinessExpectation =
-    | Readonly<{ min: number; max?: number }>
-    | Readonly<{ exact: number }>
-    | Readonly<{ sessionIds: readonly string[]; allowExtras?: boolean }>;
+    | Readonly<{ min: number; max?: number; }>
+    | Readonly<{ exact: number; }>
+    | Readonly<{ sessionIds: readonly string[]; allowExtras?: boolean; }>;
 
 export type RallarNormalizedReadinessExpectation = Readonly<{
     min?: number;
@@ -31,7 +31,7 @@ export type RallarReadinessEvaluation = Readonly<{
 }>;
 
 export function normalizeRallarReadinessExpectation(
-    expectation: RallarReadinessExpectation | undefined,
+    expectation: RallarReadinessExpectation | undefined
 ): RallarNormalizedReadinessExpectation {
     if (!expectation) {
         return { min: 1, allowExtras: true };
@@ -40,14 +40,14 @@ export function normalizeRallarReadinessExpectation(
     if ('sessionIds' in expectation) {
         return {
             sessionIds: uniqueSortedSessionIds(expectation.sessionIds),
-            allowExtras: expectation.allowExtras ?? true,
+            allowExtras: expectation.allowExtras ?? true
         };
     }
 
     if ('exact' in expectation) {
         return {
             exact: normalizeNonNegativeInteger(expectation.exact, 'exact'),
-            allowExtras: false,
+            allowExtras: false
         };
     }
 
@@ -57,7 +57,7 @@ export function normalizeRallarReadinessExpectation(
         : normalizeNonNegativeInteger(expectation.max, 'max');
     if (max !== undefined && max < min) {
         throw new Error(
-            'Rallar readiness expectation max must be greater than or equal to min.',
+            'Rallar readiness expectation max must be greater than or equal to min.'
         );
     }
 
@@ -66,7 +66,7 @@ export function normalizeRallarReadinessExpectation(
 
 export function evaluateRallarReadinessExpectation(
     observedSessionIds: readonly string[],
-    expectation: RallarNormalizedReadinessExpectation,
+    expectation: RallarNormalizedReadinessExpectation
 ): RallarReadinessEvaluation {
     const observed = uniqueSortedSessionIds(observedSessionIds);
     const observedSet = new Set(observed);
@@ -84,7 +84,7 @@ export function evaluateRallarReadinessExpectation(
                 observed,
                 missingSessionIds,
                 extraSessionIds,
-                expectedSessionIds.length,
+                expectedSessionIds.length
             );
         }
         if (!expectation.allowExtras && extraSessionIds.length > 0) {
@@ -93,7 +93,7 @@ export function evaluateRallarReadinessExpectation(
                 observed,
                 missingSessionIds,
                 extraSessionIds,
-                expectedSessionIds.length,
+                expectedSessionIds.length
             );
         }
         return toEvaluation(
@@ -103,7 +103,7 @@ export function evaluateRallarReadinessExpectation(
             observed,
             missingSessionIds,
             extraSessionIds,
-            expectedSessionIds.length,
+            expectedSessionIds.length
         );
     }
 
@@ -114,7 +114,7 @@ export function evaluateRallarReadinessExpectation(
                 observed,
                 [],
                 [],
-                expectation.exact,
+                expectation.exact
             );
         }
         if (observed.length > expectation.exact) {
@@ -123,7 +123,7 @@ export function evaluateRallarReadinessExpectation(
                 observed,
                 [],
                 observed.slice(expectation.exact),
-                expectation.exact,
+                expectation.exact
             );
         }
         return toEvaluation(
@@ -131,7 +131,7 @@ export function evaluateRallarReadinessExpectation(
             observed,
             [],
             [],
-            expectation.exact,
+            expectation.exact
         );
     }
 
@@ -142,7 +142,7 @@ export function evaluateRallarReadinessExpectation(
             observed,
             [],
             observed.slice(expectation.max),
-            min,
+            min
         );
     }
     if (observed.length >= min) {
@@ -151,7 +151,7 @@ export function evaluateRallarReadinessExpectation(
             observed,
             [],
             [],
-            min,
+            min
         );
     }
     return toEvaluation(
@@ -159,7 +159,7 @@ export function evaluateRallarReadinessExpectation(
         observed,
         [],
         [],
-        min,
+        min
     );
 }
 
@@ -168,7 +168,7 @@ function toEvaluation(
     observedSessionIds: readonly string[],
     missingSessionIds: readonly string[],
     extraSessionIds: readonly string[],
-    expectedCount?: number,
+    expectedCount?: number
 ): RallarReadinessEvaluation {
     return {
         status,
@@ -176,7 +176,7 @@ function toEvaluation(
         missingSessionIds,
         extraSessionIds,
         observedCount: observedSessionIds.length,
-        expectedCount,
+        expectedCount
     };
 }
 
@@ -187,7 +187,7 @@ function uniqueSortedSessionIds(sessionIds: readonly string[]): readonly string[
 function normalizeNonNegativeInteger(value: number, name: string): number {
     if (!Number.isInteger(value) || value < 0) {
         throw new Error(
-            `Rallar readiness expectation ${name} must be a non-negative integer.`,
+            `Rallar readiness expectation ${name} must be a non-negative integer.`
         );
     }
     return value;

@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createPSqlALInboundRuntimeStores, createPSqlALOutboundRuntimeStores } from '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts';
+import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
+import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 import {
     ALInboundMessageRuntime,
     ALOutboundMessageRuntime,
@@ -7,14 +9,9 @@ import {
     InMemoryQueueBox,
     newALUnicastMessage,
     planALMessageHandling,
-    QueueBoxUtilities,
+    QueueBoxUtilities
 } from '@shared/mod.ts';
-import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
-import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
-import {
-    createPSqlALInboundRuntimeStores,
-    createPSqlALOutboundRuntimeStores,
-} from '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -28,7 +25,7 @@ describe('PSql admission optimistic retry', () => {
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 60_000,
-            supersedenceTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000
         });
         repository.conflictNextConditionalWrite = true;
 
@@ -38,8 +35,8 @@ describe('PSql admission optimistic retry', () => {
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'inbound-conflict',
-                senderId: 'peer-1',
-            }],
+                senderId: 'peer-1'
+            }]
         })).resolves.toBe('conflict');
     });
 
@@ -51,7 +48,7 @@ describe('PSql admission optimistic retry', () => {
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 60_000,
-            supersedenceTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000
         });
         repository.errorNextConditionalWrite = new Error('inbound storage unavailable');
 
@@ -61,8 +58,8 @@ describe('PSql admission optimistic retry', () => {
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'inbound-error',
-                senderId: 'peer-1',
-            }],
+                senderId: 'peer-1'
+            }]
         })).rejects.toThrow('inbound storage unavailable');
     });
 
@@ -78,7 +75,7 @@ describe('PSql admission optimistic retry', () => {
                 overlayNeighborPeerIds: [],
                 dedupStore: stores.dedupStore,
                 orderingStore: stores.orderingStore,
-                supersedenceStore: stores.supersedenceStore,
+                supersedenceStore: stores.supersedenceStore
             })
         );
         const compute = vi.spyOn(ALInboundMessageRuntime, 'computeAdmission');
@@ -90,7 +87,7 @@ describe('PSql admission optimistic retry', () => {
             readStoredEntry: (entry) => JSON.parse(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
             dispatchInboxEntry: () => Promise.resolve(undefined),
-            sendControlMessage: () => Promise.resolve(undefined),
+            sendControlMessage: () => Promise.resolve(undefined)
         });
         repository.conflictNextConditionalWrite = true;
         const msg = newALUnicastMessage(
@@ -98,7 +95,7 @@ describe('PSql admission optimistic retry', () => {
             { topicId: 'chat', resourceId: 'inbound-runtime-retry', contextId: 'chat-1' },
             'self',
             'chat.private-text.v1',
-            { text: 'retry' },
+            { text: 'retry' }
         );
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
@@ -107,10 +104,12 @@ describe('PSql admission optimistic retry', () => {
         expect(plan).toHaveBeenCalledTimes(4);
         expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:inbound:admission`;
-        expect(await repository.findEntry(
-            admissionNamespace,
-            `${admissionNamespace}:version:peer-1`,
-        )).toBeDefined();
+        expect(
+            await repository.findEntry(
+                admissionNamespace,
+                `${admissionNamespace}:version:peer-1`
+            )
+        ).toBeDefined();
         runtime.dispose();
     });
 
@@ -121,7 +120,7 @@ describe('PSql admission optimistic retry', () => {
             kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000
         });
         repository.conflictNextConditionalWrite = true;
 
@@ -131,9 +130,9 @@ describe('PSql admission optimistic retry', () => {
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'outbound-conflict',
-                senderId: 'self',
+                senderId: 'self'
             }],
-            durableEffects: [],
+            durableEffects: []
         })).resolves.toBe('conflict');
     });
 
@@ -144,7 +143,7 @@ describe('PSql admission optimistic retry', () => {
             kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000
         });
         repository.errorNextConditionalWrite = new Error('outbound storage unavailable');
 
@@ -154,9 +153,9 @@ describe('PSql admission optimistic retry', () => {
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'outbound-error',
-                senderId: 'self',
+                senderId: 'self'
             }],
-            durableEffects: [],
+            durableEffects: []
         })).rejects.toThrow('outbound storage unavailable');
     });
 
@@ -171,12 +170,12 @@ describe('PSql admission optimistic retry', () => {
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => JSON.parse(entry.resource),
             planOutgoingMessage: plan,
-            sendPreparedMessage: () => Promise.resolve(undefined),
+            sendPreparedMessage: () => Promise.resolve(undefined)
         });
         repository.conflictNextConditionalWrite = true;
 
         const result = await runtime.enqueueIfAbsent(
-            createOutboundMessage('outbound-runtime-retry'),
+            createOutboundMessage('outbound-runtime-retry')
         );
 
         expect(result.status).toBe('enqueued');
@@ -184,13 +183,14 @@ describe('PSql admission optimistic retry', () => {
         expect(plan).toHaveBeenCalledTimes(2);
         expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:outbound:admission`;
-        expect(await repository.findEntry(
-            admissionNamespace,
-            `${admissionNamespace}:version:self`,
-        )).toBeDefined();
+        expect(
+            await repository.findEntry(
+                admissionNamespace,
+                `${admissionNamespace}:version:self`
+            )
+        ).toBeDefined();
         runtime.dispose();
     });
-
 });
 
 function createOutboundMessage(resourceId: string) {
@@ -199,6 +199,6 @@ function createOutboundMessage(resourceId: string) {
         { topicId: 'chat', resourceId, contextId: 'chat-1' },
         'peer-1',
         'chat.private-text.v1',
-        { text: 'hello' },
+        { text: 'hello' }
     );
 }

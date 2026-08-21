@@ -37,6 +37,6 @@ export function createTuneRunCatalogWork(): MutableTuneRunCatalogWork {
         controlPairLookups: 0,
         performanceDerivations: 0,
         retainedArtifactProjections: 0,
-        retainedFacadeProjections: 0,
+        retainedFacadeProjections: 0
     };
 }

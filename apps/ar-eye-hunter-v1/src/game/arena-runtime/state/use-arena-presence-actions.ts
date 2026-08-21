@@ -1,19 +1,14 @@
-import { useCallback } from 'react';
-import type { RefObject } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { shouldSendRallarMotionSample } from '@shared/rallar-motion/mod.ts';
+import { useCallback } from 'react';
+import type { RefObject } from 'react';
 
-import { colorForId } from '../../color.ts';
 import { createDeterministicAvatarProfile } from '../../avatarProfile.ts';
-import {
-    GAME_MOTION_LANE_ID,
-    GAME_PROTOCOL,
-    type GameRealtimeMessage,
-    type PlayerPose,
-} from '../../types.ts';
-import type { ArenaConnection } from '../arena-connection-contracts.ts';
 import type { AvatarProfile } from '../../avatarProfile.ts';
+import { colorForId } from '../../color.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import { GAME_MOTION_LANE_ID, GAME_PROTOCOL, type GameRealtimeMessage, type PlayerPose } from '../../types.ts';
+import type { ArenaConnection } from '../arena-connection-contracts.ts';
 
 interface ArenaPresenceActionsInput {
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
@@ -24,13 +19,13 @@ interface ArenaPresenceActionsInput {
     readonly roomIdRef: RefObject<string | undefined>;
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
-        generation?: number,
+        generation?: number
     ) => void;
     readonly sessionRef: RefObject<AuthSession | undefined>;
 }
 
 export function useArenaPresenceActions(
-    input: ArenaPresenceActionsInput,
+    input: ArenaPresenceActionsInput
 ): Pick<ArenaConnection, 'sendPose'> {
     const {
         arenaMatchRef,
@@ -40,11 +35,11 @@ export function useArenaPresenceActions(
         poseSendBudget,
         roomIdRef,
         runBestEffortNetworkTask,
-        sessionRef,
+        sessionRef
     } = input;
 
     const sendPose = useCallback((
-        pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>,
+        pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>
     ) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
@@ -67,18 +62,18 @@ export function useArenaPresenceActions(
             avatarProfile: localAvatarProfileRef.current ??
                 createDeterministicAvatarProfile(
                     currentSession.sessionId,
-                    currentSession.username,
-                ),
+                    currentSession.username
+                )
         };
         const input: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'player-pose-intent',
-            pose: fullPose,
+            pose: fullPose
         };
         const presence: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'player-pose',
-            pose: fullPose,
+            pose: fullPose
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
@@ -90,7 +85,7 @@ export function useArenaPresenceActions(
                 laneId: GAME_MOTION_LANE_ID,
                 key: `pose:${currentSession.sessionId}`,
                 maxAgeMs: 250,
-                openTimeoutMs: 1500,
+                openTimeoutMs: 1500
             }), generation);
     }, [isNetworkEnabled, runBestEffortNetworkTask]);
 

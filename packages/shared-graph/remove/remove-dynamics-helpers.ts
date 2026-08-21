@@ -1,5 +1,5 @@
-import { cloneGraph } from '../graph/graph-algs.ts';
 import { VertexId, VertexState, WeightedGraph } from '../graph-props.ts';
+import { cloneGraph } from '../graph/graph-algs.ts';
 
 export function neighborsOf(graph: WeightedGraph, node: VertexId): VertexId[] {
     return graph.neighbors(node) as VertexId[];
@@ -37,7 +37,7 @@ export function withInsertedEdgeFromGlobal(
     graph: WeightedGraph,
     globalGraph: WeightedGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): WeightedGraph {
     const next = cloneGraph(graph);
 
@@ -52,7 +52,7 @@ export function withInsertedEdgeFromGlobal(
         next.addEdge(a, b, {
             from: a,
             to: b,
-            weight: edgeWeightOf(globalGraph, a, b),
+            weight: edgeWeightOf(globalGraph, a, b)
         });
     }
 
@@ -68,7 +68,9 @@ export function withUnusedSteinerRemoved(graph: WeightedGraph): WeightedGraph {
 
         for (const node of [...next.nodes()] as VertexId[]) {
             const attrs = next.getNodeAttributes(node);
-            if (attrs.state !== VertexState.STEINER) continue;
+            if (attrs.state !== VertexState.STEINER) {
+                continue;
+            }
 
             if (next.degree(node) <= 1) {
                 next.dropNode(node);

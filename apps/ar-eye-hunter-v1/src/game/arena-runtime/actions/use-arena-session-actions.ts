@@ -1,18 +1,18 @@
-import { useCallback, useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
+import { useCallback, useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { GAME_ROOM_NAME } from '../../types.ts';
-import { toErrorMessage } from '../arena-connection-helpers.ts';
 import type {
     ArenaConnection,
     ArenaConnectionState,
     DirectorAttemptSource,
-    DirectorAttemptState,
+    DirectorAttemptState
 } from '../arena-connection-contracts.ts';
+import { toErrorMessage } from '../arena-connection-helpers.ts';
 
 interface ArenaSessionActionsInput {
     readonly attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
@@ -35,7 +35,7 @@ interface ArenaSessionActionsInput {
 }
 
 export function useArenaSessionActions(
-    input: ArenaSessionActionsInput,
+    input: ArenaSessionActionsInput
 ): Pick<
     ArenaConnection,
     | 'login'
@@ -63,7 +63,7 @@ export function useArenaSessionActions(
         setError,
         setRoomId,
         setRooms,
-        setSession,
+        setSession
     } = input;
 
     const refreshRooms = useCallback(async () => {
@@ -85,7 +85,8 @@ export function useArenaSessionActions(
             const response = await rallar.auth.login({ username, password });
             setSession(response);
             await connect();
-        } catch (err) {
+        }
+        catch (err) {
             setConnectionState('error');
             setError(toErrorMessage(err instanceof Error ? err : new Error(String(err))));
         }
@@ -94,7 +95,7 @@ export function useArenaSessionActions(
     const register = useCallback(async (
         username: string,
         password: string,
-        displayName?: string,
+        displayName?: string
     ) => {
         setConnectionState('connecting');
         setError(undefined);
@@ -102,11 +103,12 @@ export function useArenaSessionActions(
             const response = await rallar.auth.registerAndLogin({
                 username,
                 password,
-                displayName: displayName || username,
+                displayName: displayName || username
             });
             setSession(response);
             await connect();
-        } catch (err) {
+        }
+        catch (err) {
             setConnectionState('error');
             setError(toErrorMessage(err instanceof Error ? err : new Error(String(err))));
         }
@@ -116,9 +118,11 @@ export function useArenaSessionActions(
         resetForSignedOutAuth();
         try {
             await rallar.auth.logout();
-        } catch {
+        }
+        catch {
             // Manual logout is best-effort; the facade performs local cleanup first.
-        } finally {
+        }
+        finally {
             resetForSignedOutAuth();
         }
     }, [resetForSignedOutAuth]);
@@ -131,10 +135,10 @@ export function useArenaSessionActions(
             baseName: GAME_ROOM_NAME,
             theme: 'ar-eye-hunter',
             seed: createRallarAiRoomNameSeed('ar-eye-hunter'),
-            existingNames: rooms.map((room) => room.name),
+            existingNames: rooms.map((room) => room.name)
         });
         const snapshot = await rallar.rooms.createAndSwitch({
-            displayName,
+            displayName
         });
         if (!sessionRef.current) {
             return;
@@ -194,6 +198,6 @@ export function useArenaSessionActions(
         refreshRooms,
         createArenaRoom,
         joinRoom,
-        appointSelfAsDirector,
+        appointSelfAsDirector
     };
 }

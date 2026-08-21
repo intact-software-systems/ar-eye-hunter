@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
-    createRallarMatchResultIdempotencyKey,
     createRallarMatchResult,
+    createRallarMatchResultIdempotencyKey,
     deriveRallarMatchDiagnostics,
     deriveRallarMatchParticipants,
-    deriveRallarMatchStandings,
+    deriveRallarMatchStandings
 } from '@shared/rallar-match/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 if (false) {
     createRallarMatchResult({
@@ -15,7 +15,7 @@ if (false) {
         roomRef: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-1',
+            groupId: 'room-1'
         },
         protocol: 'example.match.v1',
         authority: { kind: 'server', id: 'server-1', epoch: 1 },
@@ -23,7 +23,7 @@ if (false) {
         trust: 'server-validated',
         finishedAtEpochMs: 2_000,
         standings: [],
-        summary: {},
+        summary: {}
     });
 
     // @ts-expect-error Room-trusted results require browser-director authority.
@@ -33,14 +33,14 @@ if (false) {
         roomRef: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-1',
+            groupId: 'room-1'
         },
         protocol: 'example.match.v1',
         authority: { kind: 'server', id: 'server-1', epoch: 1 },
         trust: 'room-trusted',
         finishedAtEpochMs: 2_000,
         standings: [],
-        summary: {},
+        summary: {}
     });
 }
 
@@ -54,7 +54,7 @@ describe('Rallar match shared helpers', () => {
                     groupId: 'room-1',
                     principalId: 'principal-b',
                     role: 'member',
-                    status: 'active',
+                    status: 'active'
                 },
                 {
                     applicationId: 'app-1',
@@ -62,7 +62,7 @@ describe('Rallar match shared helpers', () => {
                     groupId: 'room-1',
                     principalId: 'principal-a',
                     role: 'owner',
-                    status: 'active',
+                    status: 'active'
                 },
                 {
                     applicationId: 'app-1',
@@ -70,8 +70,8 @@ describe('Rallar match shared helpers', () => {
                     groupId: 'room-1',
                     principalId: 'principal-removed',
                     role: 'member',
-                    status: 'removed',
-                },
+                    status: 'removed'
+                }
             ],
             activeSessions: [
                 {
@@ -79,16 +79,16 @@ describe('Rallar match shared helpers', () => {
                     workspaceId: 'workspace-1',
                     groupId: 'room-1',
                     principalId: 'principal-a',
-                    sessionId: 'session-a2',
+                    sessionId: 'session-a2'
                 },
                 {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
                     groupId: 'room-1',
                     principalId: 'principal-a',
-                    sessionId: 'session-a1',
-                },
-            ],
+                    sessionId: 'session-a1'
+                }
+            ]
         } as unknown as GroupSnapshot;
 
         expect(deriveRallarMatchParticipants({ snapshot })).toEqual([
@@ -98,7 +98,7 @@ describe('Rallar match shared helpers', () => {
                 role: 'owner',
                 status: 'active',
                 online: true,
-                sessionIds: ['session-a1', 'session-a2'],
+                sessionIds: ['session-a1', 'session-a2']
             },
             {
                 participantId: 'principal-b',
@@ -106,8 +106,8 @@ describe('Rallar match shared helpers', () => {
                 role: 'member',
                 status: 'active',
                 online: false,
-                sessionIds: [],
-            },
+                sessionIds: []
+            }
         ]);
     });
 
@@ -120,17 +120,17 @@ describe('Rallar match shared helpers', () => {
                     groupId: 'room-1',
                     principalId: 'principal-a',
                     role: 'member',
-                    status: 'active',
-                },
+                    status: 'active'
+                }
             ],
-            activeSessions: [],
+            activeSessions: []
         } as unknown as GroupSnapshot;
 
         expect(
             deriveRallarMatchParticipants({
                 snapshot,
-                resolveParticipantId: ({ principalId }) => `seat:${principalId}`,
-            })[0]?.participantId,
+                resolveParticipantId: ({ principalId }) => `seat:${principalId}`
+            })[0]?.participantId
         ).toBe('seat:principal-a');
     });
 
@@ -142,25 +142,25 @@ describe('Rallar match shared helpers', () => {
                         participantId: 'b',
                         principalId: 'principal-b',
                         sessionIds: ['session-b'],
-                        metrics: { points: 10, objectives: 1 },
+                        metrics: { points: 10, objectives: 1 }
                     },
                     {
                         participantId: 'a',
                         principalId: 'principal-a',
                         sessionIds: ['session-a'],
-                        metrics: { points: 10, objectives: 1 },
+                        metrics: { points: 10, objectives: 1 }
                     },
                     {
                         participantId: 'c',
                         principalId: 'principal-c',
                         sessionIds: ['session-c'],
-                        metrics: { points: 4, objectives: 3 },
-                    },
+                        metrics: { points: 4, objectives: 3 }
+                    }
                 ],
                 compare: (left, right) =>
                     right.metrics.points - left.metrics.points ||
-                    right.metrics.objectives - left.metrics.objectives,
-            }),
+                    right.metrics.objectives - left.metrics.objectives
+            })
         ).toEqual([
             {
                 participantId: 'a',
@@ -168,7 +168,7 @@ describe('Rallar match shared helpers', () => {
                 sessionIds: ['session-a'],
                 rank: 1,
                 tieGroup: 1,
-                metrics: { points: 10, objectives: 1 },
+                metrics: { points: 10, objectives: 1 }
             },
             {
                 participantId: 'b',
@@ -176,7 +176,7 @@ describe('Rallar match shared helpers', () => {
                 sessionIds: ['session-b'],
                 rank: 1,
                 tieGroup: 1,
-                metrics: { points: 10, objectives: 1 },
+                metrics: { points: 10, objectives: 1 }
             },
             {
                 participantId: 'c',
@@ -184,48 +184,52 @@ describe('Rallar match shared helpers', () => {
                 sessionIds: ['session-c'],
                 rank: 3,
                 tieGroup: 2,
-                metrics: { points: 4, objectives: 3 },
-            },
+                metrics: { points: 4, objectives: 3 }
+            }
         ]);
     });
 
     it('orders participant and tied standing IDs by canonical ordinal value', () => {
         const escapedUnicodeId = '\u00e4';
 
-        expect(deriveRallarMatchParticipants({
-            members: [
-                {
-                    participantId: escapedUnicodeId,
-                    online: false,
-                    sessionIds: [],
-                },
-                {
-                    participantId: 'z',
-                    online: false,
-                    sessionIds: [],
-                },
-            ],
-        }).map((participant) => participant.participantId)).toEqual([
+        expect(
+            deriveRallarMatchParticipants({
+                members: [
+                    {
+                        participantId: escapedUnicodeId,
+                        online: false,
+                        sessionIds: []
+                    },
+                    {
+                        participantId: 'z',
+                        online: false,
+                        sessionIds: []
+                    }
+                ]
+            }).map((participant) => participant.participantId)
+        ).toEqual([
             'z',
-            escapedUnicodeId,
+            escapedUnicodeId
         ]);
 
-        expect(deriveRallarMatchStandings({
-            rows: [
-                {
-                    participantId: escapedUnicodeId,
-                    sessionIds: [],
-                    metrics: { points: 1 },
-                },
-                {
-                    participantId: 'z',
-                    sessionIds: [],
-                    metrics: { points: 1 },
-                },
-            ],
-        }).map((standing) => standing.participantId)).toEqual([
+        expect(
+            deriveRallarMatchStandings({
+                rows: [
+                    {
+                        participantId: escapedUnicodeId,
+                        sessionIds: [],
+                        metrics: { points: 1 }
+                    },
+                    {
+                        participantId: 'z',
+                        sessionIds: [],
+                        metrics: { points: 1 }
+                    }
+                ]
+            }).map((standing) => standing.participantId)
+        ).toEqual([
             'z',
-            escapedUnicodeId,
+            escapedUnicodeId
         ]);
     });
 
@@ -236,7 +240,7 @@ describe('Rallar match shared helpers', () => {
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
             protocol: 'example.match.v1',
             authority: {
@@ -244,7 +248,7 @@ describe('Rallar match shared helpers', () => {
                 id: 'session-a',
                 epoch: 4,
                 principalId: 'principal-a',
-                sessionId: 'session-a',
+                sessionId: 'session-a'
             },
             trust: 'room-trusted',
             startedAtEpochMs: 1_000,
@@ -256,14 +260,14 @@ describe('Rallar match shared helpers', () => {
                     sessionIds: ['session-a'],
                     rank: 1,
                     tieGroup: 1,
-                    metrics: { points: 10 },
-                },
+                    metrics: { points: 10 }
+                }
             ],
-            summary: { reason: 'finished' },
+            summary: { reason: 'finished' }
         });
 
         expect(result.idempotencyKey).toBe(
-            'app-1:workspace%3Aworkspace-1:room-1:example.match.v1:match-1:browser-director:session-a:4:2000',
+            'app-1:workspace%3Aworkspace-1:room-1:example.match.v1:match-1:browser-director:session-a:4:2000'
         );
         expect(result.trust).toBe('room-trusted');
         expect(result.summary).toEqual({ reason: 'finished' });
@@ -276,26 +280,30 @@ describe('Rallar match shared helpers', () => {
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
             protocol: 'example.match.v1',
             authority: { kind: 'server', id: 'server-1', epoch: 1 },
             finishedAtEpochMs: 2_000,
             standings: [],
-            summary: {},
+            summary: {}
         } as const;
 
-        expect(() => createRallarMatchResult({
-            ...input,
-            trust: 'server-validated',
-        } as never)).toThrow(
-            'Shared Rallar match result creation cannot assign server-validated trust.',
+        expect(() =>
+            createRallarMatchResult({
+                ...input,
+                trust: 'server-validated'
+            } as never)
+        ).toThrow(
+            'Shared Rallar match result creation cannot assign server-validated trust.'
         );
-        expect(() => createRallarMatchResult({
-            ...input,
-            trust: 'room-trusted',
-        } as never)).toThrow(
-            'Room-trusted Rallar match results require browser-director authority.',
+        expect(() =>
+            createRallarMatchResult({
+                ...input,
+                trust: 'room-trusted'
+            } as never)
+        ).toThrow(
+            'Room-trusted Rallar match results require browser-director authority.'
         );
     });
 
@@ -304,18 +312,18 @@ describe('Rallar match shared helpers', () => {
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
             protocol: 'example.match.v1',
             matchId: 'match-1:browser-director',
             authority: { kind: 'server', id: 'id', epoch: 1 },
-            finishedAtEpochMs: 2_000,
+            finishedAtEpochMs: 2_000
         });
         const browserDirectorKey = createRallarMatchResultIdempotencyKey({
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
             protocol: 'example.match.v1',
             matchId: 'match-1',
@@ -324,9 +332,9 @@ describe('Rallar match shared helpers', () => {
                 id: 'server:id',
                 epoch: 1,
                 principalId: 'principal-a',
-                sessionId: 'server:id',
+                sessionId: 'server:id'
             },
-            finishedAtEpochMs: 2_000,
+            finishedAtEpochMs: 2_000
         });
 
         expect(serverKey).not.toBe(browserDirectorKey);
@@ -337,31 +345,31 @@ describe('Rallar match shared helpers', () => {
             protocol: 'example.match.v1',
             matchId: 'match-1',
             authority: { kind: 'server', id: 'server-1', epoch: 1 } as const,
-            finishedAtEpochMs: 2_000,
+            finishedAtEpochMs: 2_000
         };
         const roomOneKey = createRallarMatchResultIdempotencyKey({
             ...input,
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
-            },
+                groupId: 'room-1'
+            }
         });
         const roomTwoKey = createRallarMatchResultIdempotencyKey({
             ...input,
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-2',
-            },
+                groupId: 'room-2'
+            }
         });
         const workspaceTwoKey = createRallarMatchResultIdempotencyKey({
             ...input,
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-2',
-                groupId: 'room-1',
-            },
+                groupId: 'room-1'
+            }
         });
 
         expect(roomOneKey).not.toBe(roomTwoKey);
@@ -377,15 +385,15 @@ describe('Rallar match shared helpers', () => {
                 authorityFresh: false,
                 pendingCommandCount: 2,
                 snapshotAgeMs: 12_000,
-                maxSnapshotAgeMs: 5_000,
-            }).issues,
+                maxSnapshotAgeMs: 5_000
+            }).issues
         ).toEqual([
             'no-participants',
             'no-standings',
             'no-result',
             'stale-authority',
             'pending-commands',
-            'stale-snapshot',
+            'stale-snapshot'
         ]);
     });
 });

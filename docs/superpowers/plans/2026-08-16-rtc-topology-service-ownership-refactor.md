@@ -304,18 +304,18 @@ Write a semantic identity and construction test:
 import { expect, it } from 'vitest';
 
 import {
-  planRallarRtcTopologySnapshot as packagePlanSnapshot,
-  RallarRtcTopologyService as PackageService,
+    planRallarRtcTopologySnapshot as packagePlanSnapshot,
+    RallarRtcTopologyService as PackageService
 } from '@shared-server/mod.ts';
 import {
-  planRallarRtcTopologySnapshot as directPlanSnapshot,
-  RallarRtcTopologyService as DirectService,
+    planRallarRtcTopologySnapshot as directPlanSnapshot,
+    RallarRtcTopologyService as DirectService
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
 it('keeps the supported RTC topology service package and deep imports identical', () => {
-  expect(PackageService).toBe(DirectService);
-  expect(packagePlanSnapshot).toBe(directPlanSnapshot);
-  expect(new PackageService()).toBeInstanceOf(DirectService);
+    expect(PackageService).toBe(DirectService);
+    expect(packagePlanSnapshot).toBe(directPlanSnapshot);
+    expect(new PackageService()).toBeInstanceOf(DirectService);
 });
 ```
 
@@ -396,34 +396,34 @@ Never run this commit step on `main`.
 
 ```ts
 export interface ComputeNoRttTopologyNextHopsInput {
-  readonly topology: RallarRtcTopologyKind;
-  readonly activeSessionIds: readonly string[];
-  readonly degreeLimit: number;
-  readonly meshParamK: number;
+    readonly topology: RallarRtcTopologyKind;
+    readonly activeSessionIds: readonly string[];
+    readonly degreeLimit: number;
+    readonly meshParamK: number;
 }
 
 export function computeNoRttTopologyNextHops(
-  input: ComputeNoRttTopologyNextHopsInput,
+    input: ComputeNoRttTopologyNextHopsInput
 ): Record<string, readonly string[]>;
 
 export class RtcTopologyMetrics {
-  recordTopologyUpdate(rttMeasurementCount: number): void;
-  recordTopologyResult(changed: boolean): void;
-  recordStarPlan(durationMs: number): void;
-  recordNoRttTreePlan(durationMs: number): void;
-  recordNoRttMeshPlan(durationMs: number): void;
-  recordWeightedPlan(durationMs: number): void;
-  recordWeightedRoomGraph(durationMs: number, usedSparseFallback: boolean): void;
-  recordIncrementalPlan(): void;
-  recordIncrementalFallback(reason: EvolvePlannedTopologyFullRebuildReason): void;
-  recordHysteresisHold(): void;
-  recordRttQueue(result: 'new' | 'coalesced', immediate: boolean): void;
-  recordRttFlush(executed: boolean): void;
-  recordPublish(changed: boolean): void;
-  recordFingerprintSkip(): void;
-  recordRemoval(removed: boolean): void;
-  read(snapshotCount: number, pendingRttUpdateCount: number): RallarRtcTopologyMetrics;
-  reset(): void;
+    recordTopologyUpdate(rttMeasurementCount: number): void;
+    recordTopologyResult(changed: boolean): void;
+    recordStarPlan(durationMs: number): void;
+    recordNoRttTreePlan(durationMs: number): void;
+    recordNoRttMeshPlan(durationMs: number): void;
+    recordWeightedPlan(durationMs: number): void;
+    recordWeightedRoomGraph(durationMs: number, usedSparseFallback: boolean): void;
+    recordIncrementalPlan(): void;
+    recordIncrementalFallback(reason: EvolvePlannedTopologyFullRebuildReason): void;
+    recordHysteresisHold(): void;
+    recordRttQueue(result: 'new' | 'coalesced', immediate: boolean): void;
+    recordRttFlush(executed: boolean): void;
+    recordPublish(changed: boolean): void;
+    recordFingerprintSkip(): void;
+    recordRemoval(removed: boolean): void;
+    read(snapshotCount: number, pendingRttUpdateCount: number): RallarRtcTopologyMetrics;
+    reset(): void;
 }
 ```
 
@@ -565,54 +565,54 @@ git commit -m "refactor(rtc-topology): separate planning leaf owners"
 
 ```ts
 export interface CreateRtcRoomGraphInput {
-  readonly group: GroupSnapshot;
-  readonly activeSessionIds: readonly string[];
-  readonly rttMeasurements: readonly RttMeasurementInfo[];
-  readonly degreeLimit: number;
-  readonly rttReportingDegreeLimit: number;
-  readonly seedTopology: RallarRtcTopologyKind;
-  readonly meshParamK: number;
+    readonly group: GroupSnapshot;
+    readonly activeSessionIds: readonly string[];
+    readonly rttMeasurements: readonly RttMeasurementInfo[];
+    readonly degreeLimit: number;
+    readonly rttReportingDegreeLimit: number;
+    readonly seedTopology: RallarRtcTopologyKind;
+    readonly meshParamK: number;
 }
 
 export interface CreateRtcRoomGraphResult {
-  readonly graph: WeightedGraph;
-  readonly usedSparseFallback: boolean;
+    readonly graph: WeightedGraph;
+    readonly usedSparseFallback: boolean;
 }
 
 export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoomGraphResult;
 
 export namespace RtcTopologyPlanner {
-  export interface Dependencies {
-    readonly metrics: RtcTopologyMetrics;
-    readonly durationNowMs: () => number;
-  }
+    export interface Dependencies {
+        readonly metrics: RtcTopologyMetrics;
+        readonly durationNowMs: () => number;
+    }
 
-  export interface PlanInput {
-    readonly group: GroupSnapshot;
-    readonly rttMeasurements: readonly RttMeasurementInfo[];
-    readonly previous: RallarOverlayTopologySnapshot | undefined;
-    readonly updateOptions: RallarRtcTopologyUpdateOptions;
-    readonly nowEpochMs: number;
-  }
+    export interface PlanInput {
+        readonly group: GroupSnapshot;
+        readonly rttMeasurements: readonly RttMeasurementInfo[];
+        readonly previous: RallarOverlayTopologySnapshot | undefined;
+        readonly updateOptions: RallarRtcTopologyUpdateOptions;
+        readonly nowEpochMs: number;
+    }
 }
 
 export class RtcTopologyPlanner {
-  constructor(
-    serviceOptions: RallarRtcTopologyServiceOptions,
-    dependencies: RtcTopologyPlanner.Dependencies,
-  );
-  plan(input: RtcTopologyPlanner.PlanInput): RallarRtcTopologyUpdateResult;
-  createRoomGraph(
-    group: GroupSnapshot,
-    rttMeasurements: readonly RttMeasurementInfo[],
-  ): WeightedGraph;
-  selectTopology(
-    group: GroupSnapshot,
-    options: RallarRtcTopologyServiceOptions,
-    previousKind?: RallarRtcTopologyKind,
-  ): RallarRtcTopologyKind;
-  readRttReportingDegreeLimit(options: RallarRtcTopologyServiceOptions): number;
-  readKindHysteresisWidths(): RtcTopologyKindHysteresisWidths;
+    constructor(
+        serviceOptions: RallarRtcTopologyServiceOptions,
+        dependencies: RtcTopologyPlanner.Dependencies
+    );
+    plan(input: RtcTopologyPlanner.PlanInput): RallarRtcTopologyUpdateResult;
+    createRoomGraph(
+        group: GroupSnapshot,
+        rttMeasurements: readonly RttMeasurementInfo[]
+    ): WeightedGraph;
+    selectTopology(
+        group: GroupSnapshot,
+        options: RallarRtcTopologyServiceOptions,
+        previousKind?: RallarRtcTopologyKind
+    ): RallarRtcTopologyKind;
+    readRttReportingDegreeLimit(options: RallarRtcTopologyServiceOptions): number;
+    readKindHysteresisWidths(): RtcTopologyKindHysteresisWidths;
 }
 ```
 
@@ -678,16 +678,15 @@ in `planGroupTopologyAt`:
 
 ```ts
 const overlayId = toScopedOverlayId(group.group);
-const previous =
-  options.previous?.overlayId === overlayId
+const previous = options.previous?.overlayId === overlayId
     ? options.previous
     : this.snapshotsByOverlayId.get(overlayId);
 return this.planner.plan({
-  group,
-  rttMeasurements,
-  previous,
-  updateOptions: options,
-  nowEpochMs,
+    group,
+    rttMeasurements,
+    previous,
+    updateOptions: options,
+    nowEpochMs
 });
 ```
 
@@ -794,34 +793,34 @@ git commit -m "refactor(rtc-topology): extract topology planning ownership"
 
 ```ts
 export class RtcTopologySnapshotRegistry {
-  observe(snapshot: RallarOverlayTopologySnapshot): boolean;
-  get(overlayId: string): RallarOverlayTopologySnapshot | undefined;
-  has(overlayId: string): boolean;
-  remove(overlayId: string): boolean;
-  get size(): number;
+    observe(snapshot: RallarOverlayTopologySnapshot): boolean;
+    get(overlayId: string): RallarOverlayTopologySnapshot | undefined;
+    has(overlayId: string): boolean;
+    remove(overlayId: string): boolean;
+    get size(): number;
 }
 
 export namespace RtcTopologyRttRebuildScheduler {
-  export interface Dependencies {
-    readonly nowEpochMs: () => number;
-    readonly debounceMs: number;
-    readonly metrics: RtcTopologyMetrics;
-  }
+    export interface Dependencies {
+        readonly nowEpochMs: () => number;
+        readonly debounceMs: number;
+        readonly metrics: RtcTopologyMetrics;
+    }
 
-  export interface QueueInput {
-    readonly overlayId: string;
-    readonly hasSnapshot: boolean;
-  }
+    export interface QueueInput {
+        readonly overlayId: string;
+        readonly hasSnapshot: boolean;
+    }
 }
 
 export class RtcTopologyRttRebuildScheduler {
-  constructor(dependencies: RtcTopologyRttRebuildScheduler.Dependencies);
-  queue(input: RtcTopologyRttRebuildScheduler.QueueInput): RallarRtcTopologyRttQueueResult;
-  claimDue(overlayId: string): boolean;
-  readDelayMs(overlayId: string): number | undefined;
-  remove(overlayId: string): boolean;
-  readDebounceMs(): number;
-  get size(): number;
+    constructor(dependencies: RtcTopologyRttRebuildScheduler.Dependencies);
+    queue(input: RtcTopologyRttRebuildScheduler.QueueInput): RallarRtcTopologyRttQueueResult;
+    claimDue(overlayId: string): boolean;
+    readDelayMs(overlayId: string): number | undefined;
+    remove(overlayId: string): boolean;
+    readDebounceMs(): number;
+    get size(): number;
 }
 ```
 

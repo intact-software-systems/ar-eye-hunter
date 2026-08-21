@@ -1,9 +1,9 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
-import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
+import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { ManualRallarExecutionPanel } from './ManualRallarExecutionPanel.tsx';
 import { ManualRallarInputsPanel } from './ManualRallarInputsPanel.tsx';
 import { useManualRallarWorkbench } from './use-manual-rallar-workbench.ts';
@@ -16,7 +16,7 @@ export function ManualRallarWorkbenchPanel({
     globalValuesEdited,
     busy,
     onSelectCommand,
-    onGlobalValueChange,
+    onGlobalValueChange
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -27,7 +27,7 @@ export function ManualRallarWorkbenchPanel({
     onSelectCommand(commandId: string): void;
     onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
 }) {
     const model = useManualRallarWorkbench({
@@ -37,7 +37,7 @@ export function ManualRallarWorkbenchPanel({
         globalValues,
         globalValuesEdited,
         onSelectCommand,
-        onGlobalValueChange,
+        onGlobalValueChange
     });
 
     return (
@@ -63,8 +63,8 @@ export function ManualRallarWorkbenchPanel({
                     {redactRallarBlackBoxValue(
                         model.localError,
                         uiRedactionOptions(state, authSession, [
-                            model.values.rallarPassword,
-                        ]),
+                            model.values.rallarPassword
+                        ])
                     )}
                 </div>
             )}

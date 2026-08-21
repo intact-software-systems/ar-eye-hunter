@@ -1,31 +1,53 @@
-import { describe, expect, it } from 'vitest';
-import { deriveApiV1StateWriteEvidence } from
-    '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
+import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import type {
     AuthoritativeReceiptEvidence,
-    PersistedCommandEvidence,
+    PersistedCommandEvidence
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
+import { describe, expect, it } from 'vitest';
 
 const commandId = 'topology-command-1';
 const effectId = `${commandId}:rtc-topology-recompute:1`;
 const commandHash = `sha256:${'a'.repeat(64)}`;
 const topologyGroupRef = {
-    applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1',
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId: 'group-1'
 };
 const acceptedConfig = {
-    topologyKind: 'tree', degreeLimit: 2, treeMinSize: 5, meshMinSize: 16, meshParamK: 2,
+    topologyKind: 'tree',
+    degreeLimit: 2,
+    treeMinSize: 5,
+    meshMinSize: 16,
+    meshParamK: 2
 };
 const topologyReceipt = {
-    commandId, requestId: commandId, commandHash, operation: 'putConfig', outcome: 'applied',
-    attemptCount: 1, groupRef: topologyGroupRef, target: 'config', acceptedVersion: 1,
-    acceptedStorageRevision: 0, acceptedCreatedAtEpochMs: 10, acceptedUpdatedAtEpochMs: 11,
-    acceptedExpiresAtEpochMs: null, acceptedConfig, acceptedCausalRevision: null,
-    eventId: null, outboxId: effectId, outboxIds: [effectId],
+    commandId,
+    requestId: commandId,
+    commandHash,
+    operation: 'putConfig',
+    outcome: 'applied',
+    attemptCount: 1,
+    groupRef: topologyGroupRef,
+    target: 'config',
+    acceptedVersion: 1,
+    acceptedStorageRevision: 0,
+    acceptedCreatedAtEpochMs: 10,
+    acceptedUpdatedAtEpochMs: 11,
+    acceptedExpiresAtEpochMs: null,
+    acceptedConfig,
+    acceptedCausalRevision: null,
+    eventId: null,
+    outboxId: effectId,
+    outboxIds: [effectId]
 };
 const topologyConfig = {
-    groupRef: topologyGroupRef, config: acceptedConfig, version: 1,
-    createdAtEpochMs: 10, updatedAtEpochMs: 11,
-    updatedByPrincipalId: 'principal-1', requestId: commandId,
+    groupRef: topologyGroupRef,
+    config: acceptedConfig,
+    version: 1,
+    createdAtEpochMs: 10,
+    updatedAtEpochMs: 11,
+    updatedByPrincipalId: 'principal-1',
+    requestId: commandId
 };
 const command = {
     ri_row_id: 1,
@@ -40,12 +62,14 @@ const command = {
     result_status: 'COMPLETED',
     result_resource: JSON.stringify({
         receipt: topologyReceipt,
-        config: topologyConfig,
+        config: topologyConfig
     }),
-    ri_resource: JSON.stringify({ payload: {
-        typeId: 'TOPOLOGY_CONFIG_PUT',
-        resource: JSON.stringify({ requestId: commandId }),
-    } }),
+    ri_resource: JSON.stringify({
+        payload: {
+            typeId: 'TOPOLOGY_CONFIG_PUT',
+            resource: JSON.stringify({ requestId: commandId })
+        }
+    })
 };
 const effect = {
     ri_resource_id: 'physical-queue-key-1',
@@ -53,15 +77,15 @@ const effect = {
     ri_type_id: 'APP_OUTBOX',
     ri_status: 'NEW',
     ri_resource: JSON.stringify({
-        id: { msgId: effectId },
-    }),
+        id: { msgId: effectId }
+    })
 };
 const spec = {
     match: 'scope',
     commandTypes: ['TOPOLOGY_CONFIG_PUT'],
     expectedEffectsByCommandType: {
-        TOPOLOGY_CONFIG_PUT: ['rtc-topology-recompute'],
-    },
+        TOPOLOGY_CONFIG_PUT: ['rtc-topology-recompute']
+    }
 };
 
 describe('durable AppInbox result evidence', () => {
@@ -71,22 +95,25 @@ describe('durable AppInbox result evidence', () => {
         ['auth agent ticket', 'AUTH_AGENT_SESSION_TICKET_CONSUME', { garbage: true }],
         ['admin prune', 'ADMIN_PRUNE_EXPIRED', { garbage: true }],
         ['CRDT append', 'CRDT_UPDATE_APPEND', { garbage: true }],
-        ['RTC RTT', 'RTC_RTT_SUBMIT', { garbage: true }],
+        ['RTC RTT', 'RTC_RTT_SUBMIT', { garbage: true }]
     ])('fails closed for a completed %s result', (_name, commandType, result) => {
         const candidate = {
             ...command,
-            ri_resource: JSON.stringify({ payload: {
-                typeId: commandType,
-                resource: JSON.stringify({ requestId: commandId }),
-            } }),
-            result_resource: JSON.stringify(result),
+            ri_resource: JSON.stringify({
+                payload: {
+                    typeId: commandType,
+                    resource: JSON.stringify({ requestId: commandId })
+                }
+            }),
+            result_resource: JSON.stringify(result)
         };
         expect(deriveApiV1StateWriteEvidence({
-            match: 'scope', commandTypes: [commandType],
+            match: 'scope',
+            commandTypes: [commandType]
         }, [candidate])).toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
-            appInbox: [{ durableResultValid: false }],
+            appInbox: [{ durableResultValid: false }]
         });
     });
 
@@ -95,9 +122,13 @@ describe('durable AppInbox result evidence', () => {
             atomicCompletionFailures: 0,
             receiptOutboxIds: [effectId],
             resourceOutbox: [{ resourceId: 'physical-queue-key-1', outboxId: effectId }],
-            appInbox: [{ durableResultValid: true, receipt: {
-                commandId, identityKind: 'logical-msg-id',
-            } }],
+            appInbox: [{
+                durableResultValid: true,
+                receipt: {
+                    commandId,
+                    identityKind: 'logical-msg-id'
+                }
+            }]
         });
     });
 
@@ -107,54 +138,79 @@ describe('durable AppInbox result evidence', () => {
         const presence = {
             ...command,
             ri_resource_id: presenceCommandId,
-            ri_resource: JSON.stringify({ payload: {
-                typeId: 'GROUP_PRESENCE_CONNECT',
-                resource: JSON.stringify({ commandId: presenceCommandId }),
-            } }),
-            result_resource: JSON.stringify({
-                commandId: presenceCommandId, outcome: 'applied', attemptCount: 1,
-                outboxIds: [physicalEffectId],
+            ri_resource: JSON.stringify({
+                payload: {
+                    typeId: 'GROUP_PRESENCE_CONNECT',
+                    resource: JSON.stringify({ commandId: presenceCommandId })
+                }
             }),
+            result_resource: JSON.stringify({
+                commandId: presenceCommandId,
+                outcome: 'applied',
+                attemptCount: 1,
+                outboxIds: [physicalEffectId]
+            })
         };
         const presenceEffect = {
             ...effect,
             ri_resource_id: physicalEffectId,
             ri_topic_id: 'app-outbox.group-presence-summary',
-            ri_resource: JSON.stringify({ id: {
-                msgId: `${presenceCommandId}:group-presence-summary:1`,
-            } }),
+            ri_resource: JSON.stringify({
+                id: {
+                    msgId: `${presenceCommandId}:group-presence-summary:1`
+                }
+            })
         };
-        expect(deriveApiV1StateWriteEvidence({
-            match: 'scope', commandTypes: ['GROUP_PRESENCE_CONNECT'],
-            expectedEffectsByCommandType: {
-                GROUP_PRESENCE_CONNECT: ['group-presence-summary'],
+        expect(deriveApiV1StateWriteEvidence(
+            {
+                match: 'scope',
+                commandTypes: ['GROUP_PRESENCE_CONNECT'],
+                expectedEffectsByCommandType: {
+                    GROUP_PRESENCE_CONNECT: ['group-presence-summary']
+                }
             },
-        }, [presence], [presenceEffect])).toMatchObject({
+            [presence],
+            [presenceEffect]
+        )).toMatchObject({
             atomicCompletionFailures: 0,
             appInbox: [{ receipt: { identityKind: 'physical-resource-id' } }],
             resourceOutbox: [{
                 resourceId: physicalEffectId,
-                outboxId: `${presenceCommandId}:group-presence-summary:1`,
-            }],
+                outboxId: `${presenceCommandId}:group-presence-summary:1`
+            }]
         });
     });
 
     it.each([
         ['missing', null],
         ['malformed', '{'],
-        ['wrong command', JSON.stringify({ receipt: {
-            commandId: 'invented-command', outcome: 'applied', attemptCount: 1,
-            outboxIds: [effectId],
-        } })],
-        ['duplicate effect identity', JSON.stringify({ receipt: {
-            commandId, outcome: 'applied', attemptCount: 1,
-            outboxIds: [effectId, effectId],
-        } })],
+        [
+            'wrong command',
+            JSON.stringify({
+                receipt: {
+                    commandId: 'invented-command',
+                    outcome: 'applied',
+                    attemptCount: 1,
+                    outboxIds: [effectId]
+                }
+            })
+        ],
+        [
+            'duplicate effect identity',
+            JSON.stringify({
+                receipt: {
+                    commandId,
+                    outcome: 'applied',
+                    attemptCount: 1,
+                    outboxIds: [effectId, effectId]
+                }
+            })
+        ]
     ])('rejects a %s durable result', (_name, resultResource) => {
         expect(deriveApiV1StateWriteEvidence(
             spec,
             [{ ...command, result_resource: resultResource }],
-            [effect],
+            [effect]
         )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
@@ -162,18 +218,18 @@ describe('durable AppInbox result evidence', () => {
         expect(deriveApiV1StateWriteEvidence(spec, [command], [{
             ...effect,
             ri_resource: JSON.stringify({
-                id: { msgId: `${commandId}:rtc-topology-recompute:different-effect` },
-            }),
+                id: { msgId: `${commandId}:rtc-topology-recompute:different-effect` }
+            })
         }])).toMatchObject({
             atomicCompletionFailures: 1,
-            finalEffectFailures: [commandId],
+            finalEffectFailures: [commandId]
         });
         expect(deriveApiV1StateWriteEvidence(spec, [command], [effect, {
             ...effect,
-            ri_resource_id: 'unexpected-effect',
+            ri_resource_id: 'unexpected-effect'
         }])).toMatchObject({
             atomicCompletionFailures: 1,
-            finalEffectFailures: [commandId],
+            finalEffectFailures: [commandId]
         });
     });
 
@@ -186,30 +242,45 @@ describe('durable AppInbox result evidence', () => {
             outboxIds: [effectId],
             identityKind: 'logical-msg-id',
             topology: {
-                operation: 'putConfig', target: 'config', groupRef: topologyGroupRef,
-                acceptedVersion: 1, acceptedStorageRevision: 0,
-                acceptedCreatedAtEpochMs: 10, acceptedUpdatedAtEpochMs: 11,
-                acceptedExpiresAtEpochMs: null, acceptedConfig,
-            },
+                operation: 'putConfig',
+                target: 'config',
+                groupRef: topologyGroupRef,
+                acceptedVersion: 1,
+                acceptedStorageRevision: 0,
+                acceptedCreatedAtEpochMs: 10,
+                acceptedUpdatedAtEpochMs: 11,
+                acceptedExpiresAtEpochMs: null,
+                acceptedConfig
+            }
         };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: commandId,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [commandId],
-            receipt,
+            receipt
         }];
         const valid = deriveApiV1StateWriteEvidence(
-            spec, [command], [effect], [], undefined, authoritative,
+            spec,
+            [command],
+            [effect],
+            [],
+            undefined,
+            authoritative
         );
         expect(valid).toMatchObject({ atomicCompletionFailures: 0 });
 
         const tampered: readonly PersistedCommandEvidence[] = [{
             ...authoritative[0],
-            receipt: { ...receipt, outboxIds: ['invented-authoritative-id'] },
+            receipt: { ...receipt, outboxIds: ['invented-authoritative-id'] }
         }];
         expect(deriveApiV1StateWriteEvidence(
-            spec, [command], [effect], [], undefined, tampered,
+            spec,
+            [command],
+            [effect],
+            [],
+            undefined,
+            tampered
         )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
 
         const extraReceiptKey = {
@@ -217,12 +288,17 @@ describe('durable AppInbox result evidence', () => {
             result_resource: JSON.stringify({
                 receipt: {
                     ...JSON.parse(command.result_resource).receipt,
-                    inventedIdentity: 'must-not-be-trusted',
-                },
-            }),
+                    inventedIdentity: 'must-not-be-trusted'
+                }
+            })
         };
         expect(deriveApiV1StateWriteEvidence(
-            spec, [extraReceiptKey], [effect], [], undefined, authoritative,
+            spec,
+            [extraReceiptKey],
+            [effect],
+            [],
+            undefined,
+            authoritative
         )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
@@ -230,36 +306,58 @@ describe('durable AppInbox result evidence', () => {
         const resourceId = 'physical-topology-reconfigure-row';
         const requestId = 'topology-reconfigure-request';
         const groupRef = {
-            applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1'
         };
         const topology = {
             ...command,
             ri_resource_id: resourceId,
-            ri_resource: JSON.stringify({ payload: {
-                typeId: 'TOPOLOGY_RECONFIGURE', resource: JSON.stringify({ requestId }),
-            } }),
-            result_resource: JSON.stringify({
-                status: 'queued', groupRef, requestId, outboxId: 'topology-outbox-1',
+            ri_resource: JSON.stringify({
+                payload: {
+                    typeId: 'TOPOLOGY_RECONFIGURE',
+                    resource: JSON.stringify({ requestId })
+                }
             }),
+            result_resource: JSON.stringify({
+                status: 'queued',
+                groupRef,
+                requestId,
+                outboxId: 'topology-outbox-1'
+            })
         };
         const authoritative = [{
             appInboxResourceId: resourceId,
             valid: true,
             commandType: 'TOPOLOGY_RECONFIGURE',
             commandIds: [requestId],
-            commandScope: groupRef,
+            commandScope: groupRef
         }];
         const topologySpec = { match: 'scope', commandTypes: ['TOPOLOGY_RECONFIGURE'] };
         expect(deriveApiV1StateWriteEvidence(
-            topologySpec, [topology], [], [], undefined, authoritative,
+            topologySpec,
+            [topology],
+            [],
+            [],
+            undefined,
+            authoritative
         )).toMatchObject({ atomicCompletionFailures: 0 });
         expect(deriveApiV1StateWriteEvidence(
             topologySpec,
-            [{ ...topology, result_resource: JSON.stringify({
-                status: 'queued', groupRef: { ...groupRef, groupId: 'swapped-group' },
-                requestId, outboxId: 'topology-outbox-1', inventedIdentity: true,
-            }) }],
-            [], [], undefined, authoritative,
+            [{
+                ...topology,
+                result_resource: JSON.stringify({
+                    status: 'queued',
+                    groupRef: { ...groupRef, groupId: 'swapped-group' },
+                    requestId,
+                    outboxId: 'topology-outbox-1',
+                    inventedIdentity: true
+                })
+            }],
+            [],
+            [],
+            undefined,
+            authoritative
         )).toMatchObject({ atomicCompletionFailures: 1, statusResultFailures: 1 });
     });
 
@@ -268,23 +366,32 @@ describe('durable AppInbox result evidence', () => {
         const cleanup = {
             ...command,
             ri_resource_id: resourceId,
-            ri_resource: JSON.stringify({ payload: {
-                typeId: 'GROUP_PRESENCE_SESSION_CLEANUP', resource: '{}',
-            } }),
-            result_resource: JSON.stringify({
-                status: 'inactive', sessionId: 'session-1', generationId: 'generation-1',
-                affectedGroups: 2,
+            ri_resource: JSON.stringify({
+                payload: {
+                    typeId: 'GROUP_PRESENCE_SESSION_CLEANUP',
+                    resource: '{}'
+                }
             }),
+            result_resource: JSON.stringify({
+                status: 'inactive',
+                sessionId: 'session-1',
+                generationId: 'generation-1',
+                affectedGroups: 2
+            })
         };
         const cleanupEvidence = [{
             appInboxResourceId: resourceId,
             valid: true,
             commandType: 'GROUP_PRESENCE_SESSION_CLEANUP',
-            commandIds: ['session-1', 'generation-1'],
+            commandIds: ['session-1', 'generation-1']
         }];
         expect(deriveApiV1StateWriteEvidence(
             { match: 'scope', commandTypes: ['GROUP_PRESENCE_SESSION_CLEANUP'] },
-            [cleanup], [], [], undefined, cleanupEvidence,
+            [cleanup],
+            [],
+            [],
+            undefined,
+            cleanupEvidence
         )).toMatchObject({ atomicCompletionFailures: 0 });
     });
 
@@ -304,18 +411,28 @@ describe('durable AppInbox result evidence', () => {
                 outboxIds: [effectId],
                 identityKind: 'logical-msg-id',
                 topology: {
-                    operation: 'putConfig', target: 'config', groupRef: topologyGroupRef,
-                    acceptedVersion: 1, acceptedStorageRevision: 0,
-                    acceptedCreatedAtEpochMs: 10, acceptedUpdatedAtEpochMs: 11,
-                    acceptedExpiresAtEpochMs: null, acceptedConfig,
-                },
-            },
+                    operation: 'putConfig',
+                    target: 'config',
+                    groupRef: topologyGroupRef,
+                    acceptedVersion: 1,
+                    acceptedStorageRevision: 0,
+                    acceptedCreatedAtEpochMs: 10,
+                    acceptedUpdatedAtEpochMs: 11,
+                    acceptedExpiresAtEpochMs: null,
+                    acceptedConfig
+                }
+            }
         }];
         expect(deriveApiV1StateWriteEvidence(
-            spec, [physicalCommand], [effect], [], undefined, authoritative,
+            spec,
+            [physicalCommand],
+            [effect],
+            [],
+            undefined,
+            authoritative
         )).toMatchObject({
             atomicCompletionFailures: 0,
-            appInbox: [{ resourceId: physicalResourceId, commandIds: [commandId] }],
+            appInbox: [{ resourceId: physicalResourceId, commandIds: [commandId] }]
         });
     });
 
@@ -325,8 +442,7 @@ describe('durable AppInbox result evidence', () => {
             valid: false,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [],
-            failure: 'topology command scope differs from queue identity',
+            failure: 'topology command scope differs from queue identity'
         }])).toMatchObject({ statusResultFailures: 1 });
     });
-
 });

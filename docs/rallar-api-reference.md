@@ -38,7 +38,7 @@ default.
 Import one shared facade instance, or create an isolated facade:
 
 ```ts
-import { rallar, createRallarFacade } from '@shared-web/browser/rallar.ts';
+import { createRallarFacade, rallar } from '@shared-web/browser/rallar.ts';
 
 const isolated = createRallarFacade();
 ```
@@ -63,10 +63,10 @@ rallar.setDefaults({
         waitTimeoutMs: 1000,
         connectOnWait: true,
         maxPeerConnections: 10,
-        rttReportingDegreeLimit: 5,
+        rttReportingDegreeLimit: 5
     },
     messages: { maxPayloadBytes: 64 * 1024 },
-    operations: { timeoutMs: 5000, maxAttempts: 3 },
+    operations: { timeoutMs: 5000, maxAttempts: 3 }
 });
 ```
 
@@ -82,7 +82,7 @@ const started = await rallar.setup({
     apiBaseUrl: 'http://localhost:8080',
     applicationId: 'game',
     workspaceId: 'default',
-    rtc: { maxPeerConnections: 10, rttReportingDegreeLimit: 5 },
+    rtc: { maxPeerConnections: 10, rttReportingDegreeLimit: 5 }
 });
 ```
 
@@ -99,9 +99,10 @@ try {
         roomId: 'lobby',
         topicId: 'room.chat',
         typeId: 'chat.message.v1',
-        payload: { text: 'hello' },
+        payload: { text: 'hello' }
     });
-} catch (error) {
+}
+catch (error) {
     if (isRallarValidationError(error)) {
         console.warn(error.issues);
     }
@@ -125,7 +126,7 @@ const started = await rallar.start({
     restoreSession: true,
     connect: true,
     refreshRooms: true,
-    refreshPeople: true,
+    refreshPeople: true
 });
 ```
 
@@ -169,7 +170,7 @@ scope.unsubscribe();
 await rallar.auth.registerAndLogin({
     username: 'alice',
     password: 'secret',
-    displayName: 'Alice',
+    displayName: 'Alice'
 });
 ```
 
@@ -261,16 +262,16 @@ knowing that the new room is now current.
 ```ts
 const created = await rallar.rooms.createAndSwitch({
     displayName: 'Lobby',
-    scope: { applicationId: 'game', workspaceId: 'default' },
+    scope: { applicationId: 'game', workspaceId: 'default' }
 });
 
 const room = rallar.rooms.session(created.group);
-const chat = room.message<{ text: string }>('chat');
-const motion = room.realtime<{ x: number; y: number }>('motion');
+const chat = room.message<{ text: string; }>('chat');
+const motion = room.realtime<{ x: number; y: number; }>('motion');
 
 const presence = await rallar.rooms.waitForPresence(created.group, {
     expect: { min: 2, max: 8 },
-    timeoutMs: 2000,
+    timeoutMs: 2000
 });
 
 rallar.rooms.onEvent((event) => {
@@ -404,7 +405,7 @@ intent/output/snapshot relay around that appointment.
 const room = rallar.rooms.session(created.group);
 
 await rallar.director.appoint(room.roomRef, {
-    heartbeatTtlMs: 4_000,
+    heartbeatTtlMs: 4_000
 });
 
 const status = rallar.director.status(room.roomRef);
@@ -523,18 +524,18 @@ await rallar.messages.ws.send({
     typeId: 'chat.message.v1',
     payload: { text: 'hello' },
     scope: 'room',
-    roomRef: room.group,
+    roomRef: room.group
 });
 ```
 
 Typed channels reduce boilerplate when one payload type has one topic/type pair:
 
 ```ts
-type ChatMessage = { text: string };
+type ChatMessage = { text: string; };
 
 const chat = rallar.messages.channel<ChatMessage>({
     topicId: 'room.chat',
-    typeId: 'chat.message.v1',
+    typeId: 'chat.message.v1'
 });
 
 chat.onWs((payload) => console.log(payload.text));
@@ -549,17 +550,17 @@ Room channels add room defaults and default `send(...)` to the existing
 `isSameGroupRef` before accepting an inbound payload:
 
 ```ts
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { RallarMessageSendStatus } from '@shared-web/browser/rallar.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
-type RoomChatMessage = { text: string };
+type RoomChatMessage = { text: string; };
 
 const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
     'enqueued',
     'sent-immediate',
     'duplicate',
     'superseded',
-    'skipped',
+    'skipped'
 ]);
 
 const roomSession = await rallar.rooms.enter('lobby');
@@ -611,13 +612,13 @@ expectation shape used by `rooms.waitForPresence(...)` can be passed as
 const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
     connect: true,
     timeoutMs: 1000,
-    expect: { min: 1, max: 10 },
+    expect: { min: 1, max: 10 }
 });
 
 if (readiness.status === 'open' || readiness.status === 'partial') {
     console.log(
         'Ready peers',
-        readiness.readyPeerIds,
+        readiness.readyPeerIds
     );
 }
 ```
@@ -677,12 +678,12 @@ selection and readiness handling.
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-type MotionUpdate = Readonly<{ roomRef: GroupRef; x: number; y: number }>;
+type MotionUpdate = Readonly<{ roomRef: GroupRef; x: number; y: number; }>;
 
 const room = await rallar.rooms.enter('lobby');
 const lane = room.realtime<MotionUpdate>({
     laneId: 'motion',
-    waitTimeoutMs: 1000,
+    waitTimeoutMs: 1000
 });
 
 lane.on((message) => {
@@ -697,7 +698,7 @@ if (sendResult.status !== 'sent') {
         'Realtime delivery degraded',
         sendResult.status,
         sendResult.reason,
-        sendResult.transportStatus,
+        sendResult.transportStatus
     );
 }
 ```
@@ -746,10 +747,7 @@ ranges and precision are always caller-owned; Rallar Motion does not assume a
 world scale.
 
 ```ts
-import {
-    RallarMotion,
-    createRallarMotionAdaptiveDelay,
-} from '@shared/rallar-motion/mod.ts';
+import { createRallarMotionAdaptiveDelay, RallarMotion } from '@shared/rallar-motion/mod.ts';
 
 const adaptiveDelay = createRallarMotionAdaptiveDelay();
 
@@ -757,20 +755,20 @@ const motion = RallarMotion.createBuffer({
     readInterpolationDelayMs: adaptiveDelay.currentDelayMs,
     maxExtrapolationMs: 150,
     interpolationMode: 'hermite',
-    discontinuity: { enabled: true, maxPositionDelta: 8 },
+    discontinuity: { enabled: true, maxPositionDelta: 8 }
 });
 
-rallar.realtime.onJson<{ position: [number, number, number]; seq: number }>(
+rallar.realtime.onJson<{ position: [number, number, number]; seq: number; }>(
     'motion',
     (message) => {
         motion.push({
             entityId: message.peerId,
             observedAtEpochMs: message.receivedAtEpochMs,
             position: message.data.position,
-            seq: message.data.seq,
+            seq: message.data.seq
         });
         adaptiveDelay.pushObservedAt(message.receivedAtEpochMs);
-    },
+    }
 );
 
 const estimate = motion.sample('peer-1', Date.now());
@@ -793,13 +791,11 @@ const estimate = motion.sample('peer-1', Date.now());
 ```ts
 const stream = await navigator.mediaDevices.getUserMedia({
     audio: true,
-    video: true,
+    video: true
 });
 
 await rallar.media.setLocalStream(stream);
-rallar.media.onRemoteStream(({ peerId, stream }) =>
-    attachVideo(peerId, stream),
-);
+rallar.media.onRemoteStream(({ peerId, stream }) => attachVideo(peerId, stream));
 ```
 
 ## Rallar CRDT
@@ -813,9 +809,9 @@ const doc = await rallar.crdt.open('room-checklist', {
     documentId: room.group.groupId,
     scope: {
         kind: 'room',
-        roomRef: room.group,
+        roomRef: room.group
     },
-    transport: 'ws',
+    transport: 'ws'
 });
 
 await doc.applyLocal({
@@ -825,9 +821,9 @@ await doc.applyLocal({
             kind: 'map.set',
             path: [],
             key: 'title',
-            value: 'North entrance',
-        },
-    ],
+            value: 'North entrance'
+        }
+    ]
 });
 ```
 
@@ -936,10 +932,7 @@ Rallar Data is a browser IndexedDB-backed key-value facade with observable in-me
 Import through `rallar.data`, or directly:
 
 ```ts
-import {
-    createRallarDataFacade,
-    defineRallarDataStore,
-} from '@shared-web/browser/rallar-data.ts';
+import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/browser/rallar-data.ts';
 ```
 
 ### Facade API
@@ -965,11 +958,11 @@ import {
 `estimateUsage()` returns browser storage usage/quota when available.
 
 ```ts
-type Settings = { volume: number };
+type Settings = { volume: number; };
 
 const settingsDef = rallar.data.define<Settings>('settings', {
     scope: 'principal',
-    durability: 'write-through',
+    durability: 'write-through'
 });
 
 const settings = await rallar.data.open(settingsDef);
@@ -1027,11 +1020,11 @@ Lifecycle methods:
 - `onChange(listener)`
 
 ```ts
-const drafts = await rallar.data.open<{ body: string }>('drafts', {
+const drafts = await rallar.data.open<{ body: string; }>('drafts', {
     scope: 'session',
     durability: 'write-behind',
     hydrate: 'lazy',
-    ttlMs: 24 * 60 * 60 * 1000,
+    ttlMs: 24 * 60 * 60 * 1000
 });
 
 drafts.onChange((event) => {
@@ -1039,7 +1032,7 @@ drafts.onChange((event) => {
 });
 
 await drafts.updateOrCreate('room:lobby', (current) => ({
-    body: current?.body ?? '',
+    body: current?.body ?? ''
 }));
 
 await drafts.whenIdle();
@@ -1102,12 +1095,12 @@ const runtime = createRallarMiddleware({
         inboxQueueReader,
         outboxQueueReader,
         wsQBoxServerService,
-        wakeQueueEngine,
+        wakeQueueEngine
     }) => {
         const topologyOutbox = createRtcTopologyOutboxPublisher({
             outboxQueueReader,
             senderId: serverId,
-            wake: wakeQueueEngine,
+            wake: wakeQueueEngine
         });
         return new AppGroupInboxService(
             inboxQueueReader,
@@ -1118,7 +1111,7 @@ const runtime = createRallarMiddleware({
             serverId,
             undefined,
             undefined,
-            topologyOutbox.publisher,
+            topologyOutbox.publisher
         );
     },
     createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
@@ -1128,15 +1121,15 @@ const runtime = createRallarMiddleware({
             resourceInboxResultsRepository,
             clientStateService,
             createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId,
+            serverId
         ),
     resilience: {
         inbox: resilienceInbox,
         outbox: resilienceOutbox,
-        appOutbox: resilienceAppOutbox,
+        appOutbox: resilienceAppOutbox
     },
     clientsRepository,
-    groupsRepository,
+    groupsRepository
 });
 
 runtime.qboxEngine.start();
@@ -1379,8 +1372,8 @@ const rallarServer = createRallarServerApplication({
     runtime,
     routes: {
         ws: (app) => installWsRoutes(app),
-        rest: [installAuthRoutes, installStateRoutes],
-    },
+        rest: [installAuthRoutes, installStateRoutes]
+    }
 });
 
 rallarServer.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();

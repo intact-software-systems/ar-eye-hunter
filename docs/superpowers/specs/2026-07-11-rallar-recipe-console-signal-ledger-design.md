@@ -22,12 +22,12 @@ iterations replace seeded surfaces with live features one workflow at a time.
 The checked-in concepts are the visual source of truth for composition and
 interaction hierarchy:
 
-| State | Concept | Native generated size |
-| --- | --- | --- |
-| Desktop Execute | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-execute-desktop.png` | 1586 × 992 |
-| Desktop failed Monitor with inspector | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-monitor-failed-desktop.png` | 1586 × 992 |
-| Mobile portrait Monitor | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-monitor-portrait.png` | 851 × 1847 |
-| Mobile landscape Tune timing/matrix | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-tune-landscape.png` | 1847 × 851 |
+| State                                 | Concept                                                                                                   | Native generated size |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- |
+| Desktop Execute                       | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-execute-desktop.png`        | 1586 × 992            |
+| Desktop failed Monitor with inspector | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-monitor-failed-desktop.png` | 1586 × 992            |
+| Mobile portrait Monitor               | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-monitor-portrait.png`       | 851 × 1847            |
+| Mobile landscape Tune timing/matrix   | `apps/rallar-black-box/docs/recipe-console-concepts/iteration-2-signal-ledger-tune-landscape.png`         | 1847 × 851            |
 
 The implementation must reproduce the concepts' hierarchy, density, palette,
 typography, geometry, selection/error states, and responsive transformations.
@@ -261,22 +261,22 @@ Tokens live under `.recipe-console` in
 `src/recipe-console/design/reset.css`. Neither file defines broad legacy
 selectors such as `.panel`, `.metric`, `.workspace-grid`, or legacy tabs.
 
-| Role | Background / foreground / border | Non-color contract |
-| --- | --- | --- |
-| Canvas | `#F5F7FA` / `#172033` / `#D5DBE3` | Spatial hierarchy and persistent region headings |
-| Surface | `#FFFFFF` / `#172033` / `#D5DBE3` | Rules and headings, not shadow-only separation |
-| Rail | `#EEF1F5` / `#172033` / `#D5DBE3` | Visible navigation labels and icons |
-| Primary | `#2446C2` / `#FFFFFF` / `#2446C2` | One dominant labeled action per command region |
-| Primary hover | `#1937A2` / `#FFFFFF` / `#1937A2` | Same label/icon, no movement |
-| Selected | `#E7ECFF` / `#1B3696` / `#3659D4` | 3px selection rail/check plus `aria-selected` |
-| Focus | transparent / inherited / `#315CF3` | 2px focus ring with offset |
-| Running | `#E4F5F7` / `#065D6B` / `#16808F` | Notched-ring icon, `Running`, elapsed time |
-| Passed | `#E7F5ED` / `#14633F` / `#2E815C` | Check-circle and `Passed` |
-| Failed | `#FCEBED` / `#981F2C` / `#C3424F` | X-octagon, `Failed`, solid leading rule |
-| Warning | `#FFF2D5` / `#774600` / `#A86600` | Warning triangle, label, remediation text |
-| Stale | `#EEF1F4` / `#4E596A` / `#707B8C` | Clock, `Stale`, age text |
-| Partial | `#F1EBFF` / `#59379A` / `#7A55B8` | Half-filled circle, `Partial`, available/expected count |
-| Disabled | `#EEF1F4` / `#616B79` / `#D4D9E1` | Preserved label and accessible reason; not opacity-only |
+| Role          | Background / foreground / border    | Non-color contract                                      |
+| ------------- | ----------------------------------- | ------------------------------------------------------- |
+| Canvas        | `#F5F7FA` / `#172033` / `#D5DBE3`   | Spatial hierarchy and persistent region headings        |
+| Surface       | `#FFFFFF` / `#172033` / `#D5DBE3`   | Rules and headings, not shadow-only separation          |
+| Rail          | `#EEF1F5` / `#172033` / `#D5DBE3`   | Visible navigation labels and icons                     |
+| Primary       | `#2446C2` / `#FFFFFF` / `#2446C2`   | One dominant labeled action per command region          |
+| Primary hover | `#1937A2` / `#FFFFFF` / `#1937A2`   | Same label/icon, no movement                            |
+| Selected      | `#E7ECFF` / `#1B3696` / `#3659D4`   | 3px selection rail/check plus `aria-selected`           |
+| Focus         | transparent / inherited / `#315CF3` | 2px focus ring with offset                              |
+| Running       | `#E4F5F7` / `#065D6B` / `#16808F`   | Notched-ring icon, `Running`, elapsed time              |
+| Passed        | `#E7F5ED` / `#14633F` / `#2E815C`   | Check-circle and `Passed`                               |
+| Failed        | `#FCEBED` / `#981F2C` / `#C3424F`   | X-octagon, `Failed`, solid leading rule                 |
+| Warning       | `#FFF2D5` / `#774600` / `#A86600`   | Warning triangle, label, remediation text               |
+| Stale         | `#EEF1F4` / `#4E596A` / `#707B8C`   | Clock, `Stale`, age text                                |
+| Partial       | `#F1EBFF` / `#59379A` / `#7A55B8`   | Half-filled circle, `Partial`, available/expected count |
+| Disabled      | `#EEF1F4` / `#616B79` / `#D4D9E1`   | Preserved label and accessible reason; not opacity-only |
 
 Normal text/background pairs target WCAG AA 4.5:1. Status boundaries and focus
 indicators target at least 3:1 against adjacent fills.

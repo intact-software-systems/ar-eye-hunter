@@ -21,7 +21,7 @@ type DirectorOutput = {
 
 if (shouldBecomeDirector()) {
     await rallar.director.appoint(currentRoom.group, {
-        heartbeatTtlMs: 4_000,
+        heartbeatTtlMs: 4_000
     });
 }
 
@@ -44,13 +44,13 @@ const relay = rallar.director.createRelay<MoveIntent, DirectorOutput>({
     },
     onSnapshot: async (message) => {
         reconcileFromDirectorSnapshot(message.data);
-    },
+    }
 });
 
 if (!relay.status().isDirector) {
     const sent = await relay.sendIntent({
         seq: nextInputSeq(),
-        direction: 'left',
+        direction: 'left'
     });
 
     if (sent.status === 'stale-director' || sent.status === 'no-director') {

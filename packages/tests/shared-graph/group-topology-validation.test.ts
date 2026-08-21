@@ -1,9 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import {
-    validateGroupTopology,
-    validateGroupTopologyNextHops,
-} from '@shared-graph/group-topology-validation.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
+import { validateGroupTopology, validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
+import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('group topology validation', () => {
@@ -12,18 +9,18 @@ describe('group topology validation', () => {
             [
                 ['peer-a', VertexState.MEMBER, 5],
                 ['peer-b', VertexState.MEMBER, 5],
-                ['peer-c', VertexState.MEMBER, 5],
+                ['peer-c', VertexState.MEMBER, 5]
             ],
             [
                 ['peer-a', 'peer-b', 1],
-                ['peer-b', 'peer-c', 1],
-            ],
+                ['peer-b', 'peer-c', 1]
+            ]
         );
 
         const result = validateGroupTopology({
             graph,
             activeSessionIds: new Set(['peer-a', 'peer-b', 'peer-c']),
-            maxDegree: 5,
+            maxDegree: 5
         });
 
         expect(result.valid).toBe(true);
@@ -36,18 +33,18 @@ describe('group topology validation', () => {
                 ['peer-a', VertexState.MEMBER, 1],
                 ['peer-b', VertexState.MEMBER, 1],
                 ['peer-c', VertexState.MEMBER, 1],
-                ['peer-extra', VertexState.MEMBER, 1],
+                ['peer-extra', VertexState.MEMBER, 1]
             ],
             [
                 ['peer-a', 'peer-b', 1],
-                ['peer-a', 'peer-extra', 1],
-            ],
+                ['peer-a', 'peer-extra', 1]
+            ]
         );
 
         const result = validateGroupTopology({
             graph,
             activeSessionIds: new Set(['peer-a', 'peer-b', 'peer-c', 'peer-d']),
-            maxDegree: 1,
+            maxDegree: 1
         });
 
         expect(result.valid).toBe(false);
@@ -58,7 +55,7 @@ describe('group topology validation', () => {
             'missing-active-session',
             'degree-limit-exceeded',
             'inactive-session-present',
-            'disconnected',
+            'disconnected'
         ]);
     });
 
@@ -68,9 +65,9 @@ describe('group topology validation', () => {
             nextHopsBySessionId: {
                 'peer-a': ['peer-b'],
                 'peer-b': ['peer-a', 'peer-c'],
-                'peer-c': ['peer-b'],
+                'peer-c': ['peer-b']
             },
-            maxDegree: 2,
+            maxDegree: 2
         });
 
         expect(connected.valid).toBe(true);
@@ -81,9 +78,9 @@ describe('group topology validation', () => {
             nextHopsBySessionId: {
                 'peer-a': ['peer-b', 'peer-x'],
                 'peer-b': ['peer-a'],
-                'peer-x': ['peer-a'],
+                'peer-x': ['peer-a']
             },
-            maxDegree: 1,
+            maxDegree: 1
         });
 
         expect(invalid.valid).toBe(false);
@@ -94,7 +91,7 @@ describe('group topology validation', () => {
             'missing-active-session',
             'inactive-session-present',
             'degree-limit-exceeded',
-            'disconnected',
+            'disconnected'
         ]);
     });
 });

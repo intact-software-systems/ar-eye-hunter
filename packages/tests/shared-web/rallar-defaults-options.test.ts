@@ -1,10 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-    shouldRetryRallarOperation,
-    toRallarCommandOptions,
-    toRallarWorkflowPolicies,
-} from '@shared-web/browser/rallar-operation-options.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { shouldRetryRallarOperation, toRallarCommandOptions, toRallarWorkflowPolicies } from '@shared-web/browser/rallar-operation-options.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar defaults and operation options', () => {
     it('builds command and workflow policies from operation options', () => {
@@ -13,21 +9,21 @@ describe('Rallar defaults and operation options', () => {
 
         expect(toRallarCommandOptions({ signal, timeoutMs: 250 })).toEqual({
             signal,
-            timeoutMs: 250,
+            timeoutMs: 250
         });
         expect(toRallarCommandOptions({ shouldRetry: explicitRetry })).toEqual({
-            shouldRetry: explicitRetry,
+            shouldRetry: explicitRetry
         });
         expect(toRallarCommandOptions({ maxAttempts: 3 })).toEqual({
             maxAttempts: 3,
-            shouldRetry: shouldRetryRallarOperation,
+            shouldRetry: shouldRetryRallarOperation
         });
         expect(toRallarWorkflowPolicies({})).toEqual({});
         expect(toRallarWorkflowPolicies({ maxAttempts: 3 })).toEqual({
             command: {
                 maxAttempts: 3,
-                shouldRetry: shouldRetryRallarOperation,
-            },
+                shouldRetry: shouldRetryRallarOperation
+            }
         });
     });
 
@@ -54,6 +50,6 @@ function canonicalConflictBody(): string {
         message: 'Request identity was already used for different semantic intent',
         issues: null,
         denial: null,
-        retry: null,
+        retry: null
     });
 }

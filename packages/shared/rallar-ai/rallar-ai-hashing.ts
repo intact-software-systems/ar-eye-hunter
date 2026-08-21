@@ -1,8 +1,4 @@
-import type {
-    RallarAiJsonRequest,
-    RallarAiJsonResult,
-    RallarAiJsonValue,
-} from './rallar-ai-types.ts';
+import type { RallarAiJsonRequest, RallarAiJsonResult, RallarAiJsonValue } from './rallar-ai-types.ts';
 
 export function canonicalRallarAiJson(value: unknown): string {
     const issues = validateRallarAiJsonValue(value);
@@ -14,7 +10,7 @@ export function canonicalRallarAiJson(value: unknown): string {
 
 export function validateRallarAiJsonValue(
     value: unknown,
-    path = '$',
+    path = '$'
 ): readonly string[] {
     const issues: string[] = [];
     collectJsonIssues(value, path, issues, new Set<object>());
@@ -51,12 +47,12 @@ export function hashRallarAiPrompt(input: {
         prompt: input.prompt,
         context: input.context ?? null,
         schemaId: input.schemaId ?? null,
-        schemaVersion: input.schemaVersion ?? null,
+        schemaVersion: input.schemaVersion ?? null
     });
 }
 
 export function hashRallarAiRequest(
-    request: RallarAiJsonRequest,
+    request: RallarAiJsonRequest
 ): string {
     return hashRallarAiJson({
         requestId: request.requestId ?? null,
@@ -65,12 +61,12 @@ export function hashRallarAiRequest(
         schemaHash: hashRallarAiSchema(request.schema),
         promptHash: hashRallarAiPrompt(request),
         baseStateRevision: request.baseStateRevision ?? null,
-        dedupeKey: request.dedupeKey ?? null,
+        dedupeKey: request.dedupeKey ?? null
     });
 }
 
 export function hashRallarAiResult(
-    result: RallarAiJsonResult,
+    result: RallarAiJsonResult
 ): string {
     return hashRallarAiJson({
         protocolVersion: result.protocolVersion,
@@ -89,7 +85,7 @@ export function hashRallarAiResult(
         createdAtEpochMs: result.createdAtEpochMs,
         value: result.value,
         validation: result.validation,
-        lifecycle: result.lifecycle ?? null,
+        lifecycle: result.lifecycle ?? null
     });
 }
 
@@ -106,19 +102,20 @@ function serializeCanonicalJson(value: RallarAiJsonValue): string {
         .filter(([, entryValue]) => entryValue !== undefined)
         .sort(([left], [right]) => left.localeCompare(right));
 
-    return `{${entries
-        .map(
-            ([key, entryValue]) =>
-                `${JSON.stringify(key)}:${serializeCanonicalJson(entryValue)}`,
-        )
-        .join(',')}}`;
+    return `{${
+        entries
+            .map(
+                ([key, entryValue]) => `${JSON.stringify(key)}:${serializeCanonicalJson(entryValue)}`
+            )
+            .join(',')
+    }}`;
 }
 
 function collectJsonIssues(
     value: unknown,
     path: string,
     issues: string[],
-    seenObjects: Set<object>,
+    seenObjects: Set<object>
 ): void {
     if (
         value === null ||
@@ -147,9 +144,7 @@ function collectJsonIssues(
     seenObjects.add(value);
 
     if (Array.isArray(value)) {
-        value.forEach((entry, index) =>
-            collectJsonIssues(entry, `${path}[${index}]`, issues, seenObjects)
-        );
+        value.forEach((entry, index) => collectJsonIssues(entry, `${path}[${index}]`, issues, seenObjects));
         seenObjects.delete(value);
         return;
     }

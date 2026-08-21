@@ -1,25 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import {
-    appTabFromValue,
-} from '../../../apps/rallar-black-box/src/app-tabs.ts';
-import {
-    normalizeAppNavigation,
-} from '../../../apps/rallar-black-box/src/legacy/shell/navigation.ts';
+import { appTabFromValue } from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { normalizeAppNavigation } from '../../../apps/rallar-black-box/src/legacy/shell/navigation.ts';
+import { createAdvancedLegacyHref } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
 import {
     ADVANCED_SURFACE_CATALOG,
-    type AdvancedSurfaceDescriptor,
+    type AdvancedSurfaceDescriptor
 } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts';
-import {
-    createAdvancedLegacyHref,
-} from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
-import type {
-    RecipeConsoleUrlState,
-} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
 const recipeConsoleState: RecipeConsoleUrlState = {
     v: 1,
     experience: 'recipe-console',
-    view: 'advanced',
+    view: 'advanced'
 };
 
 describe('legacy route alias ownership', () => {
@@ -29,23 +21,23 @@ describe('legacy route alias ownership', () => {
             for (const alias of surface.aliases) {
                 const navigation = normalizeAppNavigation({
                     mode: route.workspace,
-                    tab: appTabFromValue(alias),
+                    tab: appTabFromValue(alias)
                 });
                 const href = createAdvancedLegacyHref({
                     surface: alias,
-                    state: recipeConsoleState,
+                    state: recipeConsoleState
                 });
                 const url = new URL(href ?? '', 'https://console.test');
 
                 expect.soft(navigation.mode, `${alias}: canonical mode`).toBe(
-                    route.workspace,
+                    route.workspace
                 );
                 expect.soft(navigation.tab, `${alias}: visible tab`).toBe(
-                    route.tab,
+                    route.tab
                 );
                 expect.soft(
                     navigation.advancedSurface,
-                    `${alias}: Advanced child`,
+                    `${alias}: Advanced child`
                 ).toBe(route.advancedSurface);
                 expect.soft(url.searchParams.get('experience'), `${alias}: legacy experience`)
                     .toBe('legacy');
@@ -55,7 +47,7 @@ describe('legacy route alias ownership', () => {
                     .toBe(route.tab);
                 expect.soft(
                     url.searchParams.get('advancedSurface') ?? undefined,
-                    `${alias}: rollback Advanced child`,
+                    `${alias}: rollback Advanced child`
                 ).toBe(route.advancedSurface);
                 expect.soft(url.searchParams.get('legacySurface'), `${alias}: stable leaf`)
                     .toBe(surface.id);

@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
-import {
-    APP_MODES, appTabsForMode, nextAppTab, type AppModeId, type AppTabId,
-} from '../../app-tabs.ts';
+import { APP_MODES, appTabsForMode, nextAppTab, type AppModeId, type AppTabId } from '../../app-tabs.ts';
 
 export function AppTabs({
-    activeMode, activeTab, onSelect,
+    activeMode,
+    activeTab,
+    onSelect
 }: {
     activeMode: AppModeId;
     activeTab: AppTabId;
@@ -17,8 +17,8 @@ export function AppTabs({
         previousActiveTabRef.current = activeTab;
         const target = document.getElementById(`tab-${activeTab}`);
         const activeElement = target?.ownerDocument.activeElement;
-        const focusUnavailable = !activeElement?.isConnected
-            || Boolean(activeElement?.closest('[hidden], [inert]'));
+        const focusUnavailable = !activeElement?.isConnected ||
+            Boolean(activeElement?.closest('[hidden], [inert]'));
         if (changed && (focusUnavailable || activeElement === target?.ownerDocument.body)) {
             target?.focus({ preventScroll: true });
         }
@@ -27,23 +27,27 @@ export function AppTabs({
         const targetTab = event.key === 'ArrowRight'
             ? nextAppTab(tab, 1, activeMode)
             : event.key === 'ArrowLeft'
-                ? nextAppTab(tab, -1, activeMode)
-                : event.key === 'Home'
-                    ? tabs[0]?.id
-                    : event.key === 'End' ? tabs[tabs.length - 1]?.id : undefined;
-        if (!targetTab) return;
+            ? nextAppTab(tab, -1, activeMode)
+            : event.key === 'Home'
+            ? tabs[0]?.id
+            : event.key === 'End'
+            ? tabs[tabs.length - 1]?.id
+            : undefined;
+        if (!targetTab) {
+            return;
+        }
 
         event.preventDefault();
         onSelect(targetTab);
         event.currentTarget.ownerDocument.getElementById(`tab-${targetTab}`)
             ?.focus({ preventScroll: true });
     };
-    const activeModeLabel = APP_MODES.find(mode => mode.id === activeMode)?.label
-        ?? 'Workspace';
+    const activeModeLabel = APP_MODES.find((mode) => mode.id === activeMode)?.label ??
+        'Workspace';
     return (
         <nav className="app-tabs" aria-label="Rallar black-box sections">
             <div role="tablist" aria-label={`${activeModeLabel} tabs`}>
-                {tabs.map(tab => (
+                {tabs.map((tab) => (
                     <button
                         key={tab.id}
                         id={`tab-${tab.id}`}
@@ -54,7 +58,7 @@ export function AppTabs({
                         className={activeTab === tab.id ? 'selected' : ''}
                         tabIndex={activeTab === tab.id ? 0 : -1}
                         onClick={() => onSelect(tab.id)}
-                        onKeyDown={event => handleKeyDown(event, tab.id)}
+                        onKeyDown={(event) => handleKeyDown(event, tab.id)}
                     >
                         {tab.label}
                     </button>

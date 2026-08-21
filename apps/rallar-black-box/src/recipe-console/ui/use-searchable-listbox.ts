@@ -7,20 +7,19 @@ import {
     useRef,
     useState,
     type ChangeEventHandler,
-    type KeyboardEventHandler,
+    type KeyboardEventHandler
 } from 'react';
 import {
-    SEARCHABLE_LISTBOX_WINDOW_SIZE,
     duplicateSearchableListboxKey,
     filterSearchableListboxRows,
     findSearchableListboxRow,
     normalizedSearch,
+    SEARCHABLE_LISTBOX_WINDOW_SIZE,
     searchableListboxFingerprint,
     type SearchableListboxOption,
-    type SearchableListboxRow,
+    type SearchableListboxRow
 } from './searchable-listbox-model.ts';
-import { useExplicitWindow, useExplicitWindowFocusRecovery } from
-    './use-explicit-window.ts';
+import { useExplicitWindow, useExplicitWindowFocusRecovery } from './use-explicit-window.ts';
 export type SearchableListboxInput = Readonly<{
     contextKey: string;
     disabled: boolean;
@@ -38,26 +37,32 @@ export function useSearchableListbox(input: SearchableListboxInput) {
     const queryRef = useRef('');
     const openRef = useRef(false);
     const previousFingerprintRef = useRef<string | undefined>(undefined);
-    const reconciledRef = useRef<Readonly<{
-        contextKey: string; generation: number; revision: object; selectedKey?: string;
-    }> | undefined>(undefined);
+    const reconciledRef = useRef<
+        Readonly<{
+            contextKey: string;
+            generation: number;
+            revision: object;
+            selectedKey?: string;
+        }> | undefined
+    >(undefined);
     const rootRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const revision = input.revision ?? input.options;
     const duplicateKey = useMemo(
         () => duplicateSearchableListboxKey(input.options),
-        [input.options],
+        [input.options]
     );
-    const rows = useMemo(() => open && duplicateKey === undefined
-        ? filterSearchableListboxRows(input.options, deferredQuery)
-        : [], [deferredQuery, duplicateKey, input.options, open]);
+    const rows = useMemo(() =>
+        open && duplicateKey === undefined
+            ? filterSearchableListboxRows(input.options, deferredQuery)
+            : [], [deferredQuery, duplicateKey, input.options, open]);
     const fingerprint = searchableListboxFingerprint(input.contextKey, deferredQuery);
     const explicitWindow = useExplicitWindow({
         fingerprint,
         revision,
         total: rows.length,
-        windowSize: SEARCHABLE_LISTBOX_WINDOW_SIZE,
+        windowSize: SEARCHABLE_LISTBOX_WINDOW_SIZE
     });
     const focus = useExplicitWindowFocusRecovery(explicitWindow.model);
     const safeActiveIndex = rows.length === 0
@@ -72,88 +77,119 @@ export function useSearchableListbox(input: SearchableListboxInput) {
         openRef.current = false;
         setQuery('');
         setOpen(false);
-        if (restoreFocus) triggerRef.current?.focus();
+        if (restoreFocus) {
+            triggerRef.current?.focus();
+        }
     }, []);
     const reveal = useCallback((index: number) => {
-        if (rows.length === 0) return;
+        if (rows.length === 0) {
+            return;
+        }
         const bounded = Math.min(Math.max(0, index), rows.length - 1);
         setActiveIndex(bounded);
         explicitWindow.revealIndex(bounded);
     }, [explicitWindow.revealIndex, rows.length]);
     const openListbox = useCallback(() => {
-        if (input.disabled) return;
+        if (input.disabled) {
+            return;
+        }
         queryRef.current = '';
         openRef.current = true;
         setQuery('');
         setOpen(true);
-        setOpenGeneration(current => current + 1);
+        setOpenGeneration((current) => current + 1);
     }, [input.disabled]);
     const toggleListbox = useCallback(() => {
-        if (openRef.current) close(false);
-        else openListbox();
+        if (openRef.current) {
+            close(false);
+        }
+        else {
+            openListbox();
+        }
     }, [close, openListbox]);
     const commit = useCallback((row: SearchableListboxRow | undefined) => {
         if (
             input.disabled || !row ||
             normalizedSearch(queryRef.current) !== normalizedSearch(deferredQuery)
-        ) return;
+        ) {
+            return;
+        }
         input.onSelect(row.option);
         close(true);
     }, [close, deferredQuery, input.disabled, input.onSelect]);
     const browse = useCallback((direction: 'previous' | 'next') => {
         const target = direction === 'previous'
-            ? Math.max(0, explicitWindow.model.startIndex -
-                explicitWindow.model.windowSize)
+            ? Math.max(
+                0,
+                explicitWindow.model.startIndex -
+                    explicitWindow.model.windowSize
+            )
             : Math.min(rows.length - 1, explicitWindow.model.endIndexExclusive);
         setActiveIndex(Math.max(0, target));
-        if (direction === 'previous') explicitWindow.previous();
-        else explicitWindow.next();
+        if (direction === 'previous') {
+            explicitWindow.previous();
+        }
+        else {
+            explicitWindow.next();
+        }
     }, [explicitWindow, rows.length]);
-    const onQueryChange = useCallback<ChangeEventHandler<HTMLInputElement>>(event => {
+    const onQueryChange = useCallback<ChangeEventHandler<HTMLInputElement>>((event) => {
         queryRef.current = event.currentTarget.value;
         setQuery(event.currentTarget.value);
     }, []);
     const onSearchKeyDown = useCallback<KeyboardEventHandler<HTMLInputElement>>(
-        event => {
-            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        (event) => {
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+                return;
+            }
             const moves: Partial<Record<string, number>> = {
                 ArrowDown: safeActiveIndex + 1,
                 ArrowUp: safeActiveIndex - 1,
                 End: rows.length - 1,
-                Home: 0,
+                Home: 0
             };
             if (event.key in moves) {
                 event.preventDefault();
                 reveal(moves[event.key] ?? 0);
-            } else if (event.key === 'PageDown' || event.key === 'PageUp') {
+            }
+            else if (event.key === 'PageDown' || event.key === 'PageUp') {
                 event.preventDefault();
                 browse(event.key === 'PageDown' ? 'next' : 'previous');
-            } else if (event.key === 'Enter') {
+            }
+            else if (event.key === 'Enter') {
                 event.preventDefault();
                 commit(activeRow);
             }
         },
-        [activeRow, browse, commit, reveal, rows.length, safeActiveIndex],
+        [activeRow, browse, commit, reveal, rows.length, safeActiveIndex]
     );
     useLayoutEffect(() => {
         if (
             previousFingerprintRef.current !== undefined &&
             previousFingerprintRef.current !== fingerprint
-        ) setActiveIndex(0);
+        ) {
+            setActiveIndex(0);
+        }
         previousFingerprintRef.current = fingerprint;
     }, [fingerprint]);
     useLayoutEffect(() => {
-        if (open) searchRef.current?.focus();
+        if (open) {
+            searchRef.current?.focus();
+        }
     }, [open, openGeneration]);
     useLayoutEffect(() => {
-        if (!open || pending) return;
+        if (!open || pending) {
+            return;
+        }
         const previous = reconciledRef.current;
         if (
             previous?.contextKey === input.contextKey &&
             previous.generation === openGeneration &&
             previous.revision === revision &&
             previous.selectedKey === input.selectedKey
-        ) return;
+        ) {
+            return;
+        }
         const selected = findSearchableListboxRow(rows, input.selectedKey);
         reveal(selected < 0 ? 0 : selected);
         reconciledRef.current = {
@@ -162,7 +198,7 @@ export function useSearchableListbox(input: SearchableListboxInput) {
             revision,
             ...(input.selectedKey === undefined
                 ? {}
-                : { selectedKey: input.selectedKey }),
+                : { selectedKey: input.selectedKey })
         };
     }, [
         fingerprint,
@@ -171,20 +207,28 @@ export function useSearchableListbox(input: SearchableListboxInput) {
         open,
         openGeneration,
         pending,
-        revision,
+        revision
     ]);
     useLayoutEffect(() => {
-        if (!input.disabled || !open) return;
+        if (!input.disabled || !open) {
+            return;
+        }
         const root = rootRef.current;
         const ownsFocus = Boolean(root?.contains(document.activeElement));
         close(false);
-        if (ownsFocus) root?.focus({ preventScroll: true });
+        if (ownsFocus) {
+            root?.focus({ preventScroll: true });
+        }
     }, [close, input.disabled, open]);
     useEffect(() => {
-        if (!open) return;
+        if (!open) {
+            return;
+        }
         const dismissOutside = (event: Event) => {
             const target = event.target;
-            if (!(target instanceof Node) || rootRef.current?.contains(target)) return;
+            if (!(target instanceof Node) || rootRef.current?.contains(target)) {
+                return;
+            }
             close(false);
         };
         document.addEventListener('pointerdown', dismissOutside, true);
@@ -213,8 +257,7 @@ export function useSearchableListbox(input: SearchableListboxInput) {
         searchRef,
         triggerRef,
         toggleListbox,
-        visibleRows: rows.slice(explicitWindow.model.startIndex,
-            explicitWindow.model.endIndexExclusive),
-        window: explicitWindow,
+        visibleRows: rows.slice(explicitWindow.model.startIndex, explicitWindow.model.endIndexExclusive),
+        window: explicitWindow
     } as const;
 }

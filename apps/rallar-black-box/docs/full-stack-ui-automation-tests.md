@@ -312,8 +312,8 @@ Use this pattern:
 const hasFullStackConfig = Boolean(apiBaseUrl && roomId && canLoginOrRestore);
 
 test.skip(
-  !hasFullStackConfig,
-  "Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and login or restore-session env to run this full-stack test.",
+    !hasFullStackConfig,
+    'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and login or restore-session env to run this full-stack test.'
 );
 ```
 
@@ -334,13 +334,13 @@ For restored sessions, seed `auth.session` before navigation:
 
 ```ts
 await page.addInitScript((session) => {
-  window.localStorage.setItem("auth.session", JSON.stringify(session));
+    window.localStorage.setItem('auth.session', JSON.stringify(session));
 }, {
-  clientId,
-  accessToken,
-  username,
-  sessionId,
-  expiresAtEpochMs,
+    clientId,
+    accessToken,
+    username,
+    sessionId,
+    expiresAtEpochMs
 });
 ```
 
@@ -348,9 +348,10 @@ Close contexts in `finally`:
 
 ```ts
 try {
-  // test flow
-} finally {
-  await Promise.all([contextA.close(), contextB.close()]);
+    // test flow
+}
+finally {
+    await Promise.all([contextA.close(), contextB.close()]);
 }
 ```
 
@@ -359,20 +360,20 @@ try {
 For deterministic local UI tests:
 
 ```ts
-await page.goto("/?provider=simulated&tab=manual-rallar");
+await page.goto('/?provider=simulated&tab=manual-rallar');
 ```
 
 For real-provider app-shell tests:
 
 ```ts
 const query = new URLSearchParams({
-  provider: "browser-rallar",
-  apiBaseUrl,
-  roomId,
-  actor,
-  sessionId,
-  tab: "manual-rallar",
-  ...(restoreSession ? { rallarRestoreSession: "1" } : {}),
+    provider: 'browser-rallar',
+    apiBaseUrl,
+    roomId,
+    actor,
+    sessionId,
+    tab: 'manual-rallar',
+    ...(restoreSession ? { rallarRestoreSession: '1' } : {})
 });
 
 await page.goto(`/?${query.toString()}`);
@@ -382,21 +383,21 @@ For control-agent tests:
 
 ```ts
 const query = new URLSearchParams({
-  mode: "control",
-  provider: "browser-rallar",
-  controlUrl: "ws://127.0.0.1:5180/control",
-  runId,
-  agentId,
-  apiBaseUrl,
-  roomId,
-  actor,
-  sessionId,
-  tab: "manual-rallar",
+    mode: 'control',
+    provider: 'browser-rallar',
+    controlUrl: 'ws://127.0.0.1:5180/control',
+    runId,
+    agentId,
+    apiBaseUrl,
+    roomId,
+    actor,
+    sessionId,
+    tab: 'manual-rallar'
 });
 
 await page.goto(`/?${query.toString()}`);
-await expect(page.locator("#panel-local-workbench .control-panel"))
-  .toContainText("registered");
+await expect(page.locator('#panel-local-workbench .control-panel'))
+    .toContainText('registered');
 ```
 
 ## Selector Rules
@@ -404,9 +405,9 @@ await expect(page.locator("#panel-local-workbench .control-panel"))
 Prefer accessible roles and stable tab panel IDs:
 
 ```ts
-await page.getByRole("tab", { name: "Manual Rallar" }).click();
-const manualPanel = page.locator("#panel-manual-rallar");
-await manualPanel.getByRole("button", { name: "Join" }).click();
+await page.getByRole('tab', { name: 'Manual Rallar' }).click();
+const manualPanel = page.locator('#panel-manual-rallar');
+await manualPanel.getByRole('button', { name: 'Join' }).click();
 ```
 
 Useful stable panels:
@@ -587,12 +588,12 @@ For the Rallar Server tab:
 Mocked UI example:
 
 ```ts
-await page.route("http://localhost:8080/api/config", async (route) => {
-  await route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ apiBaseUrl: "http://localhost:8080" }),
-  });
+await page.route('http://localhost:8080/api/config', async (route) => {
+    await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ apiBaseUrl: 'http://localhost:8080' })
+    });
 });
 ```
 
@@ -600,11 +601,11 @@ Live full-stack example:
 
 ```ts
 await page.goto(
-  "/?provider=browser-rallar&tab=rallar-server&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080",
+    '/?provider=browser-rallar&tab=rallar-server&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080'
 );
-const serverPanel = page.locator("#panel-rallar-server");
-await serverPanel.getByRole("button", { name: "Send" }).click();
-await expect(serverPanel).toContainText("200");
+const serverPanel = page.locator('#panel-rallar-server');
+await serverPanel.getByRole('button', { name: 'Send' }).click();
+await expect(serverPanel).toContainText('200');
 ```
 
 For REST collections:
@@ -640,26 +641,26 @@ Use Playwright's `request` fixture to enqueue commands and poll run snapshots:
 
 ```ts
 const enqueue = await request.post(
-  `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
-    encodeURIComponent(agentId)
-  }/commands`,
-  {
-    data: {
-      commandId,
-      command: { kind: "stats", commandId },
-    },
-  },
+    `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
+        encodeURIComponent(agentId)
+    }/commands`,
+    {
+        data: {
+            commandId,
+            command: { kind: 'stats', commandId }
+        }
+    }
 );
 expect(enqueue.status()).toBe(202);
 
 await expect.poll(async () => {
-  const response = await request.get(
-    `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`,
-  );
-  const run = await response.json();
-  return run.results?.some((result: { commandId?: string; ok?: boolean }) =>
-    result.commandId === commandId && result.ok === true
-  ) ?? false;
+    const response = await request.get(
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
+    );
+    const run = await response.json();
+    return run.results?.some((result: { commandId?: string; ok?: boolean; }) =>
+        result.commandId === commandId && result.ok === true
+    ) ?? false;
 }).toBe(true);
 ```
 

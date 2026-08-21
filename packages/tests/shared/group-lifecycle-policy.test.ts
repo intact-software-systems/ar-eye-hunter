@@ -1,19 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { createDefaultGroupLifecyclePolicy, resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import {
     GROUP_LIFECYCLE_POLICY_PRESET_NAMES,
     type GroupLifecyclePolicy,
-    type GroupLifecyclePolicyIssueCode,
+    type GroupLifecyclePolicyIssueCode
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import {
-    createDefaultGroupLifecyclePolicy,
-    resolveGroupLifecyclePolicyPreset,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import {
     MAX_GROUP_FORMATION_DEADLINE_MS,
     MAX_GROUP_MANAGERS,
-    toNormalizedGroupLifecyclePolicy,
+    toNormalizedGroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
+import { describe, expect, it } from 'vitest';
 
 function toIssueCodes(policy: GroupLifecyclePolicy): readonly GroupLifecyclePolicyIssueCode[] {
     return validateGroupLifecyclePolicy(policy).left?.map((issue) => issue.code) ?? [];
@@ -57,7 +54,7 @@ describe('group lifecycle policy normalization', () => {
     it('layers sparse input over the named preset', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             preset: 'managed',
-            admission: { mode: 'closed' },
+            admission: { mode: 'closed' }
         });
 
         expect(policy.admission.mode).toBe('closed');
@@ -68,10 +65,10 @@ describe('group lifecycle policy normalization', () => {
     it.each([
         { field: 'above one', input: 1.5, expected: 1 },
         { field: 'below zero', input: -0.5, expected: 0 },
-        { field: 'not a number', input: Number.NaN, expected: 0 },
+        { field: 'not a number', input: Number.NaN, expected: 0 }
     ])('clamps a rate $field', ({ input, expected }) => {
         const policy = toNormalizedGroupLifecyclePolicy({
-            activation: { successRate: input },
+            activation: { successRate: input }
         });
 
         expect(policy.activation.successRate).toBe(expected);
@@ -80,7 +77,7 @@ describe('group lifecycle policy normalization', () => {
     it('clamps integer knobs to their server bounds', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             manager: { count: 9_999 },
-            activation: { deadlineMs: 60 * 60 * 1000 },
+            activation: { deadlineMs: 60 * 60 * 1000 }
         });
 
         expect(policy.manager.count).toBe(MAX_GROUP_MANAGERS);
@@ -94,7 +91,7 @@ describe('group lifecycle policy normalization', () => {
         const inherited = toNormalizedGroupLifecyclePolicy({ preset: 'drop-in-social' });
         const cleared = toNormalizedGroupLifecyclePolicy({
             preset: 'drop-in-social',
-            admission: { untilMemberCount: null },
+            admission: { untilMemberCount: null }
         });
 
         expect(inherited.admission.untilMemberCount).toBe(50);
@@ -109,7 +106,7 @@ describe('group lifecycle policy validation', () => {
     it('rejects a manager initiator with no manager selection', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             manager: { selection: 'none' },
-            establishment: { initiator: 'manager' },
+            establishment: { initiator: 'manager' }
         });
 
         expect(toIssueCodes(policy)).toContain('manager-initiator-without-manager');
@@ -121,7 +118,7 @@ describe('group lifecycle policy validation', () => {
     it('rejects manager-approval admission with no manager selection', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
             manager: { selection: 'none' },
-            admission: { mode: 'manager-approval' },
+            admission: { mode: 'manager-approval' }
         });
 
         expect(toIssueCodes(policy)).toContain('manager-approval-without-manager');
@@ -131,7 +128,7 @@ describe('group lifecycle policy validation', () => {
 
     it('rejects a floor above the success rate', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
-            activation: { mode: 'threshold', successRate: 0.5, minimumViableRate: 0.9 },
+            activation: { mode: 'threshold', successRate: 0.5, minimumViableRate: 0.9 }
         });
 
         expect(toIssueCodes(policy)).toContain('viable-rate-above-success-rate');
@@ -141,13 +138,13 @@ describe('group lifecycle policy validation', () => {
         {
             label: 'a threshold mode with no rate',
             input: { mode: 'threshold' as const, successRate: 0, minimumViableRate: 0 },
-            code: 'threshold-mode-requires-positive-rate' as const,
+            code: 'threshold-mode-requires-positive-rate' as const
         },
         {
             label: 'a deadline mode with no deadline',
             input: { mode: 'deadline' as const, deadlineMs: 0 },
-            code: 'deadline-mode-requires-positive-deadline' as const,
-        },
+            code: 'deadline-mode-requires-positive-deadline' as const
+        }
     ])('rejects $label', ({ input, code }) => {
         expect(toIssueCodes(toNormalizedGroupLifecyclePolicy({ activation: input })))
             .toContain(code);
@@ -155,7 +152,7 @@ describe('group lifecycle policy validation', () => {
 
     it('rejects assigned selection without principals', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
-            manager: { selection: 'assigned', assignedPrincipalIds: [] },
+            manager: { selection: 'assigned', assignedPrincipalIds: [] }
         });
 
         expect(toIssueCodes(policy)).toContain('assigned-selection-requires-principals');
@@ -163,7 +160,7 @@ describe('group lifecycle policy validation', () => {
 
     it('rejects more managers than assigned principals', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
-            manager: { selection: 'assigned', assignedPrincipalIds: ['a'], count: 2 },
+            manager: { selection: 'assigned', assignedPrincipalIds: ['a'], count: 2 }
         });
 
         expect(toIssueCodes(policy)).toContain('manager-count-exceeds-assigned-principals');
@@ -173,7 +170,7 @@ describe('group lifecycle policy validation', () => {
     // silently accepted and ignored; the ledger it selects is not built.
     it('rejects strict confirmation as unsupported', () => {
         const policy = toNormalizedGroupLifecyclePolicy({
-            activation: { strictConfirmation: true },
+            activation: { strictConfirmation: true }
         });
 
         expect(toIssueCodes(policy)).toContain('strict-confirmation-unsupported');
@@ -189,16 +186,16 @@ describe('group lifecycle policy validation', () => {
                 mode: 'threshold',
                 successRate: 0,
                 minimumViableRate: 0,
-                strictConfirmation: true,
-            },
+                strictConfirmation: true
+            }
         });
 
         expect(toIssueCodes(policy)).toEqual(
             expect.arrayContaining([
                 'manager-initiator-without-manager',
                 'threshold-mode-requires-positive-rate',
-                'strict-confirmation-unsupported',
-            ]),
+                'strict-confirmation-unsupported'
+            ])
         );
     });
 

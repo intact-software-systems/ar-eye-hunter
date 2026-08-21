@@ -20,17 +20,17 @@ export interface WebRtcOverlayMulticaster {
     createOriginatingPlan(
         msg: ALMessage,
         context: OverlayMulticasterContext,
-        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>,
+        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>
     ): OverlayMulticastDispatchPlan;
 
     createForwardingPlan(
         msg: ALMessage,
         context: OverlayMulticasterContext,
         fromPeerId?: PeerId,
-        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>,
+        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>
     ): OverlayMulticastDispatchPlan;
 }
 
 export type WebRtcOverlayMulticasterFactory = (
-    overlayId: OverlayId,
+    overlayId: OverlayId
 ) => WebRtcOverlayMulticaster;

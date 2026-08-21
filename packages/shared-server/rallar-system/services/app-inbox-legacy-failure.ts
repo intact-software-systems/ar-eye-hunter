@@ -1,7 +1,9 @@
 import type { AppInboxFailure } from './app-inbox-failure.ts';
 
 export function toLegacyAppInboxFailure(failure: AppInboxFailure): string {
-    if (failure.version === 'legacy-string.v0') return failure.message;
+    if (failure.version === 'legacy-string.v0') {
+        return failure.message;
+    }
     if (failure.version === 'legacy-object.v0') {
         return JSON.stringify({
             error: failure.message,
@@ -10,13 +12,15 @@ export function toLegacyAppInboxFailure(failure: AppInboxFailure): string {
             status: failure.status,
             ...(failure.denial?.details === null || failure.denial === null
                 ? {}
-                : { details: failure.denial.details }),
+                : { details: failure.denial.details })
         });
     }
     if (failure.version === 'legacy-retry-exhausted.v0') {
         return JSON.stringify(failure.legacyWire);
     }
-    if (failure.code === 'app-inbox-non-retryable') return failure.message;
+    if (failure.code === 'app-inbox-non-retryable') {
+        return failure.message;
+    }
     if (failure.denial !== null) {
         return JSON.stringify({
             error: failure.message.startsWith('Forbidden:')
@@ -26,7 +30,7 @@ export function toLegacyAppInboxFailure(failure: AppInboxFailure): string {
             message: failure.denial.message,
             ...(failure.denial.details === null
                 ? {}
-                : { details: failure.denial.details }),
+                : { details: failure.denial.details })
         });
     }
     if (failure.version === 'canonical.v1') {

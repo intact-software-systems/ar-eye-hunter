@@ -8,20 +8,20 @@ values.
 
 ## Local/Demo Vs Production
 
-| Surface | Local/demo default | Hardened production |
-| --- | --- | --- |
-| API-v1 storage | PGlite memory/file modes are allowed. | `RALLAR_SQL_BACKEND=postgres` and `DATABASE_URL` are required. |
-| API-v1 CORS | Localhost defaults or `*` may be used for dev. | `CORS_ORIGINS` must list exact HTTPS SPA origins; no wildcard or localhost. |
-| API-v1 registration | `AUTH_REGISTRATION_MODE=public`. | `AUTH_REGISTRATION_MODE=admin`. |
-| API-v1 demo users | `AUTH_STATIC_CLIENTS_MODE=demo` keeps bundled `admin`, `user`, `guest`, and test users. | `AUTH_STATIC_CLIENTS_MODE=disabled`; provision real runtime users. |
-| API-v1 state reads | `/api/state/*` is authenticated; strict full-state read policy is opt-in. | `RALLAR_STATE_STRICT_READ_AUTH=1`. |
-| TURN/ICE | `RALLAR_ICE_MODE=local` may return no ICE servers. | `RALLAR_ICE_MODE=metered`, `METERED_APP_NAME`, and `METERED_API_KEY`. |
-| Relic REST | `RELIC_REST_AUTH_MODE=authenticated` requires login only. | `RELIC_REST_AUTH_MODE=group-policy`. |
-| Black-box control CORS | Empty allow-list means no origin restriction. | `RALLAR_BLACK_BOX_ALLOWED_ORIGINS` must list exact HTTPS SPA origins. |
-| Black-box admin/operator auth | Missing admin/operator tokens leave mutation auth open for local use. | `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` is required; optional admin token is break-glass only. |
-| Black-box run/read tokens | Run and read tokens are optional. | `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` and `RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1`. |
-| Black-box artifacts | In-memory snapshots and unbounded retention are allowed. | `RALLAR_BLACK_BOX_STORAGE_DIR` and positive `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`. |
-| Browser env | Only `VITE_*` is intentionally public in Vite bundles. | Never put server secrets in `VITE_*`, `API_*`, URLs, or browser-visible audit files. |
+| Surface                       | Local/demo default                                                                      | Hardened production                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| API-v1 storage                | PGlite memory/file modes are allowed.                                                   | `RALLAR_SQL_BACKEND=postgres` and `DATABASE_URL` are required.                                  |
+| API-v1 CORS                   | Localhost defaults or `*` may be used for dev.                                          | `CORS_ORIGINS` must list exact HTTPS SPA origins; no wildcard or localhost.                     |
+| API-v1 registration           | `AUTH_REGISTRATION_MODE=public`.                                                        | `AUTH_REGISTRATION_MODE=admin`.                                                                 |
+| API-v1 demo users             | `AUTH_STATIC_CLIENTS_MODE=demo` keeps bundled `admin`, `user`, `guest`, and test users. | `AUTH_STATIC_CLIENTS_MODE=disabled`; provision real runtime users.                              |
+| API-v1 state reads            | `/api/state/*` is authenticated; strict full-state read policy is opt-in.               | `RALLAR_STATE_STRICT_READ_AUTH=1`.                                                              |
+| TURN/ICE                      | `RALLAR_ICE_MODE=local` may return no ICE servers.                                      | `RALLAR_ICE_MODE=metered`, `METERED_APP_NAME`, and `METERED_API_KEY`.                           |
+| Relic REST                    | `RELIC_REST_AUTH_MODE=authenticated` requires login only.                               | `RELIC_REST_AUTH_MODE=group-policy`.                                                            |
+| Black-box control CORS        | Empty allow-list means no origin restriction.                                           | `RALLAR_BLACK_BOX_ALLOWED_ORIGINS` must list exact HTTPS SPA origins.                           |
+| Black-box admin/operator auth | Missing admin/operator tokens leave mutation auth open for local use.                   | `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` is required; optional admin token is break-glass only. |
+| Black-box run/read tokens     | Run and read tokens are optional.                                                       | `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` and `RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1`.             |
+| Black-box artifacts           | In-memory snapshots and unbounded retention are allowed.                                | `RALLAR_BLACK_BOX_STORAGE_DIR` and positive `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`.              |
+| Browser env                   | Only `VITE_*` is intentionally public in Vite bundles.                                  | Never put server secrets in `VITE_*`, `API_*`, URLs, or browser-visible audit files.            |
 
 ## API-v1 Production
 

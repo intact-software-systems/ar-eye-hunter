@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
+import type { RtcTopologyPublication } from '@shared-server/rallar-system/rtc-topology-publication-contract.ts';
+import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { RtcTopologyPublication } from '@shared-server/rallar-system/rtc-topology-publication-contract.ts';
-import {
-    toRtcTopologyPublicationId,
-    toRtcTopologyPublicationMessageId,
-} from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
-import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
 
 describe('RTC topology publication WS outbox entry', () => {
     it('bounds its persistence key without changing the published AL route', () => {
@@ -19,13 +16,13 @@ describe('RTC topology publication WS outbox entry', () => {
         const entry = computeRtcTopologyPublicationOutbox(publication);
         const persistedMessage = JSON.parse(entry.resource) as {
             route: typeof publication.message.route;
-            targets: { recipientPeerIds?: readonly string[] };
+            targets: { recipientPeerIds?: readonly string[]; };
         };
 
         expect(entry.key).toEqual(toAppQueueKey({
             topicId: publication.message.route.topicId,
             resourceId: publication.message.id.msgId,
-            contextId: publication.message.route.contextId,
+            contextId: publication.message.route.contextId
         }));
         expect(entry.key.resourceId.length).toBeLessThanOrEqual(36);
         expect(persistedMessage.route).toEqual(publication.message.route);
@@ -37,10 +34,12 @@ describe('RTC topology publication WS outbox entry', () => {
         const second = longRoutePublication('topology-work-2');
 
         const entries = [first, second].map(computeRtcTopologyPublicationOutbox);
-        const messages = entries.map((entry) => JSON.parse(entry.resource) as {
-            id: { msgId: string };
-            route: typeof first.message.route;
-        });
+        const messages = entries.map((entry) =>
+            JSON.parse(entry.resource) as {
+                id: { msgId: string; };
+                route: typeof first.message.route;
+            }
+        );
 
         expect(entries[0].key).not.toEqual(entries[1].key);
         expect(entries.every((entry) => entry.key.resourceId.length <= 36)).toBe(true);
@@ -54,7 +53,7 @@ function longRoutePublication(workId = 'medium-scale-topology-work'): RtcTopolog
     const groupRef = {
         applicationId: 'medium-scale-application'.repeat(2),
         workspaceId: 'medium-scale-workspace'.repeat(2),
-        groupId: 'medium-scale-group'.repeat(2),
+        groupId: 'medium-scale-group'.repeat(2)
     };
     const causalRevision = { groupRevision: 141, presenceRevision: 204 };
     const createdAtEpochMs = 1_000;
@@ -72,45 +71,44 @@ function longRoutePublication(workId = 'medium-scale-topology-work'): RtcTopolog
         version: 122,
         createdByClientId: 'owner',
         createdAtEpochMs,
-        updatedAtEpochMs: createdAtEpochMs,
+        updatedAtEpochMs: createdAtEpochMs
     };
     const message = {
         id: {
             v: 2 as const,
             msgId: toRtcTopologyPublicationMessageId(workId),
             ts: createdAtEpochMs,
-            senderId: 'rallar-server',
+            senderId: 'rallar-server'
         },
         route: {
             topicId: AppTopics.overlayTopology,
-            resourceId:
-                `${snapshot.overlayId}:${causalRevision.groupRevision}:` +
+            resourceId: `${snapshot.overlayId}:${causalRevision.groupRevision}:` +
                 `${causalRevision.presenceRevision}:${snapshot.version}`,
-            contextId: groupRef.groupId,
+            contextId: groupRef.groupId
         },
         constraints: { expiresAtMs },
         targets: {
             mode: 'broadcast' as const,
             scope: 'room' as const,
             groupRef,
-            minSnapshotVersion: 101,
+            minSnapshotVersion: 101
         },
         delivery: {
             reliability: 'best-effort' as const,
-            ack: 'none' as const,
+            ack: 'none' as const
         },
         payload: {
             typeId: AppTopics.overlayTopology,
             contentType: 'application/json' as const,
-            resource: JSON.stringify(snapshot),
+            resource: JSON.stringify(snapshot)
         },
-        audit: { createdBy: 'rallar-server', createdTs: createdAtEpochMs },
+        audit: { createdBy: 'rallar-server', createdTs: createdAtEpochMs }
     };
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision: causalRevision,
-            overlayVersion: snapshot.version,
+            overlayVersion: snapshot.version
         }),
         workId,
         groupRef,
@@ -119,6 +117,6 @@ function longRoutePublication(workId = 'medium-scale-topology-work'): RtcTopolog
         targetGroupSnapshotVersion: 101,
         recipientSessionIds: snapshot.activeSessionIds,
         message,
-        createdAtEpochMs,
+        createdAtEpochMs
     };
 }

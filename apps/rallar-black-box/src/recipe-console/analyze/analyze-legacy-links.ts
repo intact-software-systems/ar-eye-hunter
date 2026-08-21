@@ -1,29 +1,26 @@
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import {
-    setOptionalString,
-    toSearch,
-} from '../routing/url-state-helpers.ts';
+import { setOptionalString, toSearch } from '../routing/url-state-helpers.ts';
 
 const RUN_ID_FIELDS = [
     'controlRunId',
     'distributedRunId',
     'agentId',
     'recipeId',
-    'commandId',
+    'commandId'
 ] as const satisfies readonly (keyof RecipeConsoleUrlState)[];
 
 const LEGACY_PROVIDER_VALUES = new Set([
     'simulated',
-    'browser-rallar',
+    'browser-rallar'
 ]);
 
 export function createAnalyzeLegacyRunsHref(
     state: RecipeConsoleUrlState,
-    sourceSearch = '',
+    sourceSearch = ''
 ): string {
     const params = legacyParams(
         'workspace=black-box-runner&tab=runs',
-        sourceSearch,
+        sourceSearch
     );
     for (const field of RUN_ID_FIELDS) {
         setOptionalString(params, field, state[field]);
@@ -32,11 +29,11 @@ export function createAnalyzeLegacyRunsHref(
 }
 
 export function createAnalyzeLegacySharedTestHref(
-    sourceSearch = '',
+    sourceSearch = ''
 ): string {
     const params = legacyParams(
         'workspace=black-box-runner&tab=advanced&advancedSurface=shared-test',
-        sourceSearch,
+        sourceSearch
     );
     return `/${toSearch(params)}`;
 }

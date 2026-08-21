@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { RecipeConsoleControlBootstrap } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 import {
     readRecipeConsolePreferences,
     RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY,
     resetRecipeConsolePreferences,
     resolveRecipeConsolePreferenceState,
     writeRecipeConsolePreferences,
-    type RecipeConsolePreferencesStorage,
+    type RecipeConsolePreferencesStorage
 } from '../../../apps/rallar-black-box/src/recipe-console/app/recipe-console-preferences.ts';
+import type { RecipeConsoleControlBootstrap } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 
 class MemoryStorage implements RecipeConsolePreferencesStorage {
     readonly values = new Map<string, string>();
@@ -39,13 +38,13 @@ function bootstrap(): RecipeConsoleControlBootstrap {
             allowBootstrapAgentTicket: true,
             controlUrlFromLocation: false,
             apiBaseUrlFromLocation: false,
-            controlTokenFromLocation: false,
+            controlTokenFromLocation: false
         },
         bootstrapGroup: {
             applicationId: 'deployment-app',
             workspaceId: 'deployment-workspace',
-            groupId: 'deployment-group',
-        },
+            groupId: 'deployment-group'
+        }
     };
 }
 
@@ -55,7 +54,7 @@ const PERSONAL = {
     applicationId: 'personal-app',
     workspaceId: 'personal-workspace',
     groupId: 'personal-group',
-    controlReadTimeoutMs: 20_000,
+    controlReadTimeoutMs: 20_000
 } as const;
 
 describe('Recipe Console personal defaults', () => {
@@ -66,10 +65,10 @@ describe('Recipe Console personal defaults', () => {
 
         expect(readRecipeConsolePreferences(storage)).toEqual(PERSONAL);
         expect(JSON.parse(
-            storage.getItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY) ?? '{}',
+            storage.getItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY) ?? '{}'
         )).toEqual({
             version: 1,
-            values: PERSONAL,
+            values: PERSONAL
         });
         const raw = storage.getItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY) ?? '';
         expect(raw).not.toContain('must-never-be-persisted');
@@ -80,25 +79,29 @@ describe('Recipe Console personal defaults', () => {
         ['https://user:secret@control.test', 'credentials'],
         ['https://control.test/?token=secret', 'query string'],
         ['https://control.test/#secret', 'fragment'],
-        ['ftp://control.test', 'protocol'],
+        ['ftp://control.test', 'protocol']
     ])('rejects a persisted endpoint containing %s', (controlUrl, expected) => {
         const storage = new MemoryStorage();
 
-        expect(() => writeRecipeConsolePreferences(storage, {
-            ...PERSONAL,
-            controlUrl,
-        })).toThrow(expected);
+        expect(() =>
+            writeRecipeConsolePreferences(storage, {
+                ...PERSONAL,
+                controlUrl
+            })
+        ).toThrow(expected);
         expect(storage.getItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY)).toBeNull();
     });
 
     it.each([999, 120_001, 2_500.5, Number.NaN])(
         'rejects the invalid timeout %s',
-        controlReadTimeoutMs => {
-            expect(() => writeRecipeConsolePreferences(
-                new MemoryStorage(),
-                { ...PERSONAL, controlReadTimeoutMs },
-            )).toThrow('Control read timeout');
-        },
+        (controlReadTimeoutMs) => {
+            expect(() =>
+                writeRecipeConsolePreferences(
+                    new MemoryStorage(),
+                    { ...PERSONAL, controlReadTimeoutMs }
+                )
+            ).toThrow('Control read timeout');
+        }
     );
 
     it('ignores malformed, unknown, and secret-shaped stored documents', () => {
@@ -108,18 +111,18 @@ describe('Recipe Console personal defaults', () => {
             JSON.stringify({ version: 2, values: PERSONAL }),
             JSON.stringify({
                 version: 1,
-                values: { ...PERSONAL, token: 'secret' },
+                values: { ...PERSONAL, token: 'secret' }
             }),
             JSON.stringify({
                 version: 1,
-                values: { ...PERSONAL, controlReadTimeoutMs: 500 },
-            }),
+                values: { ...PERSONAL, controlReadTimeoutMs: 500 }
+            })
         ];
 
         for (const document of invalidDocuments) {
             storage.setItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY, document);
             expect(readRecipeConsolePreferences(storage)).toEqual({
-                controlReadTimeoutMs: 20_000,
+                controlReadTimeoutMs: 20_000
             });
         }
     });
@@ -129,7 +132,7 @@ describe('Recipe Console personal defaults', () => {
             bootstrap: bootstrap(),
             preferences: PERSONAL,
             search: '',
-            env: {},
+            env: {}
         });
 
         expect(resolved.effectiveBootstrap).toMatchObject({
@@ -138,8 +141,8 @@ describe('Recipe Console personal defaults', () => {
             bootstrapGroup: {
                 applicationId: PERSONAL.applicationId,
                 workspaceId: PERSONAL.workspaceId,
-                groupId: PERSONAL.groupId,
-            },
+                groupId: PERSONAL.groupId
+            }
         });
         expect(resolved.controlReadTimeoutMs).toBe(20_000);
         expect(resolved.locks).toEqual({});
@@ -157,8 +160,8 @@ describe('Recipe Console personal defaults', () => {
                 VITE_RALLAR_API_BASE_URL: 'https://environment-api.test',
                 VITE_RALLAR_APPLICATION_ID: 'environment-app',
                 VITE_RALLAR_WORKSPACE_ID: 'environment-workspace',
-                VITE_RALLAR_ROOM_ID: 'environment-group',
-            },
+                VITE_RALLAR_ROOM_ID: 'environment-group'
+            }
         });
 
         expect(resolved.effectiveBootstrap).toEqual(bootstrap());
@@ -167,7 +170,7 @@ describe('Recipe Console personal defaults', () => {
             apiBaseUrl: 'url',
             applicationId: 'url',
             workspaceId: 'url',
-            groupId: 'url',
+            groupId: 'url'
         });
     });
 
@@ -180,8 +183,8 @@ describe('Recipe Console personal defaults', () => {
                 VITE_RALLAR_CONTROL_URL: 'wss://environment.test/control',
                 VITE_RALLAR_API_BASE_URL: 'https://environment-api.test',
                 VITE_RALLAR_APPLICATION_ID: 'environment-app',
-                VITE_RALLAR_WORKSPACE_ID: 'environment-workspace',
-            },
+                VITE_RALLAR_WORKSPACE_ID: 'environment-workspace'
+            }
         });
 
         expect(resolved.effectiveBootstrap.bootstrapGroup.groupId)
@@ -190,7 +193,7 @@ describe('Recipe Console personal defaults', () => {
             controlUrl: 'deployment',
             apiBaseUrl: 'deployment',
             applicationId: 'deployment',
-            workspaceId: 'deployment',
+            workspaceId: 'deployment'
         });
     });
 
@@ -202,7 +205,7 @@ describe('Recipe Console personal defaults', () => {
 
         expect(storage.getItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY)).toBeNull();
         expect(readRecipeConsolePreferences(storage)).toEqual({
-            controlReadTimeoutMs: 20_000,
+            controlReadTimeoutMs: 20_000
         });
     });
 });

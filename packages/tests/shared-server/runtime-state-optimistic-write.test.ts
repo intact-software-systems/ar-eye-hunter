@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
     DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS,
     requireConditionalWrite,
     RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry,
+    waitForRuntimeStateWriteRetry
 } from '@shared-server/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('optimistic runtime-state writes', () => {
     it('uses the fixed three-attempt backoff contract', async () => {
@@ -27,7 +27,7 @@ describe('optimistic runtime-state writes', () => {
 
     it('rejects attempts outside the runtime budget even when typing is bypassed', async () => {
         await expect(
-            waitForRuntimeStateWriteRetry(3 as 0),
+            waitForRuntimeStateWriteRetry(3 as 0)
         ).rejects.toThrow(/runtime state write attempt/u);
     });
 
@@ -38,7 +38,7 @@ describe('optimistic runtime-state writes', () => {
         expect(requireConditionalWrite(appliedWrite)).toBe(appliedWrite);
         expect(requireConditionalWrite(appliedDelete)).toBe(appliedDelete);
         expect(() => requireConditionalWrite({ status: 'conflict' })).toThrow(
-            RuntimeStateWriteConflictError,
+            RuntimeStateWriteConflictError
         );
     });
 
@@ -47,14 +47,15 @@ describe('optimistic runtime-state writes', () => {
             { status: 'invalid' },
             {},
             null,
-            undefined,
+            undefined
         ];
 
         for (const result of invalidResults) {
             let thrown: unknown;
             try {
                 requireConditionalWrite(result as never);
-            } catch (error) {
+            }
+            catch (error) {
                 thrown = error;
             }
 

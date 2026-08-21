@@ -3,13 +3,15 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-
 export async function tryExecuteRuntimeStateConditionalMutation(
     query: string,
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined,
-    values: readonly unknown[],
-): Promise<readonly Readonly<{ revision: number }>[] | undefined> {
+    values: readonly unknown[]
+): Promise<readonly Readonly<{ revision: number; }>[] | undefined> {
     const isUpdate = query.includes('update runtime_state_store') &&
         query.includes('returning revision');
     const isDelete = query.includes('delete from runtime_state_store') &&
         query.includes('returning revision');
-    if (!isUpdate && !isDelete) return undefined;
+    if (!isUpdate && !isDelete) {
+        return undefined;
+    }
     if (!runtime) {
         throw new Error('Runtime-state SQL requires a transaction runtime');
     }
@@ -19,14 +21,14 @@ export async function tryExecuteRuntimeStateConditionalMutation(
             Date,
             string,
             string,
-            number,
+            number
         ];
         const result = await runtime.upsertIfRevision(
             namespace,
             key,
             value,
             expireAt.getTime(),
-            expectedRevision,
+            expectedRevision
         );
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }

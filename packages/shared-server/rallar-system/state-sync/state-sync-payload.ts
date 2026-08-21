@@ -12,32 +12,32 @@ export type StateSyncScope = Readonly<{
 
 export type StateSyncPayload =
     | Readonly<{
-    kind: 'client';
-    scope: StateSyncScope;
-    snapshot?: ClientSnapshot;
-}>
+        kind: 'client';
+        scope: StateSyncScope;
+        snapshot?: ClientSnapshot;
+    }>
     | Readonly<{
-    kind: 'group';
-    snapshot: GroupSnapshot;
-}>
+        kind: 'group';
+        snapshot: GroupSnapshot;
+    }>
     | Readonly<{
-    kind: 'group-directory';
-    snapshot: GroupSnapshot;
-}>
+        kind: 'group-directory';
+        snapshot: GroupSnapshot;
+    }>
     | Readonly<{
-    kind: 'group-event';
-    scope: StateSyncScope;
-    groupId: string;
-    /**
-     * The persisted immutable delivery audience carried by a delta-envelope
-     * row. Undefined for legacy bare-event and overlay rows, whose audience
-     * still resolves through the snapshot caches.
-     */
-    audienceSessionIds: readonly string[] | undefined;
-}>
+        kind: 'group-event';
+        scope: StateSyncScope;
+        groupId: string;
+        /**
+         * The persisted immutable delivery audience carried by a delta-envelope
+         * row. Undefined for legacy bare-event and overlay rows, whose audience
+         * still resolves through the snapshot caches.
+         */
+        audienceSessionIds: readonly string[] | undefined;
+    }>
     | Readonly<{
-    kind: 'invalid';
-}>;
+        kind: 'invalid';
+    }>;
 
 /**
  * The authoritative group snapshot carried by a state-sync row, when the row
@@ -45,7 +45,7 @@ export type StateSyncPayload =
  * audience resolution may use it when a process-local cache lags the row.
  */
 export function readGroupSnapshotStateSyncPayload(
-    message: ALMessage,
+    message: ALMessage
 ): GroupSnapshot | undefined {
     const payload = parseStateSyncPayload(message);
     return payload && (payload.kind === 'group' || payload.kind === 'group-directory')
@@ -61,7 +61,7 @@ export function readGroupSnapshotStateSyncPayload(
  * very session the snapshot announces.
  */
 export function readClientSnapshotStateSyncPayload(
-    message: ALMessage,
+    message: ALMessage
 ): ClientSnapshot | undefined {
     const payload = parseStateSyncPayload(message);
     return payload && payload.kind === 'client' ? payload.snapshot : undefined;
@@ -78,7 +78,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                 return {
                     kind: 'client',
                     scope: snapshot.principal,
-                    snapshot,
+                    snapshot
                 };
             }
             case AppTopics.clientStateEvent: {
@@ -88,7 +88,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                 }
                 return {
                     kind: 'client',
-                    scope: event,
+                    scope: event
                 };
             }
             case AppTopics.groupStateSnapshot: {
@@ -101,7 +101,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                 }
                 return {
                     kind: 'group',
-                    snapshot,
+                    snapshot
                 };
             }
             case AppTopics.groupDirectorySnapshot: {
@@ -114,7 +114,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                 }
                 return {
                     kind: 'group-directory',
-                    snapshot,
+                    snapshot
                 };
             }
             case AppTopics.groupStateEvent: {
@@ -127,7 +127,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                         kind: 'group-event',
                         scope: payload,
                         groupId: payload.groupId,
-                        audienceSessionIds: undefined,
+                        audienceSessionIds: undefined
                     };
                 }
                 validateGroupStateDeltaEnvelope(payload);
@@ -138,7 +138,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                     kind: 'group-event',
                     scope: payload.event,
                     groupId: payload.event.groupId,
-                    audienceSessionIds: payload.audienceSessionIds,
+                    audienceSessionIds: payload.audienceSessionIds
                 };
             }
             case AppTopics.overlayTopology: {
@@ -153,13 +153,14 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                     kind: 'group-event',
                     scope: snapshot.groupRef,
                     groupId: snapshot.groupRef.groupId,
-                    audienceSessionIds: undefined,
+                    audienceSessionIds: undefined
                 };
             }
             default:
                 return undefined;
         }
-    } catch {
+    }
+    catch {
         return isStateSyncTopic(message.payload.typeId)
             ? { kind: 'invalid' }
             : undefined;
@@ -168,7 +169,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
 
 export function sameScope(
     left: StateSyncScope,
-    right: StateSyncScope,
+    right: StateSyncScope
 ): boolean {
     return left.applicationId === right.applicationId &&
         (left.workspaceId ?? '') === (right.workspaceId ?? '');
@@ -176,7 +177,7 @@ export function sameScope(
 
 function hasMatchingExplicitGroupAudience(
     message: ALMessage,
-    groupRef: GroupRef,
+    groupRef: GroupRef
 ): boolean {
     const targets = message.targets;
     const targetRef = targets?.mode === 'multicast'
@@ -202,7 +203,7 @@ function isStateSyncTopic(typeId: string): boolean {
 }
 
 function isOverlayTopologySnapshot(
-    value: unknown,
+    value: unknown
 ): value is RallarOverlayTopologySnapshot {
     if (!isRecord(value) || !isRecord(value.groupRef)) {
         return false;

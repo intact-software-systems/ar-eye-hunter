@@ -1,21 +1,17 @@
-import type {
-    RallarBlackBoxTestRecipe,
-} from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../types.ts';
 
-import type {
-    RallarBlackBoxCompositeConformanceRecipeOptions,
-} from '../composite-conformance.ts';
+import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
 import {
     commandMetadata,
     configureCommand,
     recipeId,
     recipeMetadata,
     statsCommand,
-    timeoutMs,
+    timeoutMs
 } from '../conformance/composite-conformance-command-fixtures.ts';
 
 export function loopUntilConvergenceRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     return {
         recipeId: recipeId('loop-until-convergence', options),
@@ -38,12 +34,12 @@ export function loopUntilConvergenceRecipe(
                         timeoutMs: timeoutMs(options),
                         request: {
                             path: '/api/config',
-                            method: 'GET',
+                            method: 'GET'
                         },
                         metadata: commandMetadata(
                             'loop-until-convergence',
-                            'loop-until-poll-request',
-                        ),
+                            'loop-until-poll-request'
+                        )
                     },
                     {
                         kind: 'assert',
@@ -53,18 +49,18 @@ export function loopUntilConvergenceRecipe(
                         expected: 6,
                         metadata: commandMetadata(
                             'loop-until-convergence',
-                            'loop-until-poll-converged',
-                        ),
-                    },
-                ],
+                            'loop-until-poll-converged'
+                        )
+                    }
+                ]
             },
-            statsCommand('loop-until-convergence-stats', 'loop-until-convergence'),
-        ],
+            statsCommand('loop-until-convergence-stats', 'loop-until-convergence')
+        ]
     };
 }
 
 export function loopUntilExhaustedRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     return {
         recipeId: recipeId('loop-until-exhausted', options),
@@ -90,11 +86,11 @@ export function loopUntilExhaustedRecipe(
                         expected: -1,
                         metadata: commandMetadata(
                             'loop-until-exhausted',
-                            'loop-until-never-converges',
-                        ),
-                    },
-                ],
-            },
-        ],
+                            'loop-until-never-converges'
+                        )
+                    }
+                ]
+            }
+        ]
     };
 }

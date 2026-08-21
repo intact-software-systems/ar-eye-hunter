@@ -1,33 +1,37 @@
 import type { ClientStateRepository } from '@shared-server/mod.ts';
 
 export function mutateAfterForUpdateTurnsTestFalse(
-  repository: ClientStateRepository,
+    repository: ClientStateRepository
 ): void {
-  let active = true;
-  for (; active; active = false) {
-    // The update makes the next test false.
-  }
-  void repository.insertPrincipal({} as never);
+    let active = true;
+    for (; active; active = false) {
+        // The update makes the next test false.
+    }
+    void repository.insertPrincipal({} as never);
 }
 
 export function mutateAfterWhileBodyTurnsTestFalse(
-  repository: ClientStateRepository,
+    repository: ClientStateRepository
 ): void {
-  let active = true;
-  while (active) {
-    active = false;
-  }
-  void repository.updatePrincipal({} as never, 0);
+    let active = true;
+    while (active) {
+        active = false;
+    }
+    void repository.updatePrincipal({} as never, 0);
 }
 
 export function mutateAfterCandidateSpecificFalse(
-  repository: ClientStateRepository,
-  chooseExit: boolean,
+    repository: ClientStateRepository,
+    chooseExit: boolean
 ): void {
-  let active = true;
-  while (active) {
-    if (chooseExit) active = false;
-    else active = true;
-  }
-  void repository.deletePrincipal({} as never, 0);
+    let active = true;
+    while (active) {
+        if (chooseExit) {
+            active = false;
+        }
+        else {
+            active = true;
+        }
+    }
+    void repository.deletePrincipal({} as never, 0);
 }

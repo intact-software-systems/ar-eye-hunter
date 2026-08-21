@@ -5,7 +5,7 @@ import type {
     MonitorAction,
     MonitorActionPolicy,
     MonitorCancelArmContext,
-    MonitorConnectionTruth,
+    MonitorConnectionTruth
 } from './monitor-action-policy.ts';
 import styles from './MonitorActions.module.css';
 
@@ -15,13 +15,13 @@ const LABELS: Readonly<Record<MonitorAction, string>> = {
     refresh: 'Refresh',
     'load-artifact': 'Load artifact',
     'export-artifact': 'Export artifact',
-    cancel: 'Cancel run',
+    cancel: 'Cancel run'
 };
 const ACTION_ORDER: readonly MonitorAction[] = [
     'refresh',
     'cancel',
     'load-artifact',
-    'export-artifact',
+    'export-artifact'
 ];
 
 export function MonitorActionBand({
@@ -39,7 +39,7 @@ export function MonitorActionBand({
     onRefresh,
     onLoadArtifact,
     onExportArtifact,
-    onCancel,
+    onCancel
 }: Readonly<{
     policy: MonitorActionPolicy;
     armContext?: MonitorCancelArmContext;
@@ -61,7 +61,7 @@ export function MonitorActionBand({
         refresh: onRefresh,
         'load-artifact': onLoadArtifact,
         'export-artifact': onExportArtifact,
-        cancel: onCancel,
+        cancel: onCancel
     };
     const canReviewCancel = armContext && (
         policy.cancel.enabled || policy.cancel.code === 'arming-required'
@@ -76,23 +76,34 @@ export function MonitorActionBand({
             <div className={styles.status}>
                 <span className={styles.connection} data-connection={connection} />
                 <span>
-                    <strong>{busyAction ? `${LABELS[busyAction]} in progress` : `Authoritative state · ${runState ?? 'no run'}`}</strong>
+                    <strong>
+                        {busyAction
+                            ? `${LABELS[busyAction]} in progress`
+                            : `Authoritative state · ${runState ?? 'no run'}`}
+                    </strong>
                     <small>{connectionLabel(connection)} · artifact {artifactStatus}</small>
                 </span>
             </div>
-            {canReviewCancel ? (
-                <div className={styles.armRow}>
-                    <p><strong>{armed ? 'Cancel armed' : 'Review destination'}</strong><span>{armContext.label}</span></p>
-                    <button
-                        aria-pressed={armed}
-                        disabled={busyAction !== undefined}
-                        onClick={onToggleCancelArm}
-                        type="button"
-                    >{armed ? 'Cancel armed' : 'Arm Cancel'}</button>
-                </div>
-            ) : null}
+            {canReviewCancel
+                ? (
+                    <div className={styles.armRow}>
+                        <p>
+                            <strong>{armed ? 'Cancel armed' : 'Review destination'}</strong>
+                            <span>{armContext.label}</span>
+                        </p>
+                        <button
+                            aria-pressed={armed}
+                            disabled={busyAction !== undefined}
+                            onClick={onToggleCancelArm}
+                            type="button"
+                        >
+                            {armed ? 'Cancel armed' : 'Arm Cancel'}
+                        </button>
+                    </div>
+                )
+                : null}
             <div className={styles.actions}>
-                {ACTION_ORDER.map(action => (
+                {ACTION_ORDER.map((action) => (
                     <ActionButton
                         action={action}
                         buttonRef={action === 'refresh'
@@ -107,7 +118,7 @@ export function MonitorActionBand({
                 ))}
             </div>
             <div aria-label="Action requirements" className={styles.reasons}>
-                {ACTION_ORDER.map(action => {
+                {ACTION_ORDER.map((action) => {
                     const decision = policy[action];
                     return decision.enabled ? null : (
                         <p id={`monitor-${action}-reason`} key={action}>
@@ -116,12 +127,17 @@ export function MonitorActionBand({
                     );
                 })}
             </div>
-            {error && error.kind !== 'aborted' ? (
-                <div aria-live="assertive" className={styles.error} data-operation-error={error.kind} role="alert">
-                    <strong>{errorTitle(error)}</strong><span>{error.message}</span>
-                    {error.status ? <code>HTTP {error.status}{error.statusText ? ` · ${error.statusText}` : ''}</code> : null}
-                </div>
-            ) : null}
+            {error && error.kind !== 'aborted'
+                ? (
+                    <div aria-live="assertive" className={styles.error} data-operation-error={error.kind} role="alert">
+                        <strong>{errorTitle(error)}</strong>
+                        <span>{error.message}</span>
+                        {error.status
+                            ? <code>HTTP {error.status}{error.statusText ? ` · ${error.statusText}` : ''}</code>
+                            : null}
+                    </div>
+                )
+                : null}
         </section>
     );
 }
@@ -130,7 +146,7 @@ function ActionButton({
     action,
     policy,
     handler,
-    buttonRef,
+    buttonRef
 }: Readonly<{
     action: MonitorAction;
     policy: MonitorActionPolicy;
@@ -148,21 +164,37 @@ function ActionButton({
             onClick={() => void handler()}
             ref={buttonRef}
             type="button"
-        >{LABELS[action]}</button>
+        >
+            {LABELS[action]}
+        </button>
     );
 }
 
 function connectionLabel(connection: MonitorConnectionTruth): string {
-    if (connection === 'auth-required') return 'authorization required';
-    if (connection === 'credential-trust') return 'credential trust required';
-    if (connection === 'error') return 'control response error';
+    if (connection === 'auth-required') {
+        return 'authorization required';
+    }
+    if (connection === 'credential-trust') {
+        return 'credential trust required';
+    }
+    if (connection === 'error') {
+        return 'control response error';
+    }
     return `${connection.replace('-', ' ')} control truth`;
 }
 
 function errorTitle(error: ControlOperationError): string {
-    if (error.kind === 'credential-trust') return 'Trust the control endpoint before retrying';
-    if (error.kind === 'authorization') return 'Control authorization required';
-    if (error.kind === 'protocol') return 'Unexpected control response';
-    if (error.kind === 'network') return 'Control endpoint unreachable';
+    if (error.kind === 'credential-trust') {
+        return 'Trust the control endpoint before retrying';
+    }
+    if (error.kind === 'authorization') {
+        return 'Control authorization required';
+    }
+    if (error.kind === 'protocol') {
+        return 'Unexpected control response';
+    }
+    if (error.kind === 'network') {
+        return 'Control endpoint unreachable';
+    }
     return 'Monitor action failed';
 }

@@ -5,15 +5,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import {
-    managedApiDiagnosticSecrets,
-    waitForManagedApiReady,
-} from '../../shared-test/black-box-runner/api-v1-black-box-run.mts';
+import { managedApiDiagnosticSecrets, waitForManagedApiReady } from '../../shared-test/black-box-runner/api-v1-black-box-run.mts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const managedRunnerPath = path.join(
     repoRoot,
-    'packages/shared-test/black-box-runner/api-v1-black-box-run.mts',
+    'packages/shared-test/black-box-runner/api-v1-black-box-run.mts'
 );
 
 function deferred<T>(): {
@@ -36,12 +33,10 @@ async function flushMicrotasks(): Promise<void> {
     }
 }
 
-function observeReadiness(promise: Promise<void>): Promise<
-    { ok: true } | { ok: false; error: unknown }
-> {
+function observeReadiness(promise: Promise<void>): Promise<{ ok: true; } | { ok: false; error: unknown; }> {
     return promise.then(
         () => ({ ok: true as const }),
-        error => ({ ok: false as const, error }),
+        (error) => ({ ok: false as const, error })
     );
 }
 
@@ -50,14 +45,14 @@ function secretDiagnosticFixture(): {
     secrets: string[];
     text: string;
 } {
-    const databaseUrl = 'postgres://app:db-password@db.internal/app'
-        + '?sslpassword=query-secret&application_name=runner';
+    const databaseUrl = 'postgres://app:db-password@db.internal/app' +
+        '?sslpassword=query-secret&application_name=runner';
     const secrets = [
         databaseUrl,
         'control-token-secret',
         'token-secret',
         'bearer-secret',
-        'query-secret',
+        'query-secret'
     ];
     return {
         databaseUrl,
@@ -67,8 +62,8 @@ function secretDiagnosticFixture(): {
             'Authorization: Bearer bearer-secret',
             'CONTROL_TOKEN=control-token-secret',
             'opaque=control-token-secret',
-            'request=https://api.internal/check?token=query-secret&safe=visible',
-        ].join('\n'),
+            'request=https://api.internal/check?token=query-secret&safe=visible'
+        ].join('\n')
     };
 }
 
@@ -96,7 +91,7 @@ function responseWithPendingCancellation(status: number): {
 
 function closeServer(server: Server): Promise<void> {
     return new Promise((resolve, reject) => {
-        server.close(error => error ? reject(error) : resolve());
+        server.close((error) => error ? reject(error) : resolve());
     });
 }
 
@@ -112,20 +107,20 @@ async function runManagedApiRunner(port: number, artifactDir: string, timeoutMs 
         '--backend=pglite-memory',
         `--port=${port}`,
         '--profile=remote-dry',
-        `--artifact-dir=${artifactDir}`,
+        `--artifact-dir=${artifactDir}`
     ], {
         cwd: repoRoot,
         env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe']
     });
     let stdout = '';
     let stderr = '';
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const childExit = new Promise<{ code: number; stdout: string; stderr: string }>(
+    const childExit = new Promise<{ code: number; stdout: string; stderr: string; }>(
         (resolve, reject) => {
             child.once('error', reject);
-            child.once('close', code => resolve({ code: code ?? 0, stdout, stderr }));
-        },
+            child.once('close', (code) => resolve({ code: code ?? 0, stdout, stderr }));
+        }
     );
     const hardTimeout = new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(() => {
@@ -134,21 +129,23 @@ async function runManagedApiRunner(port: number, artifactDir: string, timeoutMs 
     });
 
     try {
-        child.stdout.on('data', chunk => {
+        child.stdout.on('data', (chunk) => {
             stdout += chunk.toString();
         });
-        child.stderr.on('data', chunk => {
+        child.stderr.on('data', (chunk) => {
             stderr += chunk.toString();
         });
 
         return await Promise.race([childExit, hardTimeout]);
-    } catch (error) {
+    }
+    catch (error) {
         if (child.exitCode === null && child.signalCode === null) {
             child.kill('SIGKILL');
         }
         await childExit.catch(() => undefined);
         throw error;
-    } finally {
+    }
+    finally {
         if (timeout !== undefined) {
             clearTimeout(timeout);
         }
@@ -168,7 +165,7 @@ describe('api-v1 black-box run helper', () => {
             fetchImpl,
             readTextFile: async () => 'AddrInUse',
             now: () => 0,
-            sleep: async () => undefined,
+            sleep: async () => undefined
         });
 
         await expect(readiness).rejects.toThrow('API-v1 child exited before readiness (code 1)');
@@ -184,7 +181,7 @@ describe('api-v1 black-box run helper', () => {
             startup: new Promise<void>(() => undefined),
             streamsDrained: Promise.resolve(),
             readTextFile: async () => 'unused',
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         }));
 
         expect(outcome).toEqual({ ok: false, error: new Error('child-status-string') });
@@ -198,7 +195,7 @@ describe('api-v1 black-box run helper', () => {
             startup: Promise.reject({ kind: 'startup-object' }),
             streamsDrained: Promise.resolve(),
             readTextFile: async () => 'unused',
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         }));
 
         expect(outcome).toEqual({ ok: false, error: new Error('[object Object]') });
@@ -214,16 +211,18 @@ describe('api-v1 black-box run helper', () => {
             startup: Promise.reject(controller.signal.reason),
             streamsDrained: Promise.resolve(),
             readTextFile: async () => 'unused',
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         }));
 
         expect(outcome).toEqual({ ok: false, error: new Error('startup-abort-reason') });
     });
 
-    for (const rejection of [
-        { name: 'null', value: null },
-        { name: 'undefined', value: undefined },
-    ] as const) {
+    for (
+        const rejection of [
+            { name: 'null', value: null },
+            { name: 'undefined', value: undefined }
+        ] as const
+    ) {
         it(`keeps a ${rejection.name} fetch rejection as an absent timeout error`, async () => {
             vi.useFakeTimers();
             try {
@@ -236,13 +235,17 @@ describe('api-v1 black-box run helper', () => {
                     streamsDrained: Promise.resolve(),
                     fetchImpl: () => {
                         attempt += 1;
-                        if (attempt === 1) return Promise.resolve(new Response(null, { status: 503 }));
-                        if (attempt === 2) return Promise.reject(rejection.value);
+                        if (attempt === 1) {
+                            return Promise.resolve(new Response(null, { status: 503 }));
+                        }
+                        if (attempt === 2) {
+                            return Promise.reject(rejection.value);
+                        }
                         return new Promise(() => undefined);
                     },
                     readTextFile: async () => 'Server started on port 18080.',
                     sleep: async () => undefined,
-                    timeoutMs: 100,
+                    timeoutMs: 100
                 }));
 
                 await vi.advanceTimersByTimeAsync(100);
@@ -253,11 +256,12 @@ describe('api-v1 black-box run helper', () => {
                     error: new Error(
                         'Timed out waiting for http://127.0.0.1:18080/api/config: ' +
                             'no successful response\nLatest API-v1 log tail:\n' +
-                            'Server started on port 18080.',
-                    ),
+                            'Server started on port 18080.'
+                    )
                 });
                 expect(attempt).toBe(3);
-            } finally {
+            }
+            finally {
                 vi.useRealTimers();
             }
         });
@@ -280,7 +284,7 @@ describe('api-v1 black-box run helper', () => {
             streamsDrained: Promise.resolve(),
             fetchImpl,
             readTextFile: async () => 'Server started on port 18080.',
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         });
 
         await flushMicrotasks();
@@ -307,7 +311,7 @@ describe('api-v1 black-box run helper', () => {
             streamsDrained: Promise.resolve(),
             fetchImpl: async () => response,
             readTextFile: async () => 'unused',
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         })).resolves.toBeUndefined();
 
         expect(cancel).toHaveBeenCalledOnce();
@@ -325,7 +329,7 @@ describe('api-v1 black-box run helper', () => {
                 streamsDrained: Promise.resolve(),
                 fetchImpl: async () => response,
                 readTextFile: async () => 'unused',
-                timeoutMs: 100,
+                timeoutMs: 100
             }));
             let settled = false;
             void outcomePromise.then(() => {
@@ -344,7 +348,8 @@ describe('api-v1 black-box run helper', () => {
             expect(settledPromptly).toBe(true);
             expect(outcome.ok).toBe(true);
             expect(cancel).toHaveBeenCalledOnce();
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -368,7 +373,7 @@ describe('api-v1 black-box run helper', () => {
                 fetchImpl,
                 readTextFile: async () => 'unused',
                 sleep: async () => undefined,
-                timeoutMs: 100,
+                timeoutMs: 100
             }));
             let settled = false;
             void outcomePromise.then(() => {
@@ -389,7 +394,8 @@ describe('api-v1 black-box run helper', () => {
             expect(fetchImpl).toHaveBeenCalledTimes(2);
             expect(retry.cancel).toHaveBeenCalledOnce();
             expect(success.cancel).toHaveBeenCalledOnce();
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -420,7 +426,7 @@ describe('api-v1 black-box run helper', () => {
             fetchImpl,
             readTextFile: async () => 'Server started on port 18080.',
             sleep: sleepImpl,
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         })).resolves.toBeUndefined();
 
         expect(fetchImpl).toHaveBeenCalledTimes(2);
@@ -441,7 +447,7 @@ describe('api-v1 black-box run helper', () => {
             fetchImpl: async () => new Response(null, { status: 200 }),
             readTextFile: async () => fixture.text,
             diagnosticSecrets: fixture.secrets,
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         }));
 
         expect(outcome.ok).toBe(false);
@@ -463,7 +469,7 @@ describe('api-v1 black-box run helper', () => {
                 fetchImpl: async () => new Response(null, { status: 200 }),
                 readTextFile: async () => fixture.text,
                 diagnosticSecrets: fixture.secrets,
-                timeoutMs: 100,
+                timeoutMs: 100
             }));
 
             await vi.advanceTimersByTimeAsync(100);
@@ -473,7 +479,8 @@ describe('api-v1 black-box run helper', () => {
             if (!outcome.ok) {
                 expectSecretDiagnosticsRedacted(String(outcome.error), fixture.secrets);
             }
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -490,19 +497,19 @@ describe('api-v1 black-box run helper', () => {
             CLIENT_CREDENTIAL: credential,
             PUBLIC_KEY_ID: 'public-key-id',
             KEYBOARD_LAYOUT: 'us',
-            MONKEY_PATCH: 'enabled',
+            MONKEY_PATCH: 'enabled'
         });
 
         expect(diagnosticSecrets).toEqual(expect.arrayContaining([
             meteredApiKey,
             accessKey,
             privateKey,
-            credential,
+            credential
         ]));
         expect(diagnosticSecrets).not.toEqual(expect.arrayContaining([
             'public-key-id',
             'us',
-            'enabled',
+            'enabled'
         ]));
 
         const logTail = `opaque=${meteredApiKey}`;
@@ -515,7 +522,7 @@ describe('api-v1 black-box run helper', () => {
             fetchImpl: async () => new Response(null, { status: 200 }),
             readTextFile: async () => logTail,
             diagnosticSecrets,
-            timeoutMs: 100,
+            timeoutMs: 100
         }));
         expect(childOutcome.ok).toBe(false);
         if (!childOutcome.ok) {
@@ -534,7 +541,7 @@ describe('api-v1 black-box run helper', () => {
                 fetchImpl: async () => new Response(null, { status: 200 }),
                 readTextFile: async () => logTail,
                 diagnosticSecrets,
-                timeoutMs: 100,
+                timeoutMs: 100
             }));
             await vi.advanceTimersByTimeAsync(100);
             const timeoutOutcome = await timeoutOutcomePromise;
@@ -544,13 +551,14 @@ describe('api-v1 black-box run helper', () => {
                 expect(String(timeoutOutcome.error)).not.toContain(meteredApiKey);
                 expect(String(timeoutOutcome.error)).toContain('opaque=<redacted>');
             }
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
 
     it('aborts an in-flight fetch and drains streams before reporting child exit', async () => {
-        const childStatus = deferred<{ success: boolean; code: number; signal: string | null }>();
+        const childStatus = deferred<{ success: boolean; code: number; signal: string | null; }>();
         const streamsDrained = deferred<void>();
         const fetchResponse = deferred<Response>();
         let fetchSignal: AbortSignal | undefined;
@@ -565,7 +573,7 @@ describe('api-v1 black-box run helper', () => {
                 return await fetchResponse.promise;
             },
             readTextFile: async () => 'AddrInUse: Address already in use',
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         });
         const outcomePromise = observeReadiness(readiness);
         let settled = false;
@@ -585,7 +593,7 @@ describe('api-v1 black-box run helper', () => {
         expect(outcome.ok).toBe(false);
         if (!outcome.ok) {
             expect(outcome.error).toEqual(expect.objectContaining({
-                message: expect.stringContaining('API-v1 child exited before readiness (code 1)'),
+                message: expect.stringContaining('API-v1 child exited before readiness (code 1)')
             }));
         }
         expect(settledBeforeDrain).toBe(false);
@@ -608,7 +616,7 @@ describe('api-v1 black-box run helper', () => {
                     return await fetchResponse.promise;
                 },
                 readTextFile: async () => 'Server started on port 18080.',
-                timeoutMs: 100,
+                timeoutMs: 100
             });
             const outcomePromise = observeReadiness(readiness);
 
@@ -622,12 +630,13 @@ describe('api-v1 black-box run helper', () => {
             if (!outcome.ok) {
                 expect(outcome.error).toEqual(expect.objectContaining({
                     message: expect.stringContaining(
-                        'Timed out waiting for http://127.0.0.1:18080/api/config',
-                    ),
+                        'Timed out waiting for http://127.0.0.1:18080/api/config'
+                    )
                 }));
             }
             expect(fetchWasAborted).toBe(true);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -642,7 +651,7 @@ describe('api-v1 black-box run helper', () => {
             const response = {
                 ok: true,
                 status: 200,
-                body: { cancel },
+                body: { cancel }
             } as unknown as Response;
             const outcomePromise = observeReadiness(waitForManagedApiReady({
                 baseUrl: 'http://127.0.0.1:18080',
@@ -652,7 +661,7 @@ describe('api-v1 black-box run helper', () => {
                 streamsDrained: Promise.resolve(),
                 fetchImpl: async () => await fetchResponse.promise,
                 readTextFile: async () => 'timeout diagnostics',
-                timeoutMs: 100,
+                timeoutMs: 100
             }));
 
             await flushMicrotasks();
@@ -664,13 +673,14 @@ describe('api-v1 black-box run helper', () => {
             const cancellationWasObserved = observeCancellation.mock.calls.length > 0;
             expect(cancel).toHaveBeenCalledOnce();
             expect(cancellationWasObserved).toBe(true);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
 
     it('aborts the losing retry sleep when the child exits', async () => {
-        const childStatus = deferred<{ success: boolean; code: number; signal: string | null }>();
+        const childStatus = deferred<{ success: boolean; code: number; signal: string | null; }>();
         let sleepSignal: AbortSignal | undefined;
         let sleepAborted = false;
         const sleepImpl = vi.fn((_ms: number, signal?: AbortSignal) => {
@@ -694,7 +704,7 @@ describe('api-v1 black-box run helper', () => {
             fetchImpl: async () => new Response(null, { status: 503 }),
             readTextFile: async () => 'AddrInUse',
             sleep: sleepImpl,
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         });
         const outcomePromise = observeReadiness(readiness);
 
@@ -743,10 +753,10 @@ describe('api-v1 black-box run helper', () => {
             expect(result.stderr).toContain('AddrInUse');
             expect(result.stdout).not.toContain('Matrix profile remote-dry:');
             expect(configRequests).toBe(0);
-        } finally {
+        }
+        finally {
             await closeServer(listener);
             await rm(artifactDir, { recursive: true, force: true });
         }
     }, 30_000);
-
 });

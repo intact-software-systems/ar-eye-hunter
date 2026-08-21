@@ -1,20 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { newALEventRoute, newALUnicastMessage, } from '@shared/al-contracts/al-contract.ts';
+import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 import type { RtcDataChannelInputDto } from '@shared/webrtc/QRtcDataChannel.ts';
 import {
     QRtcSignalingChannel,
-    type QRtcSignalingMessage,
     QRtcSignalingMsgType,
-    type QRtcSignalingTransport,
-    type QRtcSignalingTransportInputDto,
     QRtcSignalingType,
+    type QRtcSignalingMessage,
+    type QRtcSignalingTransport,
+    type QRtcSignalingTransportInputDto
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
-import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = vi.hoisted(() => ({
     peerConnections: [] as MockQRtcPeerConnection[],
     dataChannels: [] as MockQRtcDataChannel[],
-    mediaChannels: [] as MockQRtcMediaChannel[],
+    mediaChannels: [] as MockQRtcMediaChannel[]
 }));
 
 vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
@@ -22,14 +22,14 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
         public readonly status = {
             state: 'Idle',
             pc: {
-                connectionState: 'new',
-            },
+                connectionState: 'new'
+            }
         };
         public connectCallbacks:
             | {
-            onConnected?: () => Promise<void>;
-            onClosed?: (peerId: string) => Promise<void>;
-        }
+                onConnected?: () => Promise<void>;
+                onClosed?: (peerId: string) => Promise<void>;
+            }
             | undefined;
 
         public readonly connect = vi.fn((callbacks = {}) => {
@@ -50,7 +50,7 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
 
         constructor(
             signaler: unknown,
-            input: unknown,
+            input: unknown
         ) {
             this.signaler = signaler;
             this.input = input;
@@ -59,7 +59,7 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
     }
 
     return {
-        QRtcPeerConnection: MockQRtcPeerConnection,
+        QRtcPeerConnection: MockQRtcPeerConnection
     };
 });
 
@@ -91,17 +91,17 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
             label: this.input.dataChannelName,
             ...(this.healthReadyState
                 ? {
-                    readyState: this.healthReadyState,
+                    readyState: this.healthReadyState
                 }
                 : {}),
             counters: {
-                sent: 0,
-            },
+                sent: 0
+            }
         }));
         public rtcCallbacks:
             | {
-            onOpen?: () => void;
-        }
+                onOpen?: () => void;
+            }
             | undefined;
 
         public readonly connection: unknown;
@@ -109,7 +109,7 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
 
         constructor(
             connection: unknown,
-            input: RtcDataChannelInputDto,
+            input: RtcDataChannelInputDto
         ) {
             this.connection = connection;
             this.input = input;
@@ -118,7 +118,7 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
     }
 
     return {
-        QRtcDataChannel: MockQRtcDataChannel,
+        QRtcDataChannel: MockQRtcDataChannel
     };
 });
 
@@ -127,7 +127,7 @@ vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
         public readonly connect = vi.fn();
         public readonly reset = vi.fn();
         public readonly onRemoteStreamDo = vi.fn(function (
-            this: MockQRtcMediaChannel,
+            this: MockQRtcMediaChannel
         ) {
             return this;
         });
@@ -140,7 +140,7 @@ vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
 
         constructor(
             connection: unknown,
-            input: unknown,
+            input: unknown
         ) {
             this.connection = connection;
             this.input = input;
@@ -149,7 +149,7 @@ vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
     }
 
     return {
-        QRtcMediaChannel: MockQRtcMediaChannel,
+        QRtcMediaChannel: MockQRtcMediaChannel
     };
 });
 
@@ -166,7 +166,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
+            createConnectionInput('self')
         );
 
         await service.connectSignaler();
@@ -189,12 +189,12 @@ describe('WebRtcConnectionService', () => {
                     signalType: QRtcSignalingType.Offer,
                     payload: {
                         description: null,
-                        candidate: null,
-                    },
-                }),
-            ),
+                        candidate: null
+                    }
+                })
+            )
         ).rejects.toThrow(
-            'Message received for wrong session id: wrong-session expected: self',
+            'Message received for wrong session id: wrong-session expected: self'
         );
 
         await connectInput.callbacks.onMessage(
@@ -210,9 +210,9 @@ describe('WebRtcConnectionService', () => {
                 signalType: QRtcSignalingType.Offer,
                 payload: {
                     description: null,
-                    candidate: null,
-                },
-            }),
+                    candidate: null
+                }
+            })
         );
 
         expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
@@ -230,9 +230,9 @@ describe('WebRtcConnectionService', () => {
                 signalType: QRtcSignalingType.Offer,
                 payload: {
                     description: null,
-                    candidate: null,
-                },
-            }),
+                    candidate: null
+                }
+            })
         );
 
         expect(service.peerIdsWithNoReconnectableLanes()).toEqual([]);
@@ -248,10 +248,10 @@ describe('WebRtcConnectionService', () => {
             payload: {
                 description: {
                     type: 'offer',
-                    sdp: 'offer',
+                    sdp: 'offer'
                 },
-                candidate: null,
-            },
+                candidate: null
+            }
         });
 
         await connectInput.callbacks.onMessage('self', 'token-1', firstMessage);
@@ -270,9 +270,9 @@ describe('WebRtcConnectionService', () => {
             payload: {
                 description: null,
                 candidate: {
-                    candidate: 'ice-1',
-                },
-            },
+                    candidate: 'ice-1'
+                }
+            }
         });
 
         await connectInput.callbacks.onMessage('self', 'token-1', secondMessage);
@@ -285,10 +285,8 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
-        ).setInboundPeerCreationPolicy(({ peerId, signalType }) =>
-            peerId !== 'peer-1' || signalType !== QRtcSignalingType.Offer
-        );
+            createConnectionInput('self')
+        ).setInboundPeerCreationPolicy(({ peerId, signalType }) => peerId !== 'peer-1' || signalType !== QRtcSignalingType.Offer);
 
         await service.connectSignaler();
         const connectInput = getConnectInput(signaler);
@@ -307,11 +305,11 @@ describe('WebRtcConnectionService', () => {
                 payload: {
                     description: {
                         type: 'offer',
-                        sdp: 'offer',
+                        sdp: 'offer'
                     },
-                    candidate: null,
-                },
-            }),
+                    candidate: null
+                }
+            })
         );
 
         expect(mockState.peerConnections).toHaveLength(0);
@@ -322,7 +320,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
+            createConnectionInput('self')
         ).setInboundPeerCreationPolicy(() => ({ decision: 'deny' }) as never);
 
         await service.connectSignaler();
@@ -342,11 +340,11 @@ describe('WebRtcConnectionService', () => {
                 payload: {
                     description: {
                         type: 'offer',
-                        sdp: 'offer',
+                        sdp: 'offer'
                     },
-                    candidate: null,
-                },
-            }),
+                    candidate: null
+                }
+            })
         );
 
         expect(mockState.peerConnections).toHaveLength(0);
@@ -357,7 +355,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
+            createConnectionInput('self')
         ).setInboundPeerCreationPolicy(() => ({ decision: 'tentative' }) as never);
 
         await service.connectSignaler();
@@ -377,11 +375,11 @@ describe('WebRtcConnectionService', () => {
                 payload: {
                     description: {
                         type: 'offer',
-                        sdp: 'offer',
+                        sdp: 'offer'
                     },
-                    candidate: null,
-                },
-            }),
+                    candidate: null
+                }
+            })
         );
 
         expect(mockState.peerConnections).toHaveLength(1);
@@ -393,7 +391,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
+            createConnectionInput('self')
         );
 
         await service.connectSignaler();
@@ -413,11 +411,11 @@ describe('WebRtcConnectionService', () => {
                 payload: {
                     description: {
                         type: 'answer',
-                        sdp: 'answer',
+                        sdp: 'answer'
                     },
-                    candidate: null,
-                },
-            }),
+                    candidate: null
+                }
+            })
         );
 
         expect(mockState.peerConnections).toHaveLength(0);
@@ -428,7 +426,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
+            createConnectionInput('self')
         ).setInboundPeerCreationPolicy(() => false);
 
         service.ensurePeerConnectionStarted('peer-1');
@@ -449,10 +447,10 @@ describe('WebRtcConnectionService', () => {
                 payload: {
                     description: null,
                     candidate: {
-                        candidate: 'ice-1',
-                    },
-                },
-            }),
+                        candidate: 'ice-1'
+                    }
+                }
+            })
         );
 
         expect(mockState.peerConnections).toHaveLength(1);
@@ -463,19 +461,19 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('a-self'),
+            createConnectionInput('a-self')
         );
         const lifecycle: string[] = [];
 
         service.onRtcPeerLifecycleDo('lifecycle', {
             onCreated: (peer) => lifecycle.push(`created:${peer.peerId}`),
-            onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`),
+            onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`)
         });
 
         const first = service.ensurePeerConnectionStarted('z-peer');
         const second = service.ensurePeerConnectionStarted('z-peer');
 
-        expect((first as unknown as { then?: unknown }).then).toBeUndefined();
+        expect((first as unknown as { then?: unknown; }).then).toBeUndefined();
         expect(first.left).toBeUndefined();
         expect(second.left).toBeUndefined();
         expect(first.right).toBe(second.right);
@@ -499,7 +497,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('alice-session-a'),
+            createConnectionInput('alice-session-a')
         );
 
         const connected = service.ensurePeerConnectionStarted('alice-session-b');
@@ -509,7 +507,7 @@ describe('WebRtcConnectionService', () => {
         expect(service.knownPeerIds()).toEqual(['alice-session-b']);
         expect(mockState.peerConnections).toHaveLength(1);
         expect(mockState.dataChannels[0].input).toMatchObject({
-            peerId: 'alice-session-b',
+            peerId: 'alice-session-b'
         });
     });
 
@@ -517,7 +515,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('alice-session-a'),
+            createConnectionInput('alice-session-a')
         );
 
         const connected = service.ensurePeerConnectionStarted('alice-session-a');
@@ -525,12 +523,12 @@ describe('WebRtcConnectionService', () => {
 
         expect(connected.left).toEqual({
             kind: 'self',
-            peerId: 'alice-session-a',
+            peerId: 'alice-session-a'
         });
         expect(lane).toMatchObject({
             status: 'self',
             peerId: 'alice-session-a',
-            laneId: 'reliable',
+            laneId: 'reliable'
         });
         expect(service.knownPeerIds()).toEqual([]);
         expect(mockState.peerConnections).toHaveLength(0);
@@ -540,7 +538,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('alice-session-a'),
+            createConnectionInput('alice-session-a')
         );
 
         service.ensurePeerConnectionStarted('alice-session-b');
@@ -548,7 +546,7 @@ describe('WebRtcConnectionService', () => {
 
         expect(service.knownPeerIds()).toEqual([
             'alice-session-b',
-            'alice-session-c',
+            'alice-session-c'
         ]);
         expect(service.disconnectPeer('alice-session-b')).toBe(true);
 
@@ -563,7 +561,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('a-self'),
+            createConnectionInput('a-self')
         );
 
         const first = service.ensurePeerConnectionStarted('z-peer');
@@ -588,7 +586,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('a-self'),
+            createConnectionInput('a-self')
         );
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -615,7 +613,7 @@ describe('WebRtcConnectionService', () => {
             highWatermarkBytes: 1024,
             lowWatermarkBytes: 256,
             overflow: 'replace-by-key' as const,
-            maxQueueItems: 8,
+            maxQueueItems: 8
         };
         const service = new WebRtcConnectionService(
             signaler,
@@ -627,13 +625,13 @@ describe('WebRtcConnectionService', () => {
                         label: 'rtc-realtime',
                         init: {
                             ordered: false,
-                            maxRetransmits: 0,
+                            maxRetransmits: 0
                         },
                         binaryType: 'arraybuffer',
-                        flowControl: realtimeFlowControl,
-                    },
-                ],
-            },
+                        flowControl: realtimeFlowControl
+                    }
+                ]
+            }
         );
 
         const connected = service.ensurePeerConnectionStarted('z-peer');
@@ -642,26 +640,26 @@ describe('WebRtcConnectionService', () => {
         expect(mockState.dataChannels).toHaveLength(2);
         expect(Array.from(connected.right?.channels.keys() ?? [])).toEqual([
             'reliable',
-            'realtime',
+            'realtime'
         ]);
         expect(connected.right?.channel).toBe(mockState.dataChannels[0]);
         expect(service.readPeerChannel('z-peer')).toBe(mockState.dataChannels[0]);
         expect(service.readPeerChannel('z-peer', 'realtime')).toBe(
-            mockState.dataChannels[1],
+            mockState.dataChannels[1]
         );
         expect(mockState.dataChannels[0].input).toMatchObject({
             peerId: 'z-peer',
-            dataChannelName: 'room',
+            dataChannelName: 'room'
         });
         expect(mockState.dataChannels[1].input).toMatchObject({
             peerId: 'z-peer',
             dataChannelName: 'rtc-realtime',
             dataChannelInit: {
                 ordered: false,
-                maxRetransmits: 0,
+                maxRetransmits: 0
             },
             binaryType: 'arraybuffer',
-            flowControl: realtimeFlowControl,
+            flowControl: realtimeFlowControl
         });
         expect(mockState.dataChannels[0].connect).toHaveBeenCalledWith(false);
         expect(mockState.dataChannels[1].connect).toHaveBeenCalledWith(false);
@@ -676,9 +674,9 @@ describe('WebRtcConnectionService', () => {
                             peerId: 'z-peer',
                             label: 'room',
                             counters: {
-                                sent: 0,
-                            },
-                        },
+                                sent: 0
+                            }
+                        }
                     },
                     {
                         peerId: 'z-peer',
@@ -687,12 +685,12 @@ describe('WebRtcConnectionService', () => {
                             peerId: 'z-peer',
                             label: 'rtc-realtime',
                             counters: {
-                                sent: 0,
-                            },
-                        },
-                    },
-                ],
-            },
+                                sent: 0
+                            }
+                        }
+                    }
+                ]
+            }
         ]);
     });
 
@@ -705,10 +703,10 @@ describe('WebRtcConnectionService', () => {
                 dataChannelLanes: [
                     {
                         id: 'realtime',
-                        label: 'rtc-realtime',
-                    },
-                ],
-            },
+                        label: 'rtc-realtime'
+                    }
+                ]
+            }
         );
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -729,17 +727,17 @@ describe('WebRtcConnectionService', () => {
                     {
                         laneId: 'reliable',
                         channel: {
-                            readyState: 'open',
-                        },
+                            readyState: 'open'
+                        }
                     },
                     {
                         laneId: 'realtime',
                         channel: {
-                            readyState: 'closed',
-                        },
-                    },
-                ],
-            },
+                            readyState: 'closed'
+                        }
+                    }
+                ]
+            }
         ]);
     });
 
@@ -752,9 +750,9 @@ describe('WebRtcConnectionService', () => {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
                     enabled: true,
-                    timeoutMs: 50,
-                },
-            },
+                    timeoutMs: 50
+                }
+            }
         );
         const lifecycle: string[] = [];
 
@@ -763,7 +761,7 @@ describe('WebRtcConnectionService', () => {
             onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`),
             onConnectTimeout: (_peer, event) => {
                 lifecycle.push(`timeout:${event.peerId}:${event.timeoutMs}`);
-            },
+            }
         });
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -782,7 +780,7 @@ describe('WebRtcConnectionService', () => {
         expect(lifecycle).toEqual([
             'created:z-peer',
             'timeout:z-peer:50',
-            'deleted:z-peer',
+            'deleted:z-peer'
         ]);
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -800,9 +798,9 @@ describe('WebRtcConnectionService', () => {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
                     enabled: true,
-                    timeoutMs: 50,
-                },
-            },
+                    timeoutMs: 50
+                }
+            }
         );
         const lifecycle: string[] = [];
 
@@ -811,7 +809,7 @@ describe('WebRtcConnectionService', () => {
             onDeleted: (peer) => lifecycle.push(`deleted:${peer.peerId}`),
             onConnectTimeout: (_peer, event) => {
                 lifecycle.push(`timeout:${event.peerId}`);
-            },
+            }
         });
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -835,15 +833,15 @@ describe('WebRtcConnectionService', () => {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
                     enabled: true,
-                    timeoutMs: 50,
+                    timeoutMs: 50
                 },
                 peerConnectionAttemptBudget: {
                     enabled: true,
                     maxAttempts: 2,
                     maxTotalDurationMs: 100,
-                    cooldownMs: 30,
-                },
-            },
+                    cooldownMs: 30
+                }
+            }
         );
         const lifecycle: string[] = [];
 
@@ -855,9 +853,9 @@ describe('WebRtcConnectionService', () => {
             },
             onConnectExhausted: (event) => {
                 lifecycle.push(
-                    `exhausted:${event.peerId}:${event.attempts}:${event.retryAfterEpochMs - event.exhaustedAtEpochMs}`,
+                    `exhausted:${event.peerId}:${event.attempts}:${event.retryAfterEpochMs - event.exhaustedAtEpochMs}`
                 );
-            },
+            }
         });
 
         expect(service.ensurePeerConnectionStarted('z-peer').right?.peerId)
@@ -881,8 +879,8 @@ describe('WebRtcConnectionService', () => {
                 maxAttempts: 2,
                 maxTotalDurationMs: 100,
                 cooldownMs: 30,
-                reason: 'peer-connection-attempt-budget-exhausted',
-            },
+                reason: 'peer-connection-attempt-budget-exhausted'
+            }
         });
         expect(service.knownPeerIds()).toEqual([]);
         expect(lifecycle).toContain('exhausted:z-peer:2:30');
@@ -891,7 +889,7 @@ describe('WebRtcConnectionService', () => {
         expect(service.ensurePeerConnectionStarted('z-peer').left)
             .toMatchObject({
                 kind: 'connect-exhausted',
-                peerId: 'z-peer',
+                peerId: 'z-peer'
             });
 
         await vi.advanceTimersByTimeAsync(1);
@@ -909,22 +907,22 @@ describe('WebRtcConnectionService', () => {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
                     enabled: true,
-                    timeoutMs: 50,
+                    timeoutMs: 50
                 },
                 peerConnectionAttemptBudget: {
                     enabled: true,
                     maxAttempts: 1,
                     maxTotalDurationMs: 50,
-                    cooldownMs: 30,
-                },
-            },
+                    cooldownMs: 30
+                }
+            }
         );
 
         service.ensurePeerConnectionStarted('z-peer');
 
         expect(service.peerConnectionAttemptDiagnostics('z-peer')).toMatchObject({
             attempts: 1,
-            peerId: 'z-peer',
+            peerId: 'z-peer'
         });
 
         mockState.dataChannels[0].healthReadyState = 'open';
@@ -942,15 +940,15 @@ describe('WebRtcConnectionService', () => {
                 ...createConnectionInput('a-self'),
                 peerEstablishmentTimeout: {
                     enabled: true,
-                    timeoutMs: 50,
+                    timeoutMs: 50
                 },
                 peerConnectionAttemptBudget: {
                     enabled: true,
                     maxAttempts: 2,
                     maxTotalDurationMs: 100,
-                    cooldownMs: 30,
-                },
-            },
+                    cooldownMs: 30
+                }
+            }
         );
 
         expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toEqual({
@@ -958,7 +956,7 @@ describe('WebRtcConnectionService', () => {
             resetOnSuccessCount: 0,
             resetOnRemovalCount: 0,
             cooldownExpiredClearCount: 0,
-            exhaustedCount: 0,
+            exhaustedCount: 0
         });
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -970,7 +968,7 @@ describe('WebRtcConnectionService', () => {
         expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
             consumedCount: 2,
             exhaustedCount: 1,
-            cooldownExpiredClearCount: 0,
+            cooldownExpiredClearCount: 0
         });
 
         await vi.advanceTimersByTimeAsync(30);
@@ -980,14 +978,14 @@ describe('WebRtcConnectionService', () => {
             consumedCount: 3,
             cooldownExpiredClearCount: 1,
             resetOnSuccessCount: 0,
-            resetOnRemovalCount: 0,
+            resetOnRemovalCount: 0
         });
 
         service.disconnectPeer('z-peer');
 
         expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
             resetOnRemovalCount: 1,
-            resetOnSuccessCount: 0,
+            resetOnSuccessCount: 0
         });
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -997,7 +995,7 @@ describe('WebRtcConnectionService', () => {
         expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
             consumedCount: 4,
             resetOnSuccessCount: 1,
-            resetOnRemovalCount: 1,
+            resetOnRemovalCount: 1
         });
     });
 
@@ -1010,24 +1008,24 @@ describe('WebRtcConnectionService', () => {
                 dataChannelLanes: [
                     {
                         id: 'realtime',
-                        label: 'rtc-realtime',
-                    },
-                ],
-            },
+                        label: 'rtc-realtime'
+                    }
+                ]
+            }
         );
 
         const result = await service.ensurePeerLaneOpen(
             'z-peer',
             'realtime',
             {
-                timeoutMs: 25,
-            },
+                timeoutMs: 25
+            }
         );
 
         expect(result).toMatchObject({
             status: 'open',
             peerId: 'z-peer',
-            laneId: 'realtime',
+            laneId: 'realtime'
         });
         expect(result.channel).toBe(mockState.dataChannels[1]);
         expect(mockState.dataChannels[1].waitUntilOpen).toHaveBeenCalledWith(25);
@@ -1038,24 +1036,24 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('a-self'),
+            createConnectionInput('a-self')
         );
 
         await expect(service.ensurePeerLaneOpen('z-peer', 'missing'))
             .resolves.toMatchObject({
                 status: 'no-lane',
                 peerId: 'z-peer',
-                laneId: 'missing',
+                laneId: 'missing'
             });
 
         mockState.dataChannels[0].waitUntilOpen.mockResolvedValueOnce(false);
 
         await expect(
-            service.ensurePeerLaneOpen('z-peer', 'reliable', { timeoutMs: 25 }),
+            service.ensurePeerLaneOpen('z-peer', 'reliable', { timeoutMs: 25 })
         ).resolves.toMatchObject({
             status: 'timeout',
             peerId: 'z-peer',
-            laneId: 'reliable',
+            laneId: 'reliable'
         });
 
         expect(service.knownPeerIds()).toEqual(['z-peer']);
@@ -1066,7 +1064,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('a-self'),
+            createConnectionInput('a-self')
         );
 
         service.ensurePeerConnectionStarted('z-peer');
@@ -1078,13 +1076,13 @@ describe('WebRtcConnectionService', () => {
                 'reliable',
                 {
                     timeoutMs: 25,
-                    cleanupOnFailure: true,
-                },
-            ),
+                    cleanupOnFailure: true
+                }
+            )
         ).resolves.toMatchObject({
             status: 'timeout',
             peerId: 'z-peer',
-            laneId: 'reliable',
+            laneId: 'reliable'
         });
 
         expect(service.knownPeerIds()).toEqual([]);
@@ -1096,7 +1094,7 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('a-self'),
+            createConnectionInput('a-self')
         );
         const deferred = createDeferred<boolean>();
         const controller = new AbortController();
@@ -1108,15 +1106,15 @@ describe('WebRtcConnectionService', () => {
             'reliable',
             {
                 signal: controller.signal,
-                timeoutMs: 1_000,
-            },
+                timeoutMs: 1_000
+            }
         );
         controller.abort('stop');
 
         await expect(wait).resolves.toMatchObject({
             status: 'aborted',
             peerId: 'z-peer',
-            laneId: 'reliable',
+            laneId: 'reliable'
         });
         deferred.resolve(false);
     });
@@ -1125,14 +1123,14 @@ describe('WebRtcConnectionService', () => {
         const signaler = createSignaler();
         const service = new WebRtcConnectionService(
             signaler,
-            createConnectionInput('self'),
+            createConnectionInput('self')
         );
 
         expect(service.ensurePeerConnectionStarted('self')).toMatchObject({
             left: {
                 kind: 'self',
-                peerId: 'self',
-            },
+                peerId: 'self'
+            }
         });
     });
 });
@@ -1142,14 +1140,14 @@ function createSignaler() {
         connect: vi.fn(async (_input: QRtcSignalingTransportInputDto) => {
         }),
         send: vi.fn(async (_payload: QRtcSignalingMessage) => {
-        }),
+        })
     };
 
     return signaler satisfies QRtcSignalingTransport;
 }
 
 function getConnectInput(
-    signaler: ReturnType<typeof createSignaler>,
+    signaler: ReturnType<typeof createSignaler>
 ): QRtcSignalingTransportInputDto {
     const connectInput = signaler.connect.mock.calls[0]?.[0];
 
@@ -1168,8 +1166,8 @@ function createConnectionInput(sessionId: string) {
         rtcSignalingTopicId: 'rtc',
         iceCandidates: {
             iceServers: [],
-            expiresAtEpochMs: Date.now() + 1_000,
-        },
+            expiresAtEpochMs: Date.now() + 1_000
+        }
     };
 }
 
@@ -1179,7 +1177,7 @@ function createRtcEnvelope(message: QRtcSignalingMessage) {
         newALEventRoute('rtc', message.toId),
         message.toId,
         'rtc',
-        message,
+        message
     );
 }
 
@@ -1194,7 +1192,7 @@ function createDeferred<T>() {
     return {
         promise,
         resolve,
-        reject,
+        reject
     };
 }
 
@@ -1203,8 +1201,8 @@ type MockQRtcPeerConnection = {
         state: string;
         pc:
             | {
-            connectionState: string;
-        }
+                connectionState: string;
+            }
             | undefined;
     };
     readonly connect: ReturnType<typeof vi.fn>;

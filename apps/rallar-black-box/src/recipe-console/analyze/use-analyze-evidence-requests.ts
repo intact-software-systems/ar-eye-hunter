@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { AnalyzeEvidenceWindowProjection } from
-    './analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
 
 type EvidenceRequest = Readonly<{
     fingerprint: string;
@@ -15,20 +14,27 @@ export function useAnalyzeEvidenceRequests() {
     const [error, setError] = useState<string>();
     const requestRef = useRef<EvidenceRequest | undefined>(undefined);
 
-    const begin = useCallback((input: Readonly<{
-        fingerprint: string;
-        kind: EvidenceRequest['kind'];
-        send(): number | undefined;
-    }>): number | undefined => {
+    const begin = useCallback((
+        input: Readonly<{
+            fingerprint: string;
+            kind: EvidenceRequest['kind'];
+            send(): number | undefined;
+        }>
+    ): number | undefined => {
         const active = requestRef.current;
-        if (active && (
-            input.kind === 'window' ||
-            active.fingerprint === input.fingerprint
-        )) return undefined;
+        if (
+            active && (
+                input.kind === 'window' ||
+                active.fingerprint === input.fingerprint
+            )
+        ) {
+            return undefined;
+        }
         let requestId: number | undefined;
         try {
             requestId = input.send();
-        } catch {
+        }
+        catch {
             requestRef.current = undefined;
             setPending(false);
             setError(requestFailureMessage(input.kind));
@@ -43,23 +49,27 @@ export function useAnalyzeEvidenceRequests() {
         requestRef.current = {
             fingerprint: input.fingerprint,
             kind: input.kind,
-            requestId,
+            requestId
         };
         setPending(true);
         setError(undefined);
         return requestId;
     }, []);
 
-    const complete = useCallback((input: Readonly<{
-        kind: EvidenceRequest['kind'];
-        requestId: number;
-        window: AnalyzeEvidenceWindowProjection;
-    }>): boolean => {
+    const complete = useCallback((
+        input: Readonly<{
+            kind: EvidenceRequest['kind'];
+            requestId: number;
+            window: AnalyzeEvidenceWindowProjection;
+        }>
+    ): boolean => {
         const active = requestRef.current;
         if (
             !active || active.kind !== input.kind ||
             active.requestId !== input.requestId
-        ) return false;
+        ) {
+            return false;
+        }
         requestRef.current = undefined;
         setWindow(input.window);
         setWindowFingerprint(active.fingerprint);
@@ -69,7 +79,7 @@ export function useAnalyzeEvidenceRequests() {
     }, []);
 
     const acceptInitial = useCallback((
-        initialWindow: AnalyzeEvidenceWindowProjection,
+        initialWindow: AnalyzeEvidenceWindowProjection
     ) => {
         requestRef.current = undefined;
         setWindow(initialWindow);
@@ -80,13 +90,15 @@ export function useAnalyzeEvidenceRequests() {
 
     const fail = useCallback((
         kind?: EvidenceRequest['kind'],
-        requestId?: number,
+        requestId?: number
     ) => {
         const active = requestRef.current;
         if (
             !active || (kind && active.kind !== kind) ||
             (requestId !== undefined && active.requestId !== requestId)
-        ) return;
+        ) {
+            return;
+        }
         requestRef.current = undefined;
         setPending(false);
         setError(requestFailureMessage(active.kind));
@@ -109,7 +121,7 @@ export function useAnalyzeEvidenceRequests() {
         complete,
         acceptInitial,
         fail,
-        clear,
+        clear
     } as const;
 }
 

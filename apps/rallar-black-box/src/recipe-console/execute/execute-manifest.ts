@@ -1,18 +1,16 @@
-import {
-    buildDistributedRunManifest,
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
-    DistributedRecipeCatalogEntryProjection,
+    DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    validateDistributedRunManifest,
+    type DistributedRunManifestValidationResult
+} from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    validateDistributedRunManifest,
-    type DistributedRunManifestValidationResult,
-} from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 
 export const EXECUTE_ACK_TIMEOUT_MS = 15_000;
 
@@ -51,12 +49,14 @@ export type ExecuteTargetResolutionEvidence = Readonly<{
     comparison: ExecuteTargetResolutionComparison;
 }>;
 
-export function createExecuteDistributedRunId(input: Readonly<{
-    controlRunId: string;
-    group: RallarBlackBoxDistributedGroupRef;
-    recipeId: string;
-    requestedAtEpochMs: number;
-}>): string {
+export function createExecuteDistributedRunId(
+    input: Readonly<{
+        controlRunId: string;
+        group: RallarBlackBoxDistributedGroupRef;
+        recipeId: string;
+        requestedAtEpochMs: number;
+    }>
+): string {
     if (
         !Number.isSafeInteger(input.requestedAtEpochMs) ||
         input.requestedAtEpochMs < 0
@@ -68,17 +68,19 @@ export function createExecuteDistributedRunId(input: Readonly<{
         idSegment(input.group.groupId, 'group'),
         idSegment(input.recipeId, 'recipe'),
         idSegment(input.controlRunId, 'control'),
-        String(input.requestedAtEpochMs),
+        String(input.requestedAtEpochMs)
     ].join('-');
 }
 
-export function deriveExecuteManifest(input: Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-    group: RallarBlackBoxDistributedGroupRef;
-    selectedRecipe: DistributedRecipeCatalogEntryProjection;
-    selectedAgentIds: readonly string[];
-}>): ExecuteManifestDraft {
+export function deriveExecuteManifest(
+    input: Readonly<{
+        distributedRunId: string;
+        controlRunId: string;
+        group: RallarBlackBoxDistributedGroupRef;
+        selectedRecipe: DistributedRecipeCatalogEntryProjection;
+        selectedAgentIds: readonly string[];
+    }>
+): ExecuteManifestDraft {
     const selectedAgentIds = uniqueSorted(input.selectedAgentIds);
     const manifest = buildDistributedRunManifest({
         distributedRunId: input.distributedRunId,
@@ -91,18 +93,18 @@ export function deriveExecuteManifest(input: Readonly<{
         rolePattern: 'all-agents',
         ackTimeoutMs: EXECUTE_ACK_TIMEOUT_MS,
         startMode: 'manual',
-        expectedParticipantCount: selectedAgentIds.length,
+        expectedParticipantCount: selectedAgentIds.length
     });
     return projectExecuteManifest(manifest);
 }
 export function projectExecuteManifest(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): ExecuteManifestDraft {
     return {
         manifest,
         validation: validateDistributedRunManifest(manifest),
         rawJson: JSON.stringify(manifest, null, 2),
-        fingerprint: executeManifestFingerprint(manifest),
+        fingerprint: executeManifestFingerprint(manifest)
     };
 }
 
@@ -110,10 +112,12 @@ export function executeManifestFingerprint(value: unknown): string {
     return canonicalValue(value, new Set<object>());
 }
 
-export function compareExecuteTargetResolution(input: Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    resolution: RallarBlackBoxDistributedTargetResolution;
-}>): ExecuteTargetResolutionComparison {
+export function compareExecuteTargetResolution(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        resolution: RallarBlackBoxDistributedTargetResolution;
+    }>
+): ExecuteTargetResolutionComparison {
     const issues: ExecuteTargetResolutionIssue[] = [];
     const selected = [...(input.manifest.targetPolicy.agentIds ?? [])];
     const resolved = [...input.resolution.targetAgentIds];
@@ -122,31 +126,31 @@ export function compareExecuteTargetResolution(input: Readonly<{
     if (!sameGroup(input.manifest.group, input.resolution.group)) {
         issues.push({
             code: 'group-mismatch',
-            message: 'Resolved targets belong to a different application, workspace, or group.',
+            message: 'Resolved targets belong to a different application, workspace, or group.'
         });
     }
     if (input.manifest.targetPolicy.mode !== input.resolution.targetPolicyMode) {
         issues.push({
             code: 'policy-mismatch',
-            message: 'Resolved target policy no longer matches the manifest.',
+            message: 'Resolved target policy no longer matches the manifest.'
         });
     }
     if (selectedSet.size !== selected.length) {
         issues.push({
             code: 'duplicate-selected-target',
-            message: 'The manifest contains a duplicate selected agent ID.',
+            message: 'The manifest contains a duplicate selected agent ID.'
         });
     }
     if (new Set(resolved).size !== resolved.length) {
         issues.push({
             code: 'duplicate-resolved-target',
-            message: 'The server resolution contains a duplicate target agent ID.',
+            message: 'The server resolution contains a duplicate target agent ID.'
         });
     }
     if (!sameStrings(uniqueSorted(selected), uniqueSorted(resolved))) {
         issues.push({
             code: 'target-mismatch',
-            message: 'Server-resolved target IDs no longer exactly match the selected safe IDs.',
+            message: 'Server-resolved target IDs no longer exactly match the selected safe IDs.'
         });
     }
 
@@ -157,48 +161,54 @@ export function compareExecuteTargetResolution(input: Readonly<{
     ) {
         issues.push({
             code: 'expected-count-mismatch',
-            message: 'Resolved expected participant count no longer matches the exact selection.',
+            message: 'Resolved expected participant count no longer matches the exact selection.'
         });
     }
     if (input.resolution.summary.selected !== resolved.length) {
         issues.push({
             code: 'selected-count-mismatch',
-            message: 'Resolved selected count does not match the returned target IDs.',
+            message: 'Resolved selected count does not match the returned target IDs.'
         });
     }
     if (input.resolution.summary.missingExpectedParticipants !== 0) {
         issues.push({
             code: 'missing-participants',
-            message: 'The server reports missing expected participants.',
+            message: 'The server reports missing expected participants.'
         });
     }
     for (const blocker of input.resolution.blockers) {
-        if (!selectedSet.has(blocker.agentId)) continue;
+        if (!selectedSet.has(blocker.agentId)) {
+            continue;
+        }
         issues.push({
             code: 'selected-target-blocked',
             message: blocker.reason,
-            agentId: blocker.agentId,
+            agentId: blocker.agentId
         });
     }
 
     return { ok: issues.length === 0, issues };
 }
 
-export function createExecuteTargetResolutionEvidence(input: Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    resolution: RallarBlackBoxDistributedTargetResolution;
-}>): ExecuteTargetResolutionEvidence {
+export function createExecuteTargetResolutionEvidence(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        resolution: RallarBlackBoxDistributedTargetResolution;
+    }>
+): ExecuteTargetResolutionEvidence {
     return {
         manifestFingerprint: executeManifestFingerprint(input.manifest),
         resolution: input.resolution,
-        comparison: compareExecuteTargetResolution(input),
+        comparison: compareExecuteTargetResolution(input)
     };
 }
 
-export function currentExecuteTargetResolutionEvidence(input: Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    evidence?: ExecuteTargetResolutionEvidence;
-}>): ExecuteTargetResolutionEvidence | undefined {
+export function currentExecuteTargetResolutionEvidence(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        evidence?: ExecuteTargetResolutionEvidence;
+    }>
+): ExecuteTargetResolutionEvidence | undefined {
     if (
         !input.evidence ||
         input.evidence.manifestFingerprint !==
@@ -210,12 +220,24 @@ export function currentExecuteTargetResolutionEvidence(input: Readonly<{
 }
 
 function canonicalValue(value: unknown, ancestors: Set<object>): string {
-    if (value === null) return 'null';
-    if (value === undefined) return 'undefined';
-    if (typeof value === 'string') return `string${frame(value)}`;
-    if (typeof value === 'boolean') return value ? 'boolean1' : 'boolean0';
-    if (typeof value === 'number') return `number${numberValue(value)}`;
-    if (typeof value === 'bigint') return `bigint${value.toString()}`;
+    if (value === null) {
+        return 'null';
+    }
+    if (value === undefined) {
+        return 'undefined';
+    }
+    if (typeof value === 'string') {
+        return `string${frame(value)}`;
+    }
+    if (typeof value === 'boolean') {
+        return value ? 'boolean1' : 'boolean0';
+    }
+    if (typeof value === 'number') {
+        return `number${numberValue(value)}`;
+    }
+    if (typeof value === 'bigint') {
+        return `bigint${value.toString()}`;
+    }
     if (typeof value !== 'object') {
         throw new Error(`Execute manifest fingerprint cannot encode ${typeof value}.`);
     }
@@ -229,17 +251,19 @@ function canonicalValue(value: unknown, ancestors: Set<object>): string {
                 throw new Error('Execute manifest fingerprint cannot encode symbol keys.');
             }
             const indexedKeys = new Set(
-                Array.from({ length: value.length }, (_, index) => String(index)),
+                Array.from({ length: value.length }, (_, index) => String(index))
             );
             if (Object.keys(value).some((key) => !indexedKeys.has(key))) {
                 throw new Error(
-                    'Execute manifest fingerprint cannot encode custom array properties.',
+                    'Execute manifest fingerprint cannot encode custom array properties.'
                 );
             }
-            const items = Array.from({ length: value.length }, (_, index) =>
-                Object.prototype.hasOwnProperty.call(value, index)
-                    ? frame(`present${frame(canonicalValue(value[index], ancestors))}`)
-                    : frame('hole')
+            const items = Array.from(
+                { length: value.length },
+                (_, index) =>
+                    Object.prototype.hasOwnProperty.call(value, index)
+                        ? frame(`present${frame(canonicalValue(value[index], ancestors))}`)
+                        : frame('hole')
             ).join('');
             return `array${frame(String(value.length))}${frame(items)}`;
         }
@@ -258,16 +282,25 @@ function canonicalValue(value: unknown, ancestors: Set<object>): string {
         ).join('');
         const objectKind = prototype === null ? 'null-object' : 'object';
         return `${objectKind}${frame(String(keys.length))}${frame(body)}`;
-    } finally {
+    }
+    finally {
         ancestors.delete(value);
     }
 }
 
 function numberValue(value: number): string {
-    if (Number.isNaN(value)) return 'NaN';
-    if (value === Number.POSITIVE_INFINITY) return '+Infinity';
-    if (value === Number.NEGATIVE_INFINITY) return '-Infinity';
-    if (Object.is(value, -0)) return '-0';
+    if (Number.isNaN(value)) {
+        return 'NaN';
+    }
+    if (value === Number.POSITIVE_INFINITY) {
+        return '+Infinity';
+    }
+    if (value === Number.NEGATIVE_INFINITY) {
+        return '-Infinity';
+    }
+    if (Object.is(value, -0)) {
+        return '-0';
+    }
     return String(value);
 }
 
@@ -287,7 +320,7 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
 
 function sameGroup(
     left: RallarBlackBoxDistributedGroupRef,
-    right: RallarBlackBoxDistributedGroupRef,
+    right: RallarBlackBoxDistributedGroupRef
 ): boolean {
     return left.applicationId === right.applicationId &&
         left.workspaceId === right.workspaceId &&

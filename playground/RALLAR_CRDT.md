@@ -30,7 +30,7 @@ const notes = await rallar.data.open<Note>('notes');
 
 await notes.set('room-1', {
     title: 'Plan',
-    body: 'Initial text',
+    body: 'Initial text'
 });
 ```
 
@@ -79,7 +79,7 @@ Add an opt-in CRDT layer beside it:
 const board = await rallar.crdt.open<RoomBoardDocument>('room-board', {
     scope: `room:${roomId}`,
     transport: 'rtc-or-ws',
-    persist: true,
+    persist: true
 });
 ```
 
@@ -89,7 +89,7 @@ mode explicit:
 ```ts
 const board = await rallar.data.openCrdt<RoomBoardDocument>('room-board', {
     scope: `room:${roomId}`,
-    transport: 'rtc-or-ws',
+    transport: 'rtc-or-ws'
 });
 ```
 
@@ -116,7 +116,7 @@ Example:
 ```ts
 const doc = await rallar.crdt.open<SharedChecklist>('checklist', {
     scope: `room:${roomId}`,
-    storeName: 'room-checklists',
+    storeName: 'room-checklists'
 });
 
 const unsubscribe = doc.subscribe((value) => {
@@ -127,7 +127,7 @@ await doc.change((draft) => {
     draft.items.add({
         id: crypto.randomUUID(),
         text: 'Check north entrance',
-        done: false,
+        done: false
     });
 });
 
@@ -149,11 +149,11 @@ Example storage layout:
 
 ```ts
 await rallar.data.open<CrdtSnapshot>('crdt:snapshots', {
-    scope: `room:${roomId}`,
+    scope: `room:${roomId}`
 });
 
 await rallar.data.open<CrdtPendingUpdate>('crdt:pending-updates', {
-    scope: `room:${roomId}`,
+    scope: `room:${roomId}`
 });
 ```
 
@@ -186,7 +186,7 @@ server.crdt.defineDocument({
     documentType: 'room-board',
     scope: 'room',
     authorizeRead: isRoomMember,
-    authorizeWrite: canEditRoomBoard,
+    authorizeWrite: canEditRoomBoard
 });
 ```
 
@@ -205,7 +205,7 @@ time can overwrite each other. With a CRDT, independent additions merge.
 ```ts
 const board = await rallar.crdt.open<RoomBoard>('room-board', {
     scope: `room:${roomId}`,
-    transport: 'rtc-or-ws',
+    transport: 'rtc-or-ws'
 });
 
 await board.change((draft) => {
@@ -214,7 +214,7 @@ await board.change((draft) => {
         x: 0.42,
         y: 0.61,
         label: 'Inspect here',
-        createdBy: rallar.clientId,
+        createdBy: rallar.clientId
     });
 });
 ```
@@ -230,7 +230,7 @@ different item done. The merged document preserves both changes.
 
 ```ts
 const checklist = await rallar.crdt.open<SharedChecklist>('room-checklist', {
-    scope: `room:${roomId}`,
+    scope: `room:${roomId}`
 });
 
 await checklist.change((draft) => {
@@ -249,7 +249,7 @@ record is replaced. A CRDT map can merge independent field changes.
 
 ```ts
 const report = await rallar.crdt.open<InspectionReport>('report', {
-    scope: `principal:${principalId}`,
+    scope: `principal:${principalId}`
 });
 
 await report.change((draft) => {
@@ -270,13 +270,13 @@ temporary tags or notes to visible peers.
 ```ts
 const annotations = await rallar.crdt.open<PresenceAnnotations>(
     'presence-annotations',
-    { scope: `room:${roomId}` },
+    { scope: `room:${roomId}` }
 );
 
 await annotations.change((draft) => {
     draft.peerNotes.set(peerId, {
         text: 'Handling camera feed',
-        updatedBy: rallar.clientId,
+        updatedBy: rallar.clientId
     });
 });
 ```
@@ -292,7 +292,7 @@ layout hints independently.
 
 ```ts
 const graphDoc = await rallar.crdt.open<SharedGraph>('room-graph', {
-    scope: `room:${roomId}`,
+    scope: `room:${roomId}`
 });
 
 await graphDoc.change((draft) => {

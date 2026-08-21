@@ -1,19 +1,16 @@
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { createAiDirectorMockProvider } from '../../aiDirector.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
-import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
-import { generateArenaAiDirectorOutput } from './generate-arena-ai-director-output.ts';
+import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
 import type { ArenaEvent, ArenaSnapshot } from '../../types.ts';
-import type {
-    ArenaAiStatus,
-    ArenaConnectionState,
-} from '../arena-connection-contracts.ts';
+import type { ArenaAiStatus, ArenaConnectionState } from '../arena-connection-contracts.ts';
+import { generateArenaAiDirectorOutput } from './generate-arena-ai-director-output.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();
 
@@ -27,7 +24,7 @@ export interface ArenaAiDirectorScheduleInput {
     readonly roomId: string | undefined;
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
-        generation?: number,
+        generation?: number
     ) => void;
     readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
     readonly setAiError: Dispatch<SetStateAction<string | undefined>>;
@@ -36,7 +33,7 @@ export interface ArenaAiDirectorScheduleInput {
 }
 
 export function startArenaAiDirectorSchedule(
-    input: ArenaAiDirectorScheduleInput,
+    input: ArenaAiDirectorScheduleInput
 ): (() => void) | undefined {
     if (
         input.connectionState !== 'connected' ||
@@ -44,9 +41,7 @@ export function startArenaAiDirectorSchedule(
         !input.directorStatus.isDirector ||
         !input.directorStatus.isFresh
     ) {
-        input.setAiStatus((current) =>
-            current === 'generating' || current === 'loading model' ? 'idle' : current
-        );
+        input.setAiStatus((current) => current === 'generating' || current === 'loading model' ? 'idle' : current);
         return undefined;
     }
     let cancelled = false;
@@ -66,7 +61,7 @@ export function startArenaAiDirectorSchedule(
             if (!cancelled && input.isCurrentNetworkGeneration(generation)) {
                 input.setAiStatus('loading model');
             }
-        },
+        }
     });
     if (providerSelection.status !== 'ready') {
         input.setAiStatus('unavailable');
@@ -80,7 +75,7 @@ export function startArenaAiDirectorSchedule(
         readCurrentStateRevision: () => {
             const snapshot = input.arenaSnapshotRef.current;
             return snapshot ? arenaRevisionKey(hydrateArenaSnapshot(snapshot)) : undefined;
-        },
+        }
     });
     const roomId = input.roomId;
     const generate = () =>
@@ -92,7 +87,7 @@ export function startArenaAiDirectorSchedule(
             providerMode: providerSelection.mode,
             providerFallback: providerSelection.fallback,
             roomId,
-            usedMockFallback: () => usedMockFallback,
+            usedMockFallback: () => usedMockFallback
         });
     const initial = window.setTimeout(() => void generate(), 4_500);
     const interval = window.setInterval(() => void generate(), 10_500);

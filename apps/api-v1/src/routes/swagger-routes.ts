@@ -1,17 +1,14 @@
+import { resolvePublicServerUrl, withPublicOpenApiServer } from '@shared-server/http/public-server-url.ts';
 import { Context, Hono } from 'jsr:@hono/hono@4.11.9';
-import {
-  resolvePublicServerUrl,
-  withPublicOpenApiServer,
-} from '@shared-server/http/public-server-url.ts';
 import { loadOpenApiYaml } from '../config-repo.ts';
 
 export { resolvePublicServerUrl };
 
 function swaggerHtml(c: Context): string {
-  const serverUrl = resolvePublicServerUrl(c.req.raw);
-  const openApiUrl = '/api/openapi.json';
+    const serverUrl = resolvePublicServerUrl(c.req.raw);
+    const openApiUrl = '/api/openapi.json';
 
-  return `
+    return `
         <!doctype html>
         <html lang="en">
           <head>
@@ -57,41 +54,41 @@ function swaggerHtml(c: Context): string {
 }
 
 export function init(app: Hono) {
-  app.get(
-    '/api/openapi.json',
-    async (c) =>
-      c.json(
-        withPublicOpenApiServer(
-          await loadOpenApiYaml(),
-          c.req.raw,
-          'Rallar server',
-        ),
-      ),
-  );
+    app.get(
+        '/api/openapi.json',
+        async (c) =>
+            c.json(
+                withPublicOpenApiServer(
+                    await loadOpenApiYaml(),
+                    c.req.raw,
+                    'Rallar server'
+                )
+            )
+    );
 
-  app.get(
-    '/api/docs',
-    (c) => c.html(swaggerHtml(c)),
-  );
+    app.get(
+        '/api/docs',
+        (c) => c.html(swaggerHtml(c))
+    );
 
-  app.get(
-    '/swagger-ui',
-    (c) => c.html(swaggerHtml(c)),
-  );
+    app.get(
+        '/swagger-ui',
+        (c) => c.html(swaggerHtml(c))
+    );
 
-  app.get(
-    '/openapi.json',
-    async (c) =>
-      c.json(
-        withPublicOpenApiServer(
-          await loadOpenApiYaml(),
-          c.req.raw,
-          'Rallar server',
-        ),
-      ),
-  );
+    app.get(
+        '/openapi.json',
+        async (c) =>
+            c.json(
+                withPublicOpenApiServer(
+                    await loadOpenApiYaml(),
+                    c.req.raw,
+                    'Rallar server'
+                )
+            )
+    );
 
-  app.get('*', (c) => c.redirect('/swagger-ui'));
+    app.get('*', (c) => c.redirect('/swagger-ui'));
 
-  return app;
+    return app;
 }

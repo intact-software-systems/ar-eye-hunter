@@ -1,10 +1,11 @@
-import { useCallback } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { colorForId } from '../../color.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import { hydrateArenaSnapshot, resolvePlayerHitIntent, toArenaSnapshot } from '../../simulation.ts';
 import {
     GAME_COMBAT_LANE_ID,
@@ -14,10 +15,9 @@ import {
     type PlayerHitAccepted,
     type PlayerHitIntent,
     type PlayerShot,
-    type ShotAccepted,
+    type ShotAccepted
 } from '../../types.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 
 interface ArenaCombatActionsInput {
     readonly acceptPlayerHit: (accepted: PlayerHitAccepted) => void;
@@ -29,14 +29,14 @@ interface ArenaCombatActionsInput {
     readonly roomIdRef: RefObject<string | undefined>;
     readonly runBestEffortNetworkTask: <T>(
         task: () => Promise<T> | undefined,
-        generation?: number,
+        generation?: number
     ) => void;
     readonly sessionRef: RefObject<AuthSession | undefined>;
     readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
 }
 
 export function useArenaCombatActions(
-    input: ArenaCombatActionsInput,
+    input: ArenaCombatActionsInput
 ): Pick<ArenaConnection, 'sendShot' | 'sendPlayerHit'> {
     const {
         acceptPlayerHit,
@@ -48,12 +48,12 @@ export function useArenaCombatActions(
         roomIdRef,
         runBestEffortNetworkTask,
         sessionRef,
-        setArenaSnapshot,
+        setArenaSnapshot
     } = input;
 
     const sendShot = useCallback((
         shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
-        accepted: ShotAccepted,
+        accepted: ShotAccepted
     ) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
@@ -66,22 +66,23 @@ export function useArenaCombatActions(
             ...shot,
             sessionId: currentSession.sessionId,
             username: currentSession.username,
-            color: colorForId(currentSession.sessionId),
+            color: colorForId(currentSession.sessionId)
         };
         const fullAccepted: ShotAccepted = {
             ...accepted,
-            shot: fullShot,
+            shot: fullShot
         };
         const acceptedMessage: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'director-shot-accepted',
-            accepted: fullAccepted,
+            accepted: fullAccepted
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
             if (match.status().directorPeerId === currentSession.sessionId) {
                 runBestEffortNetworkTask(() => match.publishEvent(acceptedMessage), generation);
-            } else {
+            }
+            else {
                 runBestEffortNetworkTask(() => match.sendIntent(acceptedMessage), generation);
             }
             return;
@@ -96,13 +97,13 @@ export function useArenaCombatActions(
             rallar.realtime.room<GameRealtimeMessage>({
                 laneId: GAME_COMBAT_LANE_ID,
                 roomId: currentRoomId,
-                openTimeoutMs: 1500,
+                openTimeoutMs: 1500
             }).send({
                 protocol: GAME_PROTOCOL,
                 kind: 'director-shot-accepted',
-                accepted: fullAccepted,
+                accepted: fullAccepted
             }, {
-                maxAgeMs: 1000,
+                maxAgeMs: 1000
             }), generation);
     }, [isNetworkEnabled, runBestEffortNetworkTask]);
 
@@ -120,14 +121,14 @@ export function useArenaCombatActions(
                 ...intent.shot,
                 sessionId: currentSession.sessionId,
                 username: currentSession.username,
-                color: colorForId(currentSession.sessionId),
+                color: colorForId(currentSession.sessionId)
             },
-            sentAtEpochMs: Date.now(),
+            sentAtEpochMs: Date.now()
         };
         const message: GameRealtimeMessage = {
             protocol: GAME_PROTOCOL,
             kind: 'player-hit-intent',
-            intent: fullIntent,
+            intent: fullIntent
         };
         const match = arenaMatchRef.current;
         if (match?.status().directorIsFresh) {
@@ -139,7 +140,7 @@ export function useArenaCombatActions(
                 const result = resolvePlayerHitIntent(
                     hydrateArenaSnapshot(previous),
                     fullIntent,
-                    Date.now(),
+                    Date.now()
                 );
                 if (!result.accepted) {
                     return;
@@ -147,7 +148,7 @@ export function useArenaCombatActions(
                 const snapshot = toArenaSnapshot(
                     result.state,
                     previous.roomId ?? currentRoomId,
-                    Date.now(),
+                    Date.now()
                 );
                 arenaSnapshotRef.current = snapshot;
                 setArenaSnapshot(snapshot);
@@ -156,13 +157,14 @@ export function useArenaCombatActions(
                     match.publishEvent({
                         protocol: GAME_PROTOCOL,
                         kind: 'director-player-hit-accepted',
-                        accepted: result.acceptedHit,
+                        accepted: result.acceptedHit
                     }), generation);
                 runBestEffortNetworkTask(
                     () => match.publishSnapshot(snapshot, { reliable: false }),
-                    generation,
+                    generation
                 );
-            } else {
+            }
+            else {
                 runBestEffortNetworkTask(() => match.sendIntent(message), generation);
             }
             return;
@@ -177,9 +179,9 @@ export function useArenaCombatActions(
             rallar.realtime.room<GameRealtimeMessage>({
                 laneId: GAME_COMBAT_LANE_ID,
                 roomId: currentRoomId,
-                openTimeoutMs: 1500,
+                openTimeoutMs: 1500
             }).send(message, {
-                maxAgeMs: 650,
+                maxAgeMs: 650
             }), generation);
     }, [acceptPlayerHit, isNetworkEnabled, runBestEffortNetworkTask]);
 

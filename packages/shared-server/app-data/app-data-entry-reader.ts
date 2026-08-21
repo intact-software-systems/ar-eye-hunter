@@ -1,7 +1,4 @@
-import type {
-    AppDataEntry,
-    AppDataRepositoryLike,
-} from './AppDataRepository.ts';
+import type { AppDataEntry, AppDataRepositoryLike } from './AppDataRepository.ts';
 import { isAppDataPageRepository } from './AppDataRepository.ts';
 
 export const APP_DATA_ENTRY_READ_PAGE_SIZE = 1_000;
@@ -11,7 +8,7 @@ export async function* readAppDataEntries(
     namespace: string,
     storeName: string,
     keyPrefix?: string,
-    pageSize: number = APP_DATA_ENTRY_READ_PAGE_SIZE,
+    pageSize: number = APP_DATA_ENTRY_READ_PAGE_SIZE
 ): AsyncGenerator<AppDataEntry> {
     if (!isAppDataPageRepository(repository)) {
         for (const entry of await repository.findEntries(namespace, storeName, keyPrefix)) {
@@ -27,7 +24,7 @@ export async function* readAppDataEntries(
         const page = await repository.findEntriesPage(namespace, storeName, {
             keyPrefix,
             afterKey,
-            limit,
+            limit
         });
         if (page.length === 0) {
             return;

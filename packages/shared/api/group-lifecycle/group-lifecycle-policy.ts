@@ -111,11 +111,10 @@ export const GROUP_LIFECYCLE_POLICY_PRESET_NAMES = [
     'optimistic',
     'managed',
     'match',
-    'drop-in-social',
+    'drop-in-social'
 ] as const;
 
-export type GroupLifecyclePolicyPresetName =
-    typeof GROUP_LIFECYCLE_POLICY_PRESET_NAMES[number];
+export type GroupLifecyclePolicyPresetName = typeof GROUP_LIFECYCLE_POLICY_PRESET_NAMES[number];
 
 /** Sparse external input. Absent fields take the preset or server default. */
 export type GroupLifecyclePolicyInput = Readonly<{
@@ -136,11 +135,10 @@ export const GROUP_LIFECYCLE_POLICY_ISSUE_CODES = [
     'deadline-mode-requires-positive-deadline',
     'assigned-selection-requires-principals',
     'manager-count-exceeds-assigned-principals',
-    'strict-confirmation-unsupported',
+    'strict-confirmation-unsupported'
 ] as const;
 
-export type GroupLifecyclePolicyIssueCode =
-    typeof GROUP_LIFECYCLE_POLICY_ISSUE_CODES[number];
+export type GroupLifecyclePolicyIssueCode = typeof GROUP_LIFECYCLE_POLICY_ISSUE_CODES[number];
 
 export type GroupLifecyclePolicyIssue = Readonly<{
     code: GroupLifecyclePolicyIssueCode;

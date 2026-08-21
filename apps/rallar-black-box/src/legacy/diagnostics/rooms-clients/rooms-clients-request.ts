@@ -1,17 +1,15 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
-    RALLAR_SERVER_ENDPOINT_PRESETS,
     applyRallarServerEndpointPreset,
+    RALLAR_SERVER_ENDPOINT_PRESETS,
     type RallarServerRestRequestInput,
-    type RallarServerWorkbenchVariables,
+    type RallarServerWorkbenchVariables
 } from '../../../rallar-server-workbench.ts';
-import type {
-    RallarServerEndpointPreset,
-} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import type { RallarServerEndpointPreset } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 
 function rallarServerPresetById(presetId: string): RallarServerEndpointPreset {
     const preset = RALLAR_SERVER_ENDPOINT_PRESETS.find(
-        (entry) => entry.presetId === presetId,
+        (entry) => entry.presetId === presetId
     );
     if (!preset) {
         throw new Error(`Unknown Rallar Server preset: ${presetId}`);
@@ -28,15 +26,15 @@ export function buildPresetRequestInput(
         timeoutMs: number;
         query?: Readonly<Record<string, unknown>>;
         attachAuth?: boolean;
-    }>,
+    }>
 ): RallarServerRestRequestInput {
     const draft = applyRallarServerEndpointPreset(
         rallarServerPresetById(input.presetId),
-        input.variables,
+        input.variables
     );
     const query = {
         ...(JSON.parse(draft.queryText || '{}') as Record<string, unknown>),
-        ...(input.query ?? {}),
+        ...(input.query ?? {})
     };
     return {
         apiBaseUrl: input.apiBaseUrl,
@@ -48,6 +46,6 @@ export function buildPresetRequestInput(
         responseBodyMode: draft.responseBodyMode,
         attachAuth: input.attachAuth ?? draft.attachAuth,
         authSession: input.authSession,
-        timeoutMs: input.timeoutMs,
+        timeoutMs: input.timeoutMs
     };
 }

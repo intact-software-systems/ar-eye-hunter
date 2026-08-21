@@ -1,13 +1,14 @@
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-data.ts';
 import {
-    RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
+    evaluateRallarCrdtFeaturePolicy,
     RALLAR_CRDT_APP_TOPIC_ID,
+    RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
     RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
     RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
     RALLAR_CRDT_ROOM_TOPIC_ID,
     RALLAR_CRDT_SYNC_REQUEST_TYPE_ID,
     RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID,
     RALLAR_CRDT_UPDATE_TYPE_ID,
-    evaluateRallarCrdtFeaturePolicy,
     type RallarCrdtAppendResponseEnvelope,
     type RallarCrdtCatchUpRequestEnvelope,
     type RallarCrdtCatchUpResponseEnvelope,
@@ -17,9 +18,8 @@ import {
     type RallarCrdtSyncRequestEnvelope,
     type RallarCrdtSyncResponseEnvelope,
     type RallarCrdtTransportStrategy,
-    type RallarCrdtUpdateEnvelope,
+    type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import type { RallarUnsubscribe } from '@shared-web/browser/rallar-data.ts';
 
 export type RallarCrdtTransportKind = 'ws' | 'rtc';
 
@@ -49,13 +49,13 @@ export type RallarCrdtTransportSendResult = Readonly<{
 
 export type RallarCrdtTransportLane = Readonly<{
     send<TPayload>(
-        input: RallarCrdtTransportSendInput<TPayload>,
+        input: RallarCrdtTransportSendInput<TPayload>
     ): Promise<RallarCrdtTransportSendResult>;
     onMessage<TPayload>(
-        selector: Readonly<{ topicId?: string; typeId?: string }>,
+        selector: Readonly<{ topicId?: string; typeId?: string; }>,
         handler: (
-            message: RallarCrdtTransportMessage<TPayload>,
-        ) => void | Promise<void>,
+            message: RallarCrdtTransportMessage<TPayload>
+        ) => void | Promise<void>
     ): RallarUnsubscribe;
 }>;
 
@@ -73,35 +73,33 @@ export type RallarCrdtLiveSendOutcome = Readonly<{
     reason?: string;
 }>;
 
-export function subscribeRallarCrdtLiveTransport<
-    TPayload extends RallarCrdtOperationBatch,
->(
+export function subscribeRallarCrdtLiveTransport<TPayload extends RallarCrdtOperationBatch>(
     options: Readonly<{
         ref: RallarCrdtDocumentRef;
         transport: RallarCrdtMessageTransport | undefined;
         strategy: RallarCrdtTransportStrategy;
         onUpdate(
             update: RallarCrdtUpdateEnvelope<TPayload>,
-            transport: RallarCrdtTransportKind,
+            transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onSyncRequest?(
             request: RallarCrdtSyncRequestEnvelope,
-            transport: RallarCrdtTransportKind,
+            transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onSyncResponse?(
             response: RallarCrdtSyncResponseEnvelope<unknown, TPayload>,
-            transport: RallarCrdtTransportKind,
+            transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onAppendResponse?(
             response: RallarCrdtAppendResponseEnvelope<TPayload>,
-            transport: RallarCrdtTransportKind,
+            transport: RallarCrdtTransportKind
         ): void | Promise<void>;
         onCatchUpResponse?(
             response: RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>,
-            transport: Extract<RallarCrdtTransportKind, 'ws'>,
+            transport: Extract<RallarCrdtTransportKind, 'ws'>
         ): void | Promise<void>;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
-    }>,
+    }>
 ): readonly RallarUnsubscribe[] {
     const topicId = toRallarCrdtLiveTopicId(options.ref);
     const unsubscribes: RallarUnsubscribe[] = [];
@@ -115,72 +113,66 @@ export function subscribeRallarCrdtLiveTransport<
             options.transport.ws.onMessage<RallarCrdtUpdateEnvelope<TPayload>>(
                 {
                     topicId,
-                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID
                 },
                 async (message) => {
                     await options.onUpdate(message.payload, 'ws');
-                },
-            ),
+                }
+            )
         );
         if (options.onSyncRequest) {
             unsubscribes.push(
                 options.transport.ws.onMessage<RallarCrdtSyncRequestEnvelope>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_SYNC_REQUEST_TYPE_ID,
+                        typeId: RALLAR_CRDT_SYNC_REQUEST_TYPE_ID
                     },
                     async (message) => {
                         await options.onSyncRequest?.(message.payload, 'ws');
-                    },
-                ),
+                    }
+                )
             );
         }
         if (options.onSyncResponse) {
             unsubscribes.push(
-                options.transport.ws.onMessage<
-                    RallarCrdtSyncResponseEnvelope<unknown, TPayload>
-                >(
+                options.transport.ws.onMessage<RallarCrdtSyncResponseEnvelope<unknown, TPayload>>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID,
+                        typeId: RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID
                     },
                     async (message) => {
                         await options.onSyncResponse?.(message.payload, 'ws');
-                    },
-                ),
+                    }
+                )
             );
         }
         if (options.onAppendResponse) {
             unsubscribes.push(
-                options.transport.ws.onMessage<
-                    RallarCrdtAppendResponseEnvelope<TPayload>
-                >(
+                options.transport.ws.onMessage<RallarCrdtAppendResponseEnvelope<TPayload>>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
+                        typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID
                     },
                     async (message) => {
                         await options.onAppendResponse?.(message.payload, 'ws');
-                    },
-                ),
+                    }
+                )
             );
         }
         if (options.onCatchUpResponse) {
             unsubscribes.push(
-                options.transport.ws.onMessage<
-                    RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>
-                >(
+                options.transport.ws.onMessage<RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
+                        typeId: RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID
                     },
                     async (message) => {
                         await options.onCatchUpResponse?.(
                             message.payload,
-                            'ws',
+                            'ws'
                         );
-                    },
-                ),
+                    }
+                )
             );
         }
     }
@@ -194,57 +186,53 @@ export function subscribeRallarCrdtLiveTransport<
             options.transport.rtc.onMessage<RallarCrdtUpdateEnvelope<TPayload>>(
                 {
                     topicId,
-                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID,
+                    typeId: RALLAR_CRDT_UPDATE_TYPE_ID
                 },
                 async (message) => {
                     await options.onUpdate(message.payload, 'rtc');
-                },
-            ),
+                }
+            )
         );
         if (options.onSyncRequest) {
             unsubscribes.push(
                 options.transport.rtc.onMessage<RallarCrdtSyncRequestEnvelope>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_SYNC_REQUEST_TYPE_ID,
+                        typeId: RALLAR_CRDT_SYNC_REQUEST_TYPE_ID
                     },
                     async (message) => {
                         await options.onSyncRequest?.(message.payload, 'rtc');
-                    },
-                ),
+                    }
+                )
             );
         }
         if (options.onSyncResponse) {
             unsubscribes.push(
-                options.transport.rtc.onMessage<
-                    RallarCrdtSyncResponseEnvelope<unknown, TPayload>
-                >(
+                options.transport.rtc.onMessage<RallarCrdtSyncResponseEnvelope<unknown, TPayload>>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID,
+                        typeId: RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID
                     },
                     async (message) => {
                         await options.onSyncResponse?.(message.payload, 'rtc');
-                    },
-                ),
+                    }
+                )
             );
         }
         if (options.onAppendResponse) {
             unsubscribes.push(
-                options.transport.rtc.onMessage<
-                    RallarCrdtAppendResponseEnvelope<TPayload>
-                >(
+                options.transport.rtc.onMessage<RallarCrdtAppendResponseEnvelope<TPayload>>(
                     {
                         topicId,
-                        typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID,
+                        typeId: RALLAR_CRDT_APPEND_RESPONSE_TYPE_ID
                     },
                     async (message) => {
                         await options.onAppendResponse?.(
                             message.payload,
-                            'rtc',
+                            'rtc'
                         );
-                    },
-                ),
+                    }
+                )
             );
         }
     }
@@ -252,15 +240,13 @@ export function subscribeRallarCrdtLiveTransport<
     return unsubscribes;
 }
 
-export async function sendRallarCrdtLiveUpdate<
-    TPayload extends RallarCrdtOperationBatch,
->(
+export async function sendRallarCrdtLiveUpdate<TPayload extends RallarCrdtOperationBatch>(
     options: Readonly<{
         update: RallarCrdtUpdateEnvelope<TPayload>;
         transport: RallarCrdtMessageTransport | undefined;
         strategy: RallarCrdtTransportStrategy;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
-    }>,
+    }>
 ): Promise<RallarCrdtLiveSendOutcome> {
     if (options.strategy === 'local-only') {
         return {
@@ -269,7 +255,7 @@ export async function sendRallarCrdtLiveUpdate<
             sentCount: 0,
             failedCount: 0,
             status: 'deferred',
-            reason: 'Document is opened in local-only mode.',
+            reason: 'Document is opened in local-only mode.'
         };
     }
 
@@ -280,7 +266,7 @@ export async function sendRallarCrdtLiveUpdate<
             sentCount: 0,
             failedCount: 0,
             status: 'deferred',
-            reason: 'Live CRDT transport supports room documents and WS app/principal documents.',
+            reason: 'Live CRDT transport supports room documents and WS app/principal documents.'
         };
     }
 
@@ -291,7 +277,7 @@ export async function sendRallarCrdtLiveUpdate<
             sentCount: 0,
             failedCount: 0,
             status: 'deferred',
-            reason: 'No CRDT live transport is configured.',
+            reason: 'No CRDT live transport is configured.'
         };
     }
 
@@ -302,7 +288,7 @@ export async function sendRallarCrdtLiveUpdate<
             return await sendThroughOrderedTransports(options, ['rtc']);
         case 'ws-then-rtc':
             return await sendThroughOrderedTransports(options, ['ws', 'rtc'], {
-                continueAfterSuccess: true,
+                continueAfterSuccess: true
             });
         case 'rtc-with-ws-fallback':
             return await sendThroughOrderedTransports(options, ['rtc', 'ws']);
@@ -315,7 +301,7 @@ export async function sendRallarCrdtSyncRequest(
         transport: RallarCrdtMessageTransport | undefined;
         strategy: RallarCrdtTransportStrategy;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
-    }>,
+    }>
 ): Promise<RallarCrdtLiveSendOutcome> {
     return await sendRallarCrdtControlEnvelope({
         envelope: options.request,
@@ -324,7 +310,7 @@ export async function sendRallarCrdtSyncRequest(
         strategy: options.strategy,
         typeId: RALLAR_CRDT_SYNC_REQUEST_TYPE_ID,
         resourceId: options.request.requestId,
-        policies: options.policies,
+        policies: options.policies
     });
 }
 
@@ -333,7 +319,7 @@ export async function sendRallarCrdtCatchUpRequest(
         request: RallarCrdtCatchUpRequestEnvelope;
         transport: RallarCrdtMessageTransport | undefined;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
-    }>,
+    }>
 ): Promise<RallarCrdtLiveSendOutcome> {
     if (!options.transport?.ws) {
         return {
@@ -342,13 +328,13 @@ export async function sendRallarCrdtCatchUpRequest(
                 {
                     transport: 'ws',
                     status: 'missing-transport',
-                    reason: 'WS CRDT transport is not configured.',
-                },
+                    reason: 'WS CRDT transport is not configured.'
+                }
             ],
             sentCount: 0,
             failedCount: 1,
             status: 'failed',
-            reason: 'WS CRDT transport is not configured.',
+            reason: 'WS CRDT transport is not configured.'
         };
     }
 
@@ -359,14 +345,14 @@ export async function sendRallarCrdtCatchUpRequest(
             sentCount: 0,
             failedCount: 0,
             status: 'deferred',
-            reason: 'CRDT durable catch-up supports room, app, and principal documents over WS.',
+            reason: 'CRDT durable catch-up supports room, app, and principal documents over WS.'
         };
     }
 
     const policy = evaluateRallarCrdtFeaturePolicy({
         document: options.request.document,
         operation: 'durable-catch-up',
-        policies: options.policies,
+        policies: options.policies
     });
     if (!policy.allowed) {
         return {
@@ -375,13 +361,13 @@ export async function sendRallarCrdtCatchUpRequest(
                 {
                     transport: 'ws',
                     status: policy.code,
-                    reason: policy.reason,
-                },
+                    reason: policy.reason
+                }
             ],
             sentCount: 0,
             failedCount: 1,
             status: 'failed',
-            reason: policy.reason,
+            reason: policy.reason
         };
     }
 
@@ -393,7 +379,7 @@ export async function sendRallarCrdtCatchUpRequest(
         resourceId: options.request.requestId,
         roomId: options.request.document.roomRef?.groupId,
         roomRef: options.request.document.roomRef,
-        scope: options.request.document.roomRef ? 'room' : undefined,
+        scope: options.request.document.roomRef ? 'room' : undefined
     });
     const sent = isSuccessfulRallarCrdtTransportStatus(result.status);
     return {
@@ -401,25 +387,23 @@ export async function sendRallarCrdtCatchUpRequest(
         results: [
             {
                 ...result,
-                transport: 'ws',
-            },
+                transport: 'ws'
+            }
         ],
         sentCount: sent ? 1 : 0,
         failedCount: sent ? 0 : 1,
         status: sent ? 'sent' : 'failed',
-        reason: result.reason,
+        reason: result.reason
     };
 }
 
-export async function sendRallarCrdtSyncResponse<
-    TPayload extends RallarCrdtOperationBatch,
->(
+export async function sendRallarCrdtSyncResponse<TPayload extends RallarCrdtOperationBatch>(
     options: Readonly<{
         response: RallarCrdtSyncResponseEnvelope<unknown, TPayload>;
         transport: RallarCrdtMessageTransport | undefined;
         replyTransport: RallarCrdtTransportKind;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
-    }>,
+    }>
 ): Promise<RallarCrdtLiveSendOutcome> {
     return await sendRallarCrdtControlEnvelope({
         envelope: options.response,
@@ -428,7 +412,7 @@ export async function sendRallarCrdtSyncResponse<
         strategy: options.replyTransport,
         typeId: RALLAR_CRDT_SYNC_RESPONSE_TYPE_ID,
         resourceId: options.response.responseId,
-        policies: options.policies,
+        policies: options.policies
     });
 }
 
@@ -466,9 +450,7 @@ function usesRtc(strategy: RallarCrdtTransportStrategy): boolean {
     );
 }
 
-async function sendThroughOrderedTransports<
-    TPayload extends RallarCrdtOperationBatch,
->(
+async function sendThroughOrderedTransports<TPayload extends RallarCrdtOperationBatch>(
     options: Readonly<{
         update: RallarCrdtUpdateEnvelope<TPayload>;
         transport: RallarCrdtMessageTransport | undefined;
@@ -476,7 +458,7 @@ async function sendThroughOrderedTransports<
         policies?: readonly RallarCrdtDocumentTypePolicy[];
     }>,
     order: readonly RallarCrdtTransportKind[],
-    behavior: Readonly<{ continueAfterSuccess?: boolean }> = {},
+    behavior: Readonly<{ continueAfterSuccess?: boolean; }> = {}
 ): Promise<RallarCrdtLiveSendOutcome> {
     const results: RallarCrdtTransportSendResult[] = [];
     const attempted: RallarCrdtTransportKind[] = [];
@@ -487,13 +469,13 @@ async function sendThroughOrderedTransports<
         const decision = evaluateTransportDecision(
             options.update.document,
             transportKind,
-            options.policies,
+            options.policies
         );
         if (!decision.allowed) {
             results.push({
                 transport: transportKind,
                 status: decision.code,
-                reason: decision.reason,
+                reason: decision.reason
             });
             continue;
         }
@@ -501,18 +483,18 @@ async function sendThroughOrderedTransports<
             results.push({
                 transport: transportKind,
                 status: 'missing-transport',
-                reason: `${transportKind.toUpperCase()} CRDT transport is not configured.`,
+                reason: `${transportKind.toUpperCase()} CRDT transport is not configured.`
             });
             continue;
         }
 
         try {
             const result = await lane.send(
-                toRallarCrdtTransportSendInput(options.update, transportKind),
+                toRallarCrdtTransportSendInput(options.update, transportKind)
             );
             results.push({
                 ...result,
-                transport: transportKind,
+                transport: transportKind
             });
             if (
                 isSuccessfulRallarCrdtTransportStatus(result.status) &&
@@ -520,18 +502,17 @@ async function sendThroughOrderedTransports<
             ) {
                 break;
             }
-        } catch (error) {
+        }
+        catch (error) {
             results.push({
                 transport: transportKind,
                 status: 'failed',
-                reason: error instanceof Error ? error.message : String(error),
+                reason: error instanceof Error ? error.message : String(error)
             });
         }
     }
 
-    const sentCount = results.filter((result) =>
-        isSuccessfulRallarCrdtTransportStatus(result.status),
-    ).length;
+    const sentCount = results.filter((result) => isSuccessfulRallarCrdtTransportStatus(result.status)).length;
     const failedCount = results.length - sentCount;
 
     return {
@@ -539,17 +520,14 @@ async function sendThroughOrderedTransports<
         results,
         sentCount,
         failedCount,
-        status:
-            sentCount > 0 ? 'sent' : failedCount > 0 ? 'failed' : 'deferred',
-        reason: results.find((result) => result.reason)?.reason,
+        status: sentCount > 0 ? 'sent' : failedCount > 0 ? 'failed' : 'deferred',
+        reason: results.find((result) => result.reason)?.reason
     };
 }
 
-function toRallarCrdtTransportSendInput<
-    TPayload extends RallarCrdtOperationBatch,
->(
+function toRallarCrdtTransportSendInput<TPayload extends RallarCrdtOperationBatch>(
     update: RallarCrdtUpdateEnvelope<TPayload>,
-    transport: RallarCrdtTransportKind,
+    transport: RallarCrdtTransportKind
 ): RallarCrdtTransportSendInput<RallarCrdtUpdateEnvelope<TPayload>> {
     const topicId = toRallarCrdtLiveTopicId(update.document);
     const roomId = update.document.roomRef?.groupId;
@@ -563,7 +541,7 @@ function toRallarCrdtTransportSendInput<
         resourceId: update.updateId,
         roomId,
         roomRef,
-        scope: transport === 'ws' && roomRef ? 'room' : undefined,
+        scope: transport === 'ws' && roomRef ? 'room' : undefined
     };
 }
 
@@ -576,7 +554,7 @@ async function sendRallarCrdtControlEnvelope<TEnvelope>(
         typeId: string;
         resourceId: string;
         policies?: readonly RallarCrdtDocumentTypePolicy[];
-    }>,
+    }>
 ): Promise<RallarCrdtLiveSendOutcome> {
     if (!options.transport) {
         return {
@@ -585,7 +563,7 @@ async function sendRallarCrdtControlEnvelope<TEnvelope>(
             sentCount: 0,
             failedCount: 0,
             status: 'deferred',
-            reason: 'No CRDT live transport is configured.',
+            reason: 'No CRDT live transport is configured.'
         };
     }
 
@@ -596,7 +574,7 @@ async function sendRallarCrdtControlEnvelope<TEnvelope>(
             sentCount: 0,
             failedCount: 0,
             status: 'deferred',
-            reason: 'Live CRDT sync supports room documents and WS app/principal documents.',
+            reason: 'Live CRDT sync supports room documents and WS app/principal documents.'
         };
     }
 
@@ -608,20 +586,20 @@ async function sendRallarCrdtControlEnvelope<TEnvelope>(
         const decision = evaluateTransportDecision(
             options.document,
             transportKind,
-            options.policies,
+            options.policies
         );
         if (!decision.allowed) {
             results.push({
                 transport: transportKind,
                 status: decision.code,
-                reason: decision.reason,
+                reason: decision.reason
             });
             continue;
         }
         if (!lane) {
             results.push({
                 transport: transportKind,
-                status: 'missing-transport',
+                status: 'missing-transport'
             });
             continue;
         }
@@ -634,14 +612,13 @@ async function sendRallarCrdtControlEnvelope<TEnvelope>(
             resourceId: options.resourceId,
             roomId: options.document.roomRef?.groupId,
             roomRef: options.document.roomRef,
-            scope:
-                transportKind === 'ws' && options.document.roomRef
-                    ? 'room'
-                    : undefined,
+            scope: transportKind === 'ws' && options.document.roomRef
+                ? 'room'
+                : undefined
         });
         results.push({
             ...result,
-            transport: transportKind,
+            transport: transportKind
         });
         if (
             isSuccessfulRallarCrdtTransportStatus(result.status) &&
@@ -651,25 +628,22 @@ async function sendRallarCrdtControlEnvelope<TEnvelope>(
         }
     }
 
-    const sentCount = results.filter((result) =>
-        isSuccessfulRallarCrdtTransportStatus(result.status),
-    ).length;
+    const sentCount = results.filter((result) => isSuccessfulRallarCrdtTransportStatus(result.status)).length;
 
     return {
         attempted: order,
         results,
         sentCount,
         failedCount: results.length - sentCount,
-        status:
-            sentCount > 0 ? 'sent' : results.length > 0 ? 'failed' : 'deferred',
-        reason: results.find((result) => result.reason)?.reason,
+        status: sentCount > 0 ? 'sent' : results.length > 0 ? 'failed' : 'deferred',
+        reason: results.find((result) => result.reason)?.reason
     };
 }
 
 function isTransportAllowed(
     document: RallarCrdtDocumentRef,
     transport: RallarCrdtTransportKind,
-    policies: readonly RallarCrdtDocumentTypePolicy[] | undefined,
+    policies: readonly RallarCrdtDocumentTypePolicy[] | undefined
 ): boolean {
     return evaluateTransportDecision(document, transport, policies).allowed;
 }
@@ -677,27 +651,26 @@ function isTransportAllowed(
 function evaluateTransportDecision(
     document: RallarCrdtDocumentRef,
     transport: RallarCrdtTransportKind,
-    policies: readonly RallarCrdtDocumentTypePolicy[] | undefined,
+    policies: readonly RallarCrdtDocumentTypePolicy[] | undefined
 ) {
     if (transport === 'rtc' && document.scope !== 'room') {
         return {
             allowed: false,
             code: 'rtc-scope-unsupported',
-            reason:
-                'RTC CRDT transport is room-scoped; use WS for app or principal documents.',
+            reason: 'RTC CRDT transport is room-scoped; use WS for app or principal documents.',
             rollout: 'production' as const,
-            retryable: false,
+            retryable: false
         };
     }
     return evaluateRallarCrdtFeaturePolicy({
         document,
         operation: transport === 'ws' ? 'ws-send' : 'rtc-send',
-        policies,
+        policies
     });
 }
 
 function toTransportOrder(
-    strategy: RallarCrdtTransportStrategy | RallarCrdtTransportKind,
+    strategy: RallarCrdtTransportStrategy | RallarCrdtTransportKind
 ): readonly RallarCrdtTransportKind[] {
     switch (strategy) {
         case 'ws':

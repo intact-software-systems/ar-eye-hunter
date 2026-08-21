@@ -1,21 +1,23 @@
 import {
     composeDistributedArtifactIssueMarkdown,
-    deriveDistributedArtifactWorkspace,
     deriveDistributedArtifactEvidenceIndex,
+    deriveDistributedArtifactWorkspace,
     distributedArtifactPipelineJsonRecord,
+    type DeriveDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactPipelineTelemetry,
     type DistributedArtifactWorkspace,
-    type DeriveDistributedArtifactEvidenceIndexInput,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactSnapshots,
-    type ParsedDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline
 } from '@shared-test/rallar-bb-test/mod.ts';
-import { deriveAnalyzePrimaryResultFailure, type AnalyzePrimaryResultFailure } from
-    './analyze-primary-result-failure.ts';
-export type { AnalyzePrimaryResultFailure } from './analyze-primary-result-failure.ts';
+import {
+    deriveAnalyzePrimaryResultFailure,
+    type AnalyzePrimaryResultFailure
+} from './analyze-primary-result-failure.ts';
 export { deriveAnalyzeArtifactSearchResult } from './analyze-artifact-search.ts';
+export type { AnalyzePrimaryResultFailure } from './analyze-primary-result-failure.ts';
 
 type AnalyzeEvidenceEntries = DistributedArtifactEvidenceIndex['entries'];
 export type AnalyzeArtifactSource = 'local-files' | 'control';
@@ -101,7 +103,7 @@ export class AnalyzeArtifactModelError extends Error {
     constructor(
         code: AnalyzeArtifactModelErrorCode,
         message: string,
-        workspace: DistributedArtifactWorkspace,
+        workspace: DistributedArtifactWorkspace
     ) {
         super(message);
         this.name = 'AnalyzeArtifactModelError';
@@ -111,31 +113,31 @@ export class AnalyzeArtifactModelError extends Error {
 }
 
 export function createAnalyzeArtifactModel(
-    input: AnalyzeArtifactModelInput,
+    input: AnalyzeArtifactModelInput
 ): AnalyzeArtifactModel {
     return deriveAnalyzeArtifactModel(input).model;
 }
 
 export function deriveAnalyzeArtifactModel(
-    input: AnalyzeArtifactModelInput,
+    input: AnalyzeArtifactModelInput
 ): DerivedAnalyzeArtifactModel {
     const prepared = prepareAnalyzeArtifactModel(input);
     const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
-        prepared.evidenceInput,
+        prepared.evidenceInput
     );
     return {
         model: finalizeAnalyzeArtifactModel(prepared, evidenceIndex),
-        pipelineTelemetry: prepared.pipelineTelemetry,
+        pipelineTelemetry: prepared.pipelineTelemetry
     };
 }
 
 export function prepareAnalyzeArtifactModel(
-    input: AnalyzeArtifactModelInput,
+    input: AnalyzeArtifactModelInput
 ): PreparedAnalyzeArtifactModel {
     const derived = deriveDistributedArtifactWorkspace({
         files: input.files,
         generatedAtEpochMs: input.generatedAtEpochMs,
-        artifactSchemaVersion: input.artifactSchemaVersion,
+        artifactSchemaVersion: input.artifactSchemaVersion
     });
     const workspace = derived.workspace;
     rejectUnsupportedFamily(workspace, input.label);
@@ -146,7 +148,7 @@ export function prepareAnalyzeArtifactModel(
         throw new AnalyzeArtifactModelError(
             'unusable-distributed-artifact',
             `${input.label} does not contain usable distributed-run analysis and snapshots.`,
-            workspace,
+            workspace
         );
     }
 
@@ -157,10 +159,10 @@ export function prepareAnalyzeArtifactModel(
         monitor: derived.monitor,
         parsedControlRun: distributedArtifactPipelineJsonRecord(
             derived.parsed,
-            'control-run.json',
+            'control-run.json'
         ),
         sourceFileNames: Object.keys(portableFiles),
-        sourceFiles: derived.parsed.projectedFiles,
+        sourceFiles: derived.parsed.projectedFiles
     };
     const ignoredFiles = normalizedIgnoredFiles(input.ignoredFiles ?? []);
     const selectedArtifactFileCount = selectedInputFileCount(derived.parsed);
@@ -173,25 +175,30 @@ export function prepareAnalyzeArtifactModel(
         ignoredFiles,
         selectedArtifactFileCount,
         evidenceInput,
-        pipelineTelemetry: derived.parsed.telemetry,
+        pipelineTelemetry: derived.parsed.telemetry
     };
 }
 
 export function finalizeAnalyzeArtifactModel(
     prepared: PreparedAnalyzeArtifactModel,
     evidenceIndex: DistributedArtifactEvidenceIndex,
-    primaryResultEvidenceEntries: AnalyzeEvidenceEntries = evidenceIndex.entries,
+    primaryResultEvidenceEntries: AnalyzeEvidenceEntries = evidenceIndex.entries
 ): AnalyzeArtifactModel {
     const {
-        input, workspace, analysis, snapshots, portableFiles, ignoredFiles,
-        selectedArtifactFileCount,
+        input,
+        workspace,
+        analysis,
+        snapshots,
+        portableFiles,
+        ignoredFiles,
+        selectedArtifactFileCount
     } = prepared;
     const firstActionableEvidenceId = evidenceIndex.entries.find(
-        entry => entry.kind === 'failure',
+        (entry) => entry.kind === 'failure'
     )?.id;
     const primaryResultFailure = deriveAnalyzePrimaryResultFailure(
         analysis,
-        primaryResultEvidenceEntries,
+        primaryResultEvidenceEntries
     );
 
     const model: AnalyzeArtifactModel = {
@@ -203,7 +210,7 @@ export function finalizeAnalyzeArtifactModel(
             distributedRunId: analysis.distributedRunId,
             ...(analysis.controlRunId
                 ? { controlRunId: analysis.controlRunId }
-                : {}),
+                : {})
         },
         workspace,
         analysis,
@@ -211,14 +218,14 @@ export function finalizeAnalyzeArtifactModel(
         evidenceIndex,
         issueMarkdown: composeDistributedArtifactIssueMarkdown({
             analysis,
-            index: evidenceIndex,
+            index: evidenceIndex
         }),
         portableEnvelope: {
             artifactSchemaVersion: workspace.artifactSchemaVersion ??
                 analysis.artifactSchemaVersion ?? 1,
             distributedRunId: analysis.distributedRunId,
             generatedAtEpochMs: workspace.generatedAtEpochMs,
-            files: portableFiles,
+            files: portableFiles
         },
         provenance: {
             source: input.source,
@@ -228,71 +235,71 @@ export function finalizeAnalyzeArtifactModel(
             selectedFileCount: selectedArtifactFileCount + ignoredFiles.length,
             artifactFileCount: Object.keys(portableFiles).length,
             loadedFileCount: workspace.inventory.filter(
-                item => item.status === 'loaded',
+                (item) => item.status === 'loaded'
             ).length,
             ignoredFileCount: ignoredFiles.length,
             workspaceIgnoredFileCount: workspace.inventory.filter(
-                item => item.status === 'ignored',
+                (item) => item.status === 'ignored'
             ).length,
-            ignoredFiles,
+            ignoredFiles
         },
         ...(firstActionableEvidenceId
             ? { firstActionableEvidenceId }
             : {}),
         ...(primaryResultFailure
             ? { primaryResultFailure }
-            : {}),
+            : {})
     };
     return model;
 }
 
 function selectedInputFileCount(
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): number {
     if (parsed.source === 'bundle-envelope') {
         return 1 + parsed.projection.outerIgnoredFiles.length;
     }
     return Object.values(parsed.projectedFiles).filter(
-        value => typeof value === 'string',
+        (value) => typeof value === 'string'
     ).length;
 }
 
 function rejectUnsupportedFamily(
     workspace: DistributedArtifactWorkspace,
-    label: string,
+    label: string
 ): void {
-    if (workspace.family === 'distributed-run') return;
+    if (workspace.family === 'distributed-run') {
+        return;
+    }
     if (workspace.family === 'black-box-runner') {
         throw new AnalyzeArtifactModelError(
             'generic-artifact-unsupported',
             `${label} is a generic black-box-runner artifact; use the legacy Shared Test importer.`,
-            workspace,
+            workspace
         );
     }
     throw new AnalyzeArtifactModelError(
         'unknown-artifact-family',
         `${label} does not identify a supported distributed-run artifact.`,
-        workspace,
+        workspace
     );
 }
 
 function normalizedPortableFiles(
-    files: DistributedRunArtifactFiles,
+    files: DistributedRunArtifactFiles
 ): Readonly<Record<string, string>> {
     return Object.fromEntries(
         Object.entries(files)
-            .filter((entry): entry is [string, string] =>
-                typeof entry[1] === 'string'
-            )
-            .sort(([left], [right]) => left.localeCompare(right)),
+            .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+            .sort(([left], [right]) => left.localeCompare(right))
     );
 }
 
 function normalizedIgnoredFiles(
-    files: readonly AnalyzeArtifactIgnoredFile[],
+    files: readonly AnalyzeArtifactIgnoredFile[]
 ): readonly AnalyzeArtifactIgnoredFile[] {
     return [...files]
-        .map(file => ({ ...file }))
+        .map((file) => ({ ...file }))
         .sort((left, right) =>
             left.sourcePath.localeCompare(right.sourcePath) ||
             left.basename.localeCompare(right.basename)

@@ -1,27 +1,24 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { StatePanel } from '../ui/StatePanel.tsx';
+import { safeAnalyzeArtifactIdentity } from './analyze-identity-policy.ts';
+import { createAnalyzeLegacyRunsHref, createAnalyzeLegacySharedTestHref } from './analyze-legacy-links.ts';
 import { AnalyzeEvidenceQuality } from './AnalyzeEvidenceQuality.tsx';
 import { AnalyzeEvidenceSearch } from './AnalyzeEvidenceSearch.tsx';
 import { AnalyzeInspector } from './AnalyzeInspector.tsx';
-import {
-    createAnalyzeLegacyRunsHref,
-    createAnalyzeLegacySharedTestHref,
-} from './analyze-legacy-links.ts';
-import { safeAnalyzeArtifactIdentity } from './analyze-identity-policy.ts';
 import { AnalyzeMarkdown } from './AnalyzeMarkdown.tsx';
 import { AnalyzePerformance } from './AnalyzePerformance.tsx';
 import { AnalyzeSourcePanel } from './AnalyzeSourcePanel.tsx';
 import { AnalyzeVerdict } from './AnalyzeVerdict.tsx';
-import type { AnalyzeWorkspaceController } from './use-analyze-workspace.ts';
 import styles from './AnalyzeWorkspace.module.css';
+import type { AnalyzeWorkspaceController } from './use-analyze-workspace.ts';
 
 export function AnalyzeWorkspace({
     controller,
     urlState,
     onInspect,
     onInspectorChange,
-    onSelectionLabelChange,
+    onSelectionLabelChange
 }: Readonly<{
     controller: AnalyzeWorkspaceController;
     urlState: RecipeConsoleUrlState;
@@ -47,15 +44,17 @@ export function AnalyzeWorkspace({
             distributedRunId: loadedIdentity?.distributedRunId,
             agentId: undefined,
             recipeId: undefined,
-            commandId: undefined,
+            commandId: undefined
         }
         : urlState;
 
     useEffect(() => {
         onInspectorChange(inspector);
-        onSelectionLabelChange(controller.selectedEvidence
-            ? `${evidenceKind(controller.selectedEvidence.kind)} · ${controller.selectedEvidence.summary}`
-            : undefined);
+        onSelectionLabelChange(
+            controller.selectedEvidence
+                ? `${evidenceKind(controller.selectedEvidence.kind)} · ${controller.selectedEvidence.summary}`
+                : undefined
+        );
     }, [controller.selectedEvidence, inspector, onInspectorChange, onSelectionLabelChange]);
     useEffect(() => () => {
         onInspectorChange(undefined);
@@ -70,12 +69,10 @@ export function AnalyzeWorkspace({
             data-analyze-match-count={controller.telemetry?.matchedEntryCount}
             data-analyze-mounted-count={controller.searchResult?.entries.length ?? 0}
             data-analyze-operation-generation={controller.operationGeneration}
-            data-analyze-pending-painted={
-                controller.status === 'pending' &&
-                controller.pendingPaintGeneration === controller.operationGeneration
-                    ? 'true'
-                    : undefined
-            }
+            data-analyze-pending-painted={controller.status === 'pending' &&
+                    controller.pendingPaintGeneration === controller.operationGeneration
+                ? 'true'
+                : undefined}
             data-analyze-render-count={renderCountRef.current}
             data-analyze-source-count={controller.telemetry?.sourceFileCount}
             data-analyze-total-entry-count={controller.telemetry?.totalEntryCount}
@@ -86,33 +83,35 @@ export function AnalyzeWorkspace({
                 legacyRunsHref={createAnalyzeLegacyRunsHref(legacyState, sourceSearch)}
                 legacySharedTestHref={createAnalyzeLegacySharedTestHref(sourceSearch)}
             />
-            {controller.model ? (
-                <>
-                    <AnalyzeVerdict
-                        model={controller.model}
-                        onInspect={trigger => {
-                            controller.selectEvidence(
-                                controller.model?.firstActionableEvidenceId,
-                            );
-                            onInspect(trigger);
-                        }}
-                        onInspectResult={trigger => {
-                            controller.selectEvidence(
-                                controller.model?.primaryResultFailure?.evidenceId,
-                            );
-                            onInspect(trigger);
-                        }}
-                    />
-                    <AnalyzeEvidenceQuality model={controller.model} />
-                    <AnalyzePerformance model={controller.model} />
-                    <AnalyzeEvidenceSearch
-                        controller={controller}
-                        onInspect={onInspect}
-                        urlState={urlState}
-                    />
-                    <AnalyzeMarkdown model={controller.model} />
-                </>
-            ) : emptyState(controller)}
+            {controller.model
+                ? (
+                    <>
+                        <AnalyzeVerdict
+                            model={controller.model}
+                            onInspect={(trigger) => {
+                                controller.selectEvidence(
+                                    controller.model?.firstActionableEvidenceId
+                                );
+                                onInspect(trigger);
+                            }}
+                            onInspectResult={(trigger) => {
+                                controller.selectEvidence(
+                                    controller.model?.primaryResultFailure?.evidenceId
+                                );
+                                onInspect(trigger);
+                            }}
+                        />
+                        <AnalyzeEvidenceQuality model={controller.model} />
+                        <AnalyzePerformance model={controller.model} />
+                        <AnalyzeEvidenceSearch
+                            controller={controller}
+                            onInspect={onInspect}
+                            urlState={urlState}
+                        />
+                        <AnalyzeMarkdown model={controller.model} />
+                    </>
+                )
+                : emptyState(controller)}
         </div>
     );
 }
@@ -135,7 +134,10 @@ function emptyState(controller: AnalyzeWorkspaceController): ReactNode {
     }
     return (
         <StatePanel kind="empty" title="Import distributed-run evidence">
-            <p>Drop a CI bundle or choose JSON and JSONL files. Artifact bytes stay in memory and must be re-imported after reload.</p>
+            <p>
+                Drop a CI bundle or choose JSON and JSONL files. Artifact bytes stay in memory and must be re-imported
+                after reload.
+            </p>
             <p>Generic black-box-runner exports remain available through the legacy Shared Test importer.</p>
         </StatePanel>
     );

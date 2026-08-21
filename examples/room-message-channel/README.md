@@ -6,13 +6,13 @@ and `sendWs(...)` are still available. The handle scopes sends, but its receive
 callbacks remain topic/type listeners, so validate each inbound target.
 
 ```ts
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     rallar,
     type RallarMessage,
-    type RallarMessageSendStatus,
+    type RallarMessageSendStatus
 } from '@shared-web/browser/rallar.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 type ReadyMessage = {
     playerId: string;
@@ -25,12 +25,12 @@ const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
     'sent-immediate',
     'duplicate',
     'superseded',
-    'skipped',
+    'skipped'
 ]);
 
 function isMessageForRoom<T>(
     message: RallarMessage<T>,
-    roomRef: GroupRef,
+    roomRef: GroupRef
 ): boolean {
     const targets = message.raw.targets;
     const targetRoomRef = targets?.mode === 'multicast'
@@ -60,7 +60,7 @@ const unsubscribeRtc = readyChannel.onRtc((payload, message) => {
 const sendResult = await readyChannel.send({
     playerId: localPlayerId,
     ready: true,
-    changedAtEpochMs: Date.now(),
+    changedAtEpochMs: Date.now()
 });
 if (!acceptedMessageStatuses.has(sendResult.status)) {
     console.warn('Ready delivery degraded', sendResult.status, sendResult.reason);
@@ -70,13 +70,13 @@ if (!acceptedMessageStatuses.has(sendResult.status)) {
 const reliableResult = await readyChannel.sendWs({
     playerId: localPlayerId,
     ready: true,
-    changedAtEpochMs: Date.now(),
+    changedAtEpochMs: Date.now()
 });
 if (!acceptedMessageStatuses.has(reliableResult.status)) {
     console.warn(
         'Reliable ready delivery degraded',
         reliableResult.status,
-        reliableResult.reason,
+        reliableResult.reason
     );
 }
 

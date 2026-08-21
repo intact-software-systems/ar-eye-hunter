@@ -1,11 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import {
-    RateAdjuster,
-    RateLimiter,
-    SlidingWindowCounter,
-} from '@shared/resilience/Resilience.ts';
+import { RateAdjuster, RateLimiter, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('Resilience', () => {
     afterEach(() => {
@@ -32,8 +28,8 @@ describe('Resilience', () => {
                 1,
                 Temporal.Duration.from({ milliseconds: 100 }),
                 Temporal.Duration.from({ milliseconds: 50 }),
-                Temporal.Duration.from({ seconds: 1 }),
-            ),
+                Temporal.Duration.from({ seconds: 1 })
+            )
         );
 
         breaker.failure();
@@ -64,9 +60,9 @@ describe('Resilience', () => {
                 1,
                 Temporal.Duration.from({ milliseconds: 100 }),
                 Temporal.Duration.from({ milliseconds: 50 }),
-                Temporal.Duration.from({ seconds: 1 }),
+                Temporal.Duration.from({ seconds: 1 })
             ),
-            0,
+            0
         );
 
         breaker.failureAt(0);
@@ -97,7 +93,7 @@ describe('Resilience', () => {
             1,
             Temporal.Duration.from({ milliseconds: 100 }),
             Temporal.Duration.from({ milliseconds: 50 }),
-            Temporal.Duration.from({ seconds: 1 }),
+            Temporal.Duration.from({ seconds: 1 })
         );
         const wallClock = CircuitBreaker.create(policy);
         const supplied = CircuitBreaker.createWithTs(policy, 0);
@@ -119,7 +115,7 @@ describe('Resilience', () => {
 
     it('increases and reduces the calculated rate based on success and failure', () => {
         const adjuster = RateAdjuster.create(
-            RateAdjuster.toPolicy(1, 4, 1, 1, 2, 1_000),
+            RateAdjuster.toPolicy(1, 4, 1, 1, 2, 1_000)
         );
 
         adjuster.success();
@@ -158,7 +154,7 @@ describe('Resilience', () => {
     it('ages successes out of the adjust window on the supplied clock', () => {
         const adjuster = RateAdjuster.createWithTs(
             RateAdjuster.toPolicy(1, 4, 1, 1, 2, 1_000),
-            0,
+            0
         );
 
         adjuster.successAt(0);
@@ -180,14 +176,14 @@ describe('Resilience', () => {
         expect(limiter.allow()).toBe(false);
 
         await expect(
-            RateLimiter.tryToExecuteOrDefault(limiter, async () => 5, 9),
+            RateLimiter.tryToExecuteOrDefault(limiter, async () => 5, 9)
         ).resolves.toBe(9);
 
         vi.setSystemTime(new Date('2026-01-01T00:00:00.150Z'));
 
         expect(limiter.allow()).toBe(true);
         await expect(
-            RateLimiter.tryToExecuteOrDefault(limiter, async () => 7, 9),
+            RateLimiter.tryToExecuteOrDefault(limiter, async () => 7, 9)
         ).resolves.toBe(7);
     });
 
@@ -200,10 +196,10 @@ describe('Resilience', () => {
         const fallback = vi.fn(async () => 'blocked');
 
         await expect(
-            RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback),
+            RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback)
         ).resolves.toBe('allowed');
         await expect(
-            RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback),
+            RateLimiter.tryToExecuteOrElse(limiter, supplier, fallback)
         ).resolves.toBe('blocked');
 
         expect(supplier).toHaveBeenCalledTimes(1);

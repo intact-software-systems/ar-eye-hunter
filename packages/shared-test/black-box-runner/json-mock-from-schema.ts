@@ -60,63 +60,63 @@ function toJsonMockFromJsonSchema(schema) {
 }
 */
 
-type JsonPrimitive = string | number | boolean | null
-export type JsonValue = JsonPrimitive | JsonObject | JsonArray
+type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
 export interface JsonObject {
-    [key: string]: JsonValue | undefined
+    [key: string]: JsonValue | undefined;
 }
 export interface JsonArray extends Array<JsonValue> {}
 
-type SchemaObject = Record<string, unknown>
+type SchemaObject = Record<string, unknown>;
 
 type JsonSchema = SchemaObject & {
-    type?: string | string[]
-    properties?: Record<string, JsonSchema>
-    items?: JsonSchema
-    enum?: JsonValue[]
-    const?: JsonValue
-    example?: JsonValue
-    examples?: JsonValue[]
-    default?: JsonValue
-    format?: string
-    $ref?: string
-}
+    type?: string | string[];
+    properties?: Record<string, JsonSchema>;
+    items?: JsonSchema;
+    enum?: JsonValue[];
+    const?: JsonValue;
+    example?: JsonValue;
+    examples?: JsonValue[];
+    default?: JsonValue;
+    format?: string;
+    $ref?: string;
+};
 
 export const SchemaType = {
     OPENAPI: 'openapi',
     SWAGGER: 'swagger',
-    JSON: 'json',
-} as const
+    JSON: 'json'
+} as const;
 
-type SchemaTypeValue = typeof SchemaType[keyof typeof SchemaType]
+type SchemaTypeValue = typeof SchemaType[keyof typeof SchemaType];
 
 function asRecord(value: unknown): SchemaObject {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as SchemaObject
-        : {}
+        : {};
 }
 
 function asJsonSchema(value: unknown): JsonSchema {
-    return asRecord(value) as JsonSchema
+    return asRecord(value) as JsonSchema;
 }
 
 export function toSchemaType(schema: unknown): SchemaTypeValue {
-    const record = asRecord(schema)
+    const record = asRecord(schema);
 
     if (record.openapi) {
-        return SchemaType.OPENAPI
+        return SchemaType.OPENAPI;
     }
 
     if (record.swagger) {
-        return SchemaType.SWAGGER
+        return SchemaType.SWAGGER;
     }
 
-    return SchemaType.JSON
+    return SchemaType.JSON;
 }
 
 function resolveRef(document: unknown, ref: string): unknown {
     if (!ref.startsWith('#/')) {
-        return undefined
+        return undefined;
     }
 
     return ref
@@ -125,114 +125,114 @@ function resolveRef(document: unknown, ref: string): unknown {
         .reduce<unknown>((current, part) => {
             return current && typeof current === 'object'
                 ? (current as SchemaObject)[part]
-                : undefined
-        }, document)
+                : undefined;
+        }, document);
 }
 
 function resolveSchema(schema: unknown, document?: unknown): JsonSchema {
-    const schemaRecord = asJsonSchema(schema)
+    const schemaRecord = asJsonSchema(schema);
 
     if (schemaRecord.$ref && document) {
-        const resolved = resolveRef(document, schemaRecord.$ref)
-        return resolveSchema(resolved, document)
+        const resolved = resolveRef(document, schemaRecord.$ref);
+        return resolveSchema(resolved, document);
     }
 
-    return schemaRecord
+    return schemaRecord;
 }
 
 function firstType(type: string | string[] | undefined): string | undefined {
     return Array.isArray(type)
-        ? type.find(value => value !== 'null') || type[0]
-        : type
+        ? type.find((value) => value !== 'null') || type[0]
+        : type;
 }
 
 function toStringMock(schema: JsonSchema): string {
     switch (schema.format) {
         case 'date-time':
-            return '2026-05-11T00:00:00.000Z'
+            return '2026-05-11T00:00:00.000Z';
         case 'date':
-            return '2026-05-11'
+            return '2026-05-11';
         case 'uuid':
-            return '00000000-0000-4000-8000-000000000000'
+            return '00000000-0000-4000-8000-000000000000';
         default:
-            return 'string'
+            return 'string';
     }
 }
 
 function toNumberMock(schema: JsonSchema): number {
     return firstType(schema.type) === 'integer'
         ? 1
-        : 1.1
+        : 1.1;
 }
 
 function toObjectMock(schema: JsonSchema, document?: unknown): JsonObject {
-    const properties = asRecord(schema.properties)
+    const properties = asRecord(schema.properties);
 
     return Object.fromEntries(
         Object.entries(properties)
             .map(([key, value]) => [key, toJsonMockFromSchema(value, document)])
-    )
+    );
 }
 
 function toJsonMockFromSchema(schemaInput: unknown, document?: unknown): JsonValue {
-    const schema = resolveSchema(schemaInput, document)
+    const schema = resolveSchema(schemaInput, document);
 
     if (schema.const !== undefined) {
-        return schema.const
+        return schema.const;
     }
 
     if (schema.example !== undefined) {
-        return schema.example
+        return schema.example;
     }
 
     if (Array.isArray(schema.examples) && schema.examples.length > 0) {
-        return schema.examples[0]
+        return schema.examples[0];
     }
 
     if (schema.default !== undefined) {
-        return schema.default
+        return schema.default;
     }
 
     if (Array.isArray(schema.enum) && schema.enum.length > 0) {
-        return schema.enum[0]
+        return schema.enum[0];
     }
 
     switch (firstType(schema.type)) {
         case 'object':
-            return toObjectMock(schema, document)
+            return toObjectMock(schema, document);
         case 'array':
-            return [toJsonMockFromSchema(schema.items || {}, document)]
+            return [toJsonMockFromSchema(schema.items || {}, document)];
         case 'integer':
         case 'number':
-            return toNumberMock(schema)
+            return toNumberMock(schema);
         case 'boolean':
-            return true
+            return true;
         case 'null':
-            return null
+            return null;
         case 'string':
-            return toStringMock(schema)
+            return toStringMock(schema);
         default:
             if (schema.properties) {
-                return toObjectMock(schema, document)
+                return toObjectMock(schema, document);
             }
             if (schema.items) {
-                return [toJsonMockFromSchema(schema.items, document)]
+                return [toJsonMockFromSchema(schema.items, document)];
             }
-            return toStringMock(schema)
+            return toStringMock(schema);
     }
 }
 
 export function toJsonMock(type: SchemaTypeValue | string | undefined, schema: unknown, document?: unknown): JsonValue {
     if (schema === undefined || schema === null) {
-        return {}
+        return {};
     }
 
     switch (type) {
         case SchemaType.OPENAPI:
         case SchemaType.SWAGGER:
-            return toJsonMockFromSchema(schema, document)
+            return toJsonMockFromSchema(schema, document);
         case SchemaType.JSON:
         default:
-            return toJsonMockFromSchema(schema)
+            return toJsonMockFromSchema(schema);
     }
 }

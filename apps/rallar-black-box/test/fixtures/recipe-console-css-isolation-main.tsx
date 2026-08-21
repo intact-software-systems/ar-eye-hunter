@@ -1,10 +1,12 @@
-import { createRoot } from 'react-dom/client';
 import type { ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
 
 async function renderFixture(): Promise<void> {
     const mode = new URLSearchParams(window.location.search).get('mode') ?? 'both';
     const root = document.querySelector('#root');
-    if (!root) throw new Error('CSS isolation fixture root is missing.');
+    if (!root) {
+        throw new Error('CSS isolation fixture root is missing.');
+    }
 
     let legacySample: ReactNode;
     let recipeSample: ReactNode;

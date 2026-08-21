@@ -8,7 +8,7 @@ export const DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES = [
     'maxP99SendDurationMs',
     'maxAverageStartDriftMs',
     'maxStartDriftMs',
-    'maxJitterMs',
+    'maxJitterMs'
 ] as const satisfies readonly (keyof RallarBlackBoxTestRtcStreamThresholds)[];
 
 export type DistributedRunTuningKnobName =

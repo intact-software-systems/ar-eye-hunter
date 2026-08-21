@@ -44,12 +44,12 @@ a server overlay planned against an **older** group revision than the
 bootstrap star carries — the S5 condition that pre-Phase-1 admission
 dropped.
 
-| Tier | Server-overlay adoption | Incomparable conflicts | Legacy restamp displacing server | Unique outbound dials per client |
-| --- | --- | --- | --- | --- |
-| N=6 | 6/6 (100%) | 0 | 0/6 | ≤ 10 (budget) |
-| N=20 | 20/20 (100%) | 0 | 0/20 | ≤ 10 (budget) |
-| N=50 | 50/50 (100%) | 0 | 0/50 | ≤ 10 (budget) |
-| N=50 `legacy-star` | — | — | — | 49 (full mesh, rollback mode) |
+| Tier               | Server-overlay adoption | Incomparable conflicts | Legacy restamp displacing server | Unique outbound dials per client |
+| ------------------ | ----------------------- | ---------------------- | -------------------------------- | -------------------------------- |
+| N=6                | 6/6 (100%)              | 0                      | 0/6                              | ≤ 10 (budget)                    |
+| N=20               | 20/20 (100%)            | 0                      | 0/20                             | ≤ 10 (budget)                    |
+| N=50               | 50/50 (100%)            | 0                      | 0/50                             | ≤ 10 (budget)                    |
+| N=50 `legacy-star` | —                       | —                      | —                                | 49 (full mesh, rollback mode)    |
 
 Deterministic rendezvous bootstrap connectivity: union bootstrap graph
 connected at every tier across 100 seeded member sets per tier at degree 5
@@ -80,37 +80,37 @@ WS sends / deliveries).
 
 Baseline values in parentheses where they differ.
 
-| Tier × backend | Server | Burst wall clock | Mutations | Expansions | Recomputes T/E/P | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 2.2 s (4.6 s) | 12 | 12 | 12 / 12 / 12 | 33 (36) | 108 (113) |
-| medium × memory | primary | 3.9 s (4.8 s) | 40 | 40 | 40 / 40 / 40 | 117 | 1,210 (1,229) |
-| small × postgres | primary | 1.9 s | 12 | 12 | 12 / 12 / 12 | 36 | 164 (165) |
-| small × postgres | secondary | — | 0 | 0 | 0 / 0 / 0 | 0 | 0 |
-| medium × postgres | primary | 2.4 s | 34 (31) | 31 (23) | 31 / 33 / 33 (23/26/21) | 120 (117) | 1,659 (1,485) |
-| medium × postgres | secondary | — | 6 (9) | 6 (17) | 6 / 5 / 5 (17/29/19) | 0 | 0 |
-| large × postgres | primary | 4.2 s (6.6 s) | 53 (38) | 44 (41) | 44 / 68 / 54 (41/44/36) | 299 (306) | 8,947 (8,467) |
-| large × postgres | secondary | — | 47 (26) | 56 (22) | 56 / 61 / 46 (22/42/33) | 0 | 0 |
+| Tier × backend    | Server    | Burst wall clock | Mutations | Expansions | Recomputes T/E/P        | WS sends  | Deliveries    |
+| ----------------- | --------- | ---------------- | --------- | ---------- | ----------------------- | --------- | ------------- |
+| small × memory    | primary   | 2.2 s (4.6 s)    | 12        | 12         | 12 / 12 / 12            | 33 (36)   | 108 (113)     |
+| medium × memory   | primary   | 3.9 s (4.8 s)    | 40        | 40         | 40 / 40 / 40            | 117       | 1,210 (1,229) |
+| small × postgres  | primary   | 1.9 s            | 12        | 12         | 12 / 12 / 12            | 36        | 164 (165)     |
+| small × postgres  | secondary | —                | 0         | 0          | 0 / 0 / 0               | 0         | 0             |
+| medium × postgres | primary   | 2.4 s            | 34 (31)   | 31 (23)    | 31 / 33 / 33 (23/26/21) | 120 (117) | 1,659 (1,485) |
+| medium × postgres | secondary | —                | 6 (9)     | 6 (17)     | 6 / 5 / 5 (17/29/19)    | 0         | 0             |
+| large × postgres  | primary   | 4.2 s (6.6 s)    | 53 (38)   | 44 (41)    | 44 / 68 / 54 (41/44/36) | 299 (306) | 8,947 (8,467) |
+| large × postgres  | secondary | —                | 47 (26)   | 56 (22)    | 56 / 61 / 46 (22/42/33) | 0         | 0             |
 
 ### Steady-state window (T2−T1, ~60 s ≈ per minute)
 
-| Tier × backend | Server | Mutations | Expansions | Recomputes T/E/P | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 12 | 12 | 12 / 12 / 12 | 48 | 288 |
-| medium × memory | primary | 40 | 40 | 40 / 40 / 40 | 160 | 3,200 |
-| small × postgres | primary | 12 | 12 | 12 / 12 / 12 | 48 | 288 |
-| medium × postgres | primary | 40 | 40 | 40 / 40 / 40 | 160 | 3,200 |
-| large × postgres | primary | 100 (57) | 93 (56) | 93 / 89 / 79 (56/62/34) | 400 | 20,000 |
-| large × postgres | secondary | 0 (28) | 3 (23) | 3 / 23 / 12 (23/62/40) | 0 | 0 |
+| Tier × backend    | Server    | Mutations | Expansions | Recomputes T/E/P        | WS sends | Deliveries |
+| ----------------- | --------- | --------- | ---------- | ----------------------- | -------- | ---------- |
+| small × memory    | primary   | 12        | 12         | 12 / 12 / 12            | 48       | 288        |
+| medium × memory   | primary   | 40        | 40         | 40 / 40 / 40            | 160      | 3,200      |
+| small × postgres  | primary   | 12        | 12         | 12 / 12 / 12            | 48       | 288        |
+| medium × postgres | primary   | 40        | 40         | 40 / 40 / 40            | 160      | 3,200      |
+| large × postgres  | primary   | 100 (57)  | 93 (56)    | 93 / 89 / 79 (56/62/34) | 400      | 20,000     |
+| large × postgres  | secondary | 0 (28)    | 3 (23)     | 3 / 23 / 12 (23/62/40)  | 0        | 0          |
 
 ### Queue depth (rows in `resource_inbox` at capture instants)
 
-| Tier × backend | T0 | T1 | T2 |
-| --- | --- | --- | --- |
-| small × memory | 138 | 282 | 367 |
-| medium × memory | 401 | 882 | 1,163 |
-| small × postgres | 140 | 284 | 371 |
-| medium × postgres | 405 | 885 | 1,168 |
-| large × postgres | 2,109 | 3,309 | 4,012 |
+| Tier × backend    | T0    | T1    | T2    |
+| ----------------- | ----- | ----- | ----- |
+| small × memory    | 138   | 282   | 367   |
+| medium × memory   | 401   | 882   | 1,163 |
+| small × postgres  | 140   | 284   | 371   |
+| medium × postgres | 405   | 885   | 1,168 |
+| large × postgres  | 2,109 | 3,309 | 4,012 |
 
 The large-tier absolute queue totals start higher than the baseline's
 (2,109 vs 13 at T0) because this run reused the suite session after the

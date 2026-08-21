@@ -1,20 +1,14 @@
 import {
     compareDistributedRuns,
     distributedRecipeStateTone,
-    filterDistributedRuns,
+    filterDistributedRuns
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import { useMemo, useState } from 'react';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-} from '../../../../control-run-manager.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../../control-run-manager.ts';
 import { formatTime } from '../../../shared/time-format.ts';
 import { uniqueValues } from '../../../shared/unique-values.ts';
 import { DistributedRunComparePanel } from '../../distributed/DistributedRunComparePanel.tsx';
-import {
-    dateInputEndEpoch,
-    dateInputStartEpoch,
-} from './date-input-epoch.ts';
+import { dateInputEndEpoch, dateInputStartEpoch } from './date-input-epoch.ts';
 
 type DistributedRunHistorySectionProps = Readonly<{
     distributedRuns: readonly ControlDistributedRunSnapshot[];
@@ -27,7 +21,7 @@ export function DistributedRunHistorySection({
     distributedRuns,
     selectedDistributedRun,
     run,
-    loadDistributedRun,
+    loadDistributedRun
 }: DistributedRunHistorySectionProps) {
     const [historyQuery, setHistoryQuery] = useState('');
     const [historyStatus, setHistoryStatus] = useState('');
@@ -42,7 +36,7 @@ export function DistributedRunHistorySection({
     const [compareRightId, setCompareRightId] = useState('');
     const historyStatusOptions = useMemo(
         () => uniqueValues(distributedRuns.map((item) => item.state)),
-        [distributedRuns],
+        [distributedRuns]
     );
     const historyRecipeOptions = useMemo(
         () =>
@@ -51,19 +45,19 @@ export function DistributedRunHistorySection({
                     item.manifest.recipes.map(
                         (selection, index) =>
                             selection.recipeId ??
-                            selection.recipe?.recipeId ??
-                            `recipe-${index + 1}`,
-                    ),
-                ),
+                                selection.recipe?.recipeId ??
+                                `recipe-${index + 1}`
+                    )
+                )
             ),
-        [distributedRuns],
+        [distributedRuns]
     );
     const historyGroupOptions = useMemo(
         () =>
             uniqueValues(
-                distributedRuns.map((item) => item.manifest.group.groupId),
+                distributedRuns.map((item) => item.manifest.group.groupId)
             ),
-        [distributedRuns],
+        [distributedRuns]
     );
     const historyProfileOptions = useMemo(
         () =>
@@ -71,10 +65,10 @@ export function DistributedRunHistorySection({
                 distributedRuns.flatMap((item) =>
                     item.manifest.recipes
                         .map((selection) => selection.profile)
-                        .filter((value): value is string => Boolean(value)),
-                ),
+                        .filter((value): value is string => Boolean(value))
+                )
             ),
-        [distributedRuns],
+        [distributedRuns]
     );
     const historyRows = useMemo(
         () =>
@@ -87,7 +81,7 @@ export function DistributedRunHistorySection({
                 status: historyStatus,
                 failureType: historyFailureType,
                 fromEpochMs: dateInputStartEpoch(historyFromDate),
-                toEpochMs: dateInputEndEpoch(historyToDate),
+                toEpochMs: dateInputEndEpoch(historyToDate)
             }),
         [
             distributedRuns,
@@ -99,40 +93,38 @@ export function DistributedRunHistorySection({
             historyRecipe,
             historyStatus,
             historyToDate,
-            historyUser,
-        ],
+            historyUser
+        ]
     );
     const compareLeftRun = useMemo(
         () =>
             distributedRuns.find(
-                (item) => item.distributedRunId === compareLeftId,
+                (item) => item.distributedRunId === compareLeftId
             ),
-        [compareLeftId, distributedRuns],
+        [compareLeftId, distributedRuns]
     );
     const compareRightRun = useMemo(
         () =>
             distributedRuns.find(
-                (item) => item.distributedRunId === compareRightId,
+                (item) => item.distributedRunId === compareRightId
             ),
-        [compareRightId, distributedRuns],
+        [compareRightId, distributedRuns]
     );
     const compareSummary = useMemo(
         () =>
             compareLeftRun && compareRightRun
                 ? compareDistributedRuns({
-                      left: compareLeftRun,
-                      right: compareRightRun,
-                      leftControlRun:
-                          compareLeftRun.controlRunId === run?.runId
-                              ? run
-                              : undefined,
-                      rightControlRun:
-                          compareRightRun.controlRunId === run?.runId
-                              ? run
-                              : undefined,
-                  })
+                    left: compareLeftRun,
+                    right: compareRightRun,
+                    leftControlRun: compareLeftRun.controlRunId === run?.runId
+                        ? run
+                        : undefined,
+                    rightControlRun: compareRightRun.controlRunId === run?.runId
+                        ? run
+                        : undefined
+                })
                 : undefined,
-        [compareLeftRun, compareRightRun, run],
+        [compareLeftRun, compareRightRun, run]
     );
 
     return (
@@ -149,9 +141,7 @@ export function DistributedRunHistorySection({
                         <span>Search</span>
                         <input
                             value={historyQuery}
-                            onChange={(event) =>
-                                setHistoryQuery(event.target.value)
-                            }
+                            onChange={(event) => setHistoryQuery(event.target.value)}
                             placeholder="run, group, recipe, failure"
                         />
                     </label>
@@ -159,9 +149,7 @@ export function DistributedRunHistorySection({
                         <span>Status</span>
                         <select
                             value={historyStatus}
-                            onChange={(event) =>
-                                setHistoryStatus(event.target.value)
-                            }
+                            onChange={(event) => setHistoryStatus(event.target.value)}
                         >
                             <option value="">Any</option>
                             {historyStatusOptions.map((option) => (
@@ -175,9 +163,7 @@ export function DistributedRunHistorySection({
                         <span>Group</span>
                         <select
                             value={historyGroup}
-                            onChange={(event) =>
-                                setHistoryGroup(event.target.value)
-                            }
+                            onChange={(event) => setHistoryGroup(event.target.value)}
                         >
                             <option value="">Any</option>
                             {historyGroupOptions.map((option) => (
@@ -191,9 +177,7 @@ export function DistributedRunHistorySection({
                         <span>Recipe</span>
                         <select
                             value={historyRecipe}
-                            onChange={(event) =>
-                                setHistoryRecipe(event.target.value)
-                            }
+                            onChange={(event) => setHistoryRecipe(event.target.value)}
                         >
                             <option value="">Any</option>
                             {historyRecipeOptions.map((option) => (
@@ -207,9 +191,7 @@ export function DistributedRunHistorySection({
                         <span>Profile</span>
                         <select
                             value={historyProfile}
-                            onChange={(event) =>
-                                setHistoryProfile(event.target.value)
-                            }
+                            onChange={(event) => setHistoryProfile(event.target.value)}
                         >
                             <option value="">Any</option>
                             {historyProfileOptions.map((option) => (
@@ -223,18 +205,14 @@ export function DistributedRunHistorySection({
                         <span>User</span>
                         <input
                             value={historyUser}
-                            onChange={(event) =>
-                                setHistoryUser(event.target.value)
-                            }
+                            onChange={(event) => setHistoryUser(event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Failure</span>
                         <select
                             value={historyFailureType}
-                            onChange={(event) =>
-                                setHistoryFailureType(event.target.value)
-                            }
+                            onChange={(event) => setHistoryFailureType(event.target.value)}
                         >
                             <option value="">Any</option>
                             <option value="any">Any failure</option>
@@ -249,9 +227,7 @@ export function DistributedRunHistorySection({
                         <input
                             type="date"
                             value={historyFromDate}
-                            onChange={(event) =>
-                                setHistoryFromDate(event.target.value)
-                            }
+                            onChange={(event) => setHistoryFromDate(event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -259,9 +235,7 @@ export function DistributedRunHistorySection({
                         <input
                             type="date"
                             value={historyToDate}
-                            onChange={(event) =>
-                                setHistoryToDate(event.target.value)
-                            }
+                            onChange={(event) => setHistoryToDate(event.target.value)}
                         />
                     </label>
                 </div>
@@ -270,24 +244,24 @@ export function DistributedRunHistorySection({
                         <button
                             type="button"
                             key={item.distributedRunId}
-                            className={`distributed-run-row ${item.distributedRunId === selectedDistributedRun?.distributedRunId ? 'selected' : ''}`}
+                            className={`distributed-run-row ${
+                                item.distributedRunId === selectedDistributedRun?.distributedRunId ? 'selected' : ''
+                            }`}
                             onClick={() =>
                                 void loadDistributedRun(
-                                    item.distributedRunId,
-                                )
-                            }
+                                    item.distributedRunId
+                                )}
                         >
                             <span>
                                 <strong>{item.distributedRunId}</strong>
                                 <small>
-                                    {item.manifest.group.groupId} -{' '}
-                                    {item.manifest.recipes
+                                    {item.manifest.group.groupId} - {item.manifest.recipes
                                         .map(
                                             (selection, index) =>
                                                 selection.recipeId ??
-                                                selection.recipe
-                                                    ?.recipeId ??
-                                                `recipe-${index + 1}`,
+                                                    selection.recipe
+                                                        ?.recipeId ??
+                                                    `recipe-${index + 1}`
                                         )
                                         .join(', ')}
                                 </small>

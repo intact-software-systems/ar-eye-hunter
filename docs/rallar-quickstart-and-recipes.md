@@ -14,7 +14,7 @@ const setup = {
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
     rtc: { maxPeerConnections: 10 },
     messages: { maxPayloadBytes: 64 * 1024 },
-    start: { refreshPeople: true },
+    start: { refreshPeople: true }
 } as const;
 
 let started = await rallar.setup(setup);
@@ -34,19 +34,19 @@ const subscriptions = rallar.subscriptions();
 subscriptions.add(
     rallar.rooms.onChange((state) => {
         renderRooms(state.rooms);
-    }),
+    })
 );
 
 subscriptions.add(
     rallar.people.onChange((state) => {
         renderPeople(state.people);
-    }),
+    })
 );
 
 subscriptions.add(
     rallar.ws.onLifecycle((event) => {
         renderWsStatus(event.status);
-    }),
+    })
 );
 
 // Component cleanup.
@@ -57,7 +57,7 @@ subscriptions.unsubscribe();
 
 ```ts
 const created = await rallar.rooms.createAndSwitch({
-    displayName: 'Lobby',
+    displayName: 'Lobby'
 });
 
 const room = rallar.rooms.session(created.group);
@@ -74,11 +74,11 @@ previous current room too.
 const created = await rallar.rooms.createAndSwitch({
     displayName: 'Private Lobby',
     joinMode: 'invite-only',
-    maxMembers: 8,
+    maxMembers: 8
 });
 
 await rallar.rooms.invite(created.group, 'bob', {
-    invitationExpiresAtEpochMs: Date.now() + 10 * 60 * 1000,
+    invitationExpiresAtEpochMs: Date.now() + 10 * 60 * 1000
 });
 ```
 
@@ -107,7 +107,7 @@ if (!session) {
 const created = await rallar.rooms.createAndSwitch({
     displayName: 'Code Lobby',
     joinMode: 'code',
-    scope,
+    scope
 });
 
 const rotated = await rotateStateGroupJoinCode(
@@ -115,7 +115,7 @@ const rotated = await rotateStateGroupJoinCode(
     { expiresAtEpochMs: Date.now() + 30 * 60 * 1000 },
     session.clientId,
     session.sessionId,
-    scope,
+    scope
 );
 
 await rallar.rooms.join(created.group, { joinCode: rotated.joinCode });
@@ -135,16 +135,18 @@ import type { RallarRoomSwitchPartialFailureError } from '@shared-web/browser/ra
 
 try {
     await rallar.rooms.join('arena-2');
-} catch (error) {
+}
+catch (error) {
     if (isRoomSwitchPartialFailure(error)) {
         await rallar.rooms.leave({ roomRef: error.previousRoomRef });
-    } else {
+    }
+    else {
         throw error;
     }
 }
 
 function isRoomSwitchPartialFailure(
-    error: unknown,
+    error: unknown
 ): error is RallarRoomSwitchPartialFailureError {
     return error instanceof Error &&
         error.name === 'RallarRoomSwitchPartialFailureError';
@@ -156,12 +158,13 @@ function isRoomSwitchPartialFailure(
 ```ts
 const presence = await rallar.rooms.waitForPresence('lobby', {
     expect: { min: 2, max: 8 },
-    timeoutMs: 2000,
+    timeoutMs: 2000
 });
 
 if (presence.status === 'ready') {
     renderReadyPlayers(presence.activeSessionIds);
-} else {
+}
+else {
     renderWaitingState(presence.status, presence.missingSessionIds);
 }
 ```
@@ -177,14 +180,14 @@ const result = await rallar.rooms.replayEvents(
         eventTypes: [
             'member-joined',
             'session-connected',
-            'session-disconnected',
+            'session-disconnected'
         ],
         limit: 100,
-        maxPages: 3,
+        maxPages: 3
     },
     (event) => {
         applyRoomEvent(event);
-    },
+    }
 );
 
 console.log(result.replayedCount, result.duplicateCount);
@@ -220,7 +223,7 @@ type PlayerUpdate = {
 const room = await rallar.rooms.enter('lobby');
 const playerUpdates = room.realtime<PlayerUpdate>({
     laneId: 'player',
-    waitTimeoutMs: 1000,
+    waitTimeoutMs: 1000
 });
 
 playerUpdates.on((message) => {
@@ -244,14 +247,14 @@ diagnostics.
 const readiness = await rallar.rtc.waitForRoomLane('lobby', 'realtime', {
     connect: true,
     timeoutMs: 1000,
-    expect: { min: 1, max: 10 },
+    expect: { min: 1, max: 10 }
 });
 
 if (readiness.readyPeerIds.length > 0) {
     await rallar.realtime.sendJson({
         laneId: 'realtime',
         peerIds: readiness.readyPeerIds,
-        data: { x: 10, y: 20, heading: 90 },
+        data: { x: 10, y: 20, heading: 90 }
     });
 }
 ```
@@ -264,11 +267,11 @@ options configure the dedicated lane before the first possible connection and
 are reused by post-login `start(...)`.
 
 ```ts
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
+import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
-import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
-import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 type PoseUpdate = {
@@ -284,21 +287,21 @@ const motionLaneConfig = {
     init: { ordered: false, maxRetransmits: 0 },
     flowControl: {
         overflow: 'replace-by-key',
-        maxQueueItems: 8,
-    },
+        maxQueueItems: 8
+    }
 } satisfies RtcDataChannelLaneConfig;
 
 const motionStartOptions = {
     connect: true,
     refreshRooms: true,
-    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLaneConfig],
+    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLaneConfig]
 } satisfies RallarStartOptions;
 
 const motionSetup = {
     apiBaseUrl: 'http://localhost:8080',
     applicationId: 'game',
     workspaceId: 'default',
-    start: motionStartOptions,
+    start: motionStartOptions
 } as const;
 
 let started = await rallar.setup(motionSetup);
@@ -313,25 +316,27 @@ const sessionId = started.session.sessionId;
 
 const motion = createRallarMotionBuffer({
     interpolationDelayMs: 100,
-    maxExtrapolationMs: 150,
+    maxExtrapolationMs: 150
 });
 
 const room = await rallar.rooms.enter('lobby');
 const motionUpdates = room.realtime<PoseUpdate>({
     laneId: 'motion',
     waitTimeoutMs: 1000,
-    key: `pose:${sessionId}`,
+    key: `pose:${sessionId}`
 });
 
 motionUpdates.on((message) => {
-    if (!isSameGroupRef(message.data.roomRef, room.roomRef)) return;
+    if (!isSameGroupRef(message.data.roomRef, room.roomRef)) {
+        return;
+    }
     motion.push({
         entityId: message.peerId,
         observedAtEpochMs: message.receivedAtEpochMs,
         position: message.data.position,
         velocity: message.data.velocity,
         seq: message.data.seq,
-        metadata: message.data,
+        metadata: message.data
     });
 });
 
@@ -349,28 +354,30 @@ receiver-local.
 ```ts
 import {
     createRallarMotionAdaptiveDelay,
-    createRallarMotionBuffer,
+    createRallarMotionBuffer
 } from '@shared/rallar-motion/mod.ts';
 
 const delay = createRallarMotionAdaptiveDelay({
     minDelayMs: 60,
-    maxDelayMs: 220,
+    maxDelayMs: 220
 });
 
 const motion = createRallarMotionBuffer({
     readInterpolationDelayMs: delay.currentDelayMs,
-    maxExtrapolationMs: 150,
+    maxExtrapolationMs: 150
 });
 
 rallar.realtime.onJson<PoseUpdate>('motion', (message) => {
-    if (!isSameGroupRef(message.data.roomRef, room.roomRef)) return;
+    if (!isSameGroupRef(message.data.roomRef, room.roomRef)) {
+        return;
+    }
     delay.pushObservedAt(message.receivedAtEpochMs);
     motion.push({
         entityId: message.peerId,
         observedAtEpochMs: message.receivedAtEpochMs,
         position: message.data.position,
         velocity: message.data.velocity,
-        seq: message.data.seq,
+        seq: message.data.seq
     });
 });
 ```
@@ -388,14 +395,14 @@ const poseGate = createRallarMotionSendGate({
     idleCadenceMs: 500,
     forceSendAfterMs: 2_000,
     minPositionDelta: 0.02,
-    minRotationDelta: 0.01,
+    minRotationDelta: 0.01
 });
 
 const nextPose: PoseUpdate = {
     roomRef: room.roomRef,
     position: [1, 0, 0],
     velocity: [0.5, 0, 0],
-    seq: 1,
+    seq: 1
 };
 
 const decision = poseGate.check(nextPose, Date.now());
@@ -406,7 +413,7 @@ if (decision.shouldSend) {
         console.warn(
             'Motion delivery degraded',
             motionSendResult.status,
-            motionSendResult.reason,
+            motionSendResult.reason
         );
     }
 }
@@ -423,13 +430,13 @@ import { createRallarMotionCorrectionBlender } from '@shared/rallar-motion/mod.t
 const corrections = createRallarMotionCorrectionBlender({
     blendDurationMs: 100,
     snapPositionDelta: 4,
-    rotationWrap: { period: Math.PI * 2 },
+    rotationWrap: { period: Math.PI * 2 }
 });
 
 corrections.correct({
     current: renderedPose,
     target: estimate,
-    nowEpochMs: performance.now(),
+    nowEpochMs: performance.now()
 });
 
 const blended = corrections.sample(performance.now());
@@ -449,8 +456,8 @@ const motion = createRallarMotionBuffer({
     discontinuity: {
         enabled: true,
         maxPositionDelta: 8,
-        maxSpeed: 40,
-    },
+        maxSpeed: 40
+    }
 });
 ```
 
@@ -474,12 +481,12 @@ type Settings = {
 
 const settings = await rallar.data.open<Settings>('settings', {
     scope: 'principal',
-    durability: 'write-through',
+    durability: 'write-through'
 });
 
 await settings.set('ui', {
     volume: 0.8,
-    showHints: true,
+    showHints: true
 });
 
 const current = await settings.get('ui');
@@ -498,12 +505,12 @@ const drafts = await rallar.data.open<Draft>('drafts', {
     durability: 'write-behind',
     hydrate: 'lazy',
     sync: true,
-    ttlMs: 7 * 24 * 60 * 60 * 1000,
+    ttlMs: 7 * 24 * 60 * 60 * 1000
 });
 
 await drafts.updateOrCreate('room:lobby', (current) => ({
     body: current?.body ?? '',
-    updatedAt: Date.now(),
+    updatedAt: Date.now()
 }));
 
 await drafts.whenIdle();
@@ -517,9 +524,9 @@ const doc = await rallar.crdt.open('room-checklist', {
     documentId: room.group.groupId,
     scope: {
         kind: 'room',
-        roomRef: room.group,
+        roomRef: room.group
     },
-    transport: 'ws-then-rtc',
+    transport: 'ws-then-rtc'
 });
 
 doc.subscribe((snapshot) => {
@@ -535,10 +542,10 @@ await doc.applyLocal({
             elementId: crypto.randomUUID(),
             value: {
                 text: 'Inspect north entrance',
-                done: false,
-            },
-        },
-    ],
+                done: false
+            }
+        }
+    ]
 });
 
 const health = doc.health();
@@ -550,7 +557,7 @@ console.log(health.pendingUpdateCount, health.lastServerAppendSequence);
 ```ts
 const stream = await navigator.mediaDevices.getUserMedia({
     audio: true,
-    video: true,
+    video: true
 });
 
 await rallar.media.setLocalStream(stream);
@@ -581,7 +588,7 @@ const runtime = createRallarMiddleware({
             resourceInboxResultsRepository,
             groupStateService,
             createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId,
+            serverId
         ),
     createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
         new AppClientInboxService(
@@ -590,19 +597,19 @@ const runtime = createRallarMiddleware({
             resourceInboxResultsRepository,
             clientStateService,
             createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId,
+            serverId
         ),
     resilience: { inbox: resilienceInbox, outbox: resilienceOutbox },
     clientsRepository,
-    groupsRepository,
+    groupsRepository
 });
 
 const server = createRallarServerApplication({
     runtime,
     routes: {
         ws: installWsRoutes,
-        rest: [installAuthRoutes, installStateRoutes],
-    },
+        rest: [installAuthRoutes, installStateRoutes]
+    }
 });
 
 server.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();
@@ -615,14 +622,14 @@ server.start();
 ## Server Topic
 
 ```ts
-server.ws.defineTopic<{ text: string }>({
+server.ws.defineTopic<{ text: string; }>({
     topicId: 'room.chat',
     typeId: 'chat.message.v1',
     scope: 'room',
     validate: (message) =>
         typeof message.payload === 'object' &&
         message.payload !== null &&
-        typeof (message.payload as { text?: unknown }).text === 'string',
-    fanout: 'outbox',
+        typeof (message.payload as { text?: unknown; }).text === 'string',
+    fanout: 'outbox'
 });
 ```

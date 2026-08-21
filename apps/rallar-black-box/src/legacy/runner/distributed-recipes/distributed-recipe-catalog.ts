@@ -1,5 +1,5 @@
 export {
-    DISTRIBUTED_RECIPE_CATALOG,
     configuredDistributedRecipeCatalogItem,
-    distributedRecipeMatches,
+    DISTRIBUTED_RECIPE_CATALOG,
+    distributedRecipeMatches
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';

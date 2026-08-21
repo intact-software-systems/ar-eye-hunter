@@ -1,200 +1,199 @@
-import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
-import type { LoginRequest, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
+import type { LoginRequest, RegisterRequest, RegisterResponse } from '@shared/api/api-config.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 
 import * as apiLoginService from '../../services/api-login-service.ts';
-import {
-  authenticationRequired,
-  authorizationDenied,
-} from '../../services/request-auth-service.ts';
+import { authenticationRequired, authorizationDenied } from '../../services/request-auth-service.ts';
+import { toApiMutationFailureResponse, toApiMutationRateLimitResponse } from '../api-mutation-route-failure.ts';
 import type { ConfigRouteDependencies } from '../config-route.ts';
-import {
-  toApiMutationFailureResponse,
-  toApiMutationRateLimitResponse,
-} from '../api-mutation-route-failure.ts';
-import {
-  readAuthMutationRequest,
-  requireAuthMutationResult,
-  toJsonResponse,
-} from './auth-mutation-route-support.ts';
+import { readAuthMutationRequest, requireAuthMutationResult, toJsonResponse } from './auth-mutation-route-support.ts';
 
 const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOGIN_IP_RATE_LIMIT = new RateLimiterPolicy(
-  60_000,
-  readPositiveIntegerEnv('RALLAR_LOGIN_IP_RATE_LIMIT', 30),
+    60_000,
+    readPositiveIntegerEnv('RALLAR_LOGIN_IP_RATE_LIMIT', 30)
 );
 const LOGIN_USER_RATE_LIMIT = new RateLimiterPolicy(
-  60_000,
-  readPositiveIntegerEnv('RALLAR_LOGIN_USER_RATE_LIMIT', 5),
+    60_000,
+    readPositiveIntegerEnv('RALLAR_LOGIN_USER_RATE_LIMIT', 5)
 );
 const REGISTER_IP_RATE_LIMIT = new RateLimiterPolicy(60_000, 20);
 const REGISTER_USER_RATE_LIMIT = new RateLimiterPolicy(60_000, 5);
 
 interface RegisterUserThroughAppInboxInput {
-  readonly context: Context;
-  readonly requestId: string;
-  readonly request: RegisterRequest;
-  readonly dependencies: ConfigRouteDependencies;
+    readonly context: Context;
+    readonly requestId: string;
+    readonly request: RegisterRequest;
+    readonly dependencies: ConfigRouteDependencies;
 }
 
 export function registerAuthUserMutationRoutes(
-  app: Hono,
-  dependencies: ConfigRouteDependencies,
+    app: Hono,
+    dependencies: ConfigRouteDependencies
 ): void {
-  app.post(
-    '/api/auth/login/requests/:requestId',
-    (context) => issueLoginResponse(context, dependencies),
-  );
-  app.post(
-    '/api/auth/register/requests/:requestId',
-    (context) => registerUserResponse(context, dependencies),
-  );
+    app.post(
+        '/api/auth/login/requests/:requestId',
+        (context) => issueLoginResponse(context, dependencies)
+    );
+    app.post(
+        '/api/auth/register/requests/:requestId',
+        (context) => registerUserResponse(context, dependencies)
+    );
 }
 
 async function issueLoginResponse(
-  context: Context,
-  dependencies: ConfigRouteDependencies,
+    context: Context,
+    dependencies: ConfigRouteDependencies
 ): Promise<Response> {
-  try {
-    const clientKey = readRequestClientKey(context.req);
-    return await RateLimiter.tryToExecuteOrDefault<Response>(
-      readRateLimiter('auth-login-ip', clientKey, LOGIN_IP_RATE_LIMIT),
-      async () => {
-        const { requestId, body } = await readAuthMutationRequest(context);
-        const loginRequest = body as LoginRequest;
+    try {
+        const clientKey = readRequestClientKey(context.req);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
-          readRateLimiter(
-            'auth-login-user',
-            `${clientKey}:${loginRequest.username ?? ''}`,
-            LOGIN_USER_RATE_LIMIT,
-          ),
-          () => issueLoginSession(requestId, loginRequest, dependencies),
-          toApiMutationRateLimitResponse(
-            context,
-            'Too many login attempts for this user',
-            60_000,
-          ),
+            readRateLimiter('auth-login-ip', clientKey, LOGIN_IP_RATE_LIMIT),
+            async () => {
+                const { requestId, body } = await readAuthMutationRequest(context);
+                const loginRequest = body as LoginRequest;
+                return await RateLimiter.tryToExecuteOrDefault<Response>(
+                    readRateLimiter(
+                        'auth-login-user',
+                        `${clientKey}:${loginRequest.username ?? ''}`,
+                        LOGIN_USER_RATE_LIMIT
+                    ),
+                    () => issueLoginSession(requestId, loginRequest, dependencies),
+                    toApiMutationRateLimitResponse(
+                        context,
+                        'Too many login attempts for this user',
+                        60_000
+                    )
+                );
+            },
+            toApiMutationRateLimitResponse(context, 'Too many login attempts', 60_000)
         );
-      },
-      toApiMutationRateLimitResponse(context, 'Too many login attempts', 60_000),
-    );
-  } catch (error) {
-    return toApiMutationFailureResponse(
-      context,
-      error instanceof Error ? error : new Error(String(error)),
-    );
-  }
+    }
+    catch (error) {
+        return toApiMutationFailureResponse(
+            context,
+            error instanceof Error ? error : new Error(String(error))
+        );
+    }
 }
 
 async function issueLoginSession(
-  requestId: string,
-  request: LoginRequest,
-  dependencies: ConfigRouteDependencies,
+    requestId: string,
+    request: LoginRequest,
+    dependencies: ConfigRouteDependencies
 ): Promise<Response> {
-  const loginResponse = await apiLoginService.login({
-    request,
-    userRepository: dependencies.authUserRepository,
-    staticClients: dependencies.staticClients,
-  });
-  if (!loginResponse) {
-    return toApiMutationFailureResponse(
-      { json: (value, status) => toJsonResponse(value, status) },
-      authenticationRequired('Unauthorized: Invalid username or password'),
-    );
-  }
+    const loginResponse = await apiLoginService.login({
+        request,
+        userRepository: dependencies.authUserRepository,
+        staticClients: dependencies.staticClients
+    });
+    if (!loginResponse) {
+        return toApiMutationFailureResponse(
+            { json: (value, status) => toJsonResponse(value, status) },
+            authenticationRequired('Unauthorized: Invalid username or password')
+        );
+    }
 
-  return toJsonResponse(requireAuthMutationResult(
-    await dependencies.appAuthInbox.issueSession({
-      requestId,
-      clientId: loginResponse.clientId,
-      username: loginResponse.username,
-      authority: loginResponse.authority,
-      ttlMs: AUTH_SESSION_TTL_MS,
-    }),
-  ));
+    return toJsonResponse(requireAuthMutationResult(
+        await dependencies.appAuthInbox.issueSession({
+            requestId,
+            clientId: loginResponse.clientId,
+            username: loginResponse.username,
+            authority: loginResponse.authority,
+            ttlMs: AUTH_SESSION_TTL_MS
+        })
+    ));
 }
 
 async function registerUserResponse(
-  context: Context,
-  dependencies: ConfigRouteDependencies,
+    context: Context,
+    dependencies: ConfigRouteDependencies
 ): Promise<Response> {
-  try {
-    const clientKey = readRequestClientKey(context.req);
-    return await RateLimiter.tryToExecuteOrDefault<Response>(
-      readRateLimiter('auth-register-ip', clientKey, REGISTER_IP_RATE_LIMIT),
-      async () => {
-        const { requestId, body } = await readAuthMutationRequest(context);
-        const request = body as RegisterRequest;
+    try {
+        const clientKey = readRequestClientKey(context.req);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
-          readRateLimiter(
-            'auth-register-user',
-            `${clientKey}:${request.username ?? ''}`,
-            REGISTER_USER_RATE_LIMIT,
-          ),
-          () =>
-            registerUserThroughAppInbox({
-              context,
-              requestId,
-              request,
-              dependencies,
-            }),
-          toApiMutationRateLimitResponse(
-            context,
-            'Too many registration attempts for this user',
-            60_000,
-          ),
+            readRateLimiter('auth-register-ip', clientKey, REGISTER_IP_RATE_LIMIT),
+            async () => {
+                const { requestId, body } = await readAuthMutationRequest(context);
+                const request = body as RegisterRequest;
+                return await RateLimiter.tryToExecuteOrDefault<Response>(
+                    readRateLimiter(
+                        'auth-register-user',
+                        `${clientKey}:${request.username ?? ''}`,
+                        REGISTER_USER_RATE_LIMIT
+                    ),
+                    () =>
+                        registerUserThroughAppInbox({
+                            context,
+                            requestId,
+                            request,
+                            dependencies
+                        }),
+                    toApiMutationRateLimitResponse(
+                        context,
+                        'Too many registration attempts for this user',
+                        60_000
+                    )
+                );
+            },
+            toApiMutationRateLimitResponse(context, 'Too many registration attempts', 60_000)
         );
-      },
-      toApiMutationRateLimitResponse(context, 'Too many registration attempts', 60_000),
-    );
-  } catch (error) {
-    return toApiMutationFailureResponse(
-      context,
-      error instanceof Error ? error : new Error(String(error)),
-    );
-  }
+    }
+    catch (error) {
+        return toApiMutationFailureResponse(
+            context,
+            error instanceof Error ? error : new Error(String(error))
+        );
+    }
 }
 
 async function registerUserThroughAppInbox(
-  input: RegisterUserThroughAppInboxInput,
+    input: RegisterUserThroughAppInboxInput
 ): Promise<Response> {
-  await requireRegistrationAdminIfNeeded(input.context.req, input.dependencies);
-  return toJsonResponse<RegisterResponse>(
-    requireAuthMutationResult(
-      await input.dependencies.appAuthInbox.registerUser({
-        requestId: input.requestId,
-        request: input.request,
-        staticClients: input.dependencies.staticClients,
-      }),
-    ),
-    201,
-  );
+    await requireRegistrationAdminIfNeeded(input.context.req, input.dependencies);
+    return toJsonResponse<RegisterResponse>(
+        requireAuthMutationResult(
+            await input.dependencies.appAuthInbox.registerUser({
+                requestId: input.requestId,
+                request: input.request,
+                staticClients: input.dependencies.staticClients
+            })
+        ),
+        201
+    );
 }
 
 async function requireRegistrationAdminIfNeeded(
-  req: { header(name: string): string | undefined },
-  dependencies: ConfigRouteDependencies,
+    req: { header(name: string): string | undefined; },
+    dependencies: ConfigRouteDependencies
 ): Promise<void> {
-  if (dependencies.registrationMode !== 'admin') return;
-  const authSession = await dependencies.requireApiAuthSession(req);
-  if (!dependencies.adminClientIds.has(authSession.clientId)) {
-    throw authorizationDenied('Forbidden: admin auth session required to register users');
-  }
+    if (dependencies.registrationMode !== 'admin') {
+        return;
+    }
+    const authSession = await dependencies.requireApiAuthSession(req);
+    if (!dependencies.adminClientIds.has(authSession.clientId)) {
+        throw authorizationDenied('Forbidden: admin auth session required to register users');
+    }
 }
 
 function readPositiveIntegerEnv(name: string, fallback: number): number {
-  try {
-    const raw = Deno.env.get(name)?.trim();
-    if (!raw) return fallback;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < 1) {
-      throw new Error(`${name} must be a positive integer`);
+    try {
+        const raw = Deno.env.get(name)?.trim();
+        if (!raw) {
+            return fallback;
+        }
+        const value = Number(raw);
+        if (!Number.isInteger(value) || value < 1) {
+            throw new Error(`${name} must be a positive integer`);
+        }
+        return value;
     }
-    return value;
-  } catch (error) {
-    if (error instanceof Deno.errors.PermissionDenied) return fallback;
-    throw error;
-  }
+    catch (error) {
+        if (error instanceof Deno.errors.PermissionDenied) {
+            return fallback;
+        }
+        throw error;
+    }
 }

@@ -180,13 +180,13 @@ RallarAI output is proposal data until domain acceptance.
 
 `react-3d-architecture.md` defines renderer-neutral ownership:
 
-| Layer | Owns | Must not own |
-| --- | --- | --- |
-| Pure domain | rules, validation, simulation, snapshots | React, Rallar runtime, renderer objects |
-| Rallar runtime adapter | startup, auth, rooms, subscriptions, commands, diagnostics, disposal | scene objects and React components |
-| React adapter/UI | app phases, menus, HUD, accessible controls, low-frequency status | per-frame transforms and authoritative simulation |
-| Presentation model | accepted snapshots, Motion mapping, renderer-neutral frames | transport authority and React rendering |
-| Renderer | scene, camera, meshes, materials, animation, effects, GPU resources | game rules, room membership, network sends |
+| Layer                  | Owns                                                                 | Must not own                                      |
+| ---------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| Pure domain            | rules, validation, simulation, snapshots                             | React, Rallar runtime, renderer objects           |
+| Rallar runtime adapter | startup, auth, rooms, subscriptions, commands, diagnostics, disposal | scene objects and React components                |
+| React adapter/UI       | app phases, menus, HUD, accessible controls, low-frequency status    | per-frame transforms and authoritative simulation |
+| Presentation model     | accepted snapshots, Motion mapping, renderer-neutral frames          | transport authority and React rendering           |
+| Renderer               | scene, camera, meshes, materials, animation, effects, GPU resources  | game rules, room membership, network sends        |
 
 The reference includes these invariants:
 
@@ -380,4 +380,3 @@ The iteration is complete when:
 7. both example SPAs still build;
 8. the focused and broader unit tests pass, with any environment-only skipped
    validator reported explicitly.
-

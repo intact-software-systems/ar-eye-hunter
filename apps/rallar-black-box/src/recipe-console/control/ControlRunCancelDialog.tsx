@@ -1,8 +1,6 @@
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { KeyboardEvent } from 'react';
 import { useEffect, useRef } from 'react';
-import type {
-    ControlDistributedRunSnapshot,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import styles from './ControlRunCancelDialog.module.css';
 
 export type ControlRunCancelDialogProps = Readonly<{
@@ -24,7 +22,7 @@ export function ControlRunCancelDialog({
     restoreFocusTo,
     fallbackFocusTo,
     onClose,
-    onConfirm,
+    onConfirm
 }: ControlRunCancelDialogProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
     const initialFocusRef = useRef<HTMLButtonElement>(null);
@@ -35,7 +33,9 @@ export function ControlRunCancelDialog({
     const descriptionId = `${owner}-cancel-description`;
 
     useEffect(() => {
-        if (!open) return;
+        if (!open) {
+            return;
+        }
         restoreTargetRef.current = restoreFocusTo ?? (
             document.activeElement instanceof HTMLElement
                 ? document.activeElement
@@ -54,22 +54,30 @@ export function ControlRunCancelDialog({
         };
     }, [open]);
     useEffect(() => {
-        if (open && busy) dialogRef.current?.focus();
+        if (open && busy) {
+            dialogRef.current?.focus();
+        }
     }, [busy, open]);
 
-    if (!open) return null;
+    if (!open) {
+        return null;
+    }
 
     function trapFocus(event: KeyboardEvent<HTMLDivElement>): void {
         if (event.key === 'Escape') {
             event.preventDefault();
-            if (!busy) onClose();
+            if (!busy) {
+                onClose();
+            }
             return;
         }
-        if (event.key !== 'Tab') return;
+        if (event.key !== 'Tab') {
+            return;
+        }
         const focusable = Array.from(
             dialogRef.current?.querySelectorAll<HTMLElement>(
-                'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-            ) ?? [],
+                'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+            ) ?? []
         );
         if (focusable.length === 0) {
             event.preventDefault();
@@ -79,15 +87,17 @@ export function ControlRunCancelDialog({
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
         const activeIndex = focusable.indexOf(
-            document.activeElement as HTMLElement,
+            document.activeElement as HTMLElement
         );
         if (activeIndex === -1) {
             event.preventDefault();
             (event.shiftKey ? last : first)?.focus();
-        } else if (event.shiftKey && document.activeElement === first) {
+        }
+        else if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        }
+        else if (!event.shiftKey && document.activeElement === last) {
             event.preventDefault();
             first?.focus();
         }
@@ -115,7 +125,8 @@ export function ControlRunCancelDialog({
                     <h2 id={headingId}>Cancel distributed run?</h2>
                 </header>
                 <p id={descriptionId}>
-                    Cancellation is sent to the control server and every active target. Completed evidence remains available for export and analysis.
+                    Cancellation is sent to the control server and every active target. Completed evidence remains
+                    available for export and analysis.
                 </p>
                 <dl className={styles.facts}>
                     <Fact label="Distributed run" value={run.distributedRunId} />
@@ -129,26 +140,37 @@ export function ControlRunCancelDialog({
                         onClick={onClose}
                         ref={initialFocusRef}
                         type="button"
-                    >Keep run</button>
+                    >
+                        Keep run
+                    </button>
                     <button
                         aria-busy={busy}
                         className={styles.confirm}
                         disabled={busy}
                         onClick={() => void onConfirm()}
                         type="button"
-                    >{busy ? 'Cancelling…' : 'Cancel run'}</button>
+                    >
+                        {busy ? 'Cancelling…' : 'Cancel run'}
+                    </button>
                 </div>
             </div>
         </div>
     );
 }
 
-function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
-    return <div><dt>{label}</dt><dd><code>{value}</code></dd></div>;
+function Fact({ label, value }: Readonly<{ label: string; value: string; }>) {
+    return (
+        <div>
+            <dt>{label}</dt>
+            <dd>
+                <code>{value}</code>
+            </dd>
+        </div>
+    );
 }
 
 function focusableRestoreTarget(
-    target: HTMLElement | null | undefined,
+    target: HTMLElement | null | undefined
 ): target is HTMLElement {
     return Boolean(target?.isConnected && !target.matches(':disabled'));
 }

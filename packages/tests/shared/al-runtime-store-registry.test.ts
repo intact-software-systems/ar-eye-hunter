@@ -1,21 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { configureALRuntimeStoreFactories, resolveALInboundRuntimeStores, resolveALOutboundRuntimeStores } from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { createInMemoryALInboundRuntimeStores, createInMemoryALOutboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import {
-    configureALRuntimeStoreFactories,
-    resolveALInboundRuntimeStores,
-    resolveALOutboundRuntimeStores,
-} from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import {
-    createInMemoryALInboundRuntimeStores,
-    createInMemoryALOutboundRuntimeStores,
-} from '@shared/alm/ALRuntimeStores.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('AL runtime store registry', () => {
     it('requires explicit configuration before stores can be resolved', () => {
         const manager = new RepositoryManager();
 
         expect(() => resolveALInboundRuntimeStores('missing', manager)).toThrow(
-            'Repository not found: shared.services.al-runtime-stores:missing',
+            'Repository not found: shared.services.al-runtime-stores:missing'
         );
     });
 
@@ -25,9 +18,9 @@ describe('AL runtime store registry', () => {
             'runtime-a',
             {
                 createInboundStores: () => createInMemoryALInboundRuntimeStores(),
-                createOutboundStores: () => createInMemoryALOutboundRuntimeStores(),
+                createOutboundStores: () => createInMemoryALOutboundRuntimeStores()
             },
-            manager,
+            manager
         );
 
         const inbound1 = resolveALInboundRuntimeStores('runtime-a', manager);
@@ -43,9 +36,9 @@ describe('AL runtime store registry', () => {
         configureALRuntimeStoreFactories(
             'runtime-b',
             {
-                createInboundStores: () => createInMemoryALInboundRuntimeStores(),
+                createInboundStores: () => createInMemoryALInboundRuntimeStores()
             },
-            isolatedManager,
+            isolatedManager
         );
 
         expect(resolveALInboundRuntimeStores('runtime-b', isolatedManager).admissionStore)
@@ -53,7 +46,7 @@ describe('AL runtime store registry', () => {
         expect(() => resolveALOutboundRuntimeStores('runtime-b', isolatedManager))
             .toThrow('AL outbound runtime stores are not configured: runtime-b');
         expect(() => resolveALInboundRuntimeStores('runtime-b')).toThrow(
-            'Repository not found: shared.services.al-runtime-stores:runtime-b',
+            'Repository not found: shared.services.al-runtime-stores:runtime-b'
         );
     });
 });

@@ -1,18 +1,18 @@
+import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { rallar } from '@shared-web/browser/rallar.ts';
-import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 
 import {
-    type AvatarProfile,
     createAvatarProfileMockProvider,
     createAvatarProfileRequest,
     createDeterministicAvatarProfile,
     validateAvatarProfile,
+    type AvatarProfile
 } from '../../avatarProfile.ts';
-import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import { resolveArenaBrowserAiConfig } from '../../browserAiConfig.ts';
+import { createArenaBrowserAiProvider } from '../../browserAiProvider.ts';
 import type { ArenaSnapshot } from '../../types.ts';
 
 const BROWSER_RALLAR_AI_CONFIG = resolveArenaBrowserAiConfig();
@@ -33,7 +33,7 @@ export function useArenaAvatarProfile(input: ArenaAvatarProfileInput): void {
         localAvatarProfileRef,
         networkGenerationRef,
         roomId,
-        session,
+        session
     } = input;
 
     useEffect(() => {
@@ -45,7 +45,7 @@ export function useArenaAvatarProfile(input: ArenaAvatarProfileInput): void {
         localAvatarProfileRef.current = fallback;
         const providerSelection = createArenaBrowserAiProvider({
             config: BROWSER_RALLAR_AI_CONFIG,
-            createMockProvider: createAvatarProfileMockProvider,
+            createMockProvider: createAvatarProfileMockProvider
         });
         if (providerSelection.status !== 'ready') {
             return;
@@ -57,8 +57,8 @@ export function useArenaAvatarProfile(input: ArenaAvatarProfileInput): void {
             provider: providerSelection.provider,
             policy: {
                 mode: 'browser-only',
-                staleResultMode: 'allow',
-            },
+                staleResultMode: 'allow'
+            }
         });
         if (typeof ai.generateJson !== 'function') {
             return;
@@ -68,8 +68,8 @@ export function useArenaAvatarProfile(input: ArenaAvatarProfileInput): void {
                 sessionId: session.sessionId,
                 username: session.username,
                 roomId,
-                revision: arenaSnapshotRef.current?.revision ?? 0,
-            }),
+                revision: arenaSnapshotRef.current?.revision ?? 0
+            })
         }).then((result) => {
             if (cancelled || !isCurrentNetworkGeneration(generation)) {
                 return;

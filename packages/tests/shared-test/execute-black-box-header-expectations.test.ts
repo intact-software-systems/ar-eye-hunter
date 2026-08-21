@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import {describe, expect, it} from 'vitest';
-import {executeBlackBox} from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { describe, expect, it } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 async function tryStartHttpServer(
-    handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string, close: () => Promise<void> } | undefined> {
+    handler: (request: IncomingMessage, response: ServerResponse) => void
+): Promise<{ url: string; close: () => Promise<void>; } | undefined> {
     const server = createServer(handler);
 
     try {
@@ -15,9 +15,10 @@ async function tryStartHttpServer(
                 resolve();
             });
         });
-    } catch (error) {
+    }
+    catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown }).code)
+            ? String((error as { code?: unknown; }).code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;
@@ -32,9 +33,10 @@ async function tryStartHttpServer(
 
     return {
         url: `http://127.0.0.1:${address.port}`,
-        close: () => new Promise<void>((resolve, reject) => {
-            server.close(error => error ? reject(error) : resolve());
-        }),
+        close: () =>
+            new Promise<void>((resolve, reject) => {
+                server.close((error) => error ? reject(error) : resolve());
+            })
     };
 }
 
@@ -43,7 +45,7 @@ function revisionHeaderHandler(_request: IncomingMessage, response: ServerRespon
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
         'Rallar-State-Revision': '7',
-        'Rallar-State-Source': 'durable',
+        'Rallar-State-Source': 'durable'
     });
     response.end(JSON.stringify({ stateRevision: 7 }));
 }
@@ -55,11 +57,11 @@ function httpStep(path: string, expectFields: Record<string, unknown>): Record<s
                 method: 'GET',
                 path,
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber: 1,
+                interactionExecutionNumber: 1
             },
-            response: expectFields,
+            response: expectFields
         },
-        readWithHeaderExpectations: {},
+        readWithHeaderExpectations: {}
     };
 }
 
@@ -77,17 +79,18 @@ describe('executeBlackBox HTTP expect.headers', () => {
                     headers: {
                         'Rallar-State-Revision': '7',
                         'RALLAR-STATE-SOURCE': 'string',
-                        'cache-control': 'no-store',
+                        'cache-control': 'no-store'
                     },
-                    body: { stateRevision: 7 },
+                    body: { stateRevision: 7 }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(0);
             expect(report.resultsByName.readWithHeaderExpectations[0].status).toBe('SUCCESS');
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -103,21 +106,22 @@ describe('executeBlackBox HTTP expect.headers', () => {
                 [httpStep(`${server.url}/state`, {
                     status: 200,
                     headers: {
-                        'Rallar-State-Revision': '8',
-                    },
+                        'Rallar-State-Revision': '8'
+                    }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
             const result = report.resultsByName.readWithHeaderExpectations[0];
             expect(result.result).toBe(
-                'Expected response headers not the same as actual response headers',
+                'Expected response headers not the same as actual response headers'
             );
             expect(result.details.headerComparison.isEqual).toBe(false);
             expect(result.actual.headers['rallar-state-revision']).toBe('7');
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -136,18 +140,19 @@ describe('executeBlackBox HTTP expect.headers', () => {
                 [httpStep(`${server.url}/state`, {
                     status: 200,
                     headers: {
-                        'Rallar-State-Source': 'string',
-                    },
+                        'Rallar-State-Source': 'string'
+                    }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
             expect(report.resultsByName.readWithHeaderExpectations[0].result).toBe(
-                'Expected response headers not the same as actual response headers',
+                'Expected response headers not the same as actual response headers'
             );
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });

@@ -4,27 +4,27 @@ import {
     type RallarRtcClientArgs,
     type RallarRtcClientEventDispatcher,
     type RallarRtcRuntime,
-    type RallarRtcRuntimeSession,
+    type RallarRtcRuntimeSession
 } from './rallar-rtc-provider.ts';
 import { createRallarWebRtcProvider } from './rallar-webrtc-runtime.ts';
 import type { RtcProvider } from './rtc-provider.ts';
 
 export type RallarInMemoryRuntimeConnection = {
-    args: RallarRtcClientArgs
-    dispatcher: RallarRtcClientEventDispatcher
-    connectedAtEpochMs: number
-    closed: boolean
-}
+    args: RallarRtcClientArgs;
+    dispatcher: RallarRtcClientEventDispatcher;
+    connectedAtEpochMs: number;
+    closed: boolean;
+};
 
 export type RallarInMemoryRuntimeState = {
-    connections: Map<string, RallarInMemoryRuntimeConnection>
-    nextDeliverySequence: number
-}
+    connections: Map<string, RallarInMemoryRuntimeConnection>;
+    nextDeliverySequence: number;
+};
 
 export function createRallarInMemoryRuntimeState(): RallarInMemoryRuntimeState {
     return {
         connections: new Map<string, RallarInMemoryRuntimeConnection>(),
-        nextDeliverySequence: 1,
+        nextDeliverySequence: 1
     };
 }
 
@@ -51,13 +51,13 @@ function toTargetPeerKey(message: any, args: RallarRtcClientArgs): string | unde
         return undefined;
     }
 
-    return message?.toPeerId
-        || message?.targetPeerId
-        || message?.to
-        || message?.payload?.toPeerId
-        || message?.payload?.targetPeerId
-        || message?.payload?.to
-        || args.remotePeerId;
+    return message?.toPeerId ||
+        message?.targetPeerId ||
+        message?.to ||
+        message?.payload?.toPeerId ||
+        message?.payload?.targetPeerId ||
+        message?.payload?.to ||
+        args.remotePeerId;
 }
 
 function toDeliveryEnvelope(
@@ -65,7 +65,7 @@ function toDeliveryEnvelope(
     message: any,
     sender: RallarInMemoryRuntimeConnection,
     target: RallarInMemoryRuntimeConnection,
-    deliveryMode: 'direct' | 'broadcast',
+    deliveryMode: 'direct' | 'broadcast'
 ): any {
     return {
         ...message,
@@ -75,25 +75,25 @@ function toDeliveryEnvelope(
         deliveryGroup: toGroupKey(sender.args),
         sentBy: toPeerKey(sender.args),
         deliveredTo: toPeerKey(target.args),
-        sentAtEpochMs: Date.now(),
+        sentAtEpochMs: Date.now()
     };
 }
 
 function toBroadcastTargets(
     state: RallarInMemoryRuntimeState,
-    sender: RallarInMemoryRuntimeConnection,
+    sender: RallarInMemoryRuntimeConnection
 ): RallarInMemoryRuntimeConnection[] {
     const senderPeerKey = toPeerKey(sender.args);
     const senderGroupKey = toGroupKey(sender.args);
 
     return Array.from(state.connections.values())
-        .filter(connection => !connection.closed)
-        .filter(connection => toPeerKey(connection.args) !== senderPeerKey)
-        .filter(connection => senderGroupKey === undefined || toGroupKey(connection.args) === senderGroupKey);
+        .filter((connection) => !connection.closed)
+        .filter((connection) => toPeerKey(connection.args) !== senderPeerKey)
+        .filter((connection) => senderGroupKey === undefined || toGroupKey(connection.args) === senderGroupKey);
 }
 
 export function createRallarInMemoryRuntime(
-    state: RallarInMemoryRuntimeState = createRallarInMemoryRuntimeState(),
+    state: RallarInMemoryRuntimeState = createRallarInMemoryRuntimeState()
 ): RallarRtcRuntime {
     return {
         connect: (args, dispatcher): RallarRtcRuntimeSession => {
@@ -108,13 +108,13 @@ export function createRallarInMemoryRuntime(
                 args,
                 dispatcher,
                 connectedAtEpochMs: Date.now(),
-                closed: false,
+                closed: false
             };
 
             state.connections.set(peerKey, connection);
 
             return {
-                send: message => {
+                send: (message) => {
                     const targetPeerKey = toTargetPeerKey(message, args);
 
                     if (targetPeerKey !== undefined) {
@@ -122,7 +122,7 @@ export function createRallarInMemoryRuntime(
 
                         if (!target || target.closed) {
                             throw new Error(
-                                'Rallar in-memory RTC target is not connected: ' + String(targetPeerKey),
+                                'Rallar in-memory RTC target is not connected: ' + String(targetPeerKey)
                             );
                         }
 
@@ -134,12 +134,14 @@ export function createRallarInMemoryRuntime(
 
                     if (targets.length <= 0) {
                         throw new Error(
-                            'Rallar in-memory RTC broadcast has no connected targets for peer: ' + toPeerKey(args),
+                            'Rallar in-memory RTC broadcast has no connected targets for peer: ' + toPeerKey(args)
                         );
                     }
 
-                    targets.forEach(target => {
-                        target.dispatcher.emitMessage(toDeliveryEnvelope(state, message, connection, target, 'broadcast'));
+                    targets.forEach((target) => {
+                        target.dispatcher.emitMessage(
+                            toDeliveryEnvelope(state, message, connection, target, 'broadcast')
+                        );
                     });
                 },
 
@@ -155,11 +157,11 @@ export function createRallarInMemoryRuntime(
                         peerId: peerKey,
                         roomId: args.roomId,
                         groupId: args.groupId,
-                        overlayId: args.overlayId,
+                        overlayId: args.overlayId
                     });
-                },
+                }
             };
-        },
+        }
     };
 }
 
@@ -168,11 +170,11 @@ export function createRallarInMemoryRuntime(
  * multi-peer routing without real WebSocket or WebRTC transports.
  */
 export function createRallarInMemoryProvider(
-    state: RallarInMemoryRuntimeState = createRallarInMemoryRuntimeState(),
+    state: RallarInMemoryRuntimeState = createRallarInMemoryRuntimeState()
 ): RtcProvider {
     const runtime = createRallarInMemoryRuntime(state);
 
     return createRallarWebRtcProvider({
-        createSession: runtime.connect,
+        createSession: runtime.connect
     });
 }

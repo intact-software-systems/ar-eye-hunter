@@ -2,35 +2,25 @@ import { useState } from 'react';
 import { json } from '../../shared/json-presentation.ts';
 import {
     isCrdtAdminOperatorMutationAction,
-    toCrdtAdminOperatorMutationRequest,
+    toCrdtAdminOperatorMutationRequest
 } from './crdt-admin-operator-mutation.ts';
-import type {
-    CrdtAdminDocumentStatus,
-    CrdtAdminListResult,
-    CrdtPanelInput,
-} from './crdt-contracts.ts';
+import type { CrdtAdminDocumentStatus, CrdtAdminListResult, CrdtPanelInput } from './crdt-contracts.ts';
 
 export function useCrdtHealthController({
     bootstrap,
     authSession,
-    globalValues,
+    globalValues
 }: CrdtPanelInput) {
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
-    const [documents, setDocuments] = useState<
-        readonly CrdtAdminDocumentStatus[]
-    >([]);
-    const [selectedDocumentKey, setSelectedDocumentKey] = useState<
-        string | undefined
-    >();
+    const [documents, setDocuments] = useState<readonly CrdtAdminDocumentStatus[]>([]);
+    const [selectedDocumentKey, setSelectedDocumentKey] = useState<string | undefined>();
     const [lastResult, setLastResult] = useState<unknown>();
-    const selectedDocument =
-        documents.find(
-            (document) => document.documentKey === selectedDocumentKey,
-        ) ?? documents[0];
+    const selectedDocument = documents.find(
+        (document) => document.documentKey === selectedDocumentKey
+    ) ?? documents[0];
     const providerReady = bootstrap.providerMode === 'browser-rallar';
-    const canCallAdmin =
-        providerReady && Boolean(authSession?.accessToken) && !busyAction;
+    const canCallAdmin = providerReady && Boolean(authSession?.accessToken) && !busyAction;
 
     const adminRequestForAction = (action: string) => {
         if (!selectedDocument) {
@@ -41,7 +31,7 @@ export function useCrdtHealthController({
                 action,
                 changedAtEpochMs: Date.now(),
                 document: selectedDocument.document,
-                requestId: '${RALLAR_REQUEST_ID}',
+                requestId: '${RALLAR_REQUEST_ID}'
             });
         }
         const body = { document: selectedDocument.document };
@@ -51,7 +41,7 @@ export function useCrdtHealthController({
             case 'debug-export':
                 return {
                     path: '/api/crdt/admin/documents/debug-export',
-                    body: { ...body, reason: 'black-box-crdt-health' },
+                    body: { ...body, reason: 'black-box-crdt-health' }
                 };
             case 'backup-export':
                 return { path: '/api/crdt/admin/documents/backup-export', body };
@@ -77,23 +67,23 @@ export function useCrdtHealthController({
                         method: 'POST',
                         url: `${globalValues.apiBaseUrl}${request.path}`,
                         headers: {
-                            authorization: 'Bearer ${RALLAR_ADMIN_ACCESS_TOKEN}',
+                            authorization: 'Bearer ${RALLAR_ADMIN_ACCESS_TOKEN}'
                         },
-                        body: request.body,
+                        body: request.body
                     },
                     response: {
-                        body: 'json',
+                        body: 'json'
                     },
-                    timeoutMs: 10_000,
-                },
-            ],
+                    timeoutMs: 10_000
+                }
+            ]
         };
         void navigator.clipboard?.writeText(json(recipe));
     };
 
-    const callAdmin = async <TResult,>(
+    const callAdmin = async <TResult>(
         path: string,
-        body: unknown,
+        body: unknown
     ): Promise<TResult> => {
         const response = await fetch(`${globalValues.apiBaseUrl}${path}`, {
             method: 'POST',
@@ -101,9 +91,9 @@ export function useCrdtHealthController({
                 'content-type': 'application/json',
                 ...(authSession?.accessToken
                     ? { authorization: `Bearer ${authSession.accessToken}` }
-                    : {}),
+                    : {})
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
         });
         const payload = (await response.json()) as {
             ok?: boolean;
@@ -113,7 +103,7 @@ export function useCrdtHealthController({
         if (!response.ok || payload.ok === false) {
             throw new Error(
                 payload.error ??
-                    `CRDT admin request failed with ${response.status}.`,
+                    `CRDT admin request failed with ${response.status}.`
             );
         }
         return payload.result as TResult;
@@ -128,22 +118,24 @@ export function useCrdtHealthController({
                 {
                     applicationId: globalValues.applicationId,
                     workspaceId: globalValues.workspaceId,
-                    limit: 50,
-                },
+                    limit: 50
+                }
             );
             setDocuments(result.documents);
             setSelectedDocumentKey((current) =>
                 current &&
-                result.documents.some(
-                    (document) => document.documentKey === current,
-                )
+                    result.documents.some(
+                        (document) => document.documentKey === current
+                    )
                     ? current
-                    : result.documents[0]?.documentKey,
+                    : result.documents[0]?.documentKey
             );
             setLastResult(result);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -157,7 +149,7 @@ export function useCrdtHealthController({
                 action,
                 changedAtEpochMs: Date.now(),
                 document: selectedDocument.document,
-                requestId: crypto.randomUUID(),
+                requestId: crypto.randomUUID()
             })
             : undefined;
         setBusyAction(action);
@@ -167,12 +159,13 @@ export function useCrdtHealthController({
             let result: unknown;
             if (mutationRequest) {
                 result = await callAdmin(mutationRequest.path, mutationRequest.body);
-            } else {
+            }
+            else {
                 switch (action) {
                     case 'integrity':
                         result = await callAdmin(
                             '/api/crdt/admin/documents/integrity',
-                            body,
+                            body
                         );
                         break;
                     case 'debug-export':
@@ -180,14 +173,14 @@ export function useCrdtHealthController({
                             '/api/crdt/admin/documents/debug-export',
                             {
                                 ...body,
-                                reason: 'black-box-crdt-health',
-                            },
+                                reason: 'black-box-crdt-health'
+                            }
                         );
                         break;
                     case 'backup-export':
                         result = await callAdmin(
                             '/api/crdt/admin/documents/backup-export',
-                            body,
+                            body
                         );
                         break;
                     default:
@@ -198,9 +191,11 @@ export function useCrdtHealthController({
             if (mutationRequest) {
                 await refresh();
             }
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -215,10 +210,8 @@ export function useCrdtHealthController({
         canCallAdmin,
         copyAdminRecipe,
         refresh,
-        runDocumentAction,
+        runDocumentAction
     };
 }
 
-export type CrdtHealthControllerModel = ReturnType<
-    typeof useCrdtHealthController
->;
+export type CrdtHealthControllerModel = ReturnType<typeof useCrdtHealthController>;

@@ -1,7 +1,5 @@
-import type { FleetWorkspaceReportEvidence } from
-    './fleet-workspace-model.ts';
-import { createFleetWorkspaceReportEvidence } from
-    './fleet-workspace-model.ts';
+import type { FleetWorkspaceReportEvidence } from './fleet-workspace-model.ts';
+import { createFleetWorkspaceReportEvidence } from './fleet-workspace-model.ts';
 
 export type FleetReportEvidenceCacheResult = Readonly<{
     evidence: FleetWorkspaceReportEvidence;
@@ -29,32 +27,40 @@ export function createFleetReportEvidenceCache(): FleetReportEvidenceCache {
             const evidence = createFleetWorkspaceReportEvidence(rawReports);
             const result = Object.freeze({
                 evidence,
-                revision: Object.freeze(Object.create(null)) as object,
+                revision: Object.freeze(Object.create(null)) as object
             });
             entry = key !== undefined && evidence.validation?.ok !== false
                 ? { key, result }
                 : undefined;
             return result;
-        },
+        }
     });
 }
 
 function fleetReportRevisionKey(rawReports: unknown): string | undefined {
-    if (rawReports === undefined) return '["fleet-reports","absent"]';
-    if (!Array.isArray(rawReports)) return undefined;
+    if (rawReports === undefined) {
+        return '["fleet-reports","absent"]';
+    }
+    if (!Array.isArray(rawReports)) {
+        return undefined;
+    }
     const revisions: [unknown, string, number][] = [];
     for (const candidate of rawReports) {
-        if (!candidate || typeof candidate !== 'object') return undefined;
+        if (!candidate || typeof candidate !== 'object') {
+            return undefined;
+        }
         const report = candidate as Record<string, unknown>;
         if (
             typeof report.distributedRunId !== 'string' ||
             typeof report.generatedAtEpochMs !== 'number' ||
             !Number.isSafeInteger(report.generatedAtEpochMs)
-        ) return undefined;
+        ) {
+            return undefined;
+        }
         revisions.push([
             report.fleetReportSchemaVersion,
             report.distributedRunId,
-            report.generatedAtEpochMs,
+            report.generatedAtEpochMs
         ]);
     }
     return JSON.stringify(['fleet-reports', revisions]);

@@ -1,9 +1,7 @@
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
-    DistributedRecipeCatalogEntryProjection,
+    DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import type {
-    ControlDistributedRunSnapshot,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { StatusMark } from '../ui/StatusMark.tsx';
 import type { ExecuteManifestDraft } from './execute-manifest.ts';
 import { ExecuteInspectorPrerequisites } from './ExecuteInspectorPrerequisites.tsx';
@@ -21,7 +19,7 @@ export function ExecuteRecipeInspector({
     entry,
     manifest,
     run,
-    selectedTargetCount,
+    selectedTargetCount
 }: ExecuteRecipeInspectorProps) {
     if (!entry) {
         return (
@@ -35,7 +33,7 @@ export function ExecuteRecipeInspector({
     const recipe = entry.item.recipe;
     const contextKey = JSON.stringify([
         'execute-inspector-v2',
-        recipe.recipeId,
+        recipe.recipeId
     ]);
     return (
         <section
@@ -67,15 +65,22 @@ export function ExecuteRecipeInspector({
                 <Fact label="Manifest commands" value={String(entry.preflight.manifestCommandCount)} />
                 <Fact label="Effective commands" value={String(entry.preflight.effectiveCommandCount)} />
                 <Fact label="Group" value={manifest ? groupLabel(manifest) : 'Awaiting manifest'} />
-                <Fact label="Run" value={run?.distributedRunId ?? manifest?.manifest.distributedRunId ?? 'Not created'} />
+                <Fact
+                    label="Run"
+                    value={run?.distributedRunId ?? manifest?.manifest.distributedRunId ?? 'Not created'}
+                />
             </dl>
             <div className={styles.requirements}>
                 <h3>Service requirements</h3>
-                {entry.preflight.liveServiceRequirements.length > 0 ? (
-                    <ul>{entry.preflight.liveServiceRequirements.map(requirement => (
-                        <li key={requirement}>{requirement}</li>
-                    ))}</ul>
-                ) : <p>No live service dependency.</p>}
+                {entry.preflight.liveServiceRequirements.length > 0
+                    ? (
+                        <ul>
+                            {entry.preflight.liveServiceRequirements.map((requirement) => (
+                                <li key={requirement}>{requirement}</li>
+                            ))}
+                        </ul>
+                    )
+                    : <p>No live service dependency.</p>}
             </div>
             <ExecuteInspectorSequence commands={recipe.commands} contextKey={contextKey} />
             <ExecuteInspectorPrerequisites contextKey={contextKey} prerequisites={entry.item.prerequisites} />
@@ -83,8 +88,13 @@ export function ExecuteRecipeInspector({
     );
 }
 
-function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
-    return <div><dt>{label}</dt><dd>{value}</dd></div>;
+function Fact({ label, value }: Readonly<{ label: string; value: string; }>) {
+    return (
+        <div>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+        </div>
+    );
 }
 
 function groupLabel(manifest: ExecuteManifestDraft): string {

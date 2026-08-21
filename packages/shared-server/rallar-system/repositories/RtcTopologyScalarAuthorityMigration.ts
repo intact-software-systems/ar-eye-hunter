@@ -1,28 +1,24 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type {
-    RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
-    waitForRuntimeStateWriteRetry,
+    waitForRuntimeStateWriteRetry
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateOptimisticTransactionalRepositoryLike
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import { decodeGroupStateGroupStorageKey, groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
+import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import {
-    decodeGroupStateGroupStorageKey,
-    groupStateGroupStorageKey,
-} from '../group-state-storage-keys.ts';
-import {
-    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE
 } from './RtcTopologyPublicationRepository.ts';
 import { RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE } from './RtcTopologySnapshotRepository.ts';
-import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 
-export const RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE =
-    'rtc-topology:scalar-recompute';
+export const RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE = 'rtc-topology:scalar-recompute';
 
 export type RtcTopologyScalarRecomputeRequest = Readonly<{
     kind: 'rtc-topology-scalar-recompute';
@@ -56,7 +52,7 @@ export type RtcTopologyScalarRecomputeWorker = Readonly<{
 const FAMILY_NAMESPACES = [
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
+    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE
 ] as const;
 const RETRY_ATTEMPTS: readonly [0, 1, 2] = [0, 1, 2];
 
@@ -76,13 +72,15 @@ export async function invalidateLegacyScalarRtcTopologyAuthority(
         migrationId: string;
         observedAtEpochMs: number;
         sleep?: (delayMs: number) => Promise<void>;
-    }>,
+    }>
 ): Promise<RtcTopologyScalarAuthorityInvalidationResult> {
     validateMigrationOptions(options);
     const family = await readValidatedFamily(runtime, options.observedAtEpochMs);
     const affectedByKey = new Map<string, GroupRef>();
     for (const member of family) {
-        if (!member.legacyScalar) continue;
+        if (!member.legacyScalar) {
+            continue;
+        }
         affectedByKey.set(groupStateGroupStorageKey(member.groupRef), member.groupRef);
     }
 
@@ -94,7 +92,7 @@ export async function invalidateLegacyScalarRtcTopologyAuthority(
             runtime,
             groupKey,
             groupRef,
-            options,
+            options
         );
         deletedSnapshotCount += counts.snapshots;
         deletedPublicationCount += counts.publications;
@@ -105,7 +103,7 @@ export async function invalidateLegacyScalarRtcTopologyAuthority(
         deletedSnapshotCount,
         deletedPublicationCount,
         deletedWorkClaimCount,
-        queuedRecomputeRequestCount: affectedByKey.size,
+        queuedRecomputeRequestCount: affectedByKey.size
     };
 }
 
@@ -113,11 +111,11 @@ export async function drainRtcTopologyScalarRecomputeRequests(
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
     process: (
         groupRef: GroupRef,
-        requestId: string,
-    ) => Promise<RtcTopologyScalarRecomputeDisposition>,
+        requestId: string
+    ) => Promise<RtcTopologyScalarRecomputeDisposition>
 ): Promise<number> {
     const entries = await runtime.findAllEntries(
-        RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE,
+        RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE
     );
     let drained = 0;
     let firstFailure: unknown;
@@ -134,32 +132,41 @@ export async function drainRtcTopologyScalarRecomputeRequests(
             const deleted = await runtime.deleteIfRevision(
                 RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE,
                 entry.key,
-                entry.revision,
+                entry.revision
             );
-            if (deleted.status === 'applied') drained += 1;
-        } catch (error) {
-            if (firstFailure === undefined) firstFailure = error;
+            if (deleted.status === 'applied') {
+                drained += 1;
+            }
+        }
+        catch (error) {
+            if (firstFailure === undefined) {
+                firstFailure = error;
+            }
         }
     }
-    if (firstFailure !== undefined) throw firstFailure;
+    if (firstFailure !== undefined) {
+        throw firstFailure;
+    }
     return drained;
 }
 
-export function initRtcTopologyScalarRecomputeWorker(input: Readonly<{
-    runtime: RuntimeStateOptimisticTransactionalRepositoryLike;
-    process: (
-        groupRef: GroupRef,
-        requestId: string,
-    ) => Promise<RtcTopologyScalarRecomputeDisposition>;
-    intervalMs?: number;
-    retryDelaysMs?: readonly number[];
-    schedule?: (
-        callback: () => void | Promise<void>,
-        delayMs: number,
-    ) => unknown;
-    cancel?: (handle: unknown) => void;
-    onError?: (error: unknown) => void;
-}>): RtcTopologyScalarRecomputeWorker {
+export function initRtcTopologyScalarRecomputeWorker(
+    input: Readonly<{
+        runtime: RuntimeStateOptimisticTransactionalRepositoryLike;
+        process: (
+            groupRef: GroupRef,
+            requestId: string
+        ) => Promise<RtcTopologyScalarRecomputeDisposition>;
+        intervalMs?: number;
+        retryDelaysMs?: readonly number[];
+        schedule?: (
+            callback: () => void | Promise<void>,
+            delayMs: number
+        ) => unknown;
+        cancel?: (handle: unknown) => void;
+        onError?: (error: unknown) => void;
+    }>
+): RtcTopologyScalarRecomputeWorker {
     const intervalMs = input.intervalMs ?? 1_000;
     const retryDelaysMs = input.retryDelaysMs ?? [10, 50, 250, 1_000];
     validateWorkerDelays(intervalMs, retryDelaysMs);
@@ -175,7 +182,9 @@ export function initRtcTopologyScalarRecomputeWorker(input: Readonly<{
     });
     const cancel = input.cancel ?? ((handle) => {
         const timer = defaultTimers.get(handle);
-        if (timer === undefined) return;
+        if (timer === undefined) {
+            return;
+        }
         clearTimeout(timer);
         defaultTimers.delete(handle);
     });
@@ -193,22 +202,30 @@ export function initRtcTopologyScalarRecomputeWorker(input: Readonly<{
     let firstRunSettled = false;
 
     const cancelScheduled = (): void => {
-        if (scheduledHandle === undefined) return;
+        if (scheduledHandle === undefined) {
+            return;
+        }
         cancel(scheduledHandle);
         scheduledHandle = undefined;
     };
     const scheduleRun = (delayMs: number): void => {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
         cancelScheduled();
         let handle: unknown;
         handle = schedule(async () => {
-            if (scheduledHandle === handle) scheduledHandle = undefined;
+            if (scheduledHandle === handle) {
+                scheduledHandle = undefined;
+            }
             await run();
         }, delayMs);
         scheduledHandle = handle;
     };
     const run = async (): Promise<void> => {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
         if (running) {
             wakeRequested = true;
             return;
@@ -218,35 +235,42 @@ export function initRtcTopologyScalarRecomputeWorker(input: Readonly<{
         try {
             const count = await drainRtcTopologyScalarRecomputeRequests(
                 input.runtime,
-                input.process,
+                input.process
             );
             failureCount = 0;
             if (!firstRunSettled) {
                 firstRunSettled = true;
                 settleFirstRun?.(count);
             }
-        } catch (error) {
+        }
+        catch (error) {
             failed = true;
             failureCount += 1;
             try {
                 input.onError?.(error);
-            } catch {
+            }
+            catch {
                 // Observability cannot own durable delivery lifecycle.
             }
             if (!firstRunSettled) {
                 firstRunSettled = true;
                 rejectFirstRun?.(error);
             }
-        } finally {
+        }
+        finally {
             running = false;
-            if (stopped) return;
+            if (stopped) {
+                return;
+            }
             if (wakeRequested) {
                 wakeRequested = false;
                 scheduleRun(0);
-            } else if (failed) {
+            }
+            else if (failed) {
                 const index = Math.min(failureCount - 1, retryDelaysMs.length - 1);
                 scheduleRun(retryDelaysMs[index] ?? intervalMs);
-            } else {
+            }
+            else {
                 scheduleRun(intervalMs);
             }
         }
@@ -256,7 +280,9 @@ export function initRtcTopologyScalarRecomputeWorker(input: Readonly<{
     return {
         firstRun,
         wake: () => {
-            if (stopped) return;
+            if (stopped) {
+                return;
+            }
             if (running) {
                 wakeRequested = true;
                 return;
@@ -264,29 +290,29 @@ export function initRtcTopologyScalarRecomputeWorker(input: Readonly<{
             scheduleRun(0);
         },
         stop: () => {
-            if (stopped) return;
+            if (stopped) {
+                return;
+            }
             stopped = true;
             wakeRequested = false;
             cancelScheduled();
-        },
+        }
     };
 }
 
 async function readValidatedFamily(
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
-    observedAtEpochMs: number,
+    observedAtEpochMs: number
 ): Promise<readonly FamilyEntry[]> {
     const [snapshots, publications, claims] = await Promise.all([
         runtime.findAllEntries(RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE),
         runtime.findAllEntries(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE),
-        runtime.findAllEntries(RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE),
+        runtime.findAllEntries(RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE)
     ]);
     const decoded = [
         ...snapshots.map((entry) => readSnapshotFamilyEntry(entry, observedAtEpochMs)),
-        ...publications.map((entry) =>
-            readPublicationFamilyEntry(entry, observedAtEpochMs)
-        ),
-        ...claims.map((entry) => readClaimFamilyEntry(entry, observedAtEpochMs)),
+        ...publications.map((entry) => readPublicationFamilyEntry(entry, observedAtEpochMs)),
+        ...claims.map((entry) => readClaimFamilyEntry(entry, observedAtEpochMs))
     ];
     validatePublicationClaimBindings(decoded);
     return decoded;
@@ -300,8 +326,8 @@ async function invalidateGroupFamilyWithRetry(
         migrationId: string;
         observedAtEpochMs: number;
         sleep?: (delayMs: number) => Promise<void>;
-    }>,
-): Promise<Readonly<{ snapshots: number; publications: number; claims: number }>> {
+    }>
+): Promise<Readonly<{ snapshots: number; publications: number; claims: number; }>> {
     let lastConflict: RuntimeStateWriteConflictError | undefined;
     for (const attempt of RETRY_ATTEMPTS) {
         await waitForRuntimeStateWriteRetry(attempt, { sleep: options.sleep });
@@ -310,23 +336,24 @@ async function invalidateGroupFamilyWithRetry(
                 const request = await newRecomputeRequest(groupRef, options);
                 const existingRequest = await transaction.findEntry(
                     RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE,
-                    groupKey,
+                    groupKey
                 );
                 if (!existingRequest) {
                     const inserted = await transaction.insertIfAbsent(
                         RTC_TOPOLOGY_SCALAR_RECOMPUTE_NAMESPACE,
                         groupKey,
                         JSON.stringify(request),
-                        NEVER_EXPIRE_AT_TIMESTAMP,
+                        NEVER_EXPIRE_AT_TIMESTAMP
                     );
                     if (inserted.status === 'conflict') {
                         throw new RuntimeStateWriteConflictError();
                     }
-                } else {
+                }
+                else {
                     const current = await readRecomputeRequest(existingRequest);
                     if (!sameRequestIdentity(current, request)) {
                         throw new TypeError(
-                            'RTC topology scalar recompute request conflicts with migration identity',
+                            'RTC topology scalar recompute request conflicts with migration identity'
                         );
                     }
                 }
@@ -334,33 +361,42 @@ async function invalidateGroupFamilyWithRetry(
                 const counts = { snapshots: 0, publications: 0, claims: 0 };
                 const currentFamily = await readValidatedFamily(
                     transaction,
-                    options.observedAtEpochMs,
+                    options.observedAtEpochMs
                 );
                 for (const namespace of FAMILY_NAMESPACES) {
                     for (const member of currentFamily) {
-                        if (!sameGroupRef(member.groupRef, groupRef)) continue;
-                        if (member.namespace !== namespace) continue;
+                        if (!sameGroupRef(member.groupRef, groupRef)) {
+                            continue;
+                        }
+                        if (member.namespace !== namespace) {
+                            continue;
+                        }
                         const deleted = await transaction.deleteIfRevision(
                             namespace,
                             member.entry.key,
-                            member.entry.revision,
+                            member.entry.revision
                         );
                         if (deleted.status === 'conflict') {
                             throw new RuntimeStateWriteConflictError();
                         }
                         if (namespace === RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE) {
                             counts.snapshots += 1;
-                        } else if (namespace === RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE) {
+                        }
+                        else if (namespace === RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE) {
                             counts.publications += 1;
-                        } else {
+                        }
+                        else {
                             counts.claims += 1;
                         }
                     }
                 }
                 return counts;
             });
-        } catch (error) {
-            if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+        }
+        catch (error) {
+            if (!(error instanceof RuntimeStateWriteConflictError)) {
+                throw error;
+            }
             lastConflict = error;
         }
     }
@@ -372,7 +408,7 @@ async function invalidateGroupFamilyWithRetry(
 
 async function newRecomputeRequest(
     groupRef: GroupRef,
-    options: Readonly<{ migrationId: string; observedAtEpochMs: number }>,
+    options: Readonly<{ migrationId: string; observedAtEpochMs: number; }>
 ): Promise<RtcTopologyScalarRecomputeRequest> {
     const groupKey = groupStateGroupStorageKey(groupRef);
     const command = {
@@ -381,7 +417,7 @@ async function newRecomputeRequest(
         migrationId: options.migrationId,
         observedAtEpochMs: options.observedAtEpochMs,
         groupRef,
-        requestId: `scalar-authority-cutover:${groupKey}`,
+        requestId: `scalar-authority-cutover:${groupKey}`
     };
     return {
         kind: 'rtc-topology-scalar-recompute',
@@ -391,12 +427,12 @@ async function newRecomputeRequest(
         observedAtEpochMs: options.observedAtEpochMs,
         commandHash: await hashMutationCommand(command as JsonWireValue),
         groupRef,
-        requestId: `scalar-authority-cutover:${groupKey}`,
+        requestId: `scalar-authority-cutover:${groupKey}`
     };
 }
 
 async function readRecomputeRequest(
-    entry: RuntimeStateEntry,
+    entry: RuntimeStateEntry
 ): Promise<RtcTopologyScalarRecomputeRequest> {
     const value = parseRecord(entry);
     exactKeys(value, [
@@ -407,12 +443,13 @@ async function readRecomputeRequest(
         'observedAtEpochMs',
         'commandHash',
         'groupRef',
-        'requestId',
+        'requestId'
     ], 'RTC topology scalar recompute request');
     let keyedRef: GroupRef;
     try {
         keyedRef = decodeGroupStateGroupStorageKey(entry.key);
-    } catch {
+    }
+    catch {
         throw new TypeError('RTC topology scalar recompute request key is invalid');
     }
     const groupRef = readRequiredGroupRef(value.groupRef, 'recompute request');
@@ -440,7 +477,7 @@ async function readRecomputeRequest(
         observedAtEpochMs: value.observedAtEpochMs,
         commandHash: value.commandHash,
         groupRef,
-        requestId: value.requestId,
+        requestId: value.requestId
     };
     const expected = await newRecomputeRequest(groupRef, request);
     if (request.commandHash !== expected.commandHash) {
@@ -451,7 +488,7 @@ async function readRecomputeRequest(
 
 function readSnapshotFamilyEntry(
     entry: RuntimeStateEntry,
-    observedAtEpochMs: number,
+    observedAtEpochMs: number
 ): FamilyEntry {
     const value = parseRecord(entry);
     const decoded = readLegacyGroupRef(value.groupRef, 'snapshot');
@@ -467,13 +504,13 @@ function readSnapshotFamilyEntry(
         groupRef: decoded.groupRef,
         legacyScalar,
         publicationId: null,
-        workId: null,
+        workId: null
     };
 }
 
 function readPublicationFamilyEntry(
     entry: RuntimeStateEntry,
-    observedAtEpochMs: number,
+    observedAtEpochMs: number
 ): FamilyEntry {
     const value = parseRecord(entry);
     const decoded = readLegacyGroupRef(value.groupRef, 'publication');
@@ -482,7 +519,7 @@ function readPublicationFamilyEntry(
     const overlayVersion = nonNegativeInteger(value.overlayVersion, 'overlay version');
     validateGroupPhysicalKey(entry.key, decoded, {
         kind: 'publication',
-        value: publicationId,
+        value: publicationId
     });
     validateLivePhysicalExpiry(entry, observedAtEpochMs, 'publication');
     const legacyScalar = isNonNegativeSafeInteger(value.sourceGroupStateRevision);
@@ -498,13 +535,13 @@ function readPublicationFamilyEntry(
         groupRef: decoded.groupRef,
         legacyScalar,
         publicationId,
-        workId,
+        workId
     };
 }
 
 function readClaimFamilyEntry(
     entry: RuntimeStateEntry,
-    observedAtEpochMs: number,
+    observedAtEpochMs: number
 ): FamilyEntry {
     const value = parseRecord(entry);
     const legacyKeys = ['groupRef', 'workId', 'publicationId'];
@@ -522,11 +559,11 @@ function readClaimFamilyEntry(
         'acceptedCausalRevision',
         'acceptedStorageRevision',
         'eventId',
-        'outboxIds',
+        'outboxIds'
     ];
     const legacyScalar = sameStringArray(
         Object.keys(value).sort(),
-        [...legacyKeys].sort(),
+        [...legacyKeys].sort()
     );
     if (!legacyScalar) {
         exactKeys(value, currentKeys, 'RTC topology work claim');
@@ -559,15 +596,19 @@ function readClaimFamilyEntry(
         groupRef: decoded.groupRef,
         legacyScalar,
         publicationId,
-        workId,
+        workId
     };
 }
 
 function validatePublicationClaimBindings(family: readonly FamilyEntry[]): void {
-    const publications = family.filter((entry) => entry.publicationId !== null &&
-        entry.namespace === RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE);
-    const claims = family.filter((entry) => entry.publicationId !== null &&
-        entry.namespace === RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE);
+    const publications = family.filter((entry) =>
+        entry.publicationId !== null &&
+        entry.namespace === RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE
+    );
+    const claims = family.filter((entry) =>
+        entry.publicationId !== null &&
+        entry.namespace === RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE
+    );
     for (const publication of publications) {
         const claim = claims.find((candidate) =>
             sameGroupRef(candidate.groupRef, publication.groupRef) &&
@@ -582,11 +623,13 @@ function validatePublicationClaimBindings(family: readonly FamilyEntry[]): void 
         }
     }
     for (const claim of claims) {
-        if (!publications.some((publication) =>
-            sameGroupRef(publication.groupRef, claim.groupRef) &&
-            publication.publicationId === claim.publicationId &&
-            publication.workId === claim.workId
-        )) {
+        if (
+            !publications.some((publication) =>
+                sameGroupRef(publication.groupRef, claim.groupRef) &&
+                publication.publicationId === claim.publicationId &&
+                publication.workId === claim.workId
+            )
+        ) {
             throw new TypeError('RTC topology work claim publication is missing');
         }
     }
@@ -595,7 +638,7 @@ function validatePublicationClaimBindings(family: readonly FamilyEntry[]): void 
 function publicationIdForCausal(
     workId: string,
     value: unknown,
-    overlayVersion: number,
+    overlayVersion: number
 ): string {
     if (!isCausalRevision(value)) {
         throw new TypeError('RTC topology publication causal authority is invalid');
@@ -605,8 +648,8 @@ function publicationIdForCausal(
 
 function validateGroupPhysicalKey(
     key: string,
-    decoded: Readonly<{ groupRef: GroupRef; legacyGroupKey: string }>,
-    child: Readonly<{ kind: 'publication' | 'work'; value: string }> | null,
+    decoded: Readonly<{ groupRef: GroupRef; legacyGroupKey: string; }>,
+    child: Readonly<{ kind: 'publication' | 'work'; value: string; }> | null
 ): void {
     const canonicalGroupKey = groupStateGroupStorageKey(decoded.groupRef);
     const expected = child === null
@@ -614,7 +657,7 @@ function validateGroupPhysicalKey(
         : [
             `${canonicalGroupKey}:${child.kind}=${encodeURIComponent(child.value)}`,
             `${decoded.legacyGroupKey}:${child.kind}=${encodeURIComponent(child.value)}`,
-            child.value,
+            child.value
         ];
     if (!expected.includes(key)) {
         throw new TypeError('RTC topology persisted key differs from value scope');
@@ -623,9 +666,11 @@ function validateGroupPhysicalKey(
 
 function readLegacyGroupRef(
     value: unknown,
-    label: string,
-): Readonly<{ groupRef: GroupRef; legacyGroupKey: string }> {
-    if (!isRecord(value)) throw new TypeError(`RTC topology ${label} groupRef is invalid`);
+    label: string
+): Readonly<{ groupRef: GroupRef; legacyGroupKey: string; }> {
+    if (!isRecord(value)) {
+        throw new TypeError(`RTC topology ${label} groupRef is invalid`);
+    }
     const keys = Object.keys(value).sort();
     const expected = Object.hasOwn(value, 'workspaceId')
         ? ['applicationId', 'groupId', 'workspaceId']
@@ -646,27 +691,30 @@ function readLegacyGroupRef(
         legacyGroupKey: [
             `app=${encodeURIComponent(applicationId)}`,
             `ws=${rawWorkspaceId === undefined ? '_' : encodeURIComponent(rawWorkspaceId)}`,
-            `group=${encodeURIComponent(groupId)}`,
-        ].join(':'),
+            `group=${encodeURIComponent(groupId)}`
+        ].join(':')
     };
 }
 
 function readRequiredGroupRef(value: unknown, label: string): GroupRef {
-    if (!isRecord(value)) throw new TypeError(`RTC topology ${label} groupRef is invalid`);
-    exactKeys(value, ['applicationId', 'workspaceId', 'groupId'],
-        `RTC topology ${label} groupRef`);
+    if (!isRecord(value)) {
+        throw new TypeError(`RTC topology ${label} groupRef is invalid`);
+    }
+    exactKeys(value, ['applicationId', 'workspaceId', 'groupId'], `RTC topology ${label} groupRef`);
     return {
         applicationId: nonEmptyString(value.applicationId, `${label} application id`),
         workspaceId: nonEmptyString(value.workspaceId, `${label} workspace id`),
-        groupId: nonEmptyString(value.groupId, `${label} group id`),
+        groupId: nonEmptyString(value.groupId, `${label} group id`)
     };
 }
 
-function validateMigrationOptions(options: Readonly<{
-    oldWritersStopped: true;
-    migrationId: string;
-    observedAtEpochMs: number;
-}>): void {
+function validateMigrationOptions(
+    options: Readonly<{
+        oldWritersStopped: true;
+        migrationId: string;
+        observedAtEpochMs: number;
+    }>
+): void {
     if (options.oldWritersStopped !== true) {
         throw new Error('RTC topology scalar authority invalidation requires old writers stopped');
     }
@@ -680,7 +728,7 @@ function validateMigrationOptions(options: Readonly<{
 
 function validateWorkerDelays(
     intervalMs: number,
-    retryDelaysMs: readonly number[],
+    retryDelaysMs: readonly number[]
 ): void {
     if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) {
         throw new RangeError('RTC topology scalar recompute interval is invalid');
@@ -696,7 +744,7 @@ function validateWorkerDelays(
 function validateLivePhysicalExpiry(
     entry: RuntimeStateEntry,
     observedAtEpochMs: number,
-    label: string,
+    label: string
 ): void {
     if (
         entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP &&
@@ -709,7 +757,7 @@ function validateLivePhysicalExpiry(
 function exactKeys(
     value: Record<string, unknown>,
     expected: readonly string[],
-    label: string,
+    label: string
 ): void {
     if (!sameStringArray(Object.keys(value).sort(), [...expected].sort())) {
         throw new TypeError(`${label} fields are invalid`);
@@ -720,7 +768,8 @@ function parseRecord(entry: RuntimeStateEntry): Record<string, unknown> {
     let value: unknown;
     try {
         value = JSON.parse(entry.value);
-    } catch {
+    }
+    catch {
         throw new TypeError(`RTC topology persisted JSON is invalid: ${entry.key}`);
     }
     if (!isRecord(value)) {
@@ -738,7 +787,9 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
 }
 
 function nonNegativeInteger(value: unknown, label: string): number {
-    if (!isNonNegativeSafeInteger(value)) throw new TypeError(`RTC topology ${label} is invalid`);
+    if (!isNonNegativeSafeInteger(value)) {
+        throw new TypeError(`RTC topology ${label} is invalid`);
+    }
     return value;
 }
 
@@ -766,7 +817,7 @@ function sameStringArray(left: readonly string[], right: readonly string[]): boo
 
 function sameRequestIdentity(
     left: RtcTopologyScalarRecomputeRequest,
-    right: RtcTopologyScalarRecomputeRequest,
+    right: RtcTopologyScalarRecomputeRequest
 ): boolean {
     return left.kind === right.kind && left.schemaVersion === right.schemaVersion &&
         left.status === right.status && left.migrationId === right.migrationId &&

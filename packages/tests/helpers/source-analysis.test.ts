@@ -1,18 +1,8 @@
-import {
-    mkdtempSync,
-    mkdirSync,
-    rmSync,
-    writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-    analyzeSource,
-    buildRelativeTypeScriptGraph,
-    findDependencyCycles,
-    resolveRelativeTypeScriptDependency,
-} from './source-analysis';
+import { analyzeSource, buildRelativeTypeScriptGraph, findDependencyCycles, resolveRelativeTypeScriptDependency } from './source-analysis';
 
 const fixtureDirectories: string[] = [];
 
@@ -40,7 +30,7 @@ describe('source analysis', () => {
                 const lazyLiteral = import('./lazy');
                 const lazyExpression = import(target);
             `,
-            'fixtures/source.tsx',
+            'fixtures/source.tsx'
         );
 
         expect(analysis.imports).toContainEqual({
@@ -51,8 +41,8 @@ describe('source analysis', () => {
             namespaceImport: undefined,
             namedImports: [
                 { imported: 'Config', local: 'Config', typeOnly: true },
-                { imported: 'runtime', local: 'renamed', typeOnly: false },
-            ],
+                { imported: 'runtime', local: 'renamed', typeOnly: false }
+            ]
         });
         expect(analysis.imports).toContainEqual({
             specifier: './types',
@@ -60,7 +50,7 @@ describe('source analysis', () => {
             sideEffectOnly: false,
             defaultImport: undefined,
             namespaceImport: 'Types',
-            namedImports: [],
+            namedImports: []
         });
         expect(analysis.imports).toContainEqual({
             specifier: './side-effect',
@@ -68,7 +58,7 @@ describe('source analysis', () => {
             sideEffectOnly: true,
             defaultImport: undefined,
             namespaceImport: undefined,
-            namedImports: [],
+            namedImports: []
         });
         expect(analysis.exports).toEqual(
             expect.arrayContaining([
@@ -77,49 +67,49 @@ describe('source analysis', () => {
                     exportedName: 'PublicType',
                     localName: 'PublicType',
                     specifier: './public',
-                    typeOnly: true,
+                    typeOnly: true
                 },
                 {
                     kind: 'named',
                     exportedName: 'publicValue',
                     localName: 'runtimeValue',
                     specifier: './public',
-                    typeOnly: false,
+                    typeOnly: false
                 },
                 {
                     kind: 'star',
                     specifier: './star',
-                    typeOnly: false,
+                    typeOnly: false
                 },
                 {
                     kind: 'namespace',
                     exportedName: 'namespaceExport',
                     specifier: './namespace',
-                    typeOnly: false,
+                    typeOnly: false
                 },
                 {
                     kind: 'declaration',
                     exportedName: 'PublicInterface',
                     localName: 'PublicInterface',
-                    typeOnly: true,
+                    typeOnly: true
                 },
                 {
                     kind: 'declaration',
                     exportedName: 'publicConstant',
                     localName: 'publicConstant',
-                    typeOnly: false,
+                    typeOnly: false
                 },
                 {
                     kind: 'default',
                     exportedName: 'default',
                     localName: 'publicDefault',
-                    typeOnly: false,
-                },
-            ]),
+                    typeOnly: false
+                }
+            ])
         );
         expect(analysis.dynamicImports).toEqual([
             { specifier: './lazy', literal: true },
-            { specifier: undefined, literal: false },
+            { specifier: undefined, literal: false }
         ]);
         expect(analysis.topLevelDeclarations).toEqual(
             expect.arrayContaining([
@@ -127,34 +117,34 @@ describe('source analysis', () => {
                     name: 'PublicInterface',
                     kind: 'type',
                     exported: true,
-                    defaultExport: false,
+                    defaultExport: false
                 },
                 {
                     name: 'publicConstant',
                     kind: 'value',
                     exported: true,
-                    defaultExport: false,
+                    defaultExport: false
                 },
                 {
                     name: 'publicDefault',
                     kind: 'value',
                     exported: true,
-                    defaultExport: true,
+                    defaultExport: true
                 },
                 {
                     name: 'lazyLiteral',
                     kind: 'value',
                     exported: false,
-                    defaultExport: false,
-                },
-            ]),
+                    defaultExport: false
+                }
+            ])
         );
         expect(analysis.identifierNames).toContain('localStorage');
     });
 
     it('includes the source path in parse failures', () => {
         expect(() => analyzeSource('export const =', 'broken/example.ts')).toThrow(
-            /broken\/example\.ts/,
+            /broken\/example\.ts/
         );
     });
 
@@ -164,25 +154,25 @@ describe('source analysis', () => {
         const dependencyPath = writeFixture(
             directory,
             'dependency.tsx',
-            'export const dependency = <div />;',
+            'export const dependency = <div />;'
         );
         const indexPath = writeFixture(
             directory,
             'folder/index.ts',
-            'export const index = true;',
+            'export const index = true;'
         );
 
         expect(
-            resolveRelativeTypeScriptDependency(importerPath, './dependency'),
+            resolveRelativeTypeScriptDependency(importerPath, './dependency')
         ).toBe(dependencyPath);
         expect(resolveRelativeTypeScriptDependency(importerPath, './folder')).toBe(
-            indexPath,
+            indexPath
         );
         expect(
-            resolveRelativeTypeScriptDependency(importerPath, '@scope/package'),
+            resolveRelativeTypeScriptDependency(importerPath, '@scope/package')
         ).toBeUndefined();
         expect(
-            resolveRelativeTypeScriptDependency(importerPath, './asset.css'),
+            resolveRelativeTypeScriptDependency(importerPath, './asset.css')
         ).toBeUndefined();
     });
 
@@ -191,43 +181,43 @@ describe('source analysis', () => {
         const entryPath = writeFixture(
             directory,
             'entry.ts',
-            `import './acyclic'; export { value } from './cycle-a';`,
+            `import './acyclic'; export { value } from './cycle-a';`
         );
         const acyclicPath = writeFixture(
             directory,
             'acyclic.ts',
-            `const lazy = import('./not-followed'); export { lazy };`,
+            `const lazy = import('./not-followed'); export { lazy };`
         );
         const cycleAPath = writeFixture(
             directory,
             'cycle-a.ts',
-            `import { valueB } from './cycle-b'; export const value = valueB;`,
+            `import { valueB } from './cycle-b'; export const value = valueB;`
         );
         const cycleBPath = writeFixture(
             directory,
             'cycle-b.ts',
-            `import { value } from './cycle-a'; export const valueB = value;`,
+            `import { value } from './cycle-a'; export const valueB = value;`
         );
         writeFixture(
             directory,
             'not-followed.ts',
-            `export const dynamicOnly = true;`,
+            `export const dynamicOnly = true;`
         );
 
         const graph = buildRelativeTypeScriptGraph([entryPath]);
 
         expect([...graph.keys()].sort()).toEqual(
-            [entryPath, acyclicPath, cycleAPath, cycleBPath].sort(),
+            [entryPath, acyclicPath, cycleAPath, cycleBPath].sort()
         );
         expect(findDependencyCycles(graph)).toEqual([
-            [cycleAPath, cycleBPath, cycleAPath],
+            [cycleAPath, cycleBPath, cycleAPath]
         ]);
     });
 });
 
 function createFixtureDirectory(): string {
     const directory = mkdtempSync(
-        path.join(tmpdir(), 'rallar-source-analysis-'),
+        path.join(tmpdir(), 'rallar-source-analysis-')
     );
     fixtureDirectories.push(directory);
     return directory;
@@ -236,7 +226,7 @@ function createFixtureDirectory(): string {
 function writeFixture(
     rootDirectory: string,
     relativePath: string,
-    source: string,
+    source: string
 ): string {
     const filePath = path.join(rootDirectory, relativePath);
     mkdirSync(path.dirname(filePath), { recursive: true });

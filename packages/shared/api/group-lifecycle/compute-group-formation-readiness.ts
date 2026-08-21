@@ -21,12 +21,14 @@ export type GroupFormationReadiness = Readonly<{
  * decides nothing itself -- intent stays authoritative. Edges are undirected;
  * evidence in either direction counts once.
  */
-export function computeGroupFormationReadiness(input: Readonly<{
-    planned: RallarOverlayTopologySnapshot;
-    rttMeasurements: readonly RttMeasurementInfo[];
-    nowEpochMs: number;
-    evidenceFreshnessMs?: number;
-}>): GroupFormationReadiness {
+export function computeGroupFormationReadiness(
+    input: Readonly<{
+        planned: RallarOverlayTopologySnapshot;
+        rttMeasurements: readonly RttMeasurementInfo[];
+        nowEpochMs: number;
+        evidenceFreshnessMs?: number;
+    }>
+): GroupFormationReadiness {
     const plannedEdges = collectPlannedEdges(input.planned);
     if (plannedEdges.size === 0) {
         return { plannedEdgeCount: 0, observedEdgeCount: 0, observedRate: 1 };
@@ -35,23 +37,31 @@ export function computeGroupFormationReadiness(input: Readonly<{
     const freshAfterEpochMs = input.nowEpochMs - freshnessMs;
     const observed = new Set<string>();
     for (const measurement of input.rttMeasurements) {
-        if (measurement.createdAtEpochMs < freshAfterEpochMs) continue;
+        if (measurement.createdAtEpochMs < freshAfterEpochMs) {
+            continue;
+        }
         const key = toUndirectedEdgeKey(measurement.sessionIdFrom, measurement.sessionIdTo);
-        if (plannedEdges.has(key)) observed.add(key);
+        if (plannedEdges.has(key)) {
+            observed.add(key);
+        }
     }
     return {
         plannedEdgeCount: plannedEdges.size,
         observedEdgeCount: observed.size,
-        observedRate: observed.size / plannedEdges.size,
+        observedRate: observed.size / plannedEdges.size
     };
 }
 
 function collectPlannedEdges(planned: RallarOverlayTopologySnapshot): ReadonlySet<string> {
     const edges = new Set<string>();
-    if (planned.state === 'removed') return edges;
+    if (planned.state === 'removed') {
+        return edges;
+    }
     for (const [sessionId, hops] of Object.entries(planned.nextHopsBySessionId)) {
         for (const hop of hops) {
-            if (hop === sessionId) continue;
+            if (hop === sessionId) {
+                continue;
+            }
             edges.add(toUndirectedEdgeKey(sessionId, hop));
         }
     }

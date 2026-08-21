@@ -15,7 +15,7 @@ export const RELIC_NEON_THEME = {
     coral: '#ff5c7a',
     white: '#f8fdff',
     glass: '#67e8f9',
-    shadow: '#040915',
+    shadow: '#040915'
 } as const;
 
 export type RelicNeonAccent = Readonly<{
@@ -29,14 +29,14 @@ export function relicNeonAccentForRoom(room: Pick<RelicRoom, 'kind' | 'collapsed
         return {
             base: RELIC_NEON_THEME.graphiteLight,
             emissive: RELIC_NEON_THEME.coral,
-            secondary: RELIC_NEON_THEME.amber,
+            secondary: RELIC_NEON_THEME.amber
         };
     }
     if (room.unstable) {
         return {
             base: '#241525',
             emissive: RELIC_NEON_THEME.coral,
-            secondary: RELIC_NEON_THEME.magenta,
+            secondary: RELIC_NEON_THEME.magenta
         };
     }
 
@@ -64,6 +64,6 @@ function neonAccent(emissive: string, secondary: string): RelicNeonAccent {
     return {
         base: RELIC_NEON_THEME.floor,
         emissive,
-        secondary,
+        secondary
     };
 }

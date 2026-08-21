@@ -6,11 +6,9 @@ leaderboards, scenario drafts, API-side feature flags, and per-room server
 diagnostics.
 
 ```ts
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import { isRallarServerAppDataConflictError } from '@shared-server/app-data/RallarServerAppData.ts';
 import type { RallarServerRuntime } from '@shared-server/rallar-facade/RallarServer.ts';
-import {
-    isRallarServerAppDataConflictError,
-} from '@shared-server/app-data/RallarServerAppData.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 
 type LeaderboardEntry = {
     principalId: string;
@@ -19,7 +17,7 @@ type LeaderboardEntry = {
 };
 
 export async function installLeaderboard(
-    rallar: RallarServerApplication<RallarServerRuntime, unknown>,
+    rallar: RallarServerApplication<RallarServerRuntime, unknown>
 ) {
     const leaderboard = await rallar.data.open<LeaderboardEntry>(
         'leaderboard',
@@ -27,21 +25,22 @@ export async function installLeaderboard(
             namespace: 'demo-game',
             schemaVersion: 1,
             readConsistency: 'fresh',
-            maxConflictRetries: 8,
-        },
+            maxConflictRetries: 8
+        }
     );
 
     async function addScore(
         principalId: string,
-        scoreDelta: number,
+        scoreDelta: number
     ): Promise<LeaderboardEntry> {
         try {
             return await leaderboard.updateOrCreate(principalId, (current) => ({
                 principalId,
                 score: (current?.score ?? 0) + scoreDelta,
-                updatedAtEpochMs: Date.now(),
+                updatedAtEpochMs: Date.now()
             }));
-        } catch (error) {
+        }
+        catch (error) {
             if (isRallarServerAppDataConflictError(error)) {
                 throw new Error('Leaderboard write conflicted. Retry the request.');
             }
@@ -58,7 +57,7 @@ export async function installLeaderboard(
 
     return {
         addScore,
-        top,
+        top
     };
 }
 ```

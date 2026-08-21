@@ -33,21 +33,21 @@ export type WsTicketLike = Readonly<{
 }>;
 
 export function readAuthenticatedWsSmokeConfig(
-    env: EnvReader = Deno.env,
+    env: EnvReader = Deno.env
 ): AuthenticatedWsSmokeConfig {
     const username = firstNonEmpty(
         env.get('RALLAR_SMOKE_USERNAME'),
-        env.get('RALLAR_BLACK_BOX_USERNAME'),
+        env.get('RALLAR_BLACK_BOX_USERNAME')
     );
     const password = firstNonEmpty(
         env.get('RALLAR_SMOKE_PASSWORD'),
-        env.get('RALLAR_BLACK_BOX_PASSWORD'),
+        env.get('RALLAR_BLACK_BOX_PASSWORD')
     );
     if (!username || !password) {
         return {
             enabled: false,
             reason:
-                'Set RALLAR_SMOKE_USERNAME/RALLAR_SMOKE_PASSWORD or RALLAR_BLACK_BOX_USERNAME/RALLAR_BLACK_BOX_PASSWORD.',
+                'Set RALLAR_SMOKE_USERNAME/RALLAR_SMOKE_PASSWORD or RALLAR_BLACK_BOX_USERNAME/RALLAR_BLACK_BOX_PASSWORD.'
         };
     }
 
@@ -60,24 +60,24 @@ export function readAuthenticatedWsSmokeConfig(
         enabled: true,
         apiBaseUrl: normalizeBaseUrl(
             firstNonEmpty(env.get('RALLAR_API_BASE_URL')) ??
-                `https://${apiHost}`,
+                `https://${apiHost}`
         ),
         origin: normalizeBaseUrl(
             firstNonEmpty(env.get('RALLAR_SMOKE_ORIGIN')) ??
-                `https://${blackboxHost}`,
+                `https://${blackboxHost}`
         ),
         username,
         password,
         timeoutMs: readPositiveInteger(
             env.get('RALLAR_SMOKE_TIMEOUT_MS'),
-            10_000,
-        ),
+            10_000
+        )
     };
 }
 
 export function validateAuthenticatedWsConfig(
-    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true }>,
-    apiConfig: ApiConfigLike,
+    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true; }>,
+    apiConfig: ApiConfigLike
 ): void {
     const apiBaseUrl = normalizeBaseUrl(apiConfig.apiBaseUrl ?? config.apiBaseUrl);
     const wsBaseUrl = normalizeBaseUrl(apiConfig.wsBaseUrl ?? '');
@@ -89,38 +89,38 @@ export function validateAuthenticatedWsConfig(
     const wsUrl = new URL(wsBaseUrl);
     if (apiUrl.protocol === 'https:' && wsUrl.protocol !== 'wss:') {
         throw new Error(
-            `CONFIG: apiBaseUrl is HTTPS but wsBaseUrl is not WSS (${wsBaseUrl})`,
+            `CONFIG: apiBaseUrl is HTTPS but wsBaseUrl is not WSS (${wsBaseUrl})`
         );
     }
 }
 
 export function buildAuthenticatedWsUrl(
-    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true }>,
+    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true; }>,
     apiConfig: ApiConfigLike,
-    ticket: WsTicketLike,
+    ticket: WsTicketLike
 ): string {
     validateAuthenticatedWsConfig(config, apiConfig);
     const wsBaseUrl = normalizeBaseUrl(apiConfig.wsBaseUrl ?? '');
     const url = new URL(
         `/api/ws/${encodeURIComponent(ticket.sessionId)}`,
-        `${wsBaseUrl}/`,
+        `${wsBaseUrl}/`
     );
     url.searchParams.set('ticket', ticket.ticket);
     return url.toString();
 }
 
 export async function runAuthenticatedWsSmoke(
-    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true }>,
+    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true; }>
 ): Promise<void> {
     const apiConfig = await fetchJson<ApiConfigLike>(
         `${config.apiBaseUrl}/api/config`,
         {
             headers: {
-                origin: config.origin,
-            },
+                origin: config.origin
+            }
         },
         config,
-        'CONFIG',
+        'CONFIG'
     );
     validateAuthenticatedWsConfig(config, apiConfig);
 
@@ -130,15 +130,15 @@ export async function runAuthenticatedWsSmoke(
             method: 'POST',
             headers: {
                 'content-type': 'application/json',
-                origin: config.origin,
+                origin: config.origin
             },
             body: JSON.stringify({
                 username: config.username,
-                password: config.password,
-            }),
+                password: config.password
+            })
         },
         config,
-        'LOGIN',
+        'LOGIN'
     );
 
     const ticket = await fetchJson<WsTicketLike>(
@@ -148,11 +148,11 @@ export async function runAuthenticatedWsSmoke(
             headers: {
                 authorization: `Bearer ${authSession.accessToken}`,
                 'x-client-id': authSession.clientId,
-                origin: config.origin,
-            },
+                origin: config.origin
+            }
         },
         config,
-        'WS_TICKET',
+        'WS_TICKET'
     );
 
     const wsUrl = buildAuthenticatedWsUrl(config, apiConfig, ticket);
@@ -162,8 +162,8 @@ export async function runAuthenticatedWsSmoke(
 async function fetchJson<T>(
     url: string,
     init: RequestInit,
-    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true }>,
-    label: string,
+    config: Extract<AuthenticatedWsSmokeConfig, { enabled: true; }>,
+    label: string
 ): Promise<T> {
     const response = await fetch(url, init);
     assertCorsResponse(response, config.origin, label);
@@ -182,7 +182,7 @@ function assertCorsResponse(response: Response, origin: string, label: string): 
     }
     if (allowOrigin !== '*' && allowOrigin !== origin) {
         throw new Error(
-            `${label}: access-control-allow-origin ${allowOrigin} does not allow ${origin}`,
+            `${label}: access-control-allow-origin ${allowOrigin} does not allow ${origin}`
         );
     }
 }
@@ -198,7 +198,8 @@ function openWebSocket(url: string, timeoutMs: number): Promise<void> {
             settled = true;
             try {
                 socket.close(1000, 'smoke-timeout');
-            } catch {
+            }
+            catch {
                 // Best effort cleanup; the timeout error below is the useful signal.
             }
             reject(new Error(`WEBSOCKET_TIMEOUT: upgrade did not open within ${timeoutMs}ms`));
@@ -221,8 +222,8 @@ function openWebSocket(url: string, timeoutMs: number): Promise<void> {
             clearTimeout(timer);
             reject(
                 new Error(
-                    'WEBSOCKET_UPGRADE: public WebSocket upgrade failed; check TLS, Caddy reverse_proxy, and /api/ws routing.',
-                ),
+                    'WEBSOCKET_UPGRADE: public WebSocket upgrade failed; check TLS, Caddy reverse_proxy, and /api/ws routing.'
+                )
             );
         };
         socket.onclose = (event) => {
@@ -233,8 +234,8 @@ function openWebSocket(url: string, timeoutMs: number): Promise<void> {
             clearTimeout(timer);
             reject(
                 new Error(
-                    `WEBSOCKET_CLOSED: socket closed before open (${event.code} ${event.reason})`,
-                ),
+                    `WEBSOCKET_CLOSED: socket closed before open (${event.code} ${event.reason})`
+                )
             );
         };
     });
@@ -269,7 +270,8 @@ if (import.meta.main) {
     try {
         await runAuthenticatedWsSmoke(config);
         console.log('Authenticated API WebSocket smoke passed.');
-    } catch (error) {
+    }
+    catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
         Deno.exit(1);
     }

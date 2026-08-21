@@ -1,11 +1,8 @@
-import type {
-    RallarMessage,
-    RallarStateEventListener,
-} from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-messages-facade.ts';
 import type {
     RallarStateListener,
     RallarSubscriptionScope,
-    RallarUnsubscribe,
+    RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 
 export function createRallarSubscriptionScope(): RallarSubscriptionScope {
@@ -39,7 +36,7 @@ export function createRallarSubscriptionScope(): RallarSubscriptionScope {
                 unsubscribe();
             }
         },
-        size: (): number => unsubscribers.size,
+        size: (): number => unsubscribers.size
     };
 
     return scope;
@@ -48,24 +45,26 @@ export function createRallarSubscriptionScope(): RallarSubscriptionScope {
 export async function notifyStateEventListener<TEvent>(
     listener: RallarStateEventListener<TEvent>,
     event: TEvent,
-    message: RallarMessage<TEvent>,
+    message: RallarMessage<TEvent>
 ): Promise<void> {
     try {
         await listener(event, message);
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Error notifying Rallar state event listener', error);
     }
 }
 
 export function notifyListener<T>(
     listener: RallarStateListener<T>,
-    state: T,
+    state: T
 ): void {
     try {
         void Promise.resolve(listener(state)).catch((error) => {
             console.error('Error notifying Rallar state listener', error);
         });
-    } catch (error) {
+    }
+    catch (error) {
         console.error('Error notifying Rallar state listener', error);
     }
 }

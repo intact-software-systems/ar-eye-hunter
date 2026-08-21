@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { VivaldiNode, type VivaldiConfig } from '@shared-graph/graph/vivaldi-core.ts';
+import { describe, expect, it } from 'vitest';
 
 // The peer sits at the origin, so the node's own norm is the predicted RTT to
 // it. A fixed draw makes the tie-break on the first sample reproducible; every
@@ -12,13 +12,13 @@ function toTrajectory(
         initialError?: number;
         cfg?: Partial<VivaldiConfig>;
         node?: VivaldiNode;
-    }>,
-): Readonly<{ node: VivaldiNode; predicted: number[]; errors: number[] }> {
+    }>
+): Readonly<{ node: VivaldiNode; predicted: number[]; errors: number[]; }> {
     const node = input.node ?? new VivaldiNode({
         dimensions: 2,
         initialError: input.initialError,
         cfg: input.cfg,
-        random: () => 1,
+        random: () => 1
     });
     const predicted: number[] = [];
     const errors: number[] = [];
@@ -28,7 +28,7 @@ function toTrajectory(
             id: 'peer',
             coords: [0, 0],
             err: input.remoteErr ?? 1.0,
-            rttMs: input.rttMs,
+            rttMs: input.rttMs
         });
         predicted.push(node.coords.norm());
         errors.push(node.myError);
@@ -106,7 +106,7 @@ describe('VivaldiNode.update error clamping', () => {
             rttMs: 50,
             samples: 1,
             initialError: 1.0,
-            cfg: { maxNodeErr: 0.6 },
+            cfg: { maxNodeErr: 0.6 }
         });
 
         expect(node.myError).toBe(0.6);
@@ -118,7 +118,7 @@ describe('VivaldiNode.update error clamping', () => {
         const { errors } = toTrajectory({
             rttMs: 50,
             samples: 300,
-            cfg: { minNodeErr: 0.4 },
+            cfg: { minNodeErr: 0.4 }
         });
 
         expect(errors[19]).toBe(0.4);

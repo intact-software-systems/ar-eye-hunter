@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { describe, expect, it } from 'vitest';
 
 import {
     authenticateRallarBlackBox,
     authErrorMessage,
     bootstrapMatchesAuthSession,
     bootstrapPatchFromAuthSession,
-    type RallarBlackBoxAuthFacade,
+    type RallarBlackBoxAuthFacade
 } from '../../../apps/rallar-black-box/src/auth-flow.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../../apps/rallar-black-box/src/runtime-store.ts';
 
@@ -16,7 +16,7 @@ function session(username = 'alice') {
         accessToken: `${username}-token`,
         username,
         sessionId: `${username}-session`,
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
 }
 
@@ -35,18 +35,18 @@ describe('rallar-black-box auth flow', () => {
                 },
                 registerAndLogin: async () => {
                     throw new Error('not expected');
-                },
-            },
+                }
+            }
         };
 
         await expect(authenticateRallarBlackBox(facade, {
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
-            password: 'secret',
+            password: 'secret'
         })).resolves.toBe(loginSession);
         expect(calls).toEqual([
             'configure:https://api.example.test',
-            'login:alice:secret',
+            'login:alice:secret'
         ]);
     });
 
@@ -64,19 +64,19 @@ describe('rallar-black-box auth flow', () => {
                 registerAndLogin: async (request) => {
                     calls.push(`register:${request.username}:${request.password}`);
                     return registeredSession;
-                },
-            },
+                }
+            }
         };
 
         await expect(authenticateRallarBlackBox(facade, {
             apiBaseUrl: 'https://api.example.test',
             username: 'bob',
             password: 'secret',
-            register: true,
+            register: true
         })).resolves.toBe(registeredSession);
         expect(calls).toEqual([
             'configure:https://api.example.test',
-            'register:bob:secret',
+            'register:bob:secret'
         ]);
     });
 
@@ -98,22 +98,22 @@ describe('rallar-black-box auth flow', () => {
                         '/api/auth/register/requests/register-request-id',
                         409,
                         'auth-user-exists',
-                        'Auth user already exists: alice',
+                        'Auth user already exists: alice'
                     );
-                },
-            },
+                }
+            }
         };
 
         await expect(authenticateRallarBlackBox(facade, {
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
             password: 'secret',
-            register: true,
+            register: true
         })).resolves.toBe(loginSession);
         expect(calls).toEqual([
             'configure:https://api.example.test',
             'register:alice:secret',
-            'login:alice:secret',
+            'login:alice:secret'
         ]);
     });
 
@@ -125,7 +125,7 @@ describe('rallar-black-box auth flow', () => {
                 sessionId: 'alice-session',
                 rallarUsername: 'alice',
                 rallarRegister: false,
-                rallarRestoreSession: true,
+                rallarRestoreSession: true
             });
     });
 
@@ -133,7 +133,7 @@ describe('rallar-black-box auth flow', () => {
         const authSession = session('alice');
         const initial = resolveRallarBlackBoxBootstrapConfig(
             '?provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.test',
-            {},
+            {}
         );
         expect(bootstrapMatchesAuthSession(initial, authSession)).toBe(false);
 
@@ -141,33 +141,33 @@ describe('rallar-black-box auth flow', () => {
             ...initial,
             ...bootstrapPatchFromAuthSession(
                 authSession,
-                'https://api.example.test',
-            ),
+                'https://api.example.test'
+            )
         };
         expect(bootstrapMatchesAuthSession(ready, authSession)).toBe(true);
         expect(bootstrapMatchesAuthSession(
             { ...ready, actor: 'mallory' },
-            authSession,
+            authSession
         )).toBe(false);
         expect(bootstrapMatchesAuthSession(
             { ...ready, sessionId: 'other-session' },
-            authSession,
+            authSession
         )).toBe(false);
         expect(bootstrapMatchesAuthSession(
             { ...ready, rallarUsername: 'mallory' },
-            authSession,
+            authSession
         )).toBe(false);
         expect(bootstrapMatchesAuthSession(
             { ...ready, rallarPassword: 'retained-secret' },
-            authSession,
+            authSession
         )).toBe(false);
         expect(bootstrapMatchesAuthSession(
             { ...ready, rallarRegister: true },
-            authSession,
+            authSession
         )).toBe(false);
         expect(bootstrapMatchesAuthSession(
             { ...ready, rallarRestoreSession: false },
-            authSession,
+            authSession
         )).toBe(false);
     });
 
@@ -177,13 +177,13 @@ describe('rallar-black-box auth flow', () => {
             '/api/auth/login/requests/login-request-id',
             401,
             'authentication-required',
-            'Invalid username or password',
+            'Invalid username or password'
         ))).toBe('Invalid username or password.');
         expect(authErrorMessage(apiMutationError(
             '/api/auth/login/requests/login-request-id',
             403,
             'authorization-denied',
-            'Login forbidden',
+            'Login forbidden'
         ))).toBe('Login is forbidden for this user.');
     });
 });
@@ -192,7 +192,7 @@ function apiMutationError(
     path: string,
     status: number,
     code: string,
-    message: string,
+    message: string
 ): ApiHttpError {
     return new ApiHttpError(
         'POST',
@@ -206,7 +206,7 @@ function apiMutationError(
             message,
             issues: null,
             denial: null,
-            retry: null,
-        }),
+            retry: null
+        })
     );
 }

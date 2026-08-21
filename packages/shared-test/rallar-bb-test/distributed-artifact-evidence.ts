@@ -2,12 +2,12 @@ export type {
     ComposeDistributedArtifactIssueMarkdownInput,
     DeriveDistributedArtifactEvidenceIndexInput,
     DeriveDistributedArtifactEvidenceInput,
-    DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceFailureDetails,
     DistributedArtifactEvidenceCatalog,
     DistributedArtifactEvidenceCollections,
     DistributedArtifactEvidenceCursor,
     DistributedArtifactEvidenceCursorRejectionCode,
+    DistributedArtifactEvidenceEntry,
+    DistributedArtifactEvidenceFailureDetails,
     DistributedArtifactEvidenceIndex,
     DistributedArtifactEvidenceKind,
     DistributedArtifactEvidenceSearchQuery,
@@ -16,32 +16,32 @@ export type {
     DistributedArtifactEvidenceWindowCounts,
     DistributedArtifactEvidenceWindowQuery,
     DistributedArtifactEvidenceWindowRequest,
-    DistributedArtifactEvidenceWindowResult,
+    DistributedArtifactEvidenceWindowResult
 } from './distributed-artifact-evidence-contracts.ts';
 
 export {
     DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE,
     MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES,
-    MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE,
+    MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE
 } from './distributed-artifact-evidence-contracts.ts';
 
 export {
-    deriveDistributedArtifactEvidence,
-    deriveDistributedArtifactEvidenceIndex,
-} from './distributed-artifact-evidence-index.ts';
-export {
     deriveDistributedArtifactEvidenceCatalog,
-    deriveDistributedArtifactEvidenceCollections,
+    deriveDistributedArtifactEvidenceCollections
 } from './distributed-artifact-evidence-catalog.ts';
 export {
-    searchDistributedArtifactEvidence,
+    deriveDistributedArtifactEvidence,
+    deriveDistributedArtifactEvidenceIndex
+} from './distributed-artifact-evidence-index.ts';
+export {
+    searchDistributedArtifactEvidence
 } from './distributed-artifact-evidence-search.ts';
 export {
-    searchDistributedArtifactEvidenceWindow,
-} from './distributed-artifact-evidence-window.ts';
-export {
-    selectPrimaryDistributedArtifactResultFailure,
+    selectPrimaryDistributedArtifactResultFailure
 } from './distributed-artifact-evidence-utils.ts';
 export {
-    composeDistributedArtifactIssueMarkdown,
+    searchDistributedArtifactEvidenceWindow
+} from './distributed-artifact-evidence-window.ts';
+export {
+    composeDistributedArtifactIssueMarkdown
 } from './distributed-artifact-issue-markdown.ts';

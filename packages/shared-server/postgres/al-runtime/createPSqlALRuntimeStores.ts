@@ -1,30 +1,30 @@
+import {
+    isRuntimeStateOptimisticTransactionalRepositoryLike,
+    type RuntimeStateOptimisticTransactionalRepositoryLike,
+    type RuntimeStateRepositoryLike
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { ALSupersedencePersistenceValue } from '@shared/al-contracts/al-runtime.ts';
 import { PersistentALSupersedenceStore } from '@shared/al-contracts/al-runtime.ts';
+import { createALInboundAdmissionStore } from '@shared/alm/ALInboundAdmissionStore.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
-    ALOutboundSentMessageSnapshot,
+    ALOutboundSentMessageSnapshot
 } from '@shared/alm/ALRuntimeStateStores.ts';
 import { PersistentALOutboundRuntimeStateStore } from '@shared/alm/ALRuntimeStateStores.ts';
-import { createALInboundAdmissionStore } from '@shared/alm/ALInboundAdmissionStore.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';
-import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import {
-    type ALRuntimeStoreFactories,
     configureALRuntimeStoreScopes,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores,
+    type ALRuntimeStoreFactories
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import {
-    isRuntimeStateOptimisticTransactionalRepositoryLike,
-    type RuntimeStateOptimisticTransactionalRepositoryLike,
-    type RuntimeStateRepositoryLike,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';
 import { PSqlJsonPersistenceProvider } from '../runtime-state/PSqlJsonPersistenceProvider.ts';
+import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';
 import { PSqlInboundAdmissionBackend } from './PSqlInboundAdmissionBackend.ts';
 import { PSqlOutboundAdmissionBackend } from './PSqlOutboundAdmissionBackend.ts';
 
@@ -47,7 +47,7 @@ export function toServerWsQBoxALRuntimeStoreId(name: string): string {
 
 function resolvePSqlRuntimeStoreContext(
     direction: RuntimeStoreDirection,
-    options: PSqlALRuntimeStoreFactoryOptions,
+    options: PSqlALRuntimeStoreFactoryOptions
 ): Readonly<{
     repository: RuntimeStateOptimisticTransactionalRepositoryLike;
     namespace: string;
@@ -62,27 +62,27 @@ function resolvePSqlRuntimeStoreContext(
 
     if (!isRuntimeStateOptimisticTransactionalRepositoryLike(repository)) {
         throw new Error(
-            `PSql ${direction} runtime stores require an optimistic transactional RuntimeStateRepository`,
+            `PSql ${direction} runtime stores require an optimistic transactional RuntimeStateRepository`
         );
     }
 
     return {
         repository,
-        namespace,
+        namespace
     };
 }
 
 function createPSqlALRuntimeStores(
     direction: 'inbound',
-    options?: PSqlALRuntimeStoreFactoryOptions,
+    options?: PSqlALRuntimeStoreFactoryOptions
 ): ALInboundRuntimeStores;
 function createPSqlALRuntimeStores(
     direction: 'outbound',
-    options?: PSqlALRuntimeStoreFactoryOptions,
+    options?: PSqlALRuntimeStoreFactoryOptions
 ): ALOutboundRuntimeStores;
 function createPSqlALRuntimeStores(
     direction: RuntimeStoreDirection,
-    options: PSqlALRuntimeStoreFactoryOptions = {},
+    options: PSqlALRuntimeStoreFactoryOptions = {}
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
     const { repository, namespace } = resolvePSqlRuntimeStoreContext(direction, options);
 
@@ -93,12 +93,12 @@ function createPSqlALRuntimeStores(
                 namespace: `${namespace}:inbound:admission`,
                 backend: new PSqlInboundAdmissionBackend(
                     repository,
-                    `${namespace}:inbound:admission`,
+                    `${namespace}:inbound:admission`
                 ),
                 orderingTrackTtlMs: options.orderingTrackTtlMs ?? 5 * 60_000,
                 supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
-                retention: options.retention,
-            }),
+                retention: options.retention
+            })
         };
     }
 
@@ -108,62 +108,62 @@ function createPSqlALRuntimeStores(
             namespace: `${namespace}:outbound:admission`,
             backend: new PSqlOutboundAdmissionBackend(
                 repository,
-                `${namespace}:outbound:admission`,
+                `${namespace}:outbound:admission`
             ),
             supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,
-            retention: options.retention,
+            retention: options.retention
         }),
         supersedenceStore: new PersistentALSupersedenceStore(
             new PSqlJsonPersistenceProvider<ALSupersedencePersistenceValue>(
                 repository,
-                `${namespace}:outbound:supersedence`,
+                `${namespace}:outbound:supersedence`
             ),
-            options.supersedenceTrackTtlMs,
+            options.supersedenceTrackTtlMs
         ),
         stateStore: new PersistentALOutboundRuntimeStateStore(
             new PSqlJsonPersistenceProvider<ALOutboundSentMessageSnapshot>(
                 repository,
-                `${namespace}:outbound:sent`,
+                `${namespace}:outbound:sent`
             ),
             new PSqlJsonPersistenceProvider<ALOutboundPendingAckSnapshot>(
                 repository,
-                `${namespace}:outbound:pending-acks`,
+                `${namespace}:outbound:pending-acks`
             ),
             new PSqlJsonPersistenceProvider<ALOutboundRepairAttemptSnapshot>(
                 repository,
-                `${namespace}:outbound:repair-attempts`,
+                `${namespace}:outbound:repair-attempts`
             ),
-            options.retention,
-        ),
+            options.retention
+        )
     };
 }
 
 function createPSqlRuntimeStoreFactories(
     runtimeStoreId: string,
-    options: PSqlALRuntimeStoreFactoryOptions,
+    options: PSqlALRuntimeStoreFactoryOptions
 ): ALRuntimeStoreFactories {
     const scopedOptions = {
         ...options,
-        namespace: options.namespace ?? runtimeStoreId,
+        namespace: options.namespace ?? runtimeStoreId
     };
 
     return {
         createInboundStores: () => createPSqlALInboundRuntimeStores(scopedOptions),
-        createOutboundStores: () => createPSqlALOutboundRuntimeStores(scopedOptions),
+        createOutboundStores: () => createPSqlALOutboundRuntimeStores(scopedOptions)
     };
 }
 
 function resolveServerWsQBoxALRuntimeStores(
     direction: 'inbound',
-    name: string,
+    name: string
 ): ALInboundRuntimeStores;
 function resolveServerWsQBoxALRuntimeStores(
     direction: 'outbound',
-    name: string,
+    name: string
 ): ALOutboundRuntimeStores;
 function resolveServerWsQBoxALRuntimeStores(
     direction: RuntimeStoreDirection,
-    name: string,
+    name: string
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
     const runtimeStoreId = toServerWsQBoxALRuntimeStoreId(name);
 
@@ -173,27 +173,27 @@ function resolveServerWsQBoxALRuntimeStores(
 }
 
 export function createPSqlALInboundRuntimeStores(
-    options: PSqlALRuntimeStoreFactoryOptions = {},
+    options: PSqlALRuntimeStoreFactoryOptions = {}
 ): ALInboundRuntimeStores {
     return createPSqlALRuntimeStores('inbound', options);
 }
 
 export function createPSqlALOutboundRuntimeStores(
-    options: PSqlALRuntimeStoreFactoryOptions = {},
+    options: PSqlALRuntimeStoreFactoryOptions = {}
 ): ALOutboundRuntimeStores {
     return createPSqlALRuntimeStores('outbound', options);
 }
 
 export function configureServerWsQBoxALRuntimeStores(
     name: string,
-    options: PSqlALRuntimeStoreFactoryOptions = {},
+    options: PSqlALRuntimeStoreFactoryOptions = {}
 ): void {
     const runtimeStoreId = toServerWsQBoxALRuntimeStoreId(name);
     configureALRuntimeStoreScopes([
         {
             id: runtimeStoreId,
-            factories: createPSqlRuntimeStoreFactories(runtimeStoreId, options),
-        },
+            factories: createPSqlRuntimeStoreFactories(runtimeStoreId, options)
+        }
     ]);
 }
 

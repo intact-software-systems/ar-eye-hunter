@@ -9,13 +9,13 @@ describe('Resource inbox expiry eviction', () => {
     it('runs deleteExpired immediately and then on the configured interval', async () => {
         vi.useFakeTimers();
         const repo = {
-            deleteExpired: vi.fn(async () => 2),
+            deleteExpired: vi.fn(async () => 2)
         };
         const log = vi.spyOn(console, 'log').mockImplementation(() => {
         });
         const { initResourceInboxExpiryEviction } = await import(
             '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
-            );
+        );
 
         await initResourceInboxExpiryEviction(repo as never, 1_000);
         expect(repo.deleteExpired).toHaveBeenCalledTimes(1);

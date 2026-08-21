@@ -1,16 +1,16 @@
 import {
     deriveFleetReportDisplaySummary,
-    deriveFleetReportFailureRows,
+    deriveFleetReportFailureRows
 } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import type {
     ControlFleetFailureSignature,
     ControlFleetReportsResponse,
-    ControlFleetRunReport,
+    ControlFleetRunReport
 } from '../../../control-run-manager.ts';
 
 export function fleetDisplaySummary(
     reports: readonly ControlFleetRunReport[],
-    response: ControlFleetReportsResponse | undefined,
+    response: ControlFleetReportsResponse | undefined
 ): Readonly<{
     runs: number;
     agents: number;
@@ -24,12 +24,12 @@ export function fleetDisplaySummary(
 }
 
 export function fleetFailureRows(
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ): readonly ControlFleetFailureSignature[] {
     return deriveFleetReportFailureRows(reports, {
         reportOrder: 'input',
         timedOutAsFailed: false,
         stableTieBreaks: false,
-        textCollation: 'legacy-locale',
+        textCollation: 'legacy-locale'
     });
 }

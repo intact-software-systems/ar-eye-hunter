@@ -23,7 +23,7 @@ export type ControlOperationError = Readonly<{
 }>;
 
 export function projectControlOperationError(
-    error: unknown,
+    error: unknown
 ): ControlOperationError {
     const record = error && typeof error === 'object'
         ? error as Record<string, unknown>
@@ -62,15 +62,15 @@ export function projectControlOperationError(
         brokerStatusText: string(record.brokerStatusText),
         authorizationRequired,
         credentialTrustRequired,
-        reachable: boolean(record.reachable),
+        reachable: boolean(record.reachable)
     });
 }
 
 function compact(
-    value: { [Key in keyof ControlOperationError]: ControlOperationError[Key] },
+    value: { [Key in keyof ControlOperationError]: ControlOperationError[Key]; }
 ): ControlOperationError {
     return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined),
+        Object.entries(value).filter(([, entry]) => entry !== undefined)
     ) as ControlOperationError;
 }
 

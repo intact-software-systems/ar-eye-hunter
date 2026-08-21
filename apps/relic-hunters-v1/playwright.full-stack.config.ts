@@ -7,19 +7,21 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [
             {
-                command: 'cd ../relic-hunter-server-v1 && CORS_ORIGINS=http://localhost:5175,http://127.0.0.1:5175 PORT=8090 deno task start',
+                command:
+                    'cd ../relic-hunter-server-v1 && CORS_ORIGINS=http://localhost:5175,http://127.0.0.1:5175 PORT=8090 deno task start',
                 url: 'http://127.0.0.1:8090/api/config',
                 reuseExistingServer: true,
-                timeout: 90_000,
-            },
+                timeout: 90_000
+            }
         ]
         : []),
     {
-        command: 'cd ../.. && API_BASE_URL=http://127.0.0.1:8090 npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
+        command:
+            'cd ../.. && API_BASE_URL=http://127.0.0.1:8090 npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
         url: 'http://127.0.0.1:5175',
         reuseExistingServer: true,
-        timeout: 60_000,
-    },
+        timeout: 60_000
+    }
 ];
 
 export default defineConfig({
@@ -27,14 +29,14 @@ export default defineConfig({
     testMatch: /full-stack-.*\.spec\.ts/,
     timeout: 120_000,
     expect: {
-        timeout: 15_000,
+        timeout: 15_000
     },
     fullyParallel: false,
     reporter: [['list']],
     use: {
         baseURL: 'http://127.0.0.1:5175',
         trace: 'on-first-retry',
-        screenshot: 'only-on-failure',
+        screenshot: 'only-on-failure'
     },
     webServer,
     projects: [
@@ -46,10 +48,10 @@ export default defineConfig({
                     args: [
                         '--enable-unsafe-swiftshader',
                         '--use-gl=angle',
-                        '--use-angle=swiftshader',
-                    ],
-                },
-            },
-        },
-    ],
+                        '--use-angle=swiftshader'
+                    ]
+                }
+            }
+        }
+    ]
 });

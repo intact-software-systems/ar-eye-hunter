@@ -46,13 +46,13 @@ The feature branch already supplies valuable work that this plan must retain:
 
 The following branch decisions are explicitly rejected and must be replaced:
 
-| Rejected branch behavior | Required replacement |
-| --- | --- |
-| Services call `runtime.begin(...)` inside `write` | AppInbox/queue handler calls the shared transaction utility and passes `PSqlTransactionSql` into `write` |
-| Service-local `[0, 2, 8]` or other inner retry loops | ResourceInbox owns the staged 20-attempt schedule; every retry re-enters the complete service flow |
-| `state-mutation:outbox` plus `StateMutationOutboxWork` | Service `write` inserts final deterministic `APP_OUTBOX`/`WS_OUTBOX` rows directly through the transaction-bound repository |
-| WS enqueue checks warm live routes before durable insertion | Persist one logical scoped WS message; resolve current recipients only while consuming `WS_OUTBOX` |
-| AppInbox result and QueueBox completion commit after the domain mutation | Result and reservation-identity completion commit in the same transaction as the domain mutation and final outbox rows |
+| Rejected branch behavior                                                 | Required replacement                                                                                                        |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Services call `runtime.begin(...)` inside `write`                        | AppInbox/queue handler calls the shared transaction utility and passes `PSqlTransactionSql` into `write`                    |
+| Service-local `[0, 2, 8]` or other inner retry loops                     | ResourceInbox owns the staged 20-attempt schedule; every retry re-enters the complete service flow                          |
+| `state-mutation:outbox` plus `StateMutationOutboxWork`                   | Service `write` inserts final deterministic `APP_OUTBOX`/`WS_OUTBOX` rows directly through the transaction-bound repository |
+| WS enqueue checks warm live routes before durable insertion              | Persist one logical scoped WS message; resolve current recipients only while consuming `WS_OUTBOX`                          |
+| AppInbox result and QueueBox completion commit after the domain mutation | Result and reservation-identity completion commit in the same transaction as the domain mutation and final outbox rows      |
 
 ## File and Responsibility Map
 
@@ -98,6 +98,7 @@ The following branch decisions are explicitly rejected and must be replaced:
 ### Task 1: Shared Transaction and ResourceInbox Atomic-Write Foundation
 
 **Files:**
+
 - Create: `packages/shared-server/postgres/run-in-transaction.ts`
 - Create: `packages/tests/shared-server/postgres-transaction-boundary.test.ts`
 - Modify: `packages/shared-server/postgres/resource-inbox/ResourceInboxRepository.ts`
@@ -107,6 +108,7 @@ The following branch decisions are explicitly rejected and must be replaced:
 - Test: `packages/tests/shared/resource-inbox-repository.test.ts`
 
 **Interfaces:**
+
 - Produces: `runInTransaction<T>(database: PSqlSql, write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T>`.
 - Produces: `ResourceInboxRepository.writeIfAbsentOrMatch(entry: ResourceEntry): Promise<'inserted' | 'matched'>`.
 - Produces: `ResourceInboxRepository.finishReserved(key: Key, expectedAttempts: number, status: EntityStatus.COMPLETED | EntityStatus.FAILED, completedAt: Date): Promise<boolean>`.
@@ -125,7 +127,7 @@ it('binds every write repository to one database transaction', async () => {
             'transaction-test',
             'aggregate-1',
             JSON.stringify({ state: 'accepted' }),
-            NEVER_EXPIRE_AT_TIMESTAMP,
+            NEVER_EXPIRE_AT_TIMESTAMP
         );
         await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(outboxEntry);
         await new ResourceInboxResultsRepository(transaction).replace(resultEntry);
@@ -161,7 +163,7 @@ import type { PSqlSql, PSqlTransactionSql } from './PostgresSqlClient.ts';
 
 export async function runInTransaction<T>(
     database: PSqlSql,
-    write: (transaction: PSqlTransactionSql) => Promise<T>,
+    write: (transaction: PSqlTransactionSql) => Promise<T>
 ): Promise<T> {
     return await database.begin(write);
 }
@@ -209,6 +211,7 @@ git commit -m "feat: add transaction-bound resource inbox writes"
 ### Task 2: Staged ResourceInbox Retry Policy and Fairness Lane
 
 **Files:**
+
 - Create: `packages/shared/queuebox/ResourceInboxRetryPolicy.ts`
 - Create: `packages/tests/shared/resource-inbox-retry-policy.test.ts`
 - Modify: `packages/shared/queuebox/QueueBoxTypes.ts`
@@ -224,6 +227,7 @@ git commit -m "feat: add transaction-bound resource inbox writes"
 - Test: `packages/tests/shared/queue.test.ts`
 
 **Interfaces:**
+
 - Produces: `DEFAULT_RESOURCE_INBOX_RETRY_POLICY` with mandatory fields `maxAttempts: 20`, `jitterRatio: 0.2`, `maxDelayMs: 30_000`, and `staleDueThresholdMs: 30_000`.
 - Produces: `retryAfterAttempt(policy, attempts, jitterUnit): { status: 'retry'; delayMs: number } | { status: 'failed'; delayMs: null }`.
 - Produces: `reserveOverdueRetryEntries(types, overdueBeforeEpochMs, maxToReserve)`.
@@ -232,13 +236,34 @@ git commit -m "feat: add transaction-bound resource inbox writes"
 - [ ] **Step 1: Write exact schedule, exhaustion, and jitter tests**
 
 ```ts
-const expected = [1, 2, 4, 8, 16, 1_000, 2_000, 4_000, 8_000, 16_000,
-    30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000, 30_000];
+const expected = [
+    1,
+    2,
+    4,
+    8,
+    16,
+    1_000,
+    2_000,
+    4_000,
+    8_000,
+    16_000,
+    30_000,
+    30_000,
+    30_000,
+    30_000,
+    30_000,
+    30_000,
+    30_000,
+    30_000,
+    30_000
+];
 
 it('schedules attempts two through twenty exactly', () => {
-    expect(expected.map((_, index) =>
-        retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, index + 1, 0.5)
-    )).toEqual(expected.map((delayMs) => ({ status: 'retry', delayMs })));
+    expect(
+        expected.map((_, index) =>
+            retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, index + 1, 0.5)
+        )
+    ).toEqual(expected.map((delayMs) => ({ status: 'retry', delayMs })));
     expect(retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, 20, 0.5))
         .toEqual({ status: 'failed', delayMs: null });
 });
@@ -276,7 +301,7 @@ export const DEFAULT_RESOURCE_INBOX_RETRY_POLICY: ResourceInboxRetryPolicy = {
     delaysAfterAttemptMs: [1, 2, 4, 8, 16, 1_000, 2_000, 4_000, 8_000, 16_000],
     maxDelayMs: 30_000,
     jitterRatio: 0.2,
-    staleDueThresholdMs: 30_000,
+    staleDueThresholdMs: 30_000
 };
 ```
 
@@ -291,7 +316,7 @@ const decision = retryAfterAttempt(retryPolicy, failure.value.dequeueAudit.attem
 await repository.releaseEntries(
     [failure.value],
     decision.status === 'retry' ? EntityStatus.RETRY : EntityStatus.FAILED,
-    decision.delayMs,
+    decision.delayMs
 );
 ```
 
@@ -347,6 +372,7 @@ git commit -m "feat: stage resource inbox retries and fairness"
 ### Task 3: AppInbox-Owned Atomic Result and Completion Transaction
 
 **Files:**
+
 - Create: `packages/tests/shared-server/app-inbox-transaction.test.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppInboxService.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppClientInboxService.ts`
@@ -359,6 +385,7 @@ git commit -m "feat: stage resource inbox retries and fairness"
 - Test: `packages/tests/shared-server/group-app-inbox-authority.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 1 `runInTransaction`, `writeIfAbsentOrMatch`, and `finishReserved`.
 - Consumes: Task 2 retry classification and schedule.
 - Produces: `AppInboxService.writeMutation(context, write): Promise<Result>` for subclasses to call after `read`, `compute`, and `validate`.
@@ -428,7 +455,9 @@ Terminal authorization, policy, malformed-command, invariant, and lifecycle erro
 
 ```ts
 const terminal = toTerminalAppInboxError(error);
-if (terminal === undefined) throw error;
+if (terminal === undefined) {
+    throw error;
+}
 await this.writeTerminalFailure(context, terminal);
 ```
 
@@ -443,9 +472,11 @@ await runInTransaction(database, async (transaction) => {
         entry.key,
         20,
         EntityStatus.FAILED,
-        new Date(now()),
+        new Date(now())
     );
-    if (!finished) throw new AppInboxReservationConflictError(entry.key);
+    if (!finished) {
+        throw new AppInboxReservationConflictError(entry.key);
+    }
 });
 ```
 
@@ -454,8 +485,10 @@ await runInTransaction(database, async (transaction) => {
 When the callback committed a row as `COMPLETED`, the outer QueueBox release sees that exact terminal row and returns success without another update. A different attempt/status is not idempotent and must surface a reservation conflict.
 
 ```ts
-if (current.status === EntityStatus.COMPLETED &&
-    current.dequeueAudit.attempts === reserved.dequeueAudit.attempts) {
+if (
+    current.status === EntityStatus.COMPLETED &&
+    current.dequeueAudit.attempts === reserved.dequeueAudit.attempts
+) {
     return current;
 }
 throw new QueueReservationConflictError(reserved.key);
@@ -483,6 +516,7 @@ git commit -m "feat: let app inbox own mutation commits"
 ### Task 4: Direct Transactional APP_OUTBOX and Logical WS_OUTBOX Writes
 
 **Files:**
+
 - Create: `packages/tests/shared-server/direct-resource-outbox.test.ts`
 - Modify: `packages/shared-server/rallar-system/state-sync-publisher.ts`
 - Modify: `packages/shared-server/rallar-system/state-sync-routing.ts`
@@ -497,6 +531,7 @@ git commit -m "feat: let app inbox own mutation commits"
 - Test: `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
 
 **Interfaces:**
+
 - Produces: `ComputedClientStateSync` and `ComputedGroupStateSync`, mandatory data-only inputs containing command ID, aggregate reference, accepted causal revision, event/snapshot payload, audience, created/expiry timestamps, and effect kinds.
 - Produces: pure `computeClientStateSyncEntries(computed: ComputedClientStateSync, senderId: string)` and `computeGroupStateSyncEntries(computed: ComputedGroupStateSync, senderId: string)` functions returning fully populated immutable `WS_OUTBOX` `ResourceEntry` values.
 - Produces: `ComputedRtcTopologyOutbox` plus pure `computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox, senderId: string)` returning a fully populated immutable `APP_OUTBOX` entry for an accepted causal revision.
@@ -510,7 +545,9 @@ it('persists logical websocket work without a live local route', async () => {
     const entries = computeGroupStateSyncEntries(groupComputed, senderId);
     await runInTransaction(database, async (transaction) => {
         const repository = new ResourceInboxRepository(transaction);
-        for (const entry of entries) await repository.writeIfAbsentOrMatch(entry);
+        for (const entry of entries) {
+            await repository.writeIfAbsentOrMatch(entry);
+        }
     });
     expect(entries.every((entry) => entry.typeId === EnqueuedType.WS_OUTBOX)).toBe(true);
     expect(await readPersisted(entries[0].key)).toBeDefined();
@@ -542,12 +579,12 @@ Create deterministic message IDs from command identity, effect kind, payload kin
 ```ts
 export function computeGroupStateSyncEntries(
     computed: ComputedGroupStateSync,
-    senderId: string,
+    senderId: string
 ): readonly ResourceEntry[] {
     return computed.effects.map((effect) =>
         QueueBoxUtilities.toResourceEntryFromMsg(
             toLogicalGroupStateMessage(computed, effect, senderId),
-            EnqueuedType.WS_OUTBOX,
+            EnqueuedType.WS_OUTBOX
         )
     );
 }
@@ -598,6 +635,7 @@ git commit -m "feat: write final resource outbox entries atomically"
 ### Task 5: Client Mutation Service Transaction Injection
 
 **Files:**
+
 - Modify: `packages/shared-server/rallar-system/services/client-state-mutations.ts`
 - Modify: `packages/shared-server/rallar-system/services/client-state-service.ts`
 - Modify: `packages/shared-server/rallar-system/repositories/ClientStateRepository.ts`
@@ -610,6 +648,7 @@ git commit -m "feat: write final resource outbox entries atomically"
 - Test: `packages/tests/shared-server/app-client-inbox-service.test.ts`
 
 **Interfaces:**
+
 - Produces: `ClientStateMutationService.read(command)`, `.compute(command, read)`, `.validate(command, read, computed)`, and `.write(transaction, computed)`.
 - `write` returns `ClientMutationReceipt` and writes its deterministic `WS_OUTBOX` entries through `ResourceInboxRepository(transaction)`.
 - Consumes: Tasks 3–4 AppInbox transaction operation and computed WS entries.
@@ -620,8 +659,14 @@ Add a test where attempt 1 loses the principal CAS, QueueBox marks the AppInbox 
 
 ```ts
 expect(timing.map((event) => event.phase)).toEqual([
-    'read', 'compute', 'validate', 'write-conflict',
-    'read', 'compute', 'validate', 'write-accepted',
+    'read',
+    'compute',
+    'validate',
+    'write-conflict',
+    'read',
+    'compute',
+    'validate',
+    'write-accepted'
 ]);
 expect(serviceLocalSleeps).toEqual([]);
 expect(resourceInboxAttemptCount).toBe(2);
@@ -675,18 +720,22 @@ Remove `runtime.begin` and the service retry loop. Build `ClientStateRepository`
 const repository = repositoryFor(new PSqlRuntimeStateRepository(transaction));
 const outbox = new ResourceInboxRepository(transaction);
 if (computed.outcome === 'no-op') {
-    requireConditionalWrite(await repository.insertIdempotentClientStateWritten(
-        computed.aggregateRef,
-        computed.idempotency.requestId,
-        computed.idempotency,
-    ));
+    requireConditionalWrite(
+        await repository.insertIdempotentClientStateWritten(
+            computed.aggregateRef,
+            computed.idempotency.requestId,
+            computed.idempotency
+        )
+    );
     return computed.receipt;
 }
 requireConditionalWrite(await repository.updatePrincipal(value, expectedRevision));
 await writeChildren(repository, computed);
 await repository.appendEvent(computed.event);
 await repository.insertReceipt(computed.receipt);
-for (const entry of computed.outboxEntries) await outbox.writeIfAbsentOrMatch(entry);
+for (const entry of computed.outboxEntries) {
+    await outbox.writeIfAbsentOrMatch(entry);
+}
 return computed.receipt;
 ```
 
@@ -701,8 +750,7 @@ this.clientState.validate(command, read, computed);
 return await this.writeMutation(context, async (transaction) =>
     requiresClientWrite(computed)
         ? await this.clientState.write(transaction, computed)
-        : toClientMutationReceipt(computed)
-);
+        : toClientMutationReceipt(computed));
 ```
 
 - [ ] **Step 6: Run focused client tests**
@@ -723,6 +771,7 @@ git commit -m "refactor: run client writes in app inbox transactions"
 ### Task 6: Group, Membership, and Presence Transaction Injection
 
 **Files:**
+
 - Modify: `packages/shared-server/rallar-system/services/group-state-mutations.ts`
 - Modify: `packages/shared-server/rallar-system/services/group-state-mutation-read.ts`
 - Modify: `packages/shared-server/rallar-system/services/group-state-service.ts`
@@ -737,6 +786,7 @@ git commit -m "refactor: run client writes in app inbox transactions"
 - Test: `apps/api-v1/test/services/group-state-service.test.ts`
 
 **Interfaces:**
+
 - Produces: `GroupStateMutationService.read`, `.compute`, `.validate`, and `.write(transaction, computed)`.
 - Changes: `writeGroupMutation(transaction, repositoryFor, computed)` never calls `begin`.
 - Produces: a deterministic presence-summary `APP_OUTBOX` entry carrying the accepted group revision and event. `GroupPresenceSummaryWork.write(transaction, computed)` later commits the converged summary and its downstream group-state `WS_OUTBOX` and topology `APP_OUTBOX` entries atomically.
@@ -748,7 +798,7 @@ Cover group creation, metadata, invite/join, membership, governance, ownership t
 ```ts
 expect(attempts).toEqual([
     { attempt: 1, outcome: 'conflict', authorized: true },
-    { attempt: 2, outcome: 'denied', authorized: false },
+    { attempt: 2, outcome: 'denied', authorized: false }
 ]);
 expect(await readGroupEvent(conflictingEventId)).toBeUndefined();
 expect(await readOutbox(conflictingCommandId)).toEqual([]);
@@ -770,10 +820,7 @@ Expected: FAIL because `writeGroupMutation` calls `runtime.begin`, guarded batch
 Keep mandatory causal fields and receipts. Replace `outbox: StateMutationOutboxRecord` with mandatory `outboxEntries: readonly ResourceEntry[]`. The initial group mutation entry is `APP_OUTBOX` presence-summary work containing the command ID, full `GroupRef`, accepted group revision, event, immutable facts, and effect kind. Do not emit a group snapshot `WS_OUTBOX` row from a predecessor whose presence summary has not converged.
 
 ```ts
-export type GroupMutationComputedWrite = Extract<
-    GroupMutationComputed,
-    { outcome: 'write' }
->;
+export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
 const outboxEntries = [computeGroupPresenceSummaryEntry({
     commandId,
@@ -781,7 +828,7 @@ const outboxEntries = [computeGroupPresenceSummaryEntry({
     acceptedCausalRevision,
     event,
     createdAtEpochMs,
-    expireAtEpochMs,
+    expireAtEpochMs
 })];
 ```
 
@@ -792,8 +839,10 @@ Change the signature and remove internal `begin`:
 ```ts
 export async function writeGroupMutation(
     transaction: PSqlTransactionSql,
-    repositoryFor: (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) => GroupStateRepository,
-    computed: GroupMutationComputedWrite,
+    repositoryFor: (
+        runtime: RuntimeStateOptimisticTransactionalRepositoryLike
+    ) => GroupStateRepository,
+    computed: GroupMutationComputedWrite
 ): Promise<GroupMutationReceipt> {
     const runtime = new PSqlRuntimeStateRepository(transaction);
     const repository = repositoryFor(runtime);
@@ -815,12 +864,14 @@ await runInTransaction(database, async (transaction) => {
     for (const entry of computed.downstreamOutboxEntries) {
         await inbox.writeIfAbsentOrMatch(entry);
     }
-    requireFinished(await inbox.finishReserved(
-        queueEntry.key,
-        queueEntry.dequeueAudit.attempts,
-        EntityStatus.COMPLETED,
-        new Date(now()),
-    ));
+    requireFinished(
+        await inbox.finishReserved(
+            queueEntry.key,
+            queueEntry.dequeueAudit.attempts,
+            EntityStatus.COMPLETED,
+            new Date(now())
+        )
+    );
 });
 ```
 
@@ -835,8 +886,7 @@ this.groupState.validate(command, read, computed);
 return await this.writeMutation(context, async (transaction) =>
     computed.outcome === 'write'
         ? await this.groupState.write(transaction, computed)
-        : toGroupMutationReceipt(computed)
-);
+        : toGroupMutationReceipt(computed));
 ```
 
 - [ ] **Step 7: Run focused group/presence tests**
@@ -861,6 +911,7 @@ git commit -m "refactor: run group writes in app inbox transactions"
 ### Task 7: Topology Configuration, Execution, Publication, and RTT Transactions
 
 **Files:**
+
 - Modify: `packages/shared-server/rallar-system/services/AppInboxService.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
 - Modify: `packages/shared-server/rallar-system/services/group-topology-config-mutations.ts`
@@ -880,6 +931,7 @@ git commit -m "refactor: run group writes in app inbox transactions"
 - Test: `apps/api-v1/test/routes/graph-topology-routes.test.ts`
 
 **Interfaces:**
+
 - Adds AppInbox types for config put/delete, override put/delete, explicit reconfigure, and RTT submission.
 - Produces transaction-receiving `writeTopologyConfigMutation`, `writeTopologyMutation`, and `writeRttMutation` operations.
 - Consumes direct immutable `APP_OUTBOX` and logical `WS_OUTBOX` entries from Task 4.
@@ -894,7 +946,7 @@ expect(appInboxCommands.map((command) => command.type)).toEqual([
     AppInboxType.TOPOLOGY_CONFIG_DELETE,
     AppInboxType.TOPOLOGY_OVERRIDE_PUT,
     AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
-    AppInboxType.TOPOLOGY_RECONFIGURE,
+    AppInboxType.TOPOLOGY_RECONFIGURE
 ]);
 expect(directTopologyMutationCalls).toBe(0);
 ```
@@ -921,8 +973,7 @@ topology.validate(command, read, computed);
 return await this.writeMutation(context, async (transaction) =>
     requiresTopologyWrite(computed)
         ? await topology.write(transaction, computed)
-        : toTopologyMutationResult(computed)
-);
+        : toTopologyMutationResult(computed));
 ```
 
 - [ ] **Step 4: Inject transactions into topology write operations**
@@ -979,14 +1030,16 @@ for (const entry of computed.outboxEntries) {
 Replace direct `putConfig`, `deleteConfig`, `putOverride`, `deleteOverride`, and `reconfigureGroupTopology` route calls with authenticated AppInbox submission and durable result waiting. Keep `readTopologyView`, `readConfig`, and `readOverride` direct.
 
 ```ts
-return c.json(await deps.appGroupInbox.processAuthenticatedEntryUntilCompletion({
-    type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-    topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
-    resourceId: requestId,
-    contextId: toScopedGroupContextId(groupRef),
-    senderId: actor.principalId,
-    data: normalizedCommand,
-}));
+return c.json(
+    await deps.appGroupInbox.processAuthenticatedEntryUntilCompletion({
+        type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+        topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
+        resourceId: requestId,
+        contextId: toScopedGroupContextId(groupRef),
+        senderId: actor.principalId,
+        data: normalizedCommand
+    })
+);
 ```
 
 - [ ] **Step 7: Run focused topology tests**
@@ -1007,6 +1060,7 @@ git commit -m "refactor: route topology writes through app inbox"
 ### Task 8: Authentication, Session, Ticket, and AL Admission Transactions
 
 **Files:**
+
 - Create: `packages/shared-server/rallar-system/services/auth-state-mutations.ts`
 - Create: `packages/shared-server/rallar-system/services/AppAuthInboxService.ts`
 - Create: `packages/tests/shared-server/app-auth-inbox-service.test.ts`
@@ -1038,6 +1092,7 @@ git commit -m "refactor: route topology writes through app inbox"
 - Test: `apps/api-v1/test/ws-routes.test.ts`
 
 **Interfaces:**
+
 - Adds AppInbox types `AUTH_USER_REGISTER`, `AUTH_SESSION_ISSUE`, `AUTH_SESSION_LOGOUT`, `AUTH_WS_TICKET_ISSUE`, `AUTH_WS_TICKET_CONSUME`, `AUTH_AGENT_SESSION_TICKETS_ISSUE`, and `AUTH_AGENT_SESSION_TICKET_CONSUME`.
 - Produces `AuthMutationService.read`, `.compute`, `.validate`, and `.write(transaction, computed)` plus `AppAuthInboxService` orchestration.
 - Produces conditional auth repository operations for normalized-username creation and expected-revision ticket consumption; removes username/ticket advisory locks.
@@ -1051,7 +1106,7 @@ Cover concurrent same-username registration, duplicate session issuance, logout 
 it('allows exactly one ticket consumer without a domain lock', async () => {
     const [left, right] = await Promise.allSettled([
         consumeThroughAppInbox(ticket),
-        consumeThroughAppInbox(ticket),
+        consumeThroughAppInbox(ticket)
     ]);
     expect([left, right].filter(isFulfilled)).toHaveLength(1);
     expect(await readStoredTicket(ticketDigest)).toBeUndefined();
@@ -1074,20 +1129,46 @@ Normalize boundary inputs before enqueue. Password verification for login remain
 
 ```ts
 export type AuthMutationCommand =
-    | Readonly<{ kind: 'register-user'; requestId: string; userId: string; username: string;
-        normalizedUsername: string; displayName: string | null; passwordHash: string;
-        passwordSalt: string; passwordAlgorithm: 'pbkdf2-sha256'; passwordIterations: number;
-        capturedAtEpochMs: number }>
-    | Readonly<{ kind: 'issue-session'; requestId: string; session: IssuedAuthSession }>
-    | Readonly<{ kind: 'logout-session'; requestId: string; expected: IssuedAuthSession }>
-    | Readonly<{ kind: 'issue-ws-ticket'; requestId: string; ticketDigest: string;
-        ticket: PersistedWebSocketTicket }>
-    | Readonly<{ kind: 'consume-ws-ticket'; requestId: string; ticketDigest: string;
-        expectedSessionId: string; capturedAtEpochMs: number }>
-    | Readonly<{ kind: 'issue-agent-tickets'; requestId: string;
-        sessions: readonly IssuedAuthSession[]; tickets: readonly PersistedAgentSessionTicket[] }>
-    | Readonly<{ kind: 'consume-agent-ticket'; requestId: string; ticketDigest: string;
-        capturedAtEpochMs: number }>;
+    | Readonly<{
+        kind: 'register-user';
+        requestId: string;
+        userId: string;
+        username: string;
+        normalizedUsername: string;
+        displayName: string | null;
+        passwordHash: string;
+        passwordSalt: string;
+        passwordAlgorithm: 'pbkdf2-sha256';
+        passwordIterations: number;
+        capturedAtEpochMs: number;
+    }>
+    | Readonly<{ kind: 'issue-session'; requestId: string; session: IssuedAuthSession; }>
+    | Readonly<{ kind: 'logout-session'; requestId: string; expected: IssuedAuthSession; }>
+    | Readonly<{
+        kind: 'issue-ws-ticket';
+        requestId: string;
+        ticketDigest: string;
+        ticket: PersistedWebSocketTicket;
+    }>
+    | Readonly<{
+        kind: 'consume-ws-ticket';
+        requestId: string;
+        ticketDigest: string;
+        expectedSessionId: string;
+        capturedAtEpochMs: number;
+    }>
+    | Readonly<{
+        kind: 'issue-agent-tickets';
+        requestId: string;
+        sessions: readonly IssuedAuthSession[];
+        tickets: readonly PersistedAgentSessionTicket[];
+    }>
+    | Readonly<{
+        kind: 'consume-agent-ticket';
+        requestId: string;
+        ticketDigest: string;
+        capturedAtEpochMs: number;
+    }>;
 ```
 
 Every persisted variant has mandatory fields. HTTP request types stay sparse and separate. The plaintext issued ticket may appear only in the authenticated response/result that returns it to the caller; persisted ticket records contain the mandatory digest instead.
@@ -1099,7 +1180,7 @@ Read current user/session/ticket state before the transaction. Compute and valid
 ```ts
 const written = await repository.deleteTicketIfRevision(
     computed.ticketDigest,
-    computed.expectedRevision,
+    computed.expectedRevision
 );
 requireConditionalWrite(written);
 await repository.insertReceipt(computed.receipt);
@@ -1121,7 +1202,7 @@ const result = await appAuthInbox.processAuthenticatedEntryUntilCompletion({
     resourceId: requestId,
     contextId: authSession.sessionId,
     senderId: authSession.clientId,
-    data: command,
+    data: command
 });
 return toJsonResponse(result);
 ```
@@ -1132,11 +1213,21 @@ Change inbound/outbound admission write contexts to collect mandatory conditiona
 
 ```ts
 export type ALAdmissionMutation =
-    | Readonly<{ kind: 'insert'; key: string; expected: 'absent'; value: JsonWireValue;
-        expireAtEpochMs: number }>
-    | Readonly<{ kind: 'replace'; key: string; expectedRevision: number;
-        value: JsonWireValue; expireAtEpochMs: number }>
-    | Readonly<{ kind: 'delete'; key: string; expectedRevision: number }>;
+    | Readonly<{
+        kind: 'insert';
+        key: string;
+        expected: 'absent';
+        value: JsonWireValue;
+        expireAtEpochMs: number;
+    }>
+    | Readonly<{
+        kind: 'replace';
+        key: string;
+        expectedRevision: number;
+        value: JsonWireValue;
+        expireAtEpochMs: number;
+    }>
+    | Readonly<{ kind: 'delete'; key: string; expectedRevision: number; }>;
 ```
 
 - [ ] **Step 7: Run auth, route, and admission tests**
@@ -1157,6 +1248,7 @@ git commit -m "refactor: route auth writes through app inbox"
 ### Task 9: CRDT and Administrative Database Mutation Transactions
 
 **Files:**
+
 - Create: `packages/shared-server/rallar-system/services/crdt-mutations.ts`
 - Create: `packages/shared-server/rallar-system/services/AppCrdtInboxService.ts`
 - Create: `packages/shared-server/rallar-system/services/AppAdminInboxService.ts`
@@ -1183,6 +1275,7 @@ git commit -m "refactor: route auth writes through app inbox"
 - Test: `apps/api-v1/test/routes/admin-operations-routes.test.ts`
 
 **Interfaces:**
+
 - Adds AppInbox types `CRDT_UPDATE_APPEND`, `CRDT_PROJECTION_REBUILD`, `CRDT_SNAPSHOT_COMPACT`, `CRDT_LIFECYCLE_UPDATE`, `CRDT_ERASE`, and `ADMIN_PRUNE_EXPIRED`.
 - Produces `CrdtMutationService.read`, `.compute`, `.validate`, and `.write(transaction, computed)` for WS update and HTTP/admin mutations.
 - Produces bounded `AdminPruneExpiredWork.read`, `.compute`, `.validate`, and `.write(transaction, computed)` for APP_OUTBOX maintenance pages.
@@ -1261,7 +1354,7 @@ await appCrdtInbox.enqueue({
     resourceId: payload.updateId,
     contextId: toRallarCrdtDocumentKey(payload.document),
     senderId: trusted.sessionId,
-    data: toCrdtAppendCommand(payload, trusted, receivedAtEpochMs),
+    data: toCrdtAppendCommand(payload, trusted, receivedAtEpochMs)
 });
 ```
 
@@ -1307,6 +1400,7 @@ git commit -m "refactor: route crdt and admin writes through app inbox"
 ### Task 10: HTTP and WebSocket Mutation-Route Closure
 
 **Files:**
+
 - Create: `packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppInboxService.ts`
 - Modify: `apps/api-v1/src/routes/config-route.ts`
@@ -1331,6 +1425,7 @@ git commit -m "refactor: route crdt and admin writes through app inbox"
 - Test: `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`
 
 **Interfaces:**
+
 - Consumes: client, group, topology, auth, CRDT, and admin AppInbox command APIs from Tasks 5–9.
 - Produces: one explicit mutation-route inventory used by the structural test; every entry names transport, route/topic, AppInbox type, and owning service operation.
 - Produces: `AppInboxService.enqueue(command): Promise<ResourceEntry>` for durable transport acceptance without synchronous result waiting.
@@ -1384,7 +1479,7 @@ const mutations = [
     AppInboxType.CRDT_SNAPSHOT_COMPACT,
     AppInboxType.CRDT_LIFECYCLE_UPDATE,
     AppInboxType.CRDT_ERASE,
-    AppInboxType.ADMIN_PRUNE_EXPIRED,
+    AppInboxType.ADMIN_PRUNE_EXPIRED
 ] as const;
 
 expect(new Set(mutations)).toEqual(new Set(Object.values(AppInboxType)));
@@ -1395,11 +1490,11 @@ const requiredOwners = {
         AppInboxType.CLIENT_INSTANCE_UPSERT,
         AppInboxType.CLIENT_SESSION_CONNECT,
         AppInboxType.CLIENT_SESSION_HEARTBEAT,
-        AppInboxType.CLIENT_SESSION_DISCONNECT,
+        AppInboxType.CLIENT_SESSION_DISCONNECT
     ],
     'ws-routes-and-lifecycle': [
         AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-        AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
+        AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT
     ],
     'client-maintenance': [AppInboxType.CLIENT_EXPIRED_SESSIONS],
     'config-and-auth-routes': [
@@ -1408,7 +1503,7 @@ const requiredOwners = {
         AppInboxType.AUTH_SESSION_LOGOUT,
         AppInboxType.AUTH_WS_TICKET_ISSUE,
         AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE,
-        AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
+        AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME
     ],
     'ws-auth-upgrade': [AppInboxType.AUTH_WS_TICKET_CONSUME],
     'group-state-routes-and-lifecycle': [
@@ -1428,14 +1523,14 @@ const requiredOwners = {
         AppInboxType.GROUP_MEMBER_UPSERT,
         AppInboxType.GROUP_PRESENCE_CONNECT,
         AppInboxType.GROUP_PRESENCE_HEARTBEAT,
-        AppInboxType.GROUP_PRESENCE_DISCONNECT,
+        AppInboxType.GROUP_PRESENCE_DISCONNECT
     ],
     'graph-topology-routes': [
         AppInboxType.TOPOLOGY_CONFIG_PUT,
         AppInboxType.TOPOLOGY_CONFIG_DELETE,
         AppInboxType.TOPOLOGY_OVERRIDE_PUT,
         AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
-        AppInboxType.TOPOLOGY_RECONFIGURE,
+        AppInboxType.TOPOLOGY_RECONFIGURE
     ],
     'rtc-rtt-ws-topic': [AppInboxType.RTC_RTT_SUBMIT],
     'crdt-ws-topic': [AppInboxType.CRDT_UPDATE_APPEND],
@@ -1443,15 +1538,15 @@ const requiredOwners = {
         AppInboxType.CRDT_PROJECTION_REBUILD,
         AppInboxType.CRDT_SNAPSHOT_COMPACT,
         AppInboxType.CRDT_LIFECYCLE_UPDATE,
-        AppInboxType.CRDT_ERASE,
+        AppInboxType.CRDT_ERASE
     ],
     'admin-operations-routes': [
         AppInboxType.TOPOLOGY_RECONFIGURE,
         AppInboxType.ADMIN_PRUNE_EXPIRED,
         AppInboxType.CRDT_SNAPSHOT_COMPACT,
         AppInboxType.CRDT_LIFECYCLE_UPDATE,
-        AppInboxType.CRDT_ERASE,
-    ],
+        AppInboxType.CRDT_ERASE
+    ]
 } as const;
 ```
 
@@ -1477,7 +1572,7 @@ const enqueue = toAuthenticatedAppInboxCommand({
     requestId,
     actor,
     command: normalizeMutationRequest(body),
-    capturedAtEpochMs: now(),
+    capturedAtEpochMs: now()
 });
 return await appInbox.processAuthenticatedEntryUntilCompletion(enqueue);
 ```
@@ -1493,7 +1588,7 @@ await appInbox.enqueue({
     resourceId: message.id.msgId,
     contextId: toScopedGroupContextId(payload.group),
     senderId: authenticated.principalId,
-    data: toRtcRttCommand(payload, authenticated, receivedAtEpochMs),
+    data: toRtcRttCommand(payload, authenticated, receivedAtEpochMs)
 });
 return { status: 'accepted', commandId: message.id.msgId };
 ```
@@ -1526,6 +1621,7 @@ git commit -m "refactor: close app inbox mutation bypasses"
 ### Task 11: Remove the Intermediate State-Mutation Outbox
 
 **Files:**
+
 - Create: `packages/shared-server/rallar-system/services/mutation-command-identity.ts`
 - Delete: `packages/shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts`
 - Delete: `packages/shared-server/rallar-system/services/StateMutationOutboxWork.ts`
@@ -1545,6 +1641,7 @@ git commit -m "refactor: close app inbox mutation bypasses"
 - Test: `packages/tests/shared-server/rallar-middleware.test.ts`
 
 **Interfaces:**
+
 - Produces: `hashMutationCommand`, `serializeCanonicalMutationCommand`, and deterministic command/effect identity helpers in the neutral identity module.
 - Removes: all `StateMutationOutbox*` public exports, middleware options, worker lifecycle, pending scans, delivery CAS, and state-mutation wake paths.
 - Consumes: final direct ResourceInbox writes proven by Tasks 4–8.
@@ -1564,11 +1661,13 @@ Expected: exit 1, proving the commit that introduced `StateMutationOutboxReposit
 Extend the structural contract to reject the namespace, repository, worker, exports, middleware option, or service imports:
 
 ```ts
-for (const forbidden of [
-    'state-mutation:outbox',
-    'StateMutationOutboxRepository',
-    'StateMutationOutboxWork',
-]) {
+for (
+    const forbidden of [
+        'state-mutation:outbox',
+        'StateMutationOutboxRepository',
+        'StateMutationOutboxWork'
+    ]
+) {
     expect(trackedRuntimeSource).not.toContain(forbidden);
 }
 ```
@@ -1619,6 +1718,7 @@ git commit -m "refactor: remove intermediate mutation outbox"
 ### Task 12: Performance and Black-Box Evidence for the New Boundary
 
 **Files:**
+
 - Modify: `scripts/perf/api-v1-state-write-concurrency-bench.ts`
 - Modify: `scripts/perf/compare-api-v1-state-write-results.mjs`
 - Modify: `scripts/perf/README.md`
@@ -1634,6 +1734,7 @@ git commit -m "refactor: remove intermediate mutation outbox"
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Replaces performance evidence `outbox intents` with final `resource_inbox` APP_OUTBOX/WS_OUTBOX rows linked by command/effect identity.
 - Replaces service-local attempt evidence with AppInbox entry attempts, retry delay, due age, and selected lane.
 - Preserves artifact validation totality and the existing scale/performance gates.
@@ -1744,6 +1845,7 @@ git commit -m "test: prove app inbox transactional convergence"
 ### Task 13: Mandatory Contracts, Documentation, and AI Architecture Guards
 
 **Files:**
+
 - Modify: `AGENTS.md`
 - Modify: `.agents/skills/rallar-platform/SKILL.md`
 - Modify: `.agents/skills/rallar-realtime/SKILL.md`
@@ -1767,6 +1869,7 @@ git commit -m "test: prove app inbox transactional convergence"
 - Modify: `packages/tests/repo/rallar-skill-integrity.test.ts`
 
 **Interfaces:**
+
 - Produces repository-wide AI guidance matching the approved spec.
 - Keeps authoritative shared fields mandatory and sparse construction inputs separate.
 - Makes stale architecture text fail a structural test.
@@ -1776,21 +1879,29 @@ git commit -m "test: prove app inbox transactional convergence"
 Add assertions that tracked architecture guidance contains all required rules and rejects stale patterns in current guidance:
 
 ```ts
-for (const required of [
-    'AppInbox is mandatory for incoming database mutations',
-    'service write receives the transaction',
-    'ResourceInboxRepository',
-    'APP_OUTBOX',
-    'WS_OUTBOX',
-    '20 total processing attempts',
-    'mandatory fields by default',
-]) expect(currentGuidance).toContain(required);
+for (
+    const required of [
+        'AppInbox is mandatory for incoming database mutations',
+        'service write receives the transaction',
+        'ResourceInboxRepository',
+        'APP_OUTBOX',
+        'WS_OUTBOX',
+        '20 total processing attempts',
+        'mandatory fields by default'
+    ]
+) {
+    expect(currentGuidance).toContain(required);
+}
 
-for (const rejected of [
-    'write opens the transaction',
-    '[0, 2, 8]',
-    'StateMutationOutboxWork',
-]) expect(currentGuidance).not.toContain(rejected);
+for (
+    const rejected of [
+        'write opens the transaction',
+        '[0, 2, 8]',
+        'StateMutationOutboxWork'
+    ]
+) {
+    expect(currentGuidance).not.toContain(rejected);
+}
 ```
 
 Scope `currentGuidance` to active AGENTS, skills, architecture, repository, and API docs; historical superseded specs may name rejected mechanisms when explaining their removal.
@@ -1866,10 +1977,12 @@ git commit -m "docs: codify app inbox transaction ownership"
 ### Task 14: Final Static, Focused, PostgreSQL, and Lock Audit Gate
 
 **Files:**
+
 - Modify only files required by failures that reproduce a requirement in Tasks 1–13.
 - Do not weaken test scale, retry limits, performance thresholds, contract assertions, or route inventory to make this task pass.
 
 **Interfaces:**
+
 - Consumes every preceding task.
 - Produces the final validation record and clean implementation branch ready for code review.
 

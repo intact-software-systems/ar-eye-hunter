@@ -1,4 +1,4 @@
-import { UndirectedGraph } from 'graphology';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     rallarCrdtDeleteMapKeyOperation,
     rallarCrdtSetMapKeyOperation,
@@ -7,16 +7,16 @@ import {
     type RallarCrdtJsonValue,
     type RallarCrdtOperation,
     type RallarCrdtPath,
-    type RallarCrdtRegisterPolicy,
+    type RallarCrdtRegisterPolicy
 } from '@shared/crdt/mod.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import { UndirectedGraph } from 'graphology';
 import {
+    VertexState,
+    VertexType,
     type EdgeProp,
     type GraphProp,
     type VertexProp,
-    VertexState,
-    VertexType,
-    type WeightedGraph,
+    type WeightedGraph
 } from '../graph/graph-props.ts';
 
 export const RALLAR_GRAPH_CRDT_NODES_PATH = ['nodes'] as const;
@@ -45,55 +45,49 @@ export type RallarGraphCrdtState = Readonly<{
     edges?: Readonly<Record<string, RallarGraphCrdtEdge>>;
 }>;
 
-export type RallarGraphCrdtNodeProperty = Exclude<
-    keyof RallarGraphCrdtNode,
-    'id'
->;
+export type RallarGraphCrdtNodeProperty = Exclude<keyof RallarGraphCrdtNode, 'id'>;
 
-export type RallarGraphCrdtEdgeProperty = Exclude<
-    keyof RallarGraphCrdtEdge,
-    'id'
->;
+export type RallarGraphCrdtEdgeProperty = Exclude<keyof RallarGraphCrdtEdge, 'id'>;
 
 export function rallarGraphCrdtAddNodeOperation(
-    node: RallarGraphCrdtNode,
+    node: RallarGraphCrdtNode
 ): RallarCrdtOperation {
     return rallarCrdtSetMapKeyOperation(
         RALLAR_GRAPH_CRDT_NODES_PATH,
         node.id,
-        stripUndefinedJson(node) as RallarCrdtJsonValue,
+        stripUndefinedJson(node) as RallarCrdtJsonValue
     );
 }
 
 export function rallarGraphCrdtRemoveNodeOperation(
     document: Pick<RallarCrdtDocument, 'observedMapUpdateIds'>,
-    nodeId: string,
+    nodeId: string
 ): RallarCrdtOperation {
     return rallarCrdtDeleteMapKeyOperation(
         document,
         RALLAR_GRAPH_CRDT_NODES_PATH,
-        nodeId,
+        nodeId
     );
 }
 
 export function rallarGraphCrdtAddEdgeOperation(
-    edge: RallarGraphCrdtEdge,
+    edge: RallarGraphCrdtEdge
 ): RallarCrdtOperation {
     return rallarCrdtSetMapKeyOperation(
         RALLAR_GRAPH_CRDT_EDGES_PATH,
         edge.id,
-        stripUndefinedJson(edge) as RallarCrdtJsonValue,
+        stripUndefinedJson(edge) as RallarCrdtJsonValue
     );
 }
 
 export function rallarGraphCrdtRemoveEdgeOperation(
     document: Pick<RallarCrdtDocument, 'observedMapUpdateIds'>,
-    edgeId: string,
+    edgeId: string
 ): RallarCrdtOperation {
     return rallarCrdtDeleteMapKeyOperation(
         document,
         RALLAR_GRAPH_CRDT_EDGES_PATH,
-        edgeId,
+        edgeId
     );
 }
 
@@ -101,12 +95,12 @@ export function rallarGraphCrdtSetNodePropertyOperation(
     nodeId: string,
     property: RallarGraphCrdtNodeProperty,
     value: RallarCrdtJsonValue,
-    policy: RallarCrdtRegisterPolicy = 'lww',
+    policy: RallarCrdtRegisterPolicy = 'lww'
 ): RallarCrdtOperation {
     return rallarCrdtSetRegisterOperation(
         graphNodePropertyPath(nodeId, property),
         value,
-        policy,
+        policy
     );
 }
 
@@ -114,25 +108,25 @@ export function rallarGraphCrdtSetEdgePropertyOperation(
     edgeId: string,
     property: RallarGraphCrdtEdgeProperty,
     value: RallarCrdtJsonValue,
-    policy: RallarCrdtRegisterPolicy = 'lww',
+    policy: RallarCrdtRegisterPolicy = 'lww'
 ): RallarCrdtOperation {
     return rallarCrdtSetRegisterOperation(
         graphEdgePropertyPath(edgeId, property),
         value,
-        policy,
+        policy
     );
 }
 
 export function graphNodePropertyPath(
     nodeId: string,
-    property: RallarGraphCrdtNodeProperty,
+    property: RallarGraphCrdtNodeProperty
 ): RallarCrdtPath {
     return [...RALLAR_GRAPH_CRDT_NODES_PATH, nodeId, String(property)];
 }
 
 export function graphEdgePropertyPath(
     edgeId: string,
-    property: RallarGraphCrdtEdgeProperty,
+    property: RallarGraphCrdtEdgeProperty
 ): RallarCrdtPath {
     return [...RALLAR_GRAPH_CRDT_EDGES_PATH, edgeId, String(property)];
 }
@@ -157,7 +151,7 @@ export function deriveGraphologyFromRallarGraphCrdt(
         groupRef: GroupRef;
         graphProp?: GraphProp;
         defaultDegreeLimit?: number;
-    }>,
+    }>
 ): RallarGraphCrdtDerivedGraph {
     const state = toRallarGraphCrdtState(value);
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
@@ -166,8 +160,8 @@ export function deriveGraphologyFromRallarGraphCrdt(
             id: toGraphPropId(options.groupRef),
             version: 1,
             degreeLimitMember: options.defaultDegreeLimit ?? 8,
-            degreeLimitSteiner: options.defaultDegreeLimit ?? 8,
-        },
+            degreeLimitSteiner: options.defaultDegreeLimit ?? 8
+        }
     );
 
     const nodeLabels: Record<string, string> = {};
@@ -191,7 +185,7 @@ export function deriveGraphologyFromRallarGraphCrdt(
             id: node.id,
             type: node.type ?? VertexType.CLIENT,
             state: node.state ?? VertexState.MEMBER,
-            degreeLimit: node.degreeLimit ?? options.defaultDegreeLimit ?? 8,
+            degreeLimit: node.degreeLimit ?? options.defaultDegreeLimit ?? 8
         });
     }
 
@@ -216,7 +210,7 @@ export function deriveGraphologyFromRallarGraphCrdt(
         graph.addEdge(edge.source, edge.target, {
             from: edge.source,
             to: edge.target,
-            weight: edge.weight ?? 1,
+            weight: edge.weight ?? 1
         });
     }
 
@@ -225,7 +219,7 @@ export function deriveGraphologyFromRallarGraphCrdt(
         graph,
         nodeLabels,
         edgeLabels,
-        labelConflicts,
+        labelConflicts
     };
 }
 
@@ -237,7 +231,7 @@ export function toRallarGraphCrdtState(value: unknown): RallarGraphCrdtState {
     const record = value as Record<string, unknown>;
     return {
         nodes: toNodeRecord(record.nodes),
-        edges: toEdgeRecord(record.edges),
+        edges: toEdgeRecord(record.edges)
     };
 }
 
@@ -262,7 +256,7 @@ function toNodeRecord(value: unknown): Record<string, RallarGraphCrdtNode> {
             degreeLimit: toOptionalFiniteNumber(record.degreeLimit),
             metadata: isCrdtJsonValue(record.metadata)
                 ? record.metadata
-                : undefined,
+                : undefined
         };
     }
     return nodes;
@@ -296,7 +290,7 @@ function toEdgeRecord(value: unknown): Record<string, RallarGraphCrdtEdge> {
             weight: toOptionalFiniteNumber(record.weight),
             metadata: isCrdtJsonValue(record.metadata)
                 ? record.metadata
-                : undefined,
+                : undefined
         };
     }
     return edges;
@@ -312,8 +306,8 @@ function stripUndefinedJson(value: unknown): unknown {
                 .filter(([, entryValue]) => entryValue !== undefined)
                 .map(([key, entryValue]) => [
                     key,
-                    stripUndefinedJson(entryValue),
-                ]),
+                    stripUndefinedJson(entryValue)
+                ])
         );
     }
     return value;
@@ -322,7 +316,7 @@ function stripUndefinedJson(value: unknown): unknown {
 function resolveLabel(
     kind: RallarGraphCrdtLabelConflict['kind'],
     id: string,
-    label: string | readonly string[] | undefined,
+    label: string | readonly string[] | undefined
 ): Readonly<{
     value?: string;
     conflict?: RallarGraphCrdtLabelConflict;
@@ -335,23 +329,22 @@ function resolveLabel(
     }
 
     const values = [
-        ...new Set(label.filter((entry) => entry.length > 0)),
+        ...new Set(label.filter((entry) => entry.length > 0))
     ].sort();
     return {
         value: values[0],
-        conflict:
-            values.length > 1
-                ? {
-                      kind,
-                      id,
-                      values,
-                  }
-                : undefined,
+        conflict: values.length > 1
+            ? {
+                kind,
+                id,
+                values
+            }
+            : undefined
     };
 }
 
 function toOptionalLabel(
-    value: unknown,
+    value: unknown
 ): string | readonly string[] | undefined {
     if (typeof value === 'string') {
         return value;
@@ -390,9 +383,9 @@ function isCrdtJsonValue(value: unknown): value is RallarCrdtJsonValue {
     );
 }
 
-function compareById<T extends Readonly<{ id: string }>>(
+function compareById<T extends Readonly<{ id: string; }>>(
     left: T,
-    right: T,
+    right: T
 ): number {
     return left.id.localeCompare(right.id);
 }
@@ -402,6 +395,6 @@ function toGraphPropId(groupRef: GroupRef): string {
         groupRef.applicationId,
         groupRef.workspaceId ?? '',
         groupRef.groupId,
-        'crdt',
+        'crdt'
     ].join(':');
 }

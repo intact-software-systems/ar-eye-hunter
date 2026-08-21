@@ -12,10 +12,12 @@ export function ExecuteManifestDisclosure({ draft }: ExecuteManifestDisclosurePr
     const [open, setOpen] = useState(false);
     return (
         <details className={styles.disclosure} data-execute-manifest open={open}>
-            <summary onClick={event => {
-                event.preventDefault();
-                setOpen(current => !current);
-            }}>
+            <summary
+                onClick={(event) => {
+                    event.preventDefault();
+                    setOpen((current) => !current);
+                }}
+            >
                 <span>
                     <strong>Generated manifest</strong>
                     <small>Read-only control contract</small>
@@ -26,9 +28,13 @@ export function ExecuteManifestDisclosure({ draft }: ExecuteManifestDisclosurePr
                 />
             </summary>
             {open && draft ? <ExecuteManifestBody draft={draft} /> : null}
-            {open && !draft ? (
-                <p className={styles.empty}>A manifest becomes available after a recipe, control run, and safe target set are selected.</p>
-            ) : null}
+            {open && !draft
+                ? (
+                    <p className={styles.empty}>
+                        A manifest becomes available after a recipe, control run, and safe target set are selected.
+                    </p>
+                )
+                : null}
         </details>
     );
 }

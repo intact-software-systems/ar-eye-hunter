@@ -1,12 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 export type Key = {
-    readonly topicId: string
-    readonly resourceId: string
-    readonly contextId: string
-}
+    readonly topicId: string;
+    readonly resourceId: string;
+    readonly contextId: string;
+};
 
-export type ResourceEntryKeyString = string
+export type ResourceEntryKeyString = string;
 
 export function toKeyAsString(key: Key): string {
     return `${key.topicId}/${key.resourceId}/${key.contextId}`;
@@ -34,39 +34,38 @@ export const EntityStatus = {
     ABORTED: 'ABORTED',
     NON_RETRYABLE: 'NON_RETRYABLE',
     PARTITIONED: 'PARTITIONED',
-    MERGED: 'MERGED',
+    MERGED: 'MERGED'
 } as const;
 
 export type EntityStatus = (typeof EntityStatus)[keyof typeof EntityStatus];
 
 export type Audit = {
-    readonly date: Temporal.PlainTime
-    readonly createdBy: string
-    readonly createdTs: Temporal.PlainDateTime
-    readonly expiryTs: Temporal.Instant
-}
+    readonly date: Temporal.PlainTime;
+    readonly createdBy: string;
+    readonly createdTs: Temporal.PlainDateTime;
+    readonly expiryTs: Temporal.Instant;
+};
 
 export type DequeueAudit = {
-    readonly startTs?: Temporal.Instant
-    readonly endTs?: Temporal.Instant
-    readonly nextTs?: Temporal.Instant
-    readonly attempts: number | 0
-}
+    readonly startTs?: Temporal.Instant;
+    readonly endTs?: Temporal.Instant;
+    readonly nextTs?: Temporal.Instant;
+    readonly attempts: number | 0;
+};
 
 export type Db = {
-    readonly id: string
-}
+    readonly id: string;
+};
 
 export type ResourceEntry = {
-    readonly key: Key
-    readonly resource: string
-    readonly typeId: string
-    readonly audit: Audit
-    status: EntityStatus
-    dequeueAudit: DequeueAudit
-    readonly db?: Db
-}
-
+    readonly key: Key;
+    readonly resource: string;
+    readonly typeId: string;
+    readonly audit: Audit;
+    status: EntityStatus;
+    dequeueAudit: DequeueAudit;
+    readonly db?: Db;
+};
 
 export const NOT_COMPLETED_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.NEW,
@@ -74,7 +73,7 @@ export const NOT_COMPLETED_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.RESERVED,
     EntityStatus.FAILED,
     EntityStatus.ABORTED,
-    EntityStatus.NON_RETRYABLE,
+    EntityStatus.NON_RETRYABLE
 ]);
 
 export const NOT_COMPLETED_STATUSES_EXCEPT_NEW: ReadonlySet<EntityStatus> = new Set([
@@ -82,35 +81,35 @@ export const NOT_COMPLETED_STATUSES_EXCEPT_NEW: ReadonlySet<EntityStatus> = new 
     EntityStatus.RESERVED,
     EntityStatus.FAILED,
     EntityStatus.ABORTED,
-    EntityStatus.NON_RETRYABLE,
+    EntityStatus.NON_RETRYABLE
 ]);
 
 export const NOT_COMPLETED_RETRYABLE_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.NEW,
     EntityStatus.RETRY,
-    EntityStatus.RESERVED,
+    EntityStatus.RESERVED
 ]);
 
 export const NEW_AND_RETRY_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.NEW,
-    EntityStatus.RETRY,
+    EntityStatus.RETRY
 ]);
 
 export const FAILED_STATUS: ReadonlySet<EntityStatus> = new Set([
-    EntityStatus.FAILED,
+    EntityStatus.FAILED
 ]);
 
 export const NOT_COMPLETED_RETRYABLE_INCLUDING_FAILED_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.NEW,
     EntityStatus.RETRY,
     EntityStatus.RESERVED,
-    EntityStatus.FAILED,
+    EntityStatus.FAILED
 ]);
 
 export const COMPLETED_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.COMPLETED,
     EntityStatus.PARTITIONED,
-    EntityStatus.MERGED,
+    EntityStatus.MERGED
 ]);
 
 // Note: Not being actively retried
@@ -137,14 +136,14 @@ export const NEVER_EXPIRE_TS = Temporal.Instant.from('9999-12-31T23:59:59.999Z')
 
 export function isExpiredAudit(
     audit: Audit,
-    now: Temporal.Instant = Temporal.Now.instant(),
+    now: Temporal.Instant = Temporal.Now.instant()
 ): boolean {
     return Temporal.Instant.compare(now, audit.expiryTs) >= 0;
 }
 
 export function isExpiredResourceEntry(
     entry: ResourceEntry,
-    now: Temporal.Instant = Temporal.Now.instant(),
+    now: Temporal.Instant = Temporal.Now.instant()
 ): boolean {
     return isExpiredAudit(entry.audit, now);
 }
@@ -152,7 +151,7 @@ export function isExpiredResourceEntry(
 export function toResourceEntry<T>(
     typeId: string,
     resource: T,
-    expiryTs: Temporal.Instant = NEVER_EXPIRE_TS,
+    expiryTs: Temporal.Instant = NEVER_EXPIRE_TS
 ): ResourceEntry {
     return {
         key: {
@@ -166,7 +165,7 @@ export function toResourceEntry<T>(
             date: Temporal.Now.plainTimeISO(),
             createdBy: 'test',
             createdTs: Temporal.Now.plainDateTimeISO(),
-            expiryTs,
+            expiryTs
         },
         status: EntityStatus.NEW,
         dequeueAudit: {
@@ -180,7 +179,7 @@ export function toResourceEntryWithKey<T>(
     key: Key,
     typeId: string,
     resource: T,
-    expiryTs: Temporal.Instant = NEVER_EXPIRE_TS,
+    expiryTs: Temporal.Instant = NEVER_EXPIRE_TS
 ): ResourceEntry {
     return {
         key: key,
@@ -190,7 +189,7 @@ export function toResourceEntryWithKey<T>(
             date: Temporal.Now.plainTimeISO(),
             createdBy: 'test',
             createdTs: Temporal.Now.plainDateTimeISO(),
-            expiryTs,
+            expiryTs
         },
         status: EntityStatus.NEW,
         dequeueAudit: {
@@ -199,7 +198,6 @@ export function toResourceEntryWithKey<T>(
         db: undefined
     };
 }
-
 
 export function toUpdatedResourceEntry(
     entry: ResourceEntry,
@@ -217,7 +215,7 @@ export function toUpdatedResourceEntry(
             startTs: entry.dequeueAudit.startTs,
             endTs: endTimestamp,
             nextTs: nextTimestamp,
-            attempts: entry.dequeueAudit.attempts,
+            attempts: entry.dequeueAudit.attempts
         },
         db: entry.db
     };

@@ -1,13 +1,10 @@
-import type {
-    ControlFleetReportBundle,
-    ControlFleetReportFiles,
-} from '@shared-test/rallar-bb-test/fleet-report.ts';
+import type { ControlFleetReportBundle, ControlFleetReportFiles } from '@shared-test/rallar-bb-test/fleet-report.ts';
 
 export const FLEET_ARTIFACT_FILE_NAMES = [
     'fleet-report.json',
     'summary.md',
     'agent-results.csv',
-    'failure-signatures.csv',
+    'failure-signatures.csv'
 ] as const satisfies readonly (keyof ControlFleetReportFiles)[];
 
 export type FleetArtifactModel = Readonly<{
@@ -23,15 +20,15 @@ export type FleetArtifactModel = Readonly<{
 }>;
 
 export function deriveFleetArtifactModel(
-    bundle: ControlFleetReportBundle,
+    bundle: ControlFleetReportBundle
 ): FleetArtifactModel {
     const encoder = new TextEncoder();
-    const files = FLEET_ARTIFACT_FILE_NAMES.map(name => {
+    const files = FLEET_ARTIFACT_FILE_NAMES.map((name) => {
         const content = bundle.files[name];
         return {
             name,
             content,
-            utf8Bytes: encoder.encode(content).byteLength,
+            utf8Bytes: encoder.encode(content).byteLength
         } as const;
     });
     return {
@@ -39,6 +36,6 @@ export function deriveFleetArtifactModel(
         generatedAtEpochMs: bundle.generatedAtEpochMs,
         files,
         totalUtf8Bytes: files.reduce((total, file) => total + file.utf8Bytes, 0),
-        bundle,
+        bundle
     };
 }

@@ -4,12 +4,12 @@
 
 Decide these boundaries before choosing dependencies or creating files:
 
-| Decision | Choose explicitly |
-| --- | --- |
-| Authority | Browser director for room-trusted outcomes, server authority for trusted outcomes, or CRDT for collaboratively authored truth. |
-| Durable/shared/local state | Put match truth in Rallar Game or server domain code, authored documents in Rallar CRDT, and browser-local latest values in Rallar Data. |
-| Latency/reliability | Use room messages for reliable or fallback coordination and room realtime for low-latency, replaceable traffic. |
-| 3D renderer | Compare Direct Three.js, React Three Fiber, and Babylon against the scene shape, ownership needs, lifecycle cost, and measured browser budgets. |
+| Decision                   | Choose explicitly                                                                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authority                  | Browser director for room-trusted outcomes, server authority for trusted outcomes, or CRDT for collaboratively authored truth.                  |
+| Durable/shared/local state | Put match truth in Rallar Game or server domain code, authored documents in Rallar CRDT, and browser-local latest values in Rallar Data.        |
+| Latency/reliability        | Use room messages for reliable or fallback coordination and room realtime for low-latency, replaceable traffic.                                 |
+| 3D renderer                | Compare Direct Three.js, React Three Fiber, and Babylon against the scene shape, ownership needs, lifecycle cost, and measured browser budgets. |
 
 Write down the authoritative state, accepted inputs, snapshot shape, transport
 semantics, and presentation-only state for the first vertical slice.
@@ -64,8 +64,8 @@ export default defineConfig({
     resolve: {
         alias: {
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
-            '@shared': path.resolve(__dirname, '../../packages/shared'),
-        },
+            '@shared': path.resolve(__dirname, '../../packages/shared')
+        }
     },
     server: {
         port: 5180,
@@ -74,11 +74,11 @@ export default defineConfig({
             '/api': {
                 target: 'http://localhost:8080',
                 changeOrigin: true,
-                ws: true,
-            },
-        },
+                ws: true
+            }
+        }
     },
-    build: { target: 'es2023' },
+    build: { target: 'es2023' }
 });
 ```
 
@@ -107,12 +107,9 @@ export default defineConfig({
 Configure and start the facade once at the application boundary:
 
 ```ts
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
-import {
-    rallar,
-    type RallarStartOptions,
-} from '@shared-web/browser/rallar.ts';
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
+import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 const credentials = { username: 'alice', password: 'secret' } as const;
 
@@ -122,28 +119,28 @@ const posesLaneConfig = {
     init: { ordered: false, maxRetransmits: 0 },
     flowControl: {
         overflow: 'replace-by-key',
-        maxQueueItems: 8,
-    },
+        maxQueueItems: 8
+    }
 } satisfies RtcDataChannelLaneConfig;
 
 const appStartOptions = {
     connect: true,
     refreshRooms: true,
     refreshPeople: true,
-    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, posesLaneConfig],
+    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, posesLaneConfig]
 } satisfies RallarStartOptions;
 
 let started = await rallar.setup({
     apiBaseUrl: 'http://localhost:8080',
     applicationId: 'example-rallar-app',
     workspaceId: 'default',
-    start: appStartOptions,
+    start: appStartOptions
 });
 
 if (!started.session) {
     await rallar.auth.login({
         username: credentials.username,
-        password: credentials.password,
+        password: credentials.password
     });
     started = await rallar.start(appStartOptions);
 }
@@ -170,17 +167,17 @@ as `setup({ ..., start: startOptions })`, and reuse it for post-login
 Retain the scoped `roomRef` and derive traffic from the room session:
 
 ```ts
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     rallar,
     type RallarMessage,
     type RallarMessageSendResult,
     type RallarMessageSendStatus,
-    type RallarRoomRealtimeSendResult,
+    type RallarRoomRealtimeSendResult
 } from '@shared-web/browser/rallar.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
-type ReadyMessage = Readonly<{ ready: boolean }>;
+type ReadyMessage = Readonly<{ ready: boolean; }>;
 type PoseUpdate = Readonly<{
     roomRef: GroupRef;
     seq: number;
@@ -192,12 +189,12 @@ const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
     'sent-immediate',
     'duplicate',
     'superseded',
-    'skipped',
+    'skipped'
 ]);
 
 function isMessageForRoom<T>(
     roomRef: GroupRef,
-    message: RallarMessage<T>,
+    message: RallarMessage<T>
 ): boolean {
     const targets = message.raw.targets;
     const targetRoomRef = targets?.mode === 'multicast'
@@ -210,7 +207,7 @@ function isMessageForRoom<T>(
 
 function surfaceMessageDelivery(
     label: string,
-    result: RallarMessageSendResult,
+    result: RallarMessageSendResult
 ): void {
     if (!acceptedMessageStatuses.has(result.status)) {
         console.warn(`${label} delivery degraded`, result.status, result.reason);
@@ -219,7 +216,7 @@ function surfaceMessageDelivery(
 
 function surfaceRealtimeDelivery(
     label: string,
-    result: RallarRoomRealtimeSendResult,
+    result: RallarRoomRealtimeSendResult
 ): void {
     if (result.status !== 'sent') {
         console.warn(`${label} delivery degraded`, result.status, result.reason);
@@ -229,14 +226,16 @@ function surfaceRealtimeDelivery(
 async function openArena(existingRoomRef?: GroupRef): Promise<() => void> {
     const room = existingRoomRef
         ? await rallar.rooms.enter(existingRoomRef)
-        : rallar.rooms.session((await rallar.rooms.createAndSwitch({
-            displayName: 'Example Arena',
-        })).group);
+        : rallar.rooms.session(
+            (await rallar.rooms.createAndSwitch({
+                displayName: 'Example Arena'
+            })).group
+        );
     const roomRef = room.roomRef;
     const ready = room.message<ReadyMessage>('ready');
     const poses = room.realtime<PoseUpdate>({
         laneId: 'poses',
-        maxAgeMs: 120,
+        maxAgeMs: 120
     });
 
     const subscriptions = rallar.subscriptions();
@@ -263,14 +262,15 @@ async function openArena(existingRoomRef?: GroupRef): Promise<() => void> {
         const poseResult = await poses.send({
             roomRef,
             seq: 1,
-            position: [0, 0, 0],
+            position: [0, 0, 0]
         });
         if (poseResult.status !== 'sent') {
             surfaceRealtimeDelivery('pose', poseResult);
         }
 
         return () => subscriptions.unsubscribe();
-    } catch (error) {
+    }
+    catch (error) {
         subscriptions.unsubscribe();
         throw error;
     }
@@ -279,7 +279,8 @@ async function openArena(existingRoomRef?: GroupRef): Promise<() => void> {
 const disposeArena = await openArena();
 try {
     console.info('Arena channels active.');
-} finally {
+}
+finally {
     disposeArena();
 }
 ```
@@ -306,18 +307,18 @@ concrete adapter can use `rallar.start(...)` because the app boundary already
 performed initial `rallar.setup(...)`.
 
 ```ts
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RallarMessage,
     RallarRoomSession,
     RallarStartResult,
-    RallarSubscriptionScope,
+    RallarSubscriptionScope
 } from '@shared-web/browser/rallar.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 function isMessageForRoom<T>(
     roomRef: GroupRef,
-    message: RallarMessage<T>,
+    message: RallarMessage<T>
 ): boolean {
     const targets = message.raw.targets;
     const targetRoomRef = targets?.mode === 'multicast'
@@ -332,7 +333,7 @@ export type RallarAppRuntimeDeps = Readonly<{
     start(signal: AbortSignal): Promise<RallarStartResult>;
     enterRoom(
         room: string | GroupRef,
-        signal: AbortSignal,
+        signal: AbortSignal
     ): Promise<RallarRoomSession>;
     subscriptions(): RallarSubscriptionScope;
 }>;
@@ -346,7 +347,9 @@ export class RallarAppRuntime {
     constructor(private readonly deps: RallarAppRuntimeDeps) {}
 
     async start(room: string | GroupRef): Promise<RallarRoomSession> {
-        if (this.disposed) throw new Error('Runtime is disposed.');
+        if (this.disposed) {
+            throw new Error('Runtime is disposed.');
+        }
 
         const generation = ++this.generation;
         this.controller?.abort();
@@ -364,12 +367,12 @@ export class RallarAppRuntime {
 
             const roomSession = await this.deps.enterRoom(
                 room,
-                controller.signal,
+                controller.signal
             );
             this.assertActive(generation, controller.signal);
 
             const subscriptions = this.deps.subscriptions();
-            const status = roomSession.message<{ ready: boolean }>('ready');
+            const status = roomSession.message<{ ready: boolean; }>('ready');
             this.assertActive(generation, controller.signal);
             subscriptions.add(status.onWs((payload, message) => {
                 if (
@@ -381,7 +384,8 @@ export class RallarAppRuntime {
             }));
             this.subscriptions = subscriptions;
             return roomSession;
-        } catch (error) {
+        }
+        catch (error) {
             if (!this.isActive(generation, controller.signal)) {
                 throw new DOMException('Runtime lifecycle ended.', 'AbortError');
             }
@@ -390,7 +394,9 @@ export class RallarAppRuntime {
     }
 
     dispose(): void {
-        if (this.disposed) return;
+        if (this.disposed) {
+            return;
+        }
         this.disposed = true;
         this.generation += 1;
         this.controller?.abort();
@@ -459,15 +465,15 @@ renderer repopulate current state.
 
 After the first slice works, route expansion deliberately:
 
-| Capability | Specialist skill and smallest evidence |
-| --- | --- |
-| Match rules and authority | `rallar-games`; Game and server-authority examples |
-| Rooms, Messages, Realtime | `rallar-realtime`; room channel examples |
-| Motion presentation | `rallar-games`; `examples/motion-smoothing` |
-| Browser-local Data | `rallar-platform`; `examples/browser-data-store` |
-| Authored CRDT documents | `rallar-platform`; `examples/room-crdt-document` |
-| AI proposals | `rallar-ai`; RallarAI examples |
-| Media/calls | `rallar-realtime`; focused facade code and tests |
+| Capability                | Specialist skill and smallest evidence                |
+| ------------------------- | ----------------------------------------------------- |
+| Match rules and authority | `rallar-games`; Game and server-authority examples    |
+| Rooms, Messages, Realtime | `rallar-realtime`; room channel examples              |
+| Motion presentation       | `rallar-games`; `examples/motion-smoothing`           |
+| Browser-local Data        | `rallar-platform`; `examples/browser-data-store`      |
+| Authored CRDT documents   | `rallar-platform`; `examples/room-crdt-document`      |
+| AI proposals              | `rallar-ai`; RallarAI examples                        |
+| Media/calls               | `rallar-realtime`; focused facade code and tests      |
 | Server authority/app data | `rallar-platform` and `rallar-games`; server examples |
 
 Use `references/example-map.md` for exact routes. Use an ecosystem renderer,

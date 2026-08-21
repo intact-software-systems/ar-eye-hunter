@@ -4,7 +4,7 @@ export const CONTROL_RETENTION_PLAN_LIMITS = Object.freeze({
     canonicalDepth: 64,
     canonicalNodes: 100_000,
     stringCharacters: 1024 * 1024,
-    canonicalUtf8Bytes: 8 * 1024 * 1024,
+    canonicalUtf8Bytes: 8 * 1024 * 1024
 });
 
 export type ControlRetentionPlanLimit = keyof typeof CONTROL_RETENTION_PLAN_LIMITS;
@@ -17,7 +17,7 @@ export class ControlRetentionPlanLimitError extends Error {
 
     constructor(
         limit: ControlRetentionPlanLimit,
-        maximum: number,
+        maximum: number
     ) {
         super(`Control retention plan exceeded the ${limit} bound of ${maximum}.`);
         this.limit = limit;
@@ -26,19 +26,21 @@ export class ControlRetentionPlanLimitError extends Error {
 }
 
 export function controlRetentionLimitError(
-    limit: ControlRetentionPlanLimit,
+    limit: ControlRetentionPlanLimit
 ): ControlRetentionPlanLimitError {
     return new ControlRetentionPlanLimitError(
         limit,
-        CONTROL_RETENTION_PLAN_LIMITS[limit],
+        CONTROL_RETENTION_PLAN_LIMITS[limit]
     );
 }
 
 export function boundedControlRetentionArray<T>(
     value: readonly T[],
-    label: string,
+    label: string
 ): readonly T[] {
-    if (!Array.isArray(value)) throw new TypeError(`${label} must be an array.`);
+    if (!Array.isArray(value)) {
+        throw new TypeError(`${label} must be an array.`);
+    }
     if (value.length > CONTROL_RETENTION_PLAN_LIMITS.collectionItems) {
         throw controlRetentionLimitError('collectionItems');
     }
@@ -47,7 +49,7 @@ export function boundedControlRetentionArray<T>(
 
 export function assertControlRetentionString(
     value: unknown,
-    label: string,
+    label: string
 ): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`${label} must be a non-empty string.`);
@@ -61,7 +63,7 @@ export function canonicalControlRetentionJson(value: unknown): string {
         seen: new Set<object>(),
         utf8Bytes: 0,
         chunks: [],
-        encoder: new TextEncoder(),
+        encoder: new TextEncoder()
     };
     writeCanonicalJson(value, 0, state);
     return state.chunks.join('');
@@ -78,7 +80,7 @@ type CanonicalState = {
 function writeCanonicalJson(
     value: unknown,
     depth: number,
-    state: CanonicalState,
+    state: CanonicalState
 ): void {
     if (depth > CONTROL_RETENTION_PLAN_LIMITS.canonicalDepth) {
         throw controlRetentionLimitError('canonicalDepth');
@@ -97,14 +99,18 @@ function writeCanonicalJson(
         return;
     }
     if (typeof value === 'number') {
-        if (!Number.isFinite(value)) throw new TypeError('Canonical retention numbers must be finite.');
+        if (!Number.isFinite(value)) {
+            throw new TypeError('Canonical retention numbers must be finite.');
+        }
         appendCanonical(JSON.stringify(value), state);
         return;
     }
     if (!value || typeof value !== 'object') {
         throw new TypeError('Canonical retention state must be JSON-compatible.');
     }
-    if (state.seen.has(value)) throw new TypeError('Canonical retention state must not be cyclic.');
+    if (state.seen.has(value)) {
+        throw new TypeError('Canonical retention state must not be cyclic.');
+    }
     const prototype = Object.getPrototypeOf(value);
     if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
         throw new TypeError('Canonical retention objects must be plain records.');
@@ -113,7 +119,9 @@ function writeCanonicalJson(
     if (Array.isArray(value)) {
         appendCanonical('[', state);
         for (let index = 0; index < value.length; index += 1) {
-            if (index > 0) appendCanonical(',', state);
+            if (index > 0) {
+                appendCanonical(',', state);
+            }
             const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
             if (!descriptor || !('value' in descriptor)) {
                 throw new TypeError('Canonical retention arrays must be dense data arrays.');
@@ -121,7 +129,8 @@ function writeCanonicalJson(
             writeCanonicalJson(descriptor.value, depth + 1, state);
         }
         appendCanonical(']', state);
-    } else {
+    }
+    else {
         if (Object.getOwnPropertySymbols(value).length > 0) {
             throw new TypeError('Canonical retention records must not use symbol keys.');
         }
@@ -137,9 +146,13 @@ function writeCanonicalJson(
             if (!descriptor || !('value' in descriptor)) {
                 throw new TypeError('Canonical retention records must use data properties.');
             }
-            if (descriptor.value === undefined) continue;
+            if (descriptor.value === undefined) {
+                continue;
+            }
             assertStringBound(key);
-            if (written > 0) appendCanonical(',', state);
+            if (written > 0) {
+                appendCanonical(',', state);
+            }
             appendCanonical(`${JSON.stringify(key)}:`, state);
             writeCanonicalJson(descriptor.value, depth + 1, state);
             written += 1;

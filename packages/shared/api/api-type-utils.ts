@@ -3,7 +3,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 export function isSameGroupRef(
     left: GroupRef,
-    right: GroupRef,
+    right: GroupRef
 ): boolean {
     return left.groupId === right.groupId &&
         left.applicationId === right.applicationId &&
@@ -12,7 +12,7 @@ export function isSameGroupRef(
 
 export function isSameGroupScope(
     left: Pick<GroupRef, 'applicationId' | 'workspaceId'>,
-    right: Pick<GroupRef, 'applicationId' | 'workspaceId'>,
+    right: Pick<GroupRef, 'applicationId' | 'workspaceId'>
 ): boolean {
     return left.applicationId === right.applicationId &&
         (left.workspaceId ?? '') === (right.workspaceId ?? '');
@@ -22,7 +22,7 @@ export function toWebRtcGroupKey(groupRef: GroupRef): string {
     return JSON.stringify([
         groupRef.applicationId,
         groupRef.workspaceId ?? '',
-        groupRef.groupId,
+        groupRef.groupId
     ]);
 }
 
@@ -43,8 +43,8 @@ export function toScopedOverlayKey(groupRef: GroupRef): string {
 }
 
 export function isOverlayForGroupRef(
-    overlay: Readonly<{ groupRef?: GroupRef }>,
-    groupRef: GroupRef,
+    overlay: Readonly<{ groupRef?: GroupRef; }>,
+    groupRef: GroupRef
 ): boolean {
     return overlay.groupRef === undefined ||
         isSameGroupRef(overlay.groupRef, groupRef);
@@ -52,12 +52,12 @@ export function isOverlayForGroupRef(
 
 export function toGroupRefFromScope(
     groupId: string,
-    scope?: StateScope,
+    scope?: StateScope
 ): GroupRef | undefined {
     return scope
         ? {
             ...scope,
-            groupId,
+            groupId
         }
         : undefined;
 }
@@ -65,6 +65,6 @@ export function toGroupRefFromScope(
 export function toStateScope(ref: GroupRef): StateScope {
     return {
         applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId ?? '',
+        workspaceId: ref.workspaceId ?? ''
     };
 }

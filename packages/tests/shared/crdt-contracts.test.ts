@@ -1,10 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import {
     canonicalRallarCrdtJson,
     createRallarCrdtDocument,
-    describeRallarCrdtEncryptionKeyring,
     decryptRallarCrdtSnapshotEnvelope,
     decryptRallarCrdtUpdateEnvelope,
+    describeRallarCrdtEncryptionKeyring,
     encryptRallarCrdtSnapshotEnvelope,
     encryptRallarCrdtUpdateEnvelope,
     evaluateRallarCrdtDestructiveCompactionSafety,
@@ -13,26 +12,27 @@ import {
     isRallarCrdtEncryptedOperationBatch,
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
-    revokeRallarCrdtEncryptionKey,
-    rotateRallarCrdtEncryptionKeyring,
-    rallarCrdtBatch,
     rallarCrdtAddCounterOperation,
+    rallarCrdtBatch,
     rallarCrdtNumberMaxOperation,
     rallarCrdtNumberMinOperation,
-    type RallarCrdtDocumentRef,
-    type RallarCrdtUpdateEnvelope,
+    revokeRallarCrdtEncryptionKey,
+    rotateRallarCrdtEncryptionKeyring,
     toRallarCrdtDocumentKey,
     validateRallarCrdtDocumentRef,
     validateRallarCrdtOperationBatch,
     validateRallarCrdtSyncRequestEnvelope,
     validateRallarCrdtSyncResponseEnvelope,
     validateRallarCrdtUpdateEnvelope,
+    type RallarCrdtDocumentRef,
+    type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 const roomRef = {
     applicationId: 'rallar-test',
     workspaceId: 'main',
-    groupId: 'room-1',
+    groupId: 'room-1'
 };
 
 const documentRef: RallarCrdtDocumentRef = {
@@ -41,7 +41,7 @@ const documentRef: RallarCrdtDocumentRef = {
     scope: 'room',
     documentType: 'checklist',
     documentId: 'room-1',
-    roomRef,
+    roomRef
 };
 
 describe('Rallar CRDT contracts', () => {
@@ -53,14 +53,14 @@ describe('Rallar CRDT contracts', () => {
             roomRef: {
                 groupId: 'room-1',
                 workspaceId: 'main',
-                applicationId: 'rallar-test',
+                applicationId: 'rallar-test'
             },
             workspaceId: 'main',
-            applicationId: 'rallar-test',
+            applicationId: 'rallar-test'
         };
 
         expect(toRallarCrdtDocumentKey(documentRef)).toBe(
-            toRallarCrdtDocumentKey(reordered),
+            toRallarCrdtDocumentKey(reordered)
         );
         expect(toRallarCrdtDocumentKey(documentRef)).toContain('room');
         expect(toRallarCrdtDocumentKey(documentRef)).toContain('checklist');
@@ -71,13 +71,13 @@ describe('Rallar CRDT contracts', () => {
             ...documentRef,
             roomRef: {
                 ...roomRef,
-                applicationId: 'other-app',
-            },
+                applicationId: 'other-app'
+            }
         });
 
         expect(result.valid).toBe(false);
         expect(result.issues.map((issue) => issue.code)).toContain(
-            'room-application-mismatch',
+            'room-application-mismatch'
         );
     });
 
@@ -88,47 +88,49 @@ describe('Rallar CRDT contracts', () => {
                     kind: 'map.set',
                     path: ['files'],
                     key: 'raw',
-                    value: new Uint8Array([1, 2, 3]) as never,
+                    value: new Uint8Array([1, 2, 3]) as never
                 },
                 {
                     kind: 'register.set',
                     path: ['bad'],
                     policy: 'lww',
-                    value: { missing: undefined } as never,
-                },
-            ]),
+                    value: { missing: undefined } as never
+                }
+            ])
         );
 
         expect(result.valid).toBe(false);
         expect(result.issues.map((issue) => issue.code)).toEqual(
             expect.arrayContaining([
                 'unsupported-json-object',
-                'undefined-json-value',
-            ]),
+                'undefined-json-value'
+            ])
         );
     });
 
     it('does not expose OT, Yjs, Automerge, arbitrary JSON Patch, or delta-state operation kinds', () => {
-        for (const kind of [
-            'ot.apply',
-            'yjs.update',
-            'automerge.update',
-            'json.patch',
-            'delta.state',
-        ]) {
+        for (
+            const kind of [
+                'ot.apply',
+                'yjs.update',
+                'automerge.update',
+                'json.patch',
+                'delta.state'
+            ]
+        ) {
             const result = validateRallarCrdtOperationBatch({
                 kind: 'batch',
                 operations: [
                     {
                         kind,
-                        path: [],
-                    },
-                ],
+                        path: []
+                    }
+                ]
             });
 
             expect(result.valid).toBe(false);
             expect(result.issues.map((issue) => issue.code)).toContain(
-                'invalid-operation-kind',
+                'invalid-operation-kind'
             );
         }
     });
@@ -139,7 +141,7 @@ describe('Rallar CRDT contracts', () => {
         const update: Record<string, unknown> = {
             ...createUpdateEnvelope(),
             protocolVersion: 2,
-            operationVersion: 99,
+            operationVersion: 99
         };
 
         const result = validateRallarCrdtUpdateEnvelope(update);
@@ -148,8 +150,8 @@ describe('Rallar CRDT contracts', () => {
         expect(result.issues.map((issue) => issue.code)).toEqual(
             expect.arrayContaining([
                 'unknown-protocol-version',
-                'unknown-operation-version',
-            ]),
+                'unknown-operation-version'
+            ])
         );
     });
 
@@ -157,7 +159,7 @@ describe('Rallar CRDT contracts', () => {
         const update = createUpdateEnvelope();
         const signed = {
             ...update,
-            hash: hashRallarCrdtUpdateEnvelope(update),
+            hash: hashRallarCrdtUpdateEnvelope(update)
         };
 
         expect(validateRallarCrdtUpdateEnvelope(signed).valid).toBe(true);
@@ -169,10 +171,10 @@ describe('Rallar CRDT contracts', () => {
                         kind: 'register.set',
                         path: ['title'],
                         policy: 'lww',
-                        value: 'Tampered',
-                    },
-                ]),
-            }).issues.map((issue) => issue.code),
+                        value: 'Tampered'
+                    }
+                ])
+            }).issues.map((issue) => issue.code)
         ).toContain('hash-mismatch');
     });
 
@@ -182,9 +184,9 @@ describe('Rallar CRDT contracts', () => {
                 b: 2,
                 a: {
                     d: true,
-                    c: null,
-                },
-            }),
+                    c: null
+                }
+            })
         ).toBe('{"a":{"c":null,"d":true},"b":2}');
     });
 
@@ -193,28 +195,28 @@ describe('Rallar CRDT contracts', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument<Record<string, unknown>>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(2_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const firstUpdate = first.applyLocal(
             rallarCrdtBatch([
                 rallarCrdtAddCounterOperation(['votes'], 3),
                 rallarCrdtNumberMinOperation(['lowestLatencyMs'], 42),
-                rallarCrdtNumberMaxOperation(['highestScore'], 9),
-            ]),
+                rallarCrdtNumberMaxOperation(['highestScore'], 9)
+            ])
         );
         const secondUpdate = second.applyLocal(
             rallarCrdtBatch([
                 rallarCrdtAddCounterOperation(['votes'], -1),
                 rallarCrdtNumberMinOperation(['lowestLatencyMs'], 21),
-                rallarCrdtNumberMaxOperation(['highestScore'], 12),
-            ]),
+                rallarCrdtNumberMaxOperation(['highestScore'], 12)
+            ])
         );
 
         first.apply(secondUpdate);
@@ -223,7 +225,7 @@ describe('Rallar CRDT contracts', () => {
         expect(first.read()).toEqual({
             votes: 2,
             lowestLatencyMs: 21,
-            highestScore: 12,
+            highestScore: 12
         });
         expect(second.read()).toEqual(first.read());
     });
@@ -233,27 +235,27 @@ describe('Rallar CRDT contracts', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const first = full.applyLocal(
             rallarCrdtBatch([
                 rallarCrdtAddCounterOperation(['views'], 10),
-                rallarCrdtNumberMaxOperation(['peak'], 3),
-            ]),
+                rallarCrdtNumberMaxOperation(['peak'], 3)
+            ])
         );
         const snapshot = full.snapshot('numeric-state');
         const later = full.applyLocal(
             rallarCrdtBatch([
                 rallarCrdtAddCounterOperation(['views'], 5),
-                rallarCrdtNumberMaxOperation(['peak'], 7),
-            ]),
+                rallarCrdtNumberMaxOperation(['peak'], 7)
+            ])
         );
 
         const compacted = createRallarCrdtDocument<Record<string, unknown>>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(2_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
         compacted.importSnapshot(snapshot);
         expect(compacted.apply(first).status).toBe('duplicate');
@@ -268,7 +270,7 @@ describe('Rallar CRDT contracts', () => {
         const valid = validateRallarCrdtOperationBatch(
             rallarCrdtBatch([
                 rallarCrdtAddCounterOperation(['votes'], 1),
-                rallarCrdtNumberMinOperation(['latency'], 12),
+                rallarCrdtNumberMinOperation(['latency'], 12)
             ]),
             '$',
             {
@@ -277,15 +279,15 @@ describe('Rallar CRDT contracts', () => {
                     paths: [
                         {
                             path: ['votes'],
-                            kind: 'counter',
+                            kind: 'counter'
                         },
                         {
                             path: ['latency'],
-                            kind: 'number',
-                        },
-                    ],
-                },
-            },
+                            kind: 'number'
+                        }
+                    ]
+                }
+            }
         );
         expect(valid.valid).toBe(true);
 
@@ -294,8 +296,8 @@ describe('Rallar CRDT contracts', () => {
                 {
                     kind: 'counter.add',
                     path: ['latency'],
-                    delta: Number.POSITIVE_INFINITY,
-                },
+                    delta: Number.POSITIVE_INFINITY
+                }
             ]),
             '$',
             {
@@ -304,18 +306,18 @@ describe('Rallar CRDT contracts', () => {
                     paths: [
                         {
                             path: ['latency'],
-                            kind: 'number',
-                        },
-                    ],
-                },
-            },
+                            kind: 'number'
+                        }
+                    ]
+                }
+            }
         );
         expect(invalid.valid).toBe(false);
         expect(invalid.issues.map((issue) => issue.code)).toEqual(
             expect.arrayContaining([
                 'invalid-finite-number',
-                'crdt-path-kind-mismatch',
-            ]),
+                'crdt-path-kind-mismatch'
+            ])
         );
     });
 
@@ -324,10 +326,10 @@ describe('Rallar CRDT contracts', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const update = document.applyLocal(
-            rallarCrdtBatch([rallarCrdtAddCounterOperation(['votes'], 1)]),
+            rallarCrdtBatch([rallarCrdtAddCounterOperation(['votes'], 1)])
         );
         const record = {
             document: documentRef,
@@ -341,8 +343,8 @@ describe('Rallar CRDT contracts', () => {
                 sessionId: 'session-a',
                 serverId: 'server-1',
                 authorizationScope: 'room' as const,
-                acceptedUpdateHash: hashRallarCrdtUpdateEnvelope(update),
-            },
+                acceptedUpdateHash: hashRallarCrdtUpdateEnvelope(update)
+            }
         };
         const snapshot = document.snapshot('destructive-gc-boundary');
 
@@ -353,23 +355,23 @@ describe('Rallar CRDT contracts', () => {
                     ...snapshot,
                     metadata: {
                         ...snapshot.metadata,
-                        crdtState: undefined,
-                    },
-                },
-            }),
+                        crdtState: undefined
+                    }
+                }
+            })
         ).toMatchObject({
             safe: false,
-            code: 'missing-crdt-state',
+            code: 'missing-crdt-state'
         });
         expect(
             evaluateRallarCrdtDestructiveCompactionSafety({
                 records: [record],
-                snapshot,
-            }),
+                snapshot
+            })
         ).toMatchObject({
             safe: true,
             code: 'safe',
-            compactableUpdateIds: [update.updateId],
+            compactableUpdateIds: [update.updateId]
         });
     });
 
@@ -385,8 +387,8 @@ describe('Rallar CRDT contracts', () => {
                 createdAtEpochMs: 1_000,
                 knownUpdateIds: [],
                 missingUpdateIds: [update.updateId],
-                maxUpdateCount: 100,
-            }).valid,
+                maxUpdateCount: 100
+            }).valid
         ).toBe(true);
 
         expect(
@@ -398,8 +400,8 @@ describe('Rallar CRDT contracts', () => {
                 replicaId: 'replica-a',
                 createdAtEpochMs: 1_001,
                 updates: [update],
-                hasMore: false,
-            }).valid,
+                hasMore: false
+            }).valid
         ).toBe(true);
 
         const invalid = validateRallarCrdtSyncResponseEnvelope({
@@ -409,7 +411,7 @@ describe('Rallar CRDT contracts', () => {
             responseId: 'sync-response-1',
             replicaId: 'replica-a',
             createdAtEpochMs: 1_001,
-            updates: [{}],
+            updates: [{}]
         });
 
         expect(invalid.valid).toBe(false);
@@ -417,8 +419,8 @@ describe('Rallar CRDT contracts', () => {
             expect.arrayContaining([
                 'unknown-protocol-version',
                 'invalid-non-empty-string',
-                'unknown-protocol-version',
-            ]),
+                'unknown-protocol-version'
+            ])
         );
     });
 
@@ -428,13 +430,13 @@ describe('Rallar CRDT contracts', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument<Record<string, unknown>>({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const plaintextUpdate = first.applyLocal(
@@ -443,54 +445,52 @@ describe('Rallar CRDT contracts', () => {
                     kind: 'map.set',
                     path: [],
                     key: 'title',
-                    value: 'Encrypted title',
-                },
-            ]),
+                    value: 'Encrypted title'
+                }
+            ])
         );
         const encryptedUpdate = await encryptRallarCrdtUpdateEnvelope(
             plaintextUpdate,
-            keyring,
+            keyring
         );
 
         expect(
-            isRallarCrdtEncryptedOperationBatch(encryptedUpdate.payload),
+            isRallarCrdtEncryptedOperationBatch(encryptedUpdate.payload)
         ).toBe(true);
         expect(encryptedUpdate.payload.operations).toEqual([]);
         expect(JSON.stringify(encryptedUpdate)).not.toContain(
-            'Encrypted title',
+            'Encrypted title'
         );
         expect(validateRallarCrdtUpdateEnvelope(encryptedUpdate).valid).toBe(
-            true,
+            true
         );
 
         const decryptedUpdate = await decryptRallarCrdtUpdateEnvelope(
             encryptedUpdate,
-            keyring,
+            keyring
         );
         expect(decryptedUpdate.payload.operations).toEqual(
-            plaintextUpdate.payload.operations,
+            plaintextUpdate.payload.operations
         );
         expect(second.apply(decryptedUpdate).status).toBe('applied');
         expect(second.read()).toEqual({
-            title: 'Encrypted title',
+            title: 'Encrypted title'
         });
 
         const encryptedSnapshot = await encryptRallarCrdtSnapshotEnvelope(
             first.snapshot('encrypted-snapshot'),
-            keyring,
+            keyring
         );
         expect(isRallarCrdtEncryptedJsonEnvelope(encryptedSnapshot.value)).toBe(
-            true,
+            true
         );
         expect(JSON.stringify(encryptedSnapshot)).not.toContain(
-            'Encrypted title',
+            'Encrypted title'
         );
 
-        const decryptedSnapshot = await decryptRallarCrdtSnapshotEnvelope<
-            Record<string, unknown>
-        >(encryptedSnapshot, keyring);
+        const decryptedSnapshot = await decryptRallarCrdtSnapshotEnvelope<Record<string, unknown>>(encryptedSnapshot, keyring);
         expect(decryptedSnapshot.value).toEqual({
-            title: 'Encrypted title',
+            title: 'Encrypted title'
         });
     });
 
@@ -498,7 +498,7 @@ describe('Rallar CRDT contracts', () => {
         const oldKeyring = testKeyring({
             activeKeyId: 'key-v1',
             secret: 'old-secret',
-            randomByte: 3,
+            randomByte: 3
         });
         const rotatedKeyring = {
             activeKeyId: 'key-v2',
@@ -507,17 +507,17 @@ describe('Rallar CRDT contracts', () => {
                     keyId: 'key-v1',
                     secret: 'old-secret',
                     rotationEpochMs: 2_000,
-                    ownerPrincipalId: 'principal-a',
+                    ownerPrincipalId: 'principal-a'
                 },
                 {
                     keyId: 'key-v2',
                     secret: 'new-secret',
                     rotationEpochMs: 3_000,
-                    ownerPrincipalId: 'principal-a',
-                },
+                    ownerPrincipalId: 'principal-a'
+                }
             ],
             now: fixedNow(4_000),
-            randomBytes: (length: number) => new Uint8Array(length).fill(4),
+            randomBytes: (length: number) => new Uint8Array(length).fill(4)
         };
         const revokedKeyring = {
             ...rotatedKeyring,
@@ -525,23 +525,23 @@ describe('Rallar CRDT contracts', () => {
                 {
                     keyId: 'key-v1',
                     secret: 'old-secret',
-                    revokedAtEpochMs: 5_000,
+                    revokedAtEpochMs: 5_000
                 },
-                rotatedKeyring.keys[1],
-            ],
+                rotatedKeyring.keys[1]
+            ]
         };
         const helperRotatedKeyring = rotateRallarCrdtEncryptionKeyring(
             oldKeyring,
             {
                 keyId: 'key-v2',
                 secret: 'new-secret',
-                ownerPrincipalId: 'principal-a',
-            },
+                ownerPrincipalId: 'principal-a'
+            }
         );
         const helperRevokedKeyring = revokeRallarCrdtEncryptionKey(
             helperRotatedKeyring,
             'key-v1',
-            5_000,
+            5_000
         );
         const update = createUpdateEnvelope({
             payload: rallarCrdtBatch([
@@ -549,18 +549,18 @@ describe('Rallar CRDT contracts', () => {
                     kind: 'map.set',
                     path: [],
                     key: 'title',
-                    value: 'Rotated title',
-                },
-            ]),
+                    value: 'Rotated title'
+                }
+            ])
         });
 
         const encryptedWithOldKey = await encryptRallarCrdtUpdateEnvelope(
             update,
-            oldKeyring,
+            oldKeyring
         );
         const encryptedWithNewKey = await encryptRallarCrdtUpdateEnvelope(
             update,
-            rotatedKeyring,
+            rotatedKeyring
         );
 
         expect(encryptedWithOldKey.payload.encryption?.keyId).toBe('key-v1');
@@ -572,7 +572,7 @@ describe('Rallar CRDT contracts', () => {
                 ownerPrincipalId: 'principal-a',
                 rotationEpochMs: 2_000,
                 revokedAtEpochMs: undefined,
-                hasMaterial: true,
+                hasMaterial: true
             },
             {
                 keyId: 'key-v2',
@@ -580,31 +580,31 @@ describe('Rallar CRDT contracts', () => {
                 ownerPrincipalId: 'principal-a',
                 rotationEpochMs: 3_000,
                 revokedAtEpochMs: undefined,
-                hasMaterial: true,
-            },
+                hasMaterial: true
+            }
         ]);
         expect(helperRotatedKeyring.activeKeyId).toBe('key-v2');
         expect(
             describeRallarCrdtEncryptionKeyring(helperRevokedKeyring).find(
-                (key) => key.keyId === 'key-v1',
-            ),
+                (key) => key.keyId === 'key-v1'
+            )
         ).toMatchObject({
             status: 'revoked',
-            revokedAtEpochMs: 5_000,
+            revokedAtEpochMs: 5_000
         });
         expect(
             (
                 await decryptRallarCrdtUpdateEnvelope(
                     encryptedWithOldKey,
-                    rotatedKeyring,
+                    rotatedKeyring
                 )
-            ).payload.operations,
+            ).payload.operations
         ).toEqual(update.payload.operations);
         await expect(
             decryptRallarCrdtUpdateEnvelope(
                 encryptedWithOldKey,
-                revokedKeyring,
-            ),
+                revokedKeyring
+            )
         ).rejects.toThrow(/revoked/);
     });
 });
@@ -615,13 +615,13 @@ describe('Rallar CRDT deterministic engine', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const title = first.applyLocal(
@@ -630,9 +630,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'register.set',
                     path: ['title'],
                     policy: 'lww',
-                    value: 'North entrance',
-                },
-            ]),
+                    value: 'North entrance'
+                }
+            ])
         );
         const priority = second.applyLocal(
             rallarCrdtBatch([
@@ -640,9 +640,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'map.set',
                     path: ['meta'],
                     key: 'priority',
-                    value: 'high',
-                },
-            ]),
+                    value: 'high'
+                }
+            ])
         );
 
         expect(first.apply(priority).status).toBe('applied');
@@ -653,8 +653,8 @@ describe('Rallar CRDT deterministic engine', () => {
         expect(first.read()).toEqual({
             title: 'North entrance',
             meta: {
-                priority: 'high',
-            },
+                priority: 'high'
+            }
         });
     });
 
@@ -663,13 +663,13 @@ describe('Rallar CRDT deterministic engine', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(2_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(2_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const add = first.applyLocal(
@@ -678,9 +678,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'orset.add',
                     path: ['items'],
                     elementId: 'item-1',
-                    value: { text: 'Inspect north entrance', done: false },
-                },
-            ]),
+                    value: { text: 'Inspect north entrance', done: false }
+                }
+            ])
         );
         const remove = createUpdateEnvelope({
             updateId: 'remove-1',
@@ -691,19 +691,19 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'orset.remove',
                     path: ['items'],
                     elementId: 'item-1',
-                    observedAddUpdateIds: [add.updateId],
-                },
-            ]),
+                    observedAddUpdateIds: [add.updateId]
+                }
+            ])
         });
 
         expect(second.apply(remove).status).toBe('dependency-blocked');
         expect(second.dependencyState().missingUpdateIds).toEqual([
-            add.updateId,
+            add.updateId
         ]);
 
         expect(second.apply(add).status).toBe('applied');
         expect(second.read()).toEqual({
-            items: [],
+            items: []
         });
         expect(second.snapshot().metadata.tombstoneCount).toBe(1);
     });
@@ -713,13 +713,13 @@ describe('Rallar CRDT deterministic engine', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(3_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(3_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const left = first.applyLocal(
@@ -728,9 +728,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'register.set',
                     path: ['status'],
                     policy: 'multi',
-                    value: 'ready',
-                },
-            ]),
+                    value: 'ready'
+                }
+            ])
         );
         const right = second.applyLocal(
             rallarCrdtBatch([
@@ -738,14 +738,14 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'register.set',
                     path: ['status'],
                     policy: 'multi',
-                    value: 'blocked',
-                },
-            ]),
+                    value: 'blocked'
+                }
+            ])
         );
 
         first.apply(right);
         expect(first.read()).toEqual({
-            status: ['ready', 'blocked'],
+            status: ['ready', 'blocked']
         });
         expect(first.conflicts()).toHaveLength(1);
 
@@ -755,9 +755,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'register.set',
                     path: ['status'],
                     policy: 'multi',
-                    value: 'ready',
-                },
-            ]),
+                    value: 'ready'
+                }
+            ])
         );
 
         second.apply(left);
@@ -765,7 +765,7 @@ describe('Rallar CRDT deterministic engine', () => {
 
         expect(first.read()).toEqual(second.read());
         expect(first.read()).toEqual({
-            status: 'ready',
+            status: 'ready'
         });
         expect(first.conflicts()).toHaveLength(0);
     });
@@ -775,13 +775,13 @@ describe('Rallar CRDT deterministic engine', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(4_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(4_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const left = first.applyLocal(
@@ -791,9 +791,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'm',
-                    value: { text: 'Alpha' },
-                },
-            ]),
+                    value: { text: 'Alpha' }
+                }
+            ])
         );
         const right = second.applyLocal(
             rallarCrdtBatch([
@@ -802,9 +802,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-b',
                     positionId: 'm',
-                    value: { text: 'Beta' },
-                },
-            ]),
+                    value: { text: 'Beta' }
+                }
+            ])
         );
 
         first.apply(right);
@@ -812,7 +812,7 @@ describe('Rallar CRDT deterministic engine', () => {
 
         expect(first.read()).toEqual(second.read());
         expect(first.read()).toEqual({
-            items: [{ text: 'Alpha' }, { text: 'Beta' }],
+            items: [{ text: 'Alpha' }, { text: 'Beta' }]
         });
     });
 
@@ -821,7 +821,7 @@ describe('Rallar CRDT deterministic engine', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(4_500),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
 
         const alpha = document.applyLocal(
@@ -831,9 +831,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'a',
-                    value: 'Alpha',
-                },
-            ]),
+                    value: 'Alpha'
+                }
+            ])
         );
         const beta = document.applyLocal(
             rallarCrdtBatch([
@@ -842,9 +842,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-b',
                     positionId: 'b',
-                    value: 'Beta',
-                },
-            ]),
+                    value: 'Beta'
+                }
+            ])
         );
         document.applyLocal(
             rallarCrdtBatch([
@@ -853,19 +853,19 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'z',
-                    observedUpdateIds: [alpha.updateId],
+                    observedUpdateIds: [alpha.updateId]
                 },
                 {
                     kind: 'sequence.delete',
                     path: ['items'],
                     elementId: 'item-b',
-                    observedUpdateIds: [beta.updateId],
-                },
-            ]),
+                    observedUpdateIds: [beta.updateId]
+                }
+            ])
         );
 
         expect(document.read()).toEqual({
-            items: ['Alpha'],
+            items: ['Alpha']
         });
         expect(document.snapshot().metadata.tombstoneCount).toBe(1);
     });
@@ -876,7 +876,7 @@ describe('Rallar CRDT deterministic engine', () => {
             replicaId: 'replica-a',
             now: fixedNow(5_000),
             createUpdateId: sequenceIds('a'),
-            createSnapshotId: sequenceIds('snapshot'),
+            createSnapshotId: sequenceIds('snapshot')
         });
         const add = source.applyLocal(
             rallarCrdtBatch([
@@ -884,20 +884,20 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'map.set',
                     path: [],
                     key: 'title',
-                    value: 'Snapshot title',
-                },
-            ]),
+                    value: 'Snapshot title'
+                }
+            ])
         );
         const snapshot = source.snapshot();
         const target = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
-            now: fixedNow(4_000),
+            now: fixedNow(4_000)
         });
 
         target.importSnapshot(snapshot);
         expect(target.read()).toEqual({
-            title: 'Snapshot title',
+            title: 'Snapshot title'
         });
         expect(target.seenUpdateIds().has(add.updateId)).toBe(true);
 
@@ -910,9 +910,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'map.delete',
                     path: [],
                     key: 'title',
-                    observedUpdateIds: [add.updateId],
-                },
-            ]),
+                    observedUpdateIds: [add.updateId]
+                }
+            ])
         });
 
         expect(target.apply(deleteTitle).status).toBe('applied');
@@ -925,7 +925,7 @@ describe('Rallar CRDT deterministic engine', () => {
             replicaId: 'replica-a',
             now: fixedNow(6_000),
             createUpdateId: sequenceIds('a'),
-            createSnapshotId: sequenceIds('snapshot'),
+            createSnapshotId: sequenceIds('snapshot')
         });
         const alpha = source.applyLocal(
             rallarCrdtBatch([
@@ -934,9 +934,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'a',
-                    value: 'Alpha',
-                },
-            ]),
+                    value: 'Alpha'
+                }
+            ])
         );
         const beta = source.applyLocal(
             rallarCrdtBatch([
@@ -945,15 +945,15 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-b',
                     positionId: 'b',
-                    value: 'Beta',
-                },
-            ]),
+                    value: 'Beta'
+                }
+            ])
         );
         const snapshot = source.snapshot('sequence-compaction');
         const target = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
-            now: fixedNow(7_000),
+            now: fixedNow(7_000)
         });
 
         target.importSnapshot(snapshot);
@@ -967,20 +967,20 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'z',
-                    observedUpdateIds: [alpha.updateId],
+                    observedUpdateIds: [alpha.updateId]
                 },
                 {
                     kind: 'sequence.delete',
                     path: ['items'],
                     elementId: 'item-b',
-                    observedUpdateIds: [beta.updateId],
-                },
-            ]),
+                    observedUpdateIds: [beta.updateId]
+                }
+            ])
         });
 
         expect(target.apply(moveAlpha).status).toBe('applied');
         expect(target.read()).toEqual({
-            items: ['Alpha'],
+            items: ['Alpha']
         });
         expect(target.seenUpdateIds().has(alpha.updateId)).toBe(true);
         expect(target.seenUpdateIds().has(beta.updateId)).toBe(true);
@@ -992,7 +992,7 @@ describe('Rallar CRDT deterministic engine', () => {
             replicaId: 'replica-a',
             now: fixedNow(8_000),
             createUpdateId: sequenceIds('full'),
-            createSnapshotId: sequenceIds('snapshot'),
+            createSnapshotId: sequenceIds('snapshot')
         });
 
         const title = full.applyLocal(
@@ -1001,9 +1001,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'map.set',
                     path: [],
                     key: 'title',
-                    value: 'Snapshot title',
-                },
-            ]),
+                    value: 'Snapshot title'
+                }
+            ])
         );
         const tag = full.applyLocal(
             rallarCrdtBatch([
@@ -1011,9 +1011,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'orset.add',
                     path: ['tags'],
                     elementId: 'tag-1',
-                    value: 'urgent',
-                },
-            ]),
+                    value: 'urgent'
+                }
+            ])
         );
         full.applyLocal(
             rallarCrdtBatch([
@@ -1021,9 +1021,9 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'register.set',
                     path: ['status'],
                     policy: 'multi',
-                    value: 'ready',
-                },
-            ]),
+                    value: 'ready'
+                }
+            ])
         );
         const alpha = full.applyLocal(
             rallarCrdtBatch([
@@ -1032,15 +1032,15 @@ describe('Rallar CRDT deterministic engine', () => {
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'a',
-                    value: 'Alpha',
-                },
-            ]),
+                    value: 'Alpha'
+                }
+            ])
         );
         const snapshot = full.snapshot('state-preserving-compaction');
         const compacted = createRallarCrdtDocument<Record<string, unknown>>({
             ref: documentRef,
             replicaId: 'replica-b',
-            now: fixedNow(9_000),
+            now: fixedNow(9_000)
         });
         compacted.importSnapshot(snapshot);
 
@@ -1050,26 +1050,26 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'map.delete',
                     path: [],
                     key: 'title',
-                    observedUpdateIds: [title.updateId],
+                    observedUpdateIds: [title.updateId]
                 },
                 {
                     kind: 'orset.remove',
                     path: ['tags'],
                     elementId: 'tag-1',
-                    observedAddUpdateIds: [tag.updateId],
+                    observedAddUpdateIds: [tag.updateId]
                 },
                 {
                     kind: 'sequence.move',
                     path: ['items'],
                     elementId: 'item-a',
                     positionId: 'z',
-                    observedUpdateIds: [alpha.updateId],
-                },
-            ]),
+                    observedUpdateIds: [alpha.updateId]
+                }
+            ])
         );
 
         expect(snapshot.metadata.crdtState).toMatchObject({
-            format: 'rallar.crdt.state.v1',
+            format: 'rallar.crdt.state.v1'
         });
         expect(compacted.apply(later).status).toBe('applied');
         expect(compacted.read()).toEqual(full.read());
@@ -1086,15 +1086,15 @@ describe('Rallar CRDT deterministic engine', () => {
                     paths: [
                         {
                             path: ['title'],
-                            kind: 'register',
+                            kind: 'register'
                         },
                         {
                             path: ['items'],
-                            kind: 'sequence',
-                        },
-                    ],
-                },
-            },
+                            kind: 'sequence'
+                        }
+                    ]
+                }
+            }
         });
 
         expect(() =>
@@ -1104,10 +1104,10 @@ describe('Rallar CRDT deterministic engine', () => {
                         kind: 'register.set',
                         path: ['title'],
                         policy: 'lww',
-                        value: 'Strict title',
-                    },
-                ]),
-            ),
+                        value: 'Strict title'
+                    }
+                ])
+            )
         ).not.toThrow();
         expect(() =>
             document.applyLocal(
@@ -1116,10 +1116,10 @@ describe('Rallar CRDT deterministic engine', () => {
                         kind: 'map.set',
                         path: ['title'],
                         key: 'bad',
-                        value: true,
-                    },
-                ]),
-            ),
+                        value: true
+                    }
+                ])
+            )
         ).toThrow(/requires a map path/);
     });
 
@@ -1128,7 +1128,7 @@ describe('Rallar CRDT deterministic engine', () => {
             ref: documentRef,
             replicaId: 'replica-frontier',
             now: fixedNow(10_000),
-            createUpdateId: sequenceIds('frontier'),
+            createUpdateId: sequenceIds('frontier')
         });
 
         for (let index = 0; index < 5; index += 1) {
@@ -1138,9 +1138,9 @@ describe('Rallar CRDT deterministic engine', () => {
                         kind: 'map.set',
                         path: ['items'],
                         key: `item-${index}`,
-                        value: index,
-                    },
-                ]),
+                        value: index
+                    }
+                ])
             );
         }
         const next = document.applyLocal(
@@ -1149,21 +1149,21 @@ describe('Rallar CRDT deterministic engine', () => {
                     kind: 'register.set',
                     path: ['status'],
                     policy: 'lww',
-                    value: 'done',
-                },
-            ]),
+                    value: 'done'
+                }
+            ])
         );
 
         expect(next.parents).toEqual(['frontier-4']);
         expect(next.causalFrontier?.frontierUpdateIds).toEqual(next.parents);
         expect(Object.keys(next.causalFrontier?.replicaClocks ?? {})).toContain(
-            'replica-frontier',
+            'replica-frontier'
         );
     });
 });
 
 function createUpdateEnvelope(
-    overrides: Partial<RallarCrdtUpdateEnvelope> = {},
+    overrides: Partial<RallarCrdtUpdateEnvelope> = {}
 ): RallarCrdtUpdateEnvelope {
     const envelope: RallarCrdtUpdateEnvelope = {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
@@ -1180,15 +1180,15 @@ function createUpdateEnvelope(
                 kind: 'register.set',
                 path: ['title'],
                 policy: 'lww',
-                value: 'Original',
-            },
+                value: 'Original'
+            }
         ]),
-        ...overrides,
+        ...overrides
     };
 
     return {
         ...envelope,
-        hash: hashRallarCrdtUpdateEnvelope(envelope),
+        hash: hashRallarCrdtUpdateEnvelope(envelope)
     };
 }
 
@@ -1207,19 +1207,18 @@ function testKeyring(
         activeKeyId?: string;
         secret?: string;
         randomByte?: number;
-    }> = {},
+    }> = {}
 ) {
     return {
         activeKeyId: options.activeKeyId ?? 'test-key',
         keys: [
             {
                 keyId: options.activeKeyId ?? 'test-key',
-                secret: options.secret ?? 'rallar-crdt-encryption-test-secret',
-            },
+                secret: options.secret ?? 'rallar-crdt-encryption-test-secret'
+            }
         ],
         visibleMetadataFields: ['operationGroupId'],
         now: fixedNow(3_000),
-        randomBytes: (length: number) =>
-            new Uint8Array(length).fill(options.randomByte ?? 7),
+        randomBytes: (length: number) => new Uint8Array(length).fill(options.randomByte ?? 7)
     };
 }

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
 import { getNeighborsOptimizeSP } from '@shared-graph/remove/remove-dynamics-optimize-neighbors.ts';
+import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph optimized neighbor discovery', () => {
@@ -12,15 +12,15 @@ describe('shared-graph optimized neighbor discovery', () => {
                 ['member-b', VertexState.MEMBER, 4],
                 ['member-c', VertexState.MEMBER, 4],
                 ['sp-1', VertexState.STEINER, 8],
-                ['sp-2', VertexState.STEINER, 8],
+                ['sp-2', VertexState.STEINER, 8]
             ],
             [
                 ['src', 'sp-1', 1],
                 ['sp-1', 'member-a', 1],
                 ['sp-1', 'sp-2', 1],
                 ['sp-2', 'member-b', 1],
-                ['src', 'member-c', 1],
-            ],
+                ['src', 'member-c', 1]
+            ]
         );
 
         const result = getNeighborsOptimizeSP(graph, 'src');
@@ -29,7 +29,7 @@ describe('shared-graph optimized neighbor discovery', () => {
             'member-a',
             'member-b',
             'member-c',
-            'src',
+            'src'
         ]);
         expect([...result.adjacentSteiner].sort()).toEqual(['sp-1', 'sp-2']);
         expect(result.removableEdgeKeys.size).toBe(5);

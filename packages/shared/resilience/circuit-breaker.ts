@@ -10,7 +10,7 @@ function nowMs(): number {
 export const CircuitBreakerState = {
     OPEN: 'OPEN',
     CLOSE: 'CLOSE',
-    HALF_OPEN: 'HALF_OPEN',
+    HALF_OPEN: 'HALF_OPEN'
 } as const;
 
 export type CircuitBreakerState = (typeof CircuitBreakerState)[keyof typeof CircuitBreakerState];
@@ -25,7 +25,7 @@ export class CircuitBreakerPolicy {
         maxConsecutiveFailures: number,
         resetTimeout: Temporal.Duration,
         halfOpenTimeout: Temporal.Duration,
-        slidingWindow: Temporal.Duration,
+        slidingWindow: Temporal.Duration
     ) {
         this.maxConsecutiveFailures = maxConsecutiveFailures;
         this.resetTimeout = resetTimeout;
@@ -48,7 +48,7 @@ export class CircuitBreaker {
         slidingWindow: SlidingWindowCounter,
         timestampOpen: AtomicLong,
         timestampHalfOpen: AtomicLong,
-        policy: CircuitBreakerPolicy,
+        policy: CircuitBreakerPolicy
     ) {
         this.state = state;
         this.slidingWindow = slidingWindow;
@@ -67,18 +67,18 @@ export class CircuitBreaker {
             SlidingWindowCounter.initWithTs(
                 policy.slidingWindow.total({ unit: 'milliseconds' }),
                 Math.floor(policy.slidingWindow.total({ unit: 'milliseconds' }) / 10),
-                createdTs,
+                createdTs
             ),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
-            policy,
+            policy
         );
     }
 
     static async tryToExecute<T>(
         circuitBreaker: CircuitBreaker,
         supplier: () => Promise<T>,
-        isSuccessful: (result: T) => boolean = () => true,
+        isSuccessful: (result: T) => boolean = () => true
     ): Promise<Either<Error, T>> {
         try {
             if (!circuitBreaker.allow()) {
@@ -88,12 +88,14 @@ export class CircuitBreaker {
             const value = await supplier();
             if (isSuccessful(value)) {
                 circuitBreaker.success();
-            } else {
+            }
+            else {
                 circuitBreaker.failure();
             }
 
             return Either.ofRight(value);
-        } catch (e) {
+        }
+        catch (e) {
             circuitBreaker.failure();
             return Either.ofLeft(e instanceof Error ? e : new Error(String(e)));
         }
@@ -112,12 +114,14 @@ export class CircuitBreaker {
 
             if (isSuccess) {
                 circuitBreaker.success();
-            } else {
+            }
+            else {
                 circuitBreaker.failure();
             }
 
             return isSuccess;
-        } catch (error) {
+        }
+        catch (error) {
             circuitBreaker.failure();
             console.error('Execution failed:', error);
             return false;
@@ -155,7 +159,7 @@ export class CircuitBreaker {
 
         const sumInWindow = SlidingWindowCounter.sumInWindowWithNow(
             this.slidingWindow,
-            nowEpochMs,
+            nowEpochMs
         );
         if (
             // if failures in window exceed the maximum allowed, trip the circuit OPEN
@@ -191,7 +195,8 @@ export class CircuitBreaker {
                     return true;
                 }
             }
-        } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
+        }
+        else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
             // check if state has been in half open too long
             const timeSinceHalfOpened = nowEpochMs - this.timestampHalfOpen.get();
 
@@ -214,7 +219,8 @@ export class CircuitBreaker {
             if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
                 return true;
             }
-        } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
+        }
+        else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
             const timeSinceHalfOpened = nowEpochMs - this.timestampHalfOpen.get();
             if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
                 return true;

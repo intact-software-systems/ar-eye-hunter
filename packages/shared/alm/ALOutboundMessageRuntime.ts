@@ -5,8 +5,10 @@ import { InMemoryALOrderingStore } from '../al-contracts/al-runtime.ts';
 import type { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
 import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { RetryableConflictError, RetryPolicies, tryWithPolicy, } from '../resilience/TryWith.ts';
+import { RetryableConflictError, RetryPolicies, tryWithPolicy } from '../resilience/TryWith.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
+import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
 import type {
     ALOutboundAdmissionMutation,
     ALOutboundAdmissionStore,
@@ -14,21 +16,19 @@ import type {
     ALOutboundDurableEffectWrite,
     ALOutboundMessageReadDto,
     ALOutboundRepairHint,
-    ALPersistedOutboundEffect,
+    ALPersistedOutboundEffect
 } from './ALOutboundAdmissionStore.ts';
-import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import {
     createALOutboundAdmissionStore,
     createInMemoryALOutboundAdmissionState,
     toPendingAckExpireAtTimestamp,
-    trackOutboundPendingAckSnapshot,
+    trackOutboundPendingAckSnapshot
 } from './ALOutboundAdmissionStore.ts';
-import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
     ALOutboundRuntimeStateStore,
-    ALOutboundSentMessageSnapshot,
+    ALOutboundSentMessageSnapshot
 } from './ALRuntimeStateStores.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
@@ -98,11 +98,11 @@ export type ALOutboundMessageRuntimeInput<TPrepared> = Readonly<{
     beforeDequeueDispatch?: (msg: ALMessage, entry: ResourceEntry) => boolean | Promise<boolean>;
     sendPreparedMessage: (
         prepared: TPrepared,
-        phase: ALOutboundDispatchPhase,
+        phase: ALOutboundDispatchPhase
     ) => Promise<void | ALOutboundPreparedSendResult>;
     planRepairMessage?: (
         msg: ALMessage,
-        request: ALOutboundRepairRequest,
+        request: ALOutboundRepairRequest
     ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>;
     onFallbackDequeue?: (msg: ALMessage, entry: ResourceEntry) => Promise<void>;
     stores?: ALOutboundRuntimeStores;
@@ -116,44 +116,44 @@ export type ALOutboundRuntimeStores = Readonly<{
 }>;
 export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
-    kind: 'sender-queue-wait';
-    senderId: string;
-    queued: boolean;
-    durationMs: number;
-}>
+        kind: 'sender-queue-wait';
+        senderId: string;
+        queued: boolean;
+        durationMs: number;
+    }>
     | Readonly<{
-    kind: 'browser-lock-wait';
-    senderId: string;
-    lockName: string;
-    available: boolean;
-    durationMs: number;
-}>
+        kind: 'browser-lock-wait';
+        senderId: string;
+        lockName: string;
+        available: boolean;
+        durationMs: number;
+    }>
     | Readonly<{
-    kind: 'browser-lock-hold';
-    senderId: string;
-    lockName: string;
-    available: boolean;
-    durationMs: number;
-}>
+        kind: 'browser-lock-hold';
+        senderId: string;
+        lockName: string;
+        available: boolean;
+        durationMs: number;
+    }>
     | Readonly<{
-    kind: 'effect-drain';
-    workerId: string;
-    durationMs: number;
-    claimedCount: number;
-    completedCount: number;
-    rescheduledCount: number;
-    skippedExpiredCount: number;
-}>;
+        kind: 'effect-drain';
+        workerId: string;
+        durationMs: number;
+        claimedCount: number;
+        completedCount: number;
+        rescheduledCount: number;
+        skippedExpiredCount: number;
+    }>;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
-    event: ALOutboundRuntimeDiagnosticsEvent,
+    event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
 
 type BrowserLockManager = Readonly<{
     request<T>(
         name: string,
-        options: Readonly<{ mode: 'exclusive' }>,
-        callback: () => Promise<T>,
+        options: Readonly<{ mode: 'exclusive'; }>,
+        callback: () => Promise<T>
     ): Promise<T>;
 }>;
 
@@ -196,7 +196,7 @@ type CommitDispatchOptions<TPrepared> = Readonly<{
     replaceExistingOutbox?: boolean;
     deferEffectDrain?: boolean;
     extraMutations?: (
-        read: ALOutboundMessageReadDto<TPrepared>,
+        read: ALOutboundMessageReadDto<TPrepared>
     ) => readonly ALOutboundAdmissionMutation[] | 'skip' | undefined;
 }>;
 
@@ -206,8 +206,8 @@ type ALOutboundCommitResult<TPrepared> = Readonly<{
 }>;
 
 type ALDurableEffectRunResult =
-    | Readonly<{ status: 'completed' }>
-    | Readonly<{ status: 'reschedule'; readyAtMs: number; reason: string }>;
+    | Readonly<{ status: 'completed'; }>
+    | Readonly<{ status: 'reschedule'; readyAtMs: number; reason: string; }>;
 
 export class ALOutboundMessageRuntime<TPrepared> {
     private static readonly MAX_COMMIT_ATTEMPTS = 10;
@@ -220,7 +220,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         .maxAttempts(ALOutboundMessageRuntime.MAX_COMMIT_ATTEMPTS)
         .retryIntervalMsecs(ALOutboundMessageRuntime.COMMIT_RETRY_INTERVAL_MSECS)
         .maxRetryIntervalMsecs(
-            ALOutboundMessageRuntime.COMMIT_MAX_RETRY_INTERVAL_MSECS,
+            ALOutboundMessageRuntime.COMMIT_MAX_RETRY_INTERVAL_MSECS
         )
         .maxElapsedMsecs(ALOutboundMessageRuntime.COMMIT_MAX_ELAPSED_MSECS);
     private static readonly EFFECT_LEASE_MS = 10_000;
@@ -239,14 +239,14 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly input: ALOutboundMessageRuntimeInput<TPrepared>;
 
     constructor(
-        input: ALOutboundMessageRuntimeInput<TPrepared>,
+        input: ALOutboundMessageRuntimeInput<TPrepared>
     ) {
         this.input = input;
         this.admissionStore = input.stores?.admissionStore ?? createALOutboundAdmissionStore({
             kind: 'memory',
             namespace: 'al-outbound-runtime',
             supersedenceTrackTtlMs: 5 * 60_000,
-            state: createInMemoryALOutboundAdmissionState(),
+            state: createInMemoryALOutboundAdmissionState()
         });
         this.readyPromise = this.admissionStore.ready();
     }
@@ -274,7 +274,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     async enqueueIfAbsent(
         msg: ALMessage,
-        dispatchPlan?: ALOutboundDispatchPlan<TPrepared>,
+        dispatchPlan?: ALOutboundDispatchPlan<TPrepared>
     ): Promise<ALOutboundEnqueueResult> {
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
@@ -291,19 +291,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 ? this.input.planOutgoingMessage
                 : () => dispatchPlan,
             'enqueue',
-            'immediate',
+            'immediate'
         );
         return {
             status: computed.status,
             message: msg,
             entry: computed.entries[0],
             entries: computed.entries,
-            reason: computed.reason,
+            reason: computed.reason
         };
     }
     async dequeue(
         typesToDequeue: Set<string>,
-        resilience: ResilienceDto,
+        resilience: ResilienceDto
     ): Promise<void> {
         if (this.disposed) {
             return;
@@ -320,7 +320,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 const msg = this.input.readMessageFromEntry(entry);
                 const clusterDispatch = this.input.beforeDequeueDispatch?.(msg, entry);
                 const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
-                    ? clusterDispatch ?? false : await clusterDispatch;
+                    ? clusterDispatch ?? false
+                    : await clusterDispatch;
                 const computed = await this.commitDispatchPlanWithRetry(
                     msg,
                     this.input.planDequeuedMessage ??
@@ -328,11 +329,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     'dequeue',
                     'dequeue',
                     {
-                        fallbackEntry: entry,
-                    },
+                        fallbackEntry: entry
+                    }
                 );
-                if (computed.status === 'no-route' && !clusterPublished) throw new Error(computed.reason);
-            },
+                if (computed.status === 'no-route' && !clusterPublished) {
+                    throw new Error(computed.reason);
+                }
+            }
         );
     }
 
@@ -346,17 +349,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
             async () => {
                 try {
                     return await this.admissionStore.acceptControlMessage<TPrepared>(msg);
-                } catch (error) {
+                }
+                catch (error) {
                     if (error instanceof ALAdmissionBackendConflictError) {
                         throw new RetryableConflictError(
                             'Outbound control-message admission conflict',
-                            { cause: error },
+                            { cause: error }
                         );
                     }
                     throw error;
                 }
             },
-            ALOutboundMessageRuntime.COMMIT_RETRY_POLICY,
+            ALOutboundMessageRuntime.COMMIT_RETRY_POLICY
         );
         if (!acceptance.handled) {
             return false;
@@ -365,7 +369,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const retryAtMs = await this.scheduleNotYetInSyncRetryIfRequired(msg);
         if (!this.runningEffectDrain) {
             await this.drainDurableEffectsNow();
-        } else if (retryAtMs !== undefined) {
+        }
+        else if (retryAtMs !== undefined) {
             this.scheduleEffectDrainAt(retryAtMs);
         }
         return true;
@@ -376,17 +381,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
         planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>,
         intent: ALOutboundComputeIntent,
         phase: ALOutboundDispatchPhase,
-        options: CommitDispatchOptions<TPrepared> = {},
+        options: CommitDispatchOptions<TPrepared> = {}
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.withSenderCommitQueue(
             msg.id.senderId,
-            async () => await this.commitDispatchPlanWithRetryNow(
-                msg,
-                planner,
-                intent,
-                phase,
-                options,
-            ),
+            async () =>
+                await this.commitDispatchPlanWithRetryNow(
+                    msg,
+                    planner,
+                    intent,
+                    phase,
+                    options
+                )
         );
 
         if (result.committed && !options.deferEffectDrain) {
@@ -401,7 +407,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>,
         intent: ALOutboundComputeIntent,
         phase: ALOutboundDispatchPhase,
-        options: CommitDispatchOptions<TPrepared>,
+        options: CommitDispatchOptions<TPrepared>
     ): Promise<ALOutboundCommitResult<TPrepared>> {
         const dependencies = this.toComputeDependencies();
 
@@ -411,7 +417,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     if (this.disposed) {
                         return {
                             computed: ALOutboundMessageRuntime.toDisposedComputed(),
-                            committed: false,
+                            committed: false
                         };
                     }
 
@@ -419,7 +425,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     if (this.disposed) {
                         return {
                             computed: ALOutboundMessageRuntime.toDisposedComputed(),
-                            committed: false,
+                            committed: false
                         };
                     }
 
@@ -428,24 +434,24 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         dependencies,
                         intent,
                         phase,
-                        options,
+                        options
                     );
 
                     if (!computed.bundle) {
                         return {
                             computed,
-                            committed: false,
+                            committed: false
                         };
                     }
                     if (this.disposed) {
                         return {
                             computed: ALOutboundMessageRuntime.toDisposedComputed(),
-                            committed: false,
+                            committed: false
                         };
                     }
 
                     const status = await this.admissionStore.commitBundle(
-                        this.toRuntimeClockedBundle(computed.bundle),
+                        this.toRuntimeClockedBundle(computed.bundle)
                     );
                     if (status === 'conflict') {
                         throw new RetryableConflictError('Outbound commit conflict');
@@ -453,15 +459,16 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
                     return {
                         computed,
-                        committed: true,
+                        committed: true
                     };
                 },
-                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY,
+                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY
             );
-        } catch (error) {
+        }
+        catch (error) {
             throw new Error(
                 `Failed to commit outbound message after retries: ${msg.id.msgId}`,
-                { cause: error },
+                { cause: error }
             );
         }
     }
@@ -471,7 +478,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         dependencies: ALOutboundComputeDependencies,
         intent: ALOutboundComputeIntent,
         phase: ALOutboundDispatchPhase,
-        options: CommitDispatchOptions<TPrepared> = {},
+        options: CommitDispatchOptions<TPrepared> = {}
     ): ALOutboundComputedDto<TPrepared> {
         const plan = read.plan;
         if (plan.dropReason) {
@@ -481,10 +488,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
             return {
                 status: ALOutboundMessageRuntime.toEnqueueStatusFromReason(
-                    plan.dropReason,
+                    plan.dropReason
                 ),
                 reason: plan.dropReason,
-                entries: [],
+                entries: []
             };
         }
 
@@ -492,13 +499,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
             const entry = read.sentSnapshot.outboxKey
                 ? {
                     ...dependencies.toOutboxEntry(read.msg),
-                    key: read.sentSnapshot.outboxKey,
+                    key: read.sentSnapshot.outboxKey
                 }
                 : undefined;
             return {
                 status: 'duplicate',
                 reason: `Duplicate outbound message ${read.msg.id.msgId}`,
-                entries: entry ? [entry] : [],
+                entries: entry ? [entry] : []
             };
         }
 
@@ -508,25 +515,26 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return {
                 status: 'superseded',
                 reason: `Skipping superseded outbound message ${read.msg.id.msgId}`,
-                entries: [],
+                entries: []
             };
         }
 
         const shouldDispatchPrepared = intent === 'enqueue'
             ? plan.preparedMessages.length > 0 && !plan.persist
             : plan.preparedMessages.length > 0;
-        const shouldFallback = !shouldDispatchPrepared
-            && intent !== 'enqueue'
-            && dependencies.canFallback;
-        const shouldEnqueueOutbox = (intent === 'enqueue' || (intent === 'repair' && plan.persist)) && !shouldDispatchPrepared;
+        const shouldFallback = !shouldDispatchPrepared &&
+            intent !== 'enqueue' &&
+            dependencies.canFallback;
+        const shouldEnqueueOutbox = (intent === 'enqueue' || (intent === 'repair' && plan.persist)) &&
+            !shouldDispatchPrepared;
         const entries: ResourceEntry[] = [];
         const mutations: ALOutboundAdmissionMutation[] = [
             {
                 kind: 'set-msg-owner',
                 msgId: read.msg.id.msgId,
                 senderId: read.msg.id.senderId,
-                expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg),
-            },
+                expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg)
+            }
         ];
         const durableEffects: ALOutboundDurableEffectWrite<TPrepared>[] = [];
 
@@ -535,7 +543,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return {
                 status: 'skipped',
                 reason: `Skipped outbound dispatch for message ${read.msg.id.msgId}`,
-                entries: [],
+                entries: []
             };
         }
         mutations.push(...extraMutations);
@@ -550,9 +558,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     read.msg,
                     {
                         outboxKey: entry.key,
-                        supersedenceKey: plan.supersedenceTracking?.key,
-                    },
-                ),
+                        supersedenceKey: plan.supersedenceTracking?.key
+                    }
+                )
             );
             durableEffects.push({
                 effectId: this.toEffectId('outbox', read.msg.id.msgId),
@@ -562,8 +570,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     msg: read.msg,
                     entry,
                     replaceExisting: options.replaceExistingOutbox === true ||
-                        (plan.supersedenceTracking?.enabled === true && plan.supersedenceTracking.key !== undefined),
-                },
+                        (plan.supersedenceTracking?.enabled === true && plan.supersedenceTracking.key !== undefined)
+                }
             });
         }
 
@@ -581,31 +589,33 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         kind: 'send-prepared',
                         msg: read.msg,
                         prepared,
-                        phase,
-                    },
+                        phase
+                    }
                 });
             });
-        } else if (shouldFallback) {
+        }
+        else if (shouldFallback) {
             durableEffects.push({
                 effectId: this.toEffectId('fallback', read.msg.id.msgId, phase),
                 expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg),
                 payload: {
                     kind: 'fallback-dispatch',
                     msg: read.msg,
-                    entry: options.fallbackEntry ?? dependencies.toOutboxEntry(read.msg),
-                },
+                    entry: options.fallbackEntry ?? dependencies.toOutboxEntry(read.msg)
+                }
             });
-        } else if (!shouldEnqueueOutbox) {
+        }
+        else if (!shouldEnqueueOutbox) {
             console.warn(`No outbound transport route for message ${read.msg.id.msgId}`);
         }
 
         const status: ALOutboundEnqueueStatus = shouldEnqueueOutbox
             ? 'enqueued'
             : shouldDispatchPrepared
-                ? 'sent-immediate'
-                : shouldFallback
-                    ? 'sent-immediate'
-                    : 'no-route';
+            ? 'sent-immediate'
+            : shouldFallback
+            ? 'sent-immediate'
+            : 'no-route';
         const reason = status === 'no-route'
             ? `No outbound transport route for message ${read.msg.id.msgId}`
             : undefined;
@@ -614,7 +624,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return {
                 status,
                 reason,
-                entries,
+                entries
             };
         }
 
@@ -626,8 +636,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 senderId: read.msg.id.senderId,
                 expectedVersion: read.clientRecord?.version,
                 mutations,
-                durableEffects,
-            },
+                durableEffects
+            }
         };
     }
 
@@ -636,7 +646,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             status: 'skipped',
             message: msg,
             entries: [],
-            reason: 'Outbound runtime is disposed.',
+            reason: 'Outbound runtime is disposed.'
         };
     }
 
@@ -644,7 +654,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return {
             status: 'skipped',
             entries: [],
-            reason: 'Outbound runtime is disposed.',
+            reason: 'Outbound runtime is disposed.'
         };
     }
 
@@ -658,7 +668,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private toRuntimeClockedBundle(
-        bundle: ALOutboundCommitBundle<TPrepared>,
+        bundle: ALOutboundCommitBundle<TPrepared>
     ): ALOutboundCommitBundle<TPrepared> {
         if (bundle.durableEffects.length === 0) {
             return bundle;
@@ -671,7 +681,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 effect.retryAtMs === undefined
                     ? { ...effect, retryAtMs: nowMs }
                     : effect
-            ),
+            )
         };
     }
 
@@ -683,7 +693,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return;
         }
-        void this.startEffectDrain().catch(error => {
+        void this.startEffectDrain().catch((error) => {
             console.error('Failed to drain outbound durable effects', error);
         });
     }
@@ -700,7 +710,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }
 
             this.effectDrainPromise = this.runDurableEffectDrainLoop()
-                .catch(error => {
+                .catch((error) => {
                     console.error('Outbound durable effect drain failed', error);
                     this.scheduleEffectDrainAt(this.readNowMs() + this.toEffectRetryDelayMs(0));
                 })
@@ -729,7 +739,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     this.effectWorkerId,
                     ALOutboundMessageRuntime.MAX_EFFECT_BATCH,
                     ALOutboundMessageRuntime.EFFECT_LEASE_MS,
-                    this.readNowMs(),
+                    this.readNowMs()
                 );
                 if (claimed.length === 0) {
                     break;
@@ -751,7 +761,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                                 effect.effectId,
                                 this.effectWorkerId,
                                 runResult.readyAtMs,
-                                runResult.reason,
+                                runResult.reason
                             );
                             rescheduledCount += 1;
                             continue;
@@ -759,7 +769,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
                         await this.admissionStore.completeEffect(effect.effectId, this.effectWorkerId);
                         completedCount += 1;
-                    } catch (error) {
+                    }
+                    catch (error) {
                         if (this.disposed) {
                             break;
                         }
@@ -768,7 +779,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                             effect.effectId,
                             this.effectWorkerId,
                             this.readNowMs() + this.toEffectRetryDelayMs(effect.attempts),
-                            ALOutboundMessageRuntime.toErrorMessage(error),
+                            ALOutboundMessageRuntime.toErrorMessage(error)
                         );
                         rescheduledCount += 1;
                     }
@@ -783,7 +794,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             if (nextReadyAt !== undefined) {
                 this.scheduleEffectDrainAt(nextReadyAt);
             }
-        } finally {
+        }
+        finally {
             this.runningEffectDrain = false;
             this.emitDiagnostics({
                 kind: 'effect-drain',
@@ -792,7 +804,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 claimedCount,
                 completedCount,
                 rescheduledCount,
-                skippedExpiredCount,
+                skippedExpiredCount
             });
         }
     }
@@ -814,7 +826,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async runDurableEffect(
-        effect: ALPersistedOutboundEffect<TPrepared>,
+        effect: ALPersistedOutboundEffect<TPrepared>
     ): Promise<ALDurableEffectRunResult> {
         if (effect.expireAtTimestamp <= this.readNowMs()) {
             return { status: 'completed' };
@@ -830,7 +842,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         status: 'reschedule',
                         readyAtMs: this.readNowMs() +
                             Math.max(0, sendResult.retryAfterMs ?? this.toEffectRetryDelayMs(effect.attempts)),
-                        reason: sendResult.reason ?? 'Prepared outbound transport is not ready.',
+                        reason: sendResult.reason ?? 'Prepared outbound transport is not ready.'
                     };
                 }
 
@@ -855,19 +867,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
             case 'repair-hint':
                 await this.executeRepairFromHint(
                     effect.payload.msgId,
-                    effect.payload.request,
+                    effect.payload.request
                 );
                 return { status: 'completed' };
             case 'nack-retry':
                 await this.retransmitByMsgId(effect.payload.msgId, {
-                    replaceExistingOutbox: true,
+                    replaceExistingOutbox: true
                 });
                 return { status: 'completed' };
         }
     }
 
     private async scheduleNotYetInSyncRetryIfRequired(
-        controlMessage: ALMessage,
+        controlMessage: ALMessage
     ): Promise<number | undefined> {
         const parsed = parseALControlMessage(controlMessage);
         if (parsed?.type !== 'nack' || parsed.payload.reason !== 'not-yet-in-sync') {
@@ -881,7 +893,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 async () => {
                     const read = await this.admissionStore.readRepairMessage(
                         msgId,
-                        this.input.planOutgoingMessage,
+                        this.input.planOutgoingMessage
                     );
                     const msg = read.sentSnapshot?.msg;
                     const retry = read.plan?.retryTracking;
@@ -890,11 +902,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     }
 
                     const retryAttempt = read.nacks
-                        .filter(nack => nack.reason === 'not-yet-in-sync')
+                        .filter((nack) => nack.reason === 'not-yet-in-sync')
                         .length;
                     if (retryAttempt > retry.maxAttempts) {
                         console.warn(
-                            `Not-yet-in-sync retry budget exceeded for message ${msgId}`,
+                            `Not-yet-in-sync retry budget exceeded for message ${msgId}`
                         );
                         return undefined;
                     }
@@ -902,7 +914,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     const retryDelayMs = Math.max(
                         0,
                         retry.retryDelayMs ??
-                        ALOutboundMessageRuntime.NOT_YET_IN_SYNC_RETRY_DELAY_MS,
+                            ALOutboundMessageRuntime.NOT_YET_IN_SYNC_RETRY_DELAY_MS
                     );
                     const retryAtMs = read.nowMs + retryDelayMs;
                     const status = await this.admissionStore.commitBundle<TPrepared>({
@@ -914,33 +926,34 @@ export class ALOutboundMessageRuntime<TPrepared> {
                                 effectId: ALOutboundMessageRuntime.toEffectId(
                                     'nack-retry',
                                     msgId,
-                                    'not-yet-in-sync',
+                                    'not-yet-in-sync'
                                 ),
                                 retryAtMs,
                                 expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
                                 payload: {
                                     kind: 'nack-retry',
                                     msgId,
-                                    reason: 'not-yet-in-sync',
-                                },
-                            },
-                        ],
+                                    reason: 'not-yet-in-sync'
+                                }
+                            }
+                        ]
                     });
 
                     if (status === 'conflict') {
                         throw new RetryableConflictError(
-                            'Outbound not-yet-in-sync retry commit conflict',
+                            'Outbound not-yet-in-sync retry commit conflict'
                         );
                     }
 
                     return retryAtMs;
                 },
-                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY,
+                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY
             );
-        } catch (error) {
+        }
+        catch (error) {
             throw new Error(
                 `Failed to schedule not-yet-in-sync retry for message ${msgId}`,
-                { cause: error },
+                { cause: error }
             );
         }
     }
@@ -972,11 +985,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         return;
                     }
 
-                    const failedPeerIds = pending.expectedPeerIds.filter(peerId => !pending.ackedPeerIds.includes(peerId));
+                    const failedPeerIds = pending.expectedPeerIds.filter((peerId) =>
+                        !pending.ackedPeerIds.includes(peerId)
+                    );
                     const nextPending: ALOutboundPendingAckSnapshot = {
                         ...pending,
                         attempts: pending.attempts + 1,
-                        deadlineAtMs: Date.now() + pending.timeoutMs,
+                        deadlineAtMs: Date.now() + pending.timeoutMs
                     };
                     const bundle: ALOutboundCommitBundle<TPrepared> = {
                         senderId: msg.id.senderId,
@@ -984,8 +999,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         mutations: [
                             {
                                 kind: 'set-pending-ack',
-                                snapshot: nextPending,
-                            },
+                                snapshot: nextPending
+                            }
                         ],
                         durableEffects: [
                             this.toAckTimeoutEffect(nextPending),
@@ -995,7 +1010,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                                     msgId,
                                     'ack-timeout',
                                     nextPending.attempts,
-                                    nextPending.deadlineAtMs,
+                                    nextPending.deadlineAtMs
                                 ),
                                 payload: {
                                     kind: 'repair-hint',
@@ -1003,29 +1018,30 @@ export class ALOutboundMessageRuntime<TPrepared> {
                                     request: {
                                         trigger: 'ack-timeout',
                                         failedPeerIds,
-                                        missingSeqs: [],
-                                    },
-                                },
-                            },
-                        ],
+                                        missingSeqs: []
+                                    }
+                                }
+                            }
+                        ]
                     };
 
                     const status = await this.admissionStore.commitBundle(bundle);
                     if (status === 'conflict') {
                         throw new RetryableConflictError(
-                            'Outbound ack timeout commit conflict',
+                            'Outbound ack timeout commit conflict'
                         );
                     }
 
                     return;
                 },
-                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY,
+                ALOutboundMessageRuntime.COMMIT_RETRY_POLICY
             );
             return;
-        } catch (error) {
+        }
+        catch (error) {
             throw new Error(
                 `Failed to commit ack timeout for message ${msgId}`,
-                { cause: error },
+                { cause: error }
             );
         }
     }
@@ -1033,19 +1049,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private async persistNextAckTimeout(
         msg: ALMessage,
         pending: ALOutboundPendingAckSnapshot,
-        expectedVersion?: number,
+        expectedVersion?: number
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle<TPrepared>({
             senderId: msg.id.senderId,
             expectedVersion,
             mutations: [],
             durableEffects: [
-                this.toAckTimeoutEffect(pending),
-            ],
+                this.toAckTimeoutEffect(pending)
+            ]
         });
         if (status === 'conflict') {
             throw new RetryableConflictError(
-                'Outbound ack timeout persistence commit conflict',
+                'Outbound ack timeout persistence commit conflict'
             );
         }
     }
@@ -1053,7 +1069,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private async commitClearPendingAck(
         msg: ALMessage,
         pending: ALOutboundPendingAckSnapshot,
-        expectedVersion?: number,
+        expectedVersion?: number
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle<TPrepared>({
             senderId: msg.id.senderId,
@@ -1061,34 +1077,35 @@ export class ALOutboundMessageRuntime<TPrepared> {
             mutations: [
                 {
                     kind: 'delete-pending-ack',
-                    msgId: pending.msgId,
+                    msgId: pending.msgId
                 },
                 {
                     kind: 'delete-repair-attempt',
-                    msgId: pending.msgId,
-                },
+                    msgId: pending.msgId
+                }
             ],
-            durableEffects: [],
+            durableEffects: []
         });
         if (status === 'conflict') {
             throw new RetryableConflictError(
-                'Outbound pending ack clear commit conflict',
+                'Outbound pending ack clear commit conflict'
             );
         }
     }
 
     private async executeRepairFromHint(
         fallbackMsgId: string,
-        request: ALOutboundRepairHint,
+        request: ALOutboundRepairHint
     ): Promise<void> {
         if (request.orderingTrackKey && request.missingSeqs.length > 0) {
             const sentMessages = await this.admissionStore.getAllSentMessages();
             let retransmitted = false;
 
             for (const seq of request.missingSeqs) {
-                const cached = sentMessages.find(snapshot =>
-                    InMemoryALOrderingStore.toTrackKey(snapshot.msg) === request.orderingTrackKey
-                    && snapshot.msg.ordering?.seq === seq);
+                const cached = sentMessages.find((snapshot) =>
+                    InMemoryALOrderingStore.toTrackKey(snapshot.msg) === request.orderingTrackKey &&
+                    snapshot.msg.ordering?.seq === seq
+                );
                 if (!cached) {
                     continue;
                 }
@@ -1107,7 +1124,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private async repairByMsgId(
         msgId: string,
-        request: ALOutboundRepairHint,
+        request: ALOutboundRepairHint
     ): Promise<void> {
         try {
             const read = await this.admissionStore.readRepairMessage(msgId, this.input.planOutgoingMessage);
@@ -1135,8 +1152,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 msg,
                 {
                     ...request,
-                    repair,
-                },
+                    repair
+                }
             );
             if (!handledPlan || handledPlan.dropReason) {
                 if (handledPlan?.dropReason) {
@@ -1152,7 +1169,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 'repair',
                 'immediate',
                 {
-                    extraMutations: repairRead => {
+                    extraMutations: (repairRead) => {
                         const currentAttempts = repairRead.repairAttempt?.attempts ?? attempts;
                         if (currentAttempts >= repair.maxAttempts) {
                             return 'skip';
@@ -1163,35 +1180,36 @@ export class ALOutboundMessageRuntime<TPrepared> {
                                 kind: 'set-repair-attempt',
                                 snapshot: {
                                     msgId,
-                                    attempts: currentAttempts + 1,
-                                } satisfies ALOutboundRepairAttemptSnapshot,
-                            },
+                                    attempts: currentAttempts + 1
+                                } satisfies ALOutboundRepairAttemptSnapshot
+                            }
                         ];
                     },
-                    deferEffectDrain: true,
-                },
+                    deferEffectDrain: true
+                }
             );
             if (computed.bundle === undefined) {
                 await this.retransmitByMsgId(msgId);
             }
             return;
-        } catch (error) {
+        }
+        catch (error) {
             throw new Error(
                 `Failed to commit repair for message ${msgId}`,
-                { cause: error },
+                { cause: error }
             );
         }
     }
 
     private async withSenderCommitQueue<T>(
         senderId: string,
-        task: () => Promise<T>,
+        task: () => Promise<T>
     ): Promise<T> {
         const existing = this.commitQueuesBySenderId.get(senderId);
         const previous = existing ?? Promise.resolve();
         const waitStartedAtMs = this.readNowMs();
         let release: (() => void) | undefined;
-        const gate = new Promise<void>(resolve => {
+        const gate = new Promise<void>((resolve) => {
             release = resolve;
         });
         const tail = previous.catch(() => undefined).then(() => gate);
@@ -1202,12 +1220,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
             kind: 'sender-queue-wait',
             senderId,
             queued: existing !== undefined,
-            durationMs: this.elapsedSince(waitStartedAtMs),
+            durationMs: this.elapsedSince(waitStartedAtMs)
         });
 
         try {
             return await this.withCrossContextCommitLock(senderId, task);
-        } finally {
+        }
+        finally {
             release?.();
             if (this.commitQueuesBySenderId.get(senderId) === tail) {
                 this.commitQueuesBySenderId.delete(senderId);
@@ -1217,7 +1236,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private async withCrossContextCommitLock<T>(
         senderId: string,
-        task: () => Promise<T>,
+        task: () => Promise<T>
     ): Promise<T> {
         const lockName = `rallar:al-outbound-commit:${senderId}`;
         const locks = this.readBrowserLockManager();
@@ -1227,18 +1246,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 senderId,
                 lockName,
                 available: false,
-                durationMs: 0,
+                durationMs: 0
             });
             const holdStartedAtMs = this.readNowMs();
             try {
                 return await task();
-            } finally {
+            }
+            finally {
                 this.emitDiagnostics({
                     kind: 'browser-lock-hold',
                     senderId,
                     lockName,
                     available: false,
-                    durationMs: this.elapsedSince(holdStartedAtMs),
+                    durationMs: this.elapsedSince(holdStartedAtMs)
                 });
             }
         }
@@ -1253,21 +1273,22 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     senderId,
                     lockName,
                     available: true,
-                    durationMs: this.elapsedSince(waitStartedAtMs),
+                    durationMs: this.elapsedSince(waitStartedAtMs)
                 });
                 const holdStartedAtMs = this.readNowMs();
                 try {
                     return await task();
-                } finally {
+                }
+                finally {
                     this.emitDiagnostics({
                         kind: 'browser-lock-hold',
                         senderId,
                         lockName,
                         available: true,
-                        durationMs: this.elapsedSince(holdStartedAtMs),
+                        durationMs: this.elapsedSince(holdStartedAtMs)
                     });
                 }
-            },
+            }
         );
     }
 
@@ -1282,7 +1303,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
         try {
             this.input.diagnostics?.(event);
-        } catch (error) {
+        }
+        catch (error) {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
     }
@@ -1301,7 +1323,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         msgId: string,
         options: Readonly<{
             replaceExistingOutbox?: boolean;
-        }> = {},
+        }> = {}
     ): Promise<void> {
         const sent = await this.admissionStore.getSentMessage(msgId);
         if (!sent) {
@@ -1316,15 +1338,15 @@ export class ALOutboundMessageRuntime<TPrepared> {
             'immediate',
             {
                 replaceExistingOutbox: options.replaceExistingOutbox,
-                deferEffectDrain: true,
-            },
+                deferEffectDrain: true
+            }
         );
     }
 
     private toComputeDependencies(): ALOutboundComputeDependencies {
         return {
             toOutboxEntry: this.input.toOutboxEntry,
-            canFallback: this.input.onFallbackDequeue !== undefined,
+            canFallback: this.input.onFallbackDequeue !== undefined
         };
     }
 
@@ -1333,32 +1355,32 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private toAckTimeoutEffect(
-        pending: ALOutboundPendingAckSnapshot,
+        pending: ALOutboundPendingAckSnapshot
     ): ALOutboundDurableEffectWrite<TPrepared> {
         return {
             effectId: ALOutboundMessageRuntime.toEffectId(
                 'ack-timeout',
                 pending.msgId,
                 pending.attempts + 1,
-                pending.deadlineAtMs,
+                pending.deadlineAtMs
             ),
             retryAtMs: pending.deadlineAtMs,
             expireAtTimestamp: toPendingAckExpireAtTimestamp(pending),
             payload: {
                 kind: 'ack-timeout',
-                msgId: pending.msgId,
-            },
+                msgId: pending.msgId
+            }
         };
     }
 
     private isAckComplete(pending: ALOutboundPendingAckSnapshot): boolean {
-        return pending.expectedPeerIds.length === 0
-            || pending.expectedPeerIds.every(peerId => pending.ackedPeerIds.includes(peerId));
+        return pending.expectedPeerIds.length === 0 ||
+            pending.expectedPeerIds.every((peerId) => pending.ackedPeerIds.includes(peerId));
     }
 
     private static appendSupersedenceMutations<TPrepared>(
         mutations: ALOutboundAdmissionMutation[],
-        read: ALOutboundMessageReadDto<TPrepared>,
+        read: ALOutboundMessageReadDto<TPrepared>
     ): void {
         const tracking = read.plan.supersedenceTracking;
         if (!tracking?.enabled || !tracking.key || !read.supersedenceAcceptance?.latestWrite) {
@@ -1368,13 +1390,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
         mutations.push({
             kind: 'set-supersedence-latest',
             supersedenceKey: tracking.key,
-            value: read.supersedenceAcceptance.latestWrite,
+            value: read.supersedenceAcceptance.latestWrite
         });
         for (const replacement of read.supersedenceAcceptance.replacementWrites) {
             mutations.push({
                 kind: 'set-supersedence-replacement',
                 msgId: replacement.msgId,
-                value: replacement.value,
+                value: replacement.value
             });
         }
     }
@@ -1382,7 +1404,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private static appendAckTrackingMutationsAndEffects<TPrepared>(
         mutations: ALOutboundAdmissionMutation[],
         durableEffects: ALOutboundDurableEffectWrite<TPrepared>[],
-        read: ALOutboundMessageReadDto<TPrepared>,
+        read: ALOutboundMessageReadDto<TPrepared>
     ): void {
         const tracking = read.plan.ackTracking;
         if (!tracking?.enabled || tracking.expectedPeerIds.length === 0 || tracking.timeoutMs <= 0) {
@@ -1394,17 +1416,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
             read.pendingAck,
             read.acks,
             tracking,
-            read.nowMs,
+            read.nowMs
         );
         if (!pending) {
             if (read.pendingAck) {
                 mutations.push({
                     kind: 'delete-pending-ack',
-                    msgId: read.msg.id.msgId,
+                    msgId: read.msg.id.msgId
                 });
                 mutations.push({
                     kind: 'delete-repair-attempt',
-                    msgId: read.msg.id.msgId,
+                    msgId: read.msg.id.msgId
                 });
             }
             return;
@@ -1412,27 +1434,27 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         mutations.push({
             kind: 'set-pending-ack',
-            snapshot: pending,
+            snapshot: pending
         });
         durableEffects.push({
             effectId: this.toEffectId(
                 'ack-timeout',
                 pending.msgId,
                 pending.attempts + 1,
-                pending.deadlineAtMs,
+                pending.deadlineAtMs
             ),
             retryAtMs: pending.deadlineAtMs,
             expireAtTimestamp: toPendingAckExpireAtTimestamp(pending),
             payload: {
                 kind: 'ack-timeout',
-                msgId: pending.msgId,
-            },
+                msgId: pending.msgId
+            }
         });
     }
 
     private static toPersistedOutboxEntry<TPrepared>(
         read: ALOutboundMessageReadDto<TPrepared>,
-        dependencies: ALOutboundComputeDependencies,
+        dependencies: ALOutboundComputeDependencies
     ): ResourceEntry {
         const entry = dependencies.toOutboxEntry(read.msg);
         const tracking = read.plan.supersedenceTracking;
@@ -1442,7 +1464,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         return {
             ...entry,
-            key: read.priorOutboxKey,
+            key: read.priorOutboxKey
         };
     }
 
@@ -1451,7 +1473,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         metadata: Readonly<{
             outboxKey?: Key;
             supersedenceKey?: string;
-        }> = {},
+        }> = {}
     ): ALOutboundAdmissionMutation {
         return {
             kind: 'set-sent-message',
@@ -1459,18 +1481,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 msgId: msg.id.msgId,
                 msg,
                 outboxKey: metadata.outboxKey,
-                supersedenceKey: metadata.supersedenceKey,
+                supersedenceKey: metadata.supersedenceKey
             } satisfies ALOutboundSentMessageSnapshot,
-            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
+            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg)
         };
     }
 
     private static toEffectId(...parts: readonly (number | string)[]): string {
-        return parts.map(part => encodeURIComponent(String(part))).join(':');
+        return parts.map((part) => encodeURIComponent(String(part))).join(':');
     }
 
     private static toEnqueueStatusFromReason(
-        reason: string,
+        reason: string
     ): ALOutboundEnqueueStatus {
         const normalized = reason.toLowerCase();
         if (normalized.includes('duplicate')) {

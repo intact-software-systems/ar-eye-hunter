@@ -276,9 +276,9 @@ Request body:
 
 ```ts
 type AdminMetricsResetRequest = Readonly<{
-  requestId?: string;
-  categories?: readonly ('rtc-topology')[];
-  reason?: string;
+    requestId?: string;
+    categories?: readonly ('rtc-topology')[];
+    reason?: string;
 }>;
 ```
 
@@ -297,11 +297,11 @@ Request body:
 
 ```ts
 type AdminTopologyRecomputeRequest = Readonly<{
-  requestId?: string;
-  groupRef: GroupRef;
-  publish?: boolean;
-  options?: GroupTopologyConfigPatch;
-  reason?: string;
+    requestId?: string;
+    groupRef: GroupRef;
+    publish?: boolean;
+    options?: GroupTopologyConfigPatch;
+    reason?: string;
 }>;
 ```
 
@@ -325,19 +325,19 @@ Request body:
 
 ```ts
 type AdminPruneExpiredRequest = Readonly<{
-  requestId?: string;
-  categories?: readonly (
-    | 'runtime-state'
-    | 'resource-inbox'
-    | 'resource-inbox-results'
-    | 'app-data'
-  )[];
-  appData?: Readonly<{
-    namespace?: string;
-    storeName?: string;
-  }>;
-  dryRun?: boolean;
-  reason?: string;
+    requestId?: string;
+    categories?: readonly (
+        | 'runtime-state'
+        | 'resource-inbox'
+        | 'resource-inbox-results'
+        | 'app-data'
+    )[];
+    appData?: Readonly<{
+        namespace?: string;
+        storeName?: string;
+    }>;
+    dryRun?: boolean;
+    reason?: string;
 }>;
 ```
 
@@ -633,24 +633,24 @@ Candidate commands:
 Completed steps:
 
 - [x] Added a reusable api-v1 admin auth helper with explicit `401`/`403`
-  behavior.
+      behavior.
 - [x] Added public admin operations REST DTOs and category/status constants in
-  `packages/shared/api`.
+      `packages/shared/api`.
 - [x] Added admin operations route mounting for all planned read and write
-  endpoints under `/api/admin/operations/*`.
+      endpoints under `/api/admin/operations/*`.
 - [x] Added reusable shared-server `AdminOperationsService` for overview/read
-  composition, metrics reset, topology recompute, expiry pruning, and CRDT
-  admin wrappers, including bounded write timing events.
+      composition, metrics reset, topology recompute, expiry pruning, and CRDT
+      admin wrappers, including bounded write timing events.
 - [x] Added PGlite/Postgres aggregate readers and pruners for queue,
-  runtime-state, app-data, CRDT, and state-event statistics.
+      runtime-state, app-data, CRDT, and state-event statistics.
 - [x] Wired the admin operations service into `apps/api-v1/src/create-rallar-server.ts`.
 - [x] Updated checked-in OpenAPI YAML with admin operations paths, request
-  bodies, response schemas, and auth responses.
+      bodies, response schemas, and auth responses.
 - [x] Added no-browser API-v1 black-box recipe and recipe-matrix entry for
-  admin operations auth denial, overview success, dry-run write execution, and
-  OpenAPI coverage.
+      admin operations auth denial, overview success, dry-run write execution, and
+      OpenAPI coverage.
 - [x] Updated canonical API and environment variable docs for implemented admin
-  operations behavior.
+      operations behavior.
 
 Files changed:
 
@@ -766,14 +766,14 @@ Remaining manual or remote validation:
 Review fix closure:
 
 - [x] Added a regression that rejects admin-operations CRDT compaction when the
-  request document and supplied snapshot document differ.
+      request document and supplied snapshot document differ.
 - [x] `AdminOperationsService.compactCrdt(...)` now validates supplied snapshot
-  document identity before calling `writeSnapshot`, preventing a mismatched
-  snapshot from being written under a different CRDT document.
+      document identity before calling `writeSnapshot`, preventing a mismatched
+      snapshot from being written under a different CRDT document.
 - [x] `createRallarServer(...)` now wires SPA statistics to the runtime
-  middleware repositories instead of constructing route dependencies through
-  the global middleware singleton during server creation. This keeps fake and
-  injected middleware construction side-effect free.
+      middleware repositories instead of constructing route dependencies through
+      the global middleware singleton during server creation. This keeps fake and
+      injected middleware construction side-effect free.
 
 Commands run:
 
@@ -807,18 +807,18 @@ Remaining manual or remote validation:
 Code review fixes:
 
 - [x] Fixed admin state active session counts to honor logical
-  `expiresAtEpochMs`, so sessions retained for purge grace are not reported as
-  active or online.
+      `expiresAtEpochMs`, so sessions retained for purge grace are not reported as
+      active or online.
 - [x] Fixed online identity keys to include application and workspace scope for
-  clients, and application, workspace, group, and principal scope for group
-  members. This prevents the same principal id in different scopes or groups
-  from being merged incorrectly.
+      clients, and application, workspace, group, and principal scope for group
+      members. This prevents the same principal id in different scopes or groups
+      from being merged incorrectly.
 - [x] Replaced the unscoped `/api/admin/operations/state` runtime-state JSON
-  row scan with SQL aggregate count queries. Scoped state reads still use
-  bounded key-prefix reads for application/workspace operator drill-downs.
+      row scan with SQL aggregate count queries. Scoped state reads still use
+      bounded key-prefix reads for application/workspace operator drill-downs.
 - [x] Added regression coverage for retained expired sessions, globally scoped
-  online identities, and avoiding unbounded global `runtime_state_store`
-  `select store_key, store_value` scans.
+      online identities, and avoiding unbounded global `runtime_state_store`
+      `select store_key, store_value` scans.
 
 Files changed in this closure:
 
@@ -863,16 +863,16 @@ Remaining manual or remote validation:
 Code review fixes:
 
 - [x] Fixed scoped runtime-state prefix matching to avoid SQL `LIKE` wildcard
-  interpretation of encoded `%` bytes. Scoped admin state reads now use a
-  literal key range for the encoded application/workspace prefix.
+      interpretation of encoded `%` bytes. Scoped admin state reads now use a
+      literal key range for the encoded application/workspace prefix.
 - [x] Fixed admin CRDT compaction responses to return a compact snapshot summary
-  with payload/state sidecars redacted instead of returning the full
-  `RallarCrdtSnapshotEnvelope.value`.
+      with payload/state sidecars redacted instead of returning the full
+      `RallarCrdtSnapshotEnvelope.value`.
 - [x] Added runtime validation for admin write category arrays before execution,
-  so malformed JSON bodies cannot silently skip or invent maintenance/reset
-  categories.
+      so malformed JSON bodies cannot silently skip or invent maintenance/reset
+      categories.
 - [x] Added regression coverage for literal encoded-prefix filtering, CRDT
-  compact payload redaction, and invalid write category rejection.
+      compact payload redaction, and invalid write category rejection.
 
 Files changed in this closure:
 
@@ -925,14 +925,14 @@ Remaining manual or remote validation:
 Code review fixes:
 
 - [x] Fixed queue/result `topPressure` ordering so the admin queue response
-  reports the highest count buckets first instead of the first type/status
-  groups alphabetically.
+      reports the highest count buckets first instead of the first type/status
+      groups alphabetically.
 - [x] Fixed global online principal counting to count distinct
-  application/workspace/principal tuples instead of concatenating fields with a
-  lossy `:` separator.
+      application/workspace/principal tuples instead of concatenating fields with a
+      lossy `:` separator.
 - [x] Added regression coverage for count-desc pressure ordering and
-  colon-bearing scoped identities that previously collided in the global
-  principal aggregate.
+      colon-bearing scoped identities that previously collided in the global
+      principal aggregate.
 
 Files changed in this closure:
 
@@ -979,15 +979,15 @@ Remaining manual or remote validation:
 Code review fixes:
 
 - [x] Fixed scoped admin state counts to use the same URL-encoded
-  runtime-state key prefix shape as `RuntimeStateJsonStore`.
+      runtime-state key prefix shape as `RuntimeStateJsonStore`.
 - [x] Fixed admin state active/online aggregates to inspect runtime
-  `store_value` JSON instead of treating every unexpired row as active:
-  active client sessions require `status: "active"` and no disconnect marker,
-  online principals are counted distinctly, active groups/members require
-  `status: "active"`, and online group members are active members with live
-  group sessions.
+      `store_value` JSON instead of treating every unexpired row as active:
+      active client sessions require `status: "active"` and no disconnect marker,
+      online principals are counted distinctly, active groups/members require
+      `status: "active"`, and online group members are active members with live
+      group sessions.
 - [x] Added regression tests for encoded application/workspace IDs, distinct
-  online principals, inactive groups/members, and disconnected sessions.
+      online principals, inactive groups/members, and disconnected sessions.
 
 Files changed in this closure:
 
@@ -1031,16 +1031,16 @@ Remaining manual or remote validation:
 Gap closure:
 
 - [x] Added `RallarTimingSink` support to `AdminOperationsService` write
-  operations. Every admin write now records a `rallar.timing` event with
-  operation name, duration, admin client/session id, request id, reason,
-  bounded target metadata, and result status. Timing events intentionally avoid
-  bearer tokens and raw operation payloads.
+      operations. Every admin write now records a `rallar.timing` event with
+      operation name, duration, admin client/session id, request id, reason,
+      bounded target metadata, and result status. Timing events intentionally avoid
+      bearer tokens and raw operation payloads.
 - [x] Wired API-v1 admin operations timing to the existing API timing sink, so
-  `RALLAR_TIMING_LOGS` controls the default console output.
+      `RALLAR_TIMING_LOGS` controls the default console output.
 - [x] Expanded the admin operations black-box recipe with a safe
-  `maintenance.prune-expired` dry-run POST.
+      `maintenance.prune-expired` dry-run POST.
 - [x] Updated `docs/rallar-api-reference.md` to document implemented write
-  timing behavior.
+      timing behavior.
 
 Files changed in this closure:
 

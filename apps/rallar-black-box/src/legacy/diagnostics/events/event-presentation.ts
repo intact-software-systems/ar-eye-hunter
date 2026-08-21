@@ -1,14 +1,10 @@
 import type { RallarBlackBoxTestEvent } from '@shared-test/rallar-bb-test/types.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { stringValue } from '../../shared/string-value.ts';
-import {
-    formatDuration,
-    formatRelativeDuration,
-    formatTime,
-} from '../../shared/time-format.ts';
+import { formatDuration, formatRelativeDuration, formatTime } from '../../shared/time-format.ts';
 
 export function isRallarBrowserEvent(
-    event: RallarBlackBoxTestEvent,
+    event: RallarBlackBoxTestEvent
 ): boolean {
     return (
         event.topic === 'rallar.browser.event' ||
@@ -24,7 +20,7 @@ export function isRallarTraceEvent(event: RallarBlackBoxTestEvent): boolean {
 }
 
 export function rallarTraceSource(
-    event: RallarBlackBoxTestEvent,
+    event: RallarBlackBoxTestEvent
 ): 'browser' | 'direct' | 'server' {
     if (event.topic.startsWith('rallar.server.')) {
         return 'server';
@@ -36,12 +32,12 @@ export function rallarTraceSource(
 }
 
 export function eventPayloadDetails(
-    event: RallarBlackBoxTestEvent,
+    event: RallarBlackBoxTestEvent
 ): Record<string, unknown> {
     const payload = optionalRecord(event.payload);
     return {
         ...payload,
-        ...optionalRecord(payload.data),
+        ...optionalRecord(payload.data)
     };
 }
 
@@ -57,11 +53,9 @@ export function eventPayloadText(event: RallarBlackBoxTestEvent): string {
             stringValue(payload.connection),
             stringValue(payload.remotePeerId),
             stringValue(payload.error),
-            stringValue(optionalRecord(payload.error).message),
+            stringValue(optionalRecord(payload.error).message)
         ]
-            .filter((value): value is string =>
-                Boolean(value && value.length > 0),
-            )
+            .filter((value): value is string => Boolean(value && value.length > 0))
             .join(' - ') || '-'
     );
 }
@@ -78,11 +72,9 @@ export function eventFailureText(event: RallarBlackBoxTestEvent): string {
             stringValue(error.message),
             stringValue(payload.error),
             stringValue(response.bodyText),
-            stringValue(payload.bodyText),
+            stringValue(payload.bodyText)
         ]
-            .filter((value): value is string =>
-                Boolean(value && value.length > 0),
-            )
+            .filter((value): value is string => Boolean(value && value.length > 0))
             .join('\n') || eventPayloadText(event)
     );
 }
@@ -90,7 +82,7 @@ export function eventFailureText(event: RallarBlackBoxTestEvent): string {
 export function traceTimingText(
     event: RallarBlackBoxTestEvent,
     previousEvent: RallarBlackBoxTestEvent | undefined,
-    now: number,
+    now: number
 ): string {
     const ageMs = Math.max(0, now - event.atEpochMs);
     const deltaMs = previousEvent
@@ -99,7 +91,7 @@ export function traceTimingText(
     return [
         formatTime(event.atEpochMs),
         `${formatRelativeDuration(ageMs)} ago`,
-        deltaMs === undefined ? 'first' : `+${formatDuration(deltaMs)}`,
+        deltaMs === undefined ? 'first' : `+${formatDuration(deltaMs)}`
     ].join(' - ');
 }
 
@@ -110,7 +102,7 @@ export function traceMetaText(event: RallarBlackBoxTestEvent): string {
         event.severity,
         event.transport ?? 'runtime',
         event.connection,
-        event.actor,
+        event.actor
     ]
         .filter((value): value is string => Boolean(value && value.length > 0))
         .join(' - ');

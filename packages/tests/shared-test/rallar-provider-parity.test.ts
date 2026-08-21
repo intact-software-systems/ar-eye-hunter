@@ -11,7 +11,7 @@ import {
     toRallarBlackBoxRunnerParityInteractions,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestEvent,
-    type RallarBlackBoxTestResult,
+    type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
 type StoredResult = Readonly<{
@@ -56,7 +56,7 @@ class FakeRemoteControlServer {
             return jsonResponse({
                 runId: decodeURIComponent(runMatch[1]),
                 results: this.results,
-                events: this.events,
+                events: this.events
             });
         }
 
@@ -85,9 +85,9 @@ class FakeRemoteControlServer {
                 durationMs: 1,
                 value: {
                     accepted: true,
-                    command,
-                },
-            },
+                    command
+                }
+            }
         });
     }
 
@@ -95,7 +95,7 @@ class FakeRemoteControlServer {
         runId: string,
         agentId: string,
         now: number,
-        command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>,
+        command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>
     ): void {
         const targets = expectedConnections(command);
         targets.forEach((connection, index) => {
@@ -115,9 +115,9 @@ class FakeRemoteControlServer {
                     connection,
                     transport: command.transport,
                     payload: {
-                        data: command.send,
-                    },
-                },
+                        data: command.send
+                    }
+                }
             });
         });
     }
@@ -127,20 +127,20 @@ function jsonResponse(value: unknown, status = 200): Response {
     return new Response(JSON.stringify(value), {
         status,
         headers: {
-            'Content-Type': 'application/json',
-        },
+            'Content-Type': 'application/json'
+        }
     });
 }
 
-function expectedConnections(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>): readonly string[] {
+function expectedConnections(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>): readonly string[] {
     const parity = command.metadata?.parity;
     if (
         parity &&
         typeof parity === 'object' &&
         !Array.isArray(parity) &&
-        Array.isArray((parity as { expectedConnections?: unknown }).expectedConnections)
+        Array.isArray((parity as { expectedConnections?: unknown; }).expectedConnections)
     ) {
-        return ((parity as { expectedConnections: readonly unknown[] }).expectedConnections)
+        return (parity as { expectedConnections: readonly unknown[]; }).expectedConnections
             .map(String);
     }
     return [command.connection ?? 'default'];
@@ -148,9 +148,9 @@ function expectedConnections(command: Extract<RallarBlackBoxTestCommand, { kind:
 
 function commandById(
     commands: readonly RallarBlackBoxTestCommand[],
-    commandId: string,
+    commandId: string
 ): RallarBlackBoxTestCommand {
-    const command = commands.find(entry => entry.commandId === commandId);
+    const command = commands.find((entry) => entry.commandId === commandId);
     if (!command) {
         throw new Error(`Missing command ${commandId}`);
     }
@@ -159,8 +159,8 @@ function commandById(
 
 function rtcSendById(
     commands: readonly RallarBlackBoxTestCommand[],
-    commandId: string,
-): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }> {
+    commandId: string
+): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }> {
     const command = commandById(commands, commandId);
     if (command.kind !== 'rtc.send') {
         throw new Error(`Command ${commandId} is not rtc.send`);
@@ -171,7 +171,7 @@ function rtcSendById(
 function result(
     commandId: string,
     kind: RallarBlackBoxTestResult['kind'],
-    status: RallarBlackBoxTestResult['status'] = 'ok',
+    status: RallarBlackBoxTestResult['status'] = 'ok'
 ): RallarBlackBoxTestResult {
     return {
         commandId,
@@ -180,7 +180,7 @@ function result(
         ok: status === 'ok',
         startedAtEpochMs: 1,
         endedAtEpochMs: 2,
-        durationMs: 1,
+        durationMs: 1
     };
 }
 
@@ -189,13 +189,13 @@ describe('rallar provider parity helpers', () => {
         const recipe = createRallarBlackBoxProviderParityRecipe({
             transport: 'messages.rtc',
             multicastExpectedConnections: ['bobRtc', 'charlieRtc'],
-            broadcastExpectedConnections: ['bobRtc', 'charlieRtc'],
+            broadcastExpectedConnections: ['bobRtc', 'charlieRtc']
         });
         const conversion = toRallarBlackBoxRunnerParityInteractions(recipe, {
-            provider: 'rallar-remote-browser',
+            provider: 'rallar-remote-browser'
         });
 
-        expect(recipe.commands.map(command => command.kind)).toEqual([
+        expect(recipe.commands.map((command) => command.kind)).toEqual([
             'configure',
             'rtc.connect',
             'rtc.send',
@@ -203,11 +203,13 @@ describe('rallar provider parity helpers', () => {
             'rtc.send',
             'health',
             'close',
-            'reset',
+            'reset'
         ]);
-        expect(recipe.commands.map(command => command.metadata?.parity)
-            .filter(Boolean)
-            .map(parity => (parity as { operation: string }).operation))
+        expect(
+            recipe.commands.map((command) => command.metadata?.parity)
+                .filter(Boolean)
+                .map((parity) => (parity as { operation: string; }).operation)
+        )
             .toEqual([
                 'configure',
                 'connect',
@@ -216,12 +218,12 @@ describe('rallar provider parity helpers', () => {
                 'send.broadcast',
                 'health',
                 'close',
-                'reset',
+                'reset'
             ]);
-        expect(conversion.omittedCommands.map(command => command.kind)).toEqual([
+        expect(conversion.omittedCommands.map((command) => command.kind)).toEqual([
             'configure',
             'health',
-            'reset',
+            'reset'
         ]);
         expect(conversion.interactions).toHaveLength(9);
         expect(JSON.stringify(conversion.interactions)).toContain('"action":"wait"');
@@ -232,7 +234,7 @@ describe('rallar provider parity helpers', () => {
         const recipe = createRallarBlackBoxProviderParityRecipe();
         const conversion = toRallarBlackBoxRunnerParityInteractions(recipe, {
             provider: 'rallar-browser',
-            includeReceiveWaits: false,
+            includeReceiveWaits: false
         });
         const executedCommands: RallarBlackBoxTestCommand[] = [];
         const runtime = createRallarBlackBoxTestRuntime({
@@ -246,8 +248,8 @@ describe('rallar provider parity helpers', () => {
                         connection: command.connection,
                         transport: command.transport,
                         payload: {
-                            data: command.send,
-                        },
+                            data: command.send
+                        }
                     });
                 }
                 if (command.kind === 'close') {
@@ -257,33 +259,33 @@ describe('rallar provider parity helpers', () => {
                         commandId: command.commandId,
                         connection: String(command.metadata?.connection ?? 'default'),
                         payload: {
-                            closed: true,
-                        },
+                            closed: true
+                        }
                     });
                 }
                 return {
                     status: 'ok',
                     value: {
-                        command,
+                        command
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const report = await executeBlackBox([...conversion.interactions], 0, {
             rtcProviders: {
-                'rallar-browser': createRallarBlackBoxRtcProvider(runtime),
-            },
+                'rallar-browser': createRallarBlackBoxRtcProvider(runtime)
+            }
         });
 
         expect(report.summary.failure).toBe(0);
-        expect(executedCommands.map(command => command.kind)).toEqual([
+        expect(executedCommands.map((command) => command.kind)).toEqual([
             'rtc.connect',
             'rtc.send',
             'rtc.send',
             'rtc.send',
-            'close',
+            'close'
         ]);
         const recipeConnect = commandById(recipe.commands, 'parity-connect');
         const actualConnect = commandById(executedCommands, 'parity-connect');
@@ -292,35 +294,35 @@ describe('rallar provider parity helpers', () => {
             connection: 'aliceRtc',
             actor: 'alice',
             roomId: 'rallar-black-box-room',
-            transport: 'realtime',
+            transport: 'realtime'
         });
         expect(commandById(executedCommands, 'parity-send-direct')).toMatchObject({
             kind: 'rtc.send',
             send: rtcSendById(recipe.commands, 'parity-send-direct').send,
             metadata: {
                 parity: {
-                    operation: 'send.direct',
-                },
-            },
+                    operation: 'send.direct'
+                }
+            }
         });
         expect(commandById(executedCommands, 'parity-close')).toMatchObject({
             kind: 'close',
             metadata: {
                 parity: {
-                    operation: 'close',
+                    operation: 'close'
                 },
-                connection: 'aliceRtc',
-            },
+                connection: 'aliceRtc'
+            }
         });
     });
 
     it('keeps the remote SPA provider mapping aligned with the portable recipe commands', async () => {
         const recipe = createRallarBlackBoxProviderParityRecipe({
             multicastExpectedConnections: ['bobRtc', 'charlieRtc'],
-            broadcastExpectedConnections: ['bobRtc', 'charlieRtc'],
+            broadcastExpectedConnections: ['bobRtc', 'charlieRtc']
         });
         const conversion = toRallarBlackBoxRunnerParityInteractions(recipe, {
-            provider: 'rallar-remote-browser',
+            provider: 'rallar-remote-browser'
         });
         const server = new FakeRemoteControlServer();
 
@@ -330,22 +332,22 @@ describe('rallar provider parity helpers', () => {
                 runId: 'run-parity',
                 agentId: 'agent-parity',
                 timeoutMs: 500,
-                pollIntervalMs: 1,
+                pollIntervalMs: 1
             },
             rtcProviders: {
                 'rallar-remote-browser': createRallarRemoteBrowserRtcProvider({
-                    fetch: server.fetch,
-                }),
-            },
+                    fetch: server.fetch
+                })
+            }
         });
 
         expect(report.summary.failure).toBe(0);
-        expect(server.commands.map(command => command.kind)).toEqual([
+        expect(server.commands.map((command) => command.kind)).toEqual([
             'rtc.connect',
             'rtc.send',
             'rtc.send',
             'rtc.send',
-            'close',
+            'close'
         ]);
         expect(commandById(server.commands, 'parity-connect')).toMatchObject({
             kind: 'rtc.connect',
@@ -355,9 +357,9 @@ describe('rallar provider parity helpers', () => {
             transport: 'realtime',
             metadata: {
                 parity: {
-                    operation: 'connect',
-                },
-            },
+                    operation: 'connect'
+                }
+            }
         });
         expect(commandById(server.commands, 'parity-send-multicast')).toMatchObject({
             kind: 'rtc.send',
@@ -365,18 +367,18 @@ describe('rallar provider parity helpers', () => {
             metadata: {
                 parity: {
                     operation: 'send.multicast',
-                    expectedConnections: ['bobRtc', 'charlieRtc'],
-                },
-            },
+                    expectedConnections: ['bobRtc', 'charlieRtc']
+                }
+            }
         });
         expect(commandById(server.commands, 'parity-close')).toMatchObject({
             kind: 'close',
             metadata: {
                 parity: {
-                    operation: 'close',
+                    operation: 'close'
                 },
-                connection: 'aliceRtc',
-            },
+                connection: 'aliceRtc'
+            }
         });
     });
 
@@ -384,7 +386,7 @@ describe('rallar provider parity helpers', () => {
         const runtimeReport = normalizeRallarBlackBoxRuntimeParityReport([
             result('parity-connect', 'rtc.connect'),
             result('parity-send-direct', 'rtc.send'),
-            result('parity-close', 'close'),
+            result('parity-close', 'close')
         ]);
         const runnerReport = normalizeBlackBoxRunnerParityReport({
             resultsList: [
@@ -396,9 +398,9 @@ describe('rallar provider parity helpers', () => {
                         commandId: 'parity-connect',
                         provider: 'rallar-remote-browser',
                         remote: {
-                            agentId: 'agent-1',
-                        },
-                    },
+                            agentId: 'agent-1'
+                        }
+                    }
                 },
                 {
                     name: 'paritySendDirect_sendDirect',
@@ -406,8 +408,8 @@ describe('rallar provider parity helpers', () => {
                     transport: 'RTC',
                     actual: {
                         commandId: 'parity-send-direct',
-                        provider: 'rallar-remote-browser',
-                    },
+                        provider: 'rallar-remote-browser'
+                    }
                 },
                 {
                     name: 'parityClose_close',
@@ -415,10 +417,10 @@ describe('rallar provider parity helpers', () => {
                     transport: 'RTC',
                     actual: {
                         commandId: 'parity-close',
-                        provider: 'rallar-remote-browser',
-                    },
-                },
-            ],
+                        provider: 'rallar-remote-browser'
+                    }
+                }
+            ]
         });
 
         expect(compareRallarBlackBoxProviderParityReports(runtimeReport, runnerReport)).toMatchObject({
@@ -426,15 +428,15 @@ describe('rallar provider parity helpers', () => {
             matchedKeys: [
                 'connect:parity-connect',
                 'send.direct:parity-send-direct',
-                'close:parity-close',
-            ],
+                'close:parity-close'
+            ]
         });
         expect(runnerReport.providerSpecificFields).toContain('actual');
         expect(runnerReport.steps[0].providerSpecific.actual).toMatchObject({
             provider: 'rallar-remote-browser',
             remote: {
-                agentId: 'agent-1',
-            },
+                agentId: 'agent-1'
+            }
         });
     });
 });

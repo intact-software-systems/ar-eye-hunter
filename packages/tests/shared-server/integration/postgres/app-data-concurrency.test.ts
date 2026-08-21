@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { RallarServerDataFacade } from '@shared-server/rallar-facade/RallarServer.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import { describe, expect, it } from 'vitest';
 import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
 
 type GlobalEnv = Readonly<{
@@ -15,8 +15,7 @@ type GlobalEnv = Readonly<{
     }>;
 }>;
 
-const POSTGRES_INTEGRATION_ENABLED =
-    readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
+const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 
 describe('Postgres app-data concurrency', () => {
@@ -31,10 +30,10 @@ describe('Postgres app-data concurrency', () => {
             try {
                 const seed = await new RallarServerDataFacade(
                     new RepositoryManager(),
-                    repository,
-                ).open<{ count: number }>('counters', {
+                    repository
+                ).open<{ count: number; }>('counters', {
                     namespace,
-                    maxConflictRetries: 100,
+                    maxConflictRetries: 100
                 });
                 await seed.set('count', { count: 0 });
 
@@ -42,24 +41,24 @@ describe('Postgres app-data concurrency', () => {
                     Array.from({ length: 16 }, async () =>
                         await new RallarServerDataFacade(
                             new RepositoryManager(),
-                            repository,
-                        ).open<{ count: number }>('counters', {
+                            repository
+                        ).open<{ count: number; }>('counters', {
                             namespace,
-                            maxConflictRetries: 100,
-                        })
-                    ),
+                            maxConflictRetries: 100
+                        }))
                 );
 
                 await Promise.all(
                     stores.map(async (store) =>
                         await store.updateOrCreate('count', (current) => ({
-                            count: (current?.count ?? 0) + 1,
+                            count: (current?.count ?? 0) + 1
                         }))
-                    ),
+                    )
                 );
 
                 await expect(seed.get('count')).resolves.toEqual({ count: 16 });
-            } finally {
+            }
+            finally {
                 await sql`
                     delete
                     from app_data_store
@@ -68,7 +67,7 @@ describe('Postgres app-data concurrency', () => {
                 await sql.end();
             }
         },
-        60_000,
+        60_000
     );
 });
 
@@ -76,7 +75,7 @@ function requireDatabaseUrl(): string {
     const databaseUrl = readEnv('DATABASE_URL');
     if (!databaseUrl) {
         throw new Error(
-            'DATABASE_URL is required when RALLAR_POSTGRES_INTEGRATION=1',
+            'DATABASE_URL is required when RALLAR_POSTGRES_INTEGRATION=1'
         );
     }
 

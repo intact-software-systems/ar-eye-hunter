@@ -9,7 +9,7 @@ import {
     MONITOR_FAILURE_COMMAND_ID,
     MONITOR_FAILURE_MESSAGE,
     MONITOR_FAILURE_RECIPE_ID,
-    MONITOR_ROUTE,
+    MONITOR_ROUTE
 } from './recipe-console-monitor-fixture.ts';
 import { createTuneArtifactUpload } from './recipe-console-tune-artifacts.ts';
 import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
@@ -17,22 +17,21 @@ import {
     TUNE_ANALYZE_ROUTE,
     TUNE_RIGHT_CONTROL_RUN_ID,
     TUNE_RIGHT_RUN_ID,
-    TUNE_SLOW_AGENT_ID,
+    TUNE_SLOW_AGENT_ID
 } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 
 async function routeOfflineControl(page: Page): Promise<void> {
-    await page.route(CONTROL_ROUTE, route => route.abort('connectionfailed'));
+    await page.route(CONTROL_ROUTE, (route) => route.abort('connectionfailed'));
 }
 
 const EXECUTE_GROUP = {
     applicationId: 'rallar-black-box',
     workspaceId: 'default',
-    groupId: 'rallar-black-box-room',
+    groupId: 'rallar-black-box-room'
 } as const;
-const LIVE_EXECUTE_ROUTE =
-    '/?provider=simulated&experience=recipe-console&view=execute' +
+const LIVE_EXECUTE_ROUTE = '/?provider=simulated&experience=recipe-console&view=execute' +
     '&applicationId=rallar-black-box&workspaceId=default' +
     '&roomId=rallar-black-box-room';
 
@@ -53,14 +52,14 @@ function liveExecuteSnapshot() {
             ...EXECUTE_GROUP,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            region: 'eu-north',
+            region: 'eu-north'
         },
         connectionSequence: 1,
         reconnectCount: 0,
         receivedResultCount: 0,
         receivedEventCount: 0,
         completedCommandIds: [],
-        resumeCompletedCommandIds: [],
+        resumeCompletedCommandIds: []
     }));
     return {
         runs: [{
@@ -73,33 +72,30 @@ function liveExecuteSnapshot() {
             events: [],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         }],
-        distributedRuns: [],
+        distributedRuns: []
     };
 }
 
 async function routeLiveExecuteControl(page: Page): Promise<void> {
-    await page.route(CONTROL_ROUTE, async route => {
+    await page.route(CONTROL_ROUTE, async (route) => {
         const snapshot = liveExecuteSnapshot();
         const pathname = new URL(route.request().url()).pathname;
         const runId = /^\/runs\/([^/]+)$/.exec(pathname)?.[1];
         const run = runId
-            ? snapshot.runs.find(candidate => candidate.runId === decodeURIComponent(runId))
+            ? snapshot.runs.find((candidate) => candidate.runId === decodeURIComponent(runId))
             : undefined;
         await route.fulfill({
             status: runId && !run ? 404 : 200,
             contentType: 'application/json',
             headers: { 'access-control-allow-origin': '*' },
-            body: JSON.stringify(runId ? run ?? { error: 'Control run not found.' } : snapshot),
+            body: JSON.stringify(runId ? run ?? { error: 'Control run not found.' } : snapshot)
         });
     });
 }
 
-test('renders real Tune evidence without invented values', async ({
-    context,
-    page,
-}) => {
+test('renders real Tune evidence without invented values', async ({ context, page }) => {
     await page.setViewportSize({ width: 932, height: 430 });
     const fixture = await installRecipeConsoleTuneFixture(context);
     await page.goto(TUNE_ANALYZE_ROUTE);
@@ -114,7 +110,7 @@ test('renders real Tune evidence without invented values', async ({
     await expect(commandBar).toContainText('Control server');
     await expect(commandBar).toContainText('http://localhost:5180');
     await expect(commandBar).toContainText(
-        'rallar-server/default/tune-ci',
+        'rallar-server/default/tune-ci'
     );
     await expect(commandBar).not.toContainText('Baseline');
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
@@ -127,13 +123,26 @@ test('renders real Tune evidence without invented values', async ({
         await expect(commandTiming).toContainText(percentile);
     }
     const streamHealth = tune.locator('[data-tune-stream-health]');
-    for (const evidence of [
-        '30 planned', '28 scheduled', '23 attempted', '22 completed',
-        '1 failed', '5 dropped', '2 in-flight drops',
-        '30 Hz requested', '28 Hz scheduled', '22 Hz completed',
-        '28 ms max drift', '6 late', '4 backpressure',
-        'P95 68 ms', 'P99 92 ms', TUNE_SLOW_AGENT_ID,
-    ]) {
+    for (
+        const evidence of [
+            '30 planned',
+            '28 scheduled',
+            '23 attempted',
+            '22 completed',
+            '1 failed',
+            '5 dropped',
+            '2 in-flight drops',
+            '30 Hz requested',
+            '28 Hz scheduled',
+            '22 Hz completed',
+            '28 ms max drift',
+            '6 late',
+            '4 backpressure',
+            'P95 68 ms',
+            'P99 92 ms',
+            TUNE_SLOW_AGENT_ID
+        ]
+    ) {
         await expect(streamHealth).toContainText(evidence);
     }
     await expect(tune.locator('[data-tune-hints]')).toContainText('Lower cadence');
@@ -154,7 +163,7 @@ test('renders real Tune evidence without invented values', async ({
     const close = inspector.getByRole('button', { name: 'Close inspector' });
     await expect(close).toBeFocused();
     const legacyLink = inspector.getByRole('link', {
-        name: 'Open this run in legacy Runs',
+        name: 'Open this run in legacy Runs'
     });
     const legacyUrl = new URL(await legacyLink.getAttribute('href') ?? '', page.url());
     expect(legacyUrl.searchParams.get('experience')).toBe('legacy');
@@ -165,18 +174,20 @@ test('renders real Tune evidence without invented values', async ({
     await page.keyboard.press('Escape');
     await expect(inspector).toHaveCount(0);
     await expect(slowStream).toBeFocused();
-    expect(await page.evaluate(() => ({
-        x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-    }))).toEqual({ x: 0, y: 0 });
+    expect(
+        await page.evaluate(() => ({
+            x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            y: document.documentElement.scrollHeight - document.documentElement.clientHeight
+        }))
+    ).toEqual({ x: 0, y: 0 });
     expect(fixture.artifactRequestCount()).toBe(0);
     expect(fixture.mutationRequestCount()).toBe(0);
 
     await slowStream.press('Enter');
     const activeLegacyLink = page.getByRole('dialog', {
-        name: 'Inspector',
+        name: 'Inspector'
     }).getByRole('link', {
-        name: 'Open this run in legacy Runs',
+        name: 'Open this run in legacy Runs'
     });
     await activeLegacyLink.focus();
     await activeLegacyLink.press('Enter');
@@ -204,12 +215,12 @@ test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) =>
     await expect(analyze).toBeVisible();
     await expect(analyzeSource).toBeVisible();
     await expect(analyzeSource.getByRole('heading', {
-        name: 'Import offline or load from Control',
+        name: 'Import offline or load from Control'
     })).toBeVisible();
     await expect(analyzeSource.getByText('Choose files', { exact: true })).toBeVisible();
     await expect(analyzeSource.locator('[data-analyze-file-input]')).toBeAttached();
     await expect(analyze.getByRole('heading', {
-        name: 'Import distributed-run evidence',
+        name: 'Import distributed-run evidence'
     })).toBeVisible();
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
@@ -218,12 +229,12 @@ test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) =>
     await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
     const offlineFleet = page.locator('[data-fleet-operational-state="offline"]');
     await expect(offlineFleet.getByRole('heading', {
-        name: 'Fleet control is offline',
+        name: 'Fleet control is offline'
     }))
         .toBeVisible();
     await expect(offlineFleet.getByText(
         'No current snapshot is available. Reconnect or use the operational legacy fallback.',
-        { exact: true },
+        { exact: true }
     ))
         .toBeVisible();
     await expect(offlineFleet).toContainText('Fleet report collection unavailable.');
@@ -235,30 +246,34 @@ test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) =>
     const advanced = page.locator('[data-preview-view="advanced"]');
     await expect(advanced.getByRole('heading', { name: 'Current diagnostic context' }))
         .toBeVisible();
-    for (const heading of [
-        'Direct Diagnostics',
-        'Preserved Workflow Fallbacks',
-        'Advanced Legacy',
-    ]) {
+    for (
+        const heading of [
+            'Direct Diagnostics',
+            'Preserved Workflow Fallbacks',
+            'Advanced Legacy'
+        ]
+    ) {
         await expect(advanced.getByRole('heading', { name: heading }))
             .toBeVisible();
     }
     const advancedLinks = advanced.locator('[data-advanced-surface-link]');
     await expect(advancedLinks).toHaveCount(22);
-    for (const [label, route] of [
-        ['Auth', { workspace: 'rallar', tab: 'auth', surface: 'direct.auth' }],
-        ['Runs', {
-            workspace: 'black-box-runner',
-            tab: 'runs',
-            surface: 'runner.runs',
-        }],
-        ['Shared Test', {
-            workspace: 'black-box-runner',
-            tab: 'advanced',
-            advancedSurface: 'shared-test',
-            surface: 'legacy.shared-test-catalog',
-        }],
-    ] as const) {
+    for (
+        const [label, route] of [
+            ['Auth', { workspace: 'rallar', tab: 'auth', surface: 'direct.auth' }],
+            ['Runs', {
+                workspace: 'black-box-runner',
+                tab: 'runs',
+                surface: 'runner.runs'
+            }],
+            ['Shared Test', {
+                workspace: 'black-box-runner',
+                tab: 'advanced',
+                advancedSurface: 'shared-test',
+                surface: 'legacy.shared-test-catalog'
+            }]
+        ] as const
+    ) {
         const href = await advanced.getByRole('link', { name: new RegExp(`^${label}`) })
             .getAttribute('href');
         const target = new URL(href ?? '', page.url());
@@ -283,7 +298,7 @@ test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) =>
     await expect(page).toHaveURL(/view=analyze/);
     await expect(page.locator('[data-analyze-workspace]')).toBeVisible();
     await expect(page.getByRole('heading', {
-        name: 'Import distributed-run evidence',
+        name: 'Import distributed-run evidence'
     })).toBeVisible();
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 });
@@ -295,20 +310,19 @@ test('renders failure-first Monitor from canonical evidence', async ({ context, 
 
     const monitorSections = page.locator('[data-monitor-section]');
     await expect(monitorSections).toHaveCount(5);
-    expect(await monitorSections.evaluateAll(nodes =>
-        nodes.map(node => node.getAttribute('data-monitor-section'))
-    )).toEqual([
-        'verdict',
-        'actions',
-        'failures',
-        'matrix',
-        'timeline',
-    ]);
+    expect(await monitorSections.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-monitor-section'))))
+        .toEqual([
+            'verdict',
+            'actions',
+            'failures',
+            'matrix',
+            'timeline'
+        ]);
     await expect(page.locator('[data-monitor-section="verdict"]'))
         .toHaveAttribute('data-run-state', 'failed');
     await expect(page.getByRole('heading', { name: 'Failures (1)' })).toBeVisible();
     const commandFailure = page.locator(
-        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`
     );
     await expect(commandFailure).toContainText(MONITOR_FAILURE_CODE);
     await expect(commandFailure).toContainText(MONITOR_FAILURE_MESSAGE);
@@ -330,10 +344,10 @@ test('renders failure-first Monitor from canonical evidence', async ({ context, 
     await expect(minimalFix).toContainText(MONITOR_FAILURE_COMMAND_ID);
     await expect(minimalFix).toContainText(MONITOR_FAILURE_RECIPE_ID);
     await expect(inspector.locator(
-        `[data-evidence-destination="diagnostic"][data-evidence-id="${MONITOR_DIAGNOSTIC_ID}"]`,
+        `[data-evidence-destination="diagnostic"][data-evidence-id="${MONITOR_DIAGNOSTIC_ID}"]`
     )).toBeVisible();
     const legacyLink = inspector.getByRole('link', {
-        name: 'Open this run in legacy Runs',
+        name: 'Open this run in legacy Runs'
     });
     await expect(legacyLink).toBeVisible();
     const legacyUrl = new URL(await legacyLink.getAttribute('href') ?? '', page.url());
@@ -371,7 +385,7 @@ test('opens one portrait failure inspector and restores focus', async ({ context
     await expect(inspect).toBeFocused();
 
     const matrixScroller = page.locator('[data-monitor-matrix-scroller]');
-    expect(await matrixScroller.evaluate(element => element.scrollWidth > element.clientWidth))
+    expect(await matrixScroller.evaluate((element) => element.scrollWidth > element.clientWidth))
         .toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth))
         .toBe(true);
@@ -386,7 +400,7 @@ test('traps and restores focus in tablet and landscape overlays', async ({ conte
         await page.goto(MONITOR_ROUTE);
         await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
         const inspect = page.locator(
-            `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+            `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`
         );
         await inspect.click();
 
@@ -408,11 +422,11 @@ test('traps and restores focus in tablet and landscape overlays', async ({ conte
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto(MONITOR_ROUTE);
     const routeTrigger = page.locator(
-        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`
     );
     await routeTrigger.click();
-    await routeTrigger.evaluate(element => {
-        const state = window as Window & { __unrelatedRestoreCount?: number };
+    await routeTrigger.evaluate((element) => {
+        const state = window as Window & { __unrelatedRestoreCount?: number; };
         state.__unrelatedRestoreCount = 0;
         element.addEventListener('focus', () => {
             state.__unrelatedRestoreCount = (state.__unrelatedRestoreCount ?? 0) + 1;
@@ -423,29 +437,31 @@ test('traps and restores focus in tablet and landscape overlays', async ({ conte
         dispatchEvent(new PopStateEvent('popstate'));
     });
     await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'analyze');
-    expect(await page.evaluate(() =>
-        (window as Window & { __unrelatedRestoreCount?: number }).__unrelatedRestoreCount
-    )).toBe(0);
+    expect(
+        await page.evaluate(() => (window as Window & { __unrelatedRestoreCount?: number; }).__unrelatedRestoreCount)
+    )
+        .toBe(0);
 
     await page.goto(MONITOR_ROUTE);
     const resizeTrigger = page.locator(
-        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`
     );
     await resizeTrigger.click();
-    await resizeTrigger.evaluate(element => {
-        const state = window as Window & { __unrelatedResizeRestoreCount?: number };
+    await resizeTrigger.evaluate((element) => {
+        const state = window as Window & { __unrelatedResizeRestoreCount?: number; };
         state.__unrelatedResizeRestoreCount = 0;
         element.addEventListener('focus', () => {
-            state.__unrelatedResizeRestoreCount =
-                (state.__unrelatedResizeRestoreCount ?? 0) + 1;
+            state.__unrelatedResizeRestoreCount = (state.__unrelatedResizeRestoreCount ?? 0) + 1;
         });
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
-    expect(await page.evaluate(() =>
-        (window as Window & { __unrelatedResizeRestoreCount?: number })
-            .__unrelatedResizeRestoreCount
-    )).toBe(0);
+    expect(
+        await page.evaluate(() =>
+            (window as Window & { __unrelatedResizeRestoreCount?: number; })
+                .__unrelatedResizeRestoreCount
+        )
+    ).toBe(0);
 });
 
 test('keeps the repository catalog and preflight usable with control offline', async ({ page }) => {
@@ -472,18 +488,20 @@ test('keeps the repository catalog and preflight usable with control offline', a
     await expect(recipeLedger.getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
     await search.clear();
     const selectedRecipe = page.locator(
-        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]',
+        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]'
     );
     await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByText('Provider Parity', { exact: true })).toBeVisible();
     await expect(page.getByText('Composite Evidence', { exact: true })).toBeVisible();
     await expect(page.getByText('Expected Failure', { exact: true })).toBeVisible();
     await page.locator(
-        '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]',
+        '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]'
     ).click();
     await expect(page).toHaveURL(/recipeId=rallar-provider-parity-recipe/);
-    await expect(page.getByRole('complementary', { name: 'Inspector' })
-        .getByRole('heading', { name: 'Provider Parity' })).toBeVisible();
+    await expect(
+        page.getByRole('complementary', { name: 'Inspector' })
+            .getByRole('heading', { name: 'Provider Parity' })
+    ).toBeVisible();
     await selectedRecipe.click();
     await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
 
@@ -492,7 +510,7 @@ test('keeps the repository catalog and preflight usable with control offline', a
         .toBeVisible();
     const offlineTargetEvidence = targets.getByText(
         'Control is offline. Refresh to retry.',
-        { exact: true },
+        { exact: true }
     );
     await expect(offlineTargetEvidence).toHaveCount(2);
     await expect(offlineTargetEvidence.first()).toBeVisible();
@@ -507,7 +525,7 @@ test('keeps the repository catalog and preflight usable with control offline', a
     await expect(agentSetup.getByRole('button', { name: 'Open 3 browser agents' }))
         .toBeDisabled();
     await expect(agentSetup.getByRole('alert')).toContainText(
-        'A current control connection is required before launching browser agents.',
+        'A current control connection is required before launching browser agents.'
     );
     await expect(page.locator('[data-execute-manifest]')).toContainText('Unavailable');
 
@@ -551,7 +569,7 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
     await page.goto(LIVE_EXECUTE_ROUTE);
 
     const providerRecipe = page.locator(
-        '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]',
+        '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]'
     );
     await providerRecipe.click();
     await expect(providerRecipe).toHaveAttribute('aria-selected', 'true');
@@ -566,7 +584,7 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
     await expect(preflight.getByText('Manifest commands', { exact: true }).locator('..'))
         .toContainText('10');
     const preflightDetails = preflight.locator('details').filter({
-        hasText: 'Preflight details',
+        hasText: 'Preflight details'
     });
     await expect(preflightDetails.locator('summary')).toBeVisible();
     await expect(preflight.getByRole('heading', { name: 'Runtime surfaces' }))
@@ -588,14 +606,16 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
     await expect(actions.getByRole('button', { name: 'Create draft' })).toHaveCount(0);
     await expect(actions.getByRole('button', { name: /Stage \d+ agents/ })).toHaveCount(0);
     await expect(actions.getByRole('button', { name: 'Review and start' })).toHaveCount(0);
-    await expect(page.locator('[data-command-bar]')
-        .getByText('Safe targets', { exact: true }).locator('..'))
+    await expect(
+        page.locator('[data-command-bar]')
+            .getByText('Safe targets', { exact: true }).locator('..')
+    )
         .toContainText('2 selected · 2 recipe-safe');
 });
 
 test('refreshes Execute control truth without discarding the uncreated draft', async ({ page }) => {
     const controlServerRequests: string[] = [];
-    page.on('request', request => {
+    page.on('request', (request) => {
         const url = new URL(request.url());
         if (
             ['fetch', 'xhr'].includes(request.resourceType()) &&
@@ -630,7 +650,7 @@ test('refreshes Execute control truth without discarding the uncreated draft', a
     await expect(firstTarget).not.toBeChecked();
     await expect(targets.getByText('1 selected', { exact: true })).toBeVisible();
     await expect(page.locator(
-        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]',
+        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]'
     )).toHaveAttribute('aria-selected', 'true');
     await expect.poll(() => controlServerRequests.length)
         .toBeGreaterThan(requestsBeforeRefresh);
@@ -640,7 +660,7 @@ test('refreshes live Monitor truth without discarding selected evidence', async 
     const fixture = await installRecipeConsoleMonitorFixture(context);
     await page.goto(MONITOR_ROUTE);
     const commandFailure = page.locator(
-        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`
     );
     await commandFailure.click();
     await expect(commandFailure).toHaveAttribute('aria-pressed', 'true');
@@ -650,8 +670,10 @@ test('refreshes live Monitor truth without discarding selected evidence', async 
     await expect.poll(fixture.runRequestCount).toBeGreaterThan(readsBeforeRefresh);
     await expect(commandFailure).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[data-failure-key]')).toHaveCount(1);
-    await expect(page.getByRole('region', { name: 'Agent by phase matrix' })
-        .getByText(MONITOR_FAILURE_AGENT_ID, { exact: true })).toBeVisible();
+    await expect(
+        page.getByRole('region', { name: 'Agent by phase matrix' })
+            .getByText(MONITOR_FAILURE_AGENT_ID, { exact: true })
+    ).toBeVisible();
 });
 
 test('requires known distributed-run truth before artifact export', async ({ page }) => {
@@ -666,26 +688,26 @@ test('requires known distributed-run truth before artifact export', async ({ pag
     expect(downloadCount).toBe(0);
 });
 
-test('blank URL opens Recipe Console Execute after the final ready-state flip', async ({
-    context,
-    page,
-}) => {
+test('blank URL opens Recipe Console Execute after the final ready-state flip', async ({ context, page }) => {
     const requestedResources: string[] = [];
     await context.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'ready-state-client',
-            sessionId: 'ready-state-session',
-            username: 'ready-state-operator',
-            accessToken: 'ready-state-session-token',
-            expiresAtEpochMs: 4_000_000_000_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'ready-state-client',
+                sessionId: 'ready-state-session',
+                username: 'ready-state-operator',
+                accessToken: 'ready-state-session-token',
+                expiresAtEpochMs: 4_000_000_000_000
+            })
+        );
         localStorage.setItem(
             'rallar-black-box.ui.active-mode',
-            'black-box-runner',
+            'black-box-runner'
         );
         localStorage.setItem(
             'rallar-black-box.ui.active-tab',
-            'event-stream',
+            'event-stream'
         );
     });
     page.on('request', (request) => {
@@ -700,7 +722,7 @@ test('blank URL opens Recipe Console Execute after the final ready-state flip', 
     await page.goto('/');
 
     await expect(
-        page.locator('.recipe-console[data-view="execute"]'),
+        page.locator('.recipe-console[data-view="execute"]')
     ).toBeVisible();
     await expect(page.locator('[data-primary-navigation]'))
         .toHaveAttribute('aria-label', 'Recipe Console');
@@ -711,12 +733,14 @@ test('blank URL opens Recipe Console Execute after the final ready-state flip', 
         return `${url.pathname}${url.search}${url.hash}`;
     }).toBe(
         '/?v=1&experience=recipe-console&view=execute' +
-        '&recipeId=rtc-realtime-stability',
+            '&recipeId=rtc-realtime-stability'
     );
-    await expect(page.locator('[data-command-bar]')
-        .getByText('Canonical', { exact: true })).toBeVisible();
+    await expect(
+        page.locator('[data-command-bar]')
+            .getByText('Canonical', { exact: true })
+    ).toBeVisible();
     await expect(page.locator('[data-url-issues]')).toHaveCount(0);
-    expect(requestedResources.some(url => url.includes('LegacyExperience')))
+    expect(requestedResources.some((url) => url.includes('LegacyExperience')))
         .toBe(false);
 });
 
@@ -754,20 +778,20 @@ test('keeps auth summary typography before either experience loads', async ({ pa
     });
 
     await page.goto(
-        '/?provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.invalid',
+        '/?provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.invalid'
     );
     await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
         .toBeVisible();
-    expect(requestedScripts.some(url => url.includes('LegacyExperience')))
+    expect(requestedScripts.some((url) => url.includes('LegacyExperience')))
         .toBe(false);
-    expect(requestedScripts.some(url => url.includes('RecipeConsoleApp')))
+    expect(requestedScripts.some((url) => url.includes('RecipeConsoleApp')))
         .toBe(false);
 
     const termStyle = await page.locator('.auth-summary dt').first().evaluate(
         (element) => {
             const style = getComputedStyle(element);
             return { color: style.color, fontSize: style.fontSize };
-        },
+        }
     );
     const descriptionStyle = await page.locator('.auth-summary dd').first()
         .evaluate((element) => {
@@ -779,13 +803,13 @@ test('keeps auth summary typography before either experience loads', async ({ pa
                 color: style.color,
                 fontWeight: style.fontWeight,
                 textOverflow: style.textOverflow,
-                whiteSpace: style.whiteSpace,
+                whiteSpace: style.whiteSpace
             };
         });
 
     expect(termStyle).toEqual({
         color: 'rgb(103, 118, 111)',
-        fontSize: '11.52px',
+        fontSize: '11.52px'
     });
     expect(descriptionStyle).toEqual({
         minWidth: '0px',
@@ -794,6 +818,6 @@ test('keeps auth summary typography before either experience loads', async ({ pa
         color: 'rgb(29, 40, 35)',
         fontWeight: '700',
         textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
+        whiteSpace: 'nowrap'
     });
 });

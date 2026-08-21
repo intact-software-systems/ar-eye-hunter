@@ -3,17 +3,15 @@
 import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    BROWSER_AL_RUNTIME_DB_NAME,
-} from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { BROWSER_AL_RUNTIME_DB_NAME } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import {
     createBrowserQueueBox,
     deleteExpiredBrowserQueueBoxEntriesForSession,
     initBrowserQueueBoxExpiryEviction,
-    toBrowserQueueBoxStoreName,
+    toBrowserQueueBoxStoreName
 } from '@shared-web/browser/browser-queuebox.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type RawQueueBoxEntry = Readonly<{
     keyString: string;
@@ -36,10 +34,10 @@ describe('Browser queuebox expiry eviction', () => {
         const targetSessionId = `queue-target-${crypto.randomUUID()}`;
         const otherSessionId = `queue-other-${crypto.randomUUID()}`;
         const targetWsInboxStoreName = toBrowserQueueBoxStoreName(
-            `ws-inbox-${targetSessionId}`,
+            `ws-inbox-${targetSessionId}`
         );
         const otherWsInboxStoreName = toBrowserQueueBoxStoreName(
-            `ws-inbox-${otherSessionId}`,
+            `ws-inbox-${otherSessionId}`
         );
         const targetQueue = createBrowserQueueBox(`ws-inbox-${targetSessionId}`);
         const otherQueue = createBrowserQueueBox(`ws-inbox-${otherSessionId}`);
@@ -55,13 +53,13 @@ describe('Browser queuebox expiry eviction', () => {
         expect(result.deleted).toBe(1);
         expect(result.stores).toContainEqual({
             storeName: targetWsInboxStoreName,
-            deleted: 1,
+            deleted: 1
         });
         expect(await readQueueBoxEntryKeys(targetWsInboxStoreName)).toEqual([
-            'chat.message.v1/target-fresh/ctx-1',
+            'chat.message.v1/target-fresh/ctx-1'
         ]);
         expect(await readQueueBoxEntryKeys(otherWsInboxStoreName)).toEqual([
-            'chat.message.v1/other-expired/ctx-1',
+            'chat.message.v1/other-expired/ctx-1'
         ]);
     });
 
@@ -81,7 +79,7 @@ describe('Browser queuebox expiry eviction', () => {
 
         await queue.enqueue(createEntry('interval-expired', expiredTs()));
         expect(await readQueueBoxEntryKeys(storeName)).toEqual([
-            'chat.message.v1/interval-expired/ctx-1',
+            'chat.message.v1/interval-expired/ctx-1'
         ]);
 
         await vi.advanceTimersByTimeAsync(50);
@@ -95,7 +93,7 @@ function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEn
         key: {
             topicId: 'chat.message.v1',
             resourceId,
-            contextId: 'ctx-1',
+            contextId: 'ctx-1'
         },
         resource: JSON.stringify({ resourceId }),
         typeId: 'chat.message.v1',
@@ -103,13 +101,13 @@ function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEn
             date: Temporal.PlainTime.from('00:00:00'),
             createdBy: 'test',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs,
+            expiryTs
         },
         status: EntityStatus.NEW,
         dequeueAudit: {
-            attempts: 0,
+            attempts: 0
         },
-        db: undefined,
+        db: undefined
     };
 }
 
@@ -118,7 +116,7 @@ function expiredTs(): Temporal.Instant {
 }
 
 async function readQueueBoxEntryKeys(
-    storeName: string,
+    storeName: string
 ): Promise<readonly string[]> {
     const db = await openBrowserRuntimeDatabase();
 
@@ -147,7 +145,8 @@ async function readQueueBoxEntryKeys(
                 cursor.continue();
             };
         });
-    } finally {
+    }
+    finally {
         db.close();
     }
 }
@@ -156,9 +155,10 @@ async function openBrowserRuntimeDatabase(): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(BROWSER_AL_RUNTIME_DB_NAME);
 
-        request.onerror = () => reject(
-            request.error ?? new Error('Browser runtime IndexedDB open failed'),
-        );
+        request.onerror = () =>
+            reject(
+                request.error ?? new Error('Browser runtime IndexedDB open failed')
+            );
         request.onsuccess = () => resolve(request.result);
     });
 }
@@ -168,11 +168,13 @@ async function deleteBrowserRuntimeDatabase(): Promise<void> {
         const request = indexedDB.deleteDatabase(BROWSER_AL_RUNTIME_DB_NAME);
 
         request.onsuccess = () => resolve();
-        request.onerror = () => reject(
-            request.error ?? new Error('Browser runtime IndexedDB delete failed'),
-        );
-        request.onblocked = () => reject(
-            new Error('Browser runtime IndexedDB delete blocked'),
-        );
+        request.onerror = () =>
+            reject(
+                request.error ?? new Error('Browser runtime IndexedDB delete failed')
+            );
+        request.onblocked = () =>
+            reject(
+                new Error('Browser runtime IndexedDB delete blocked')
+            );
     });
 }

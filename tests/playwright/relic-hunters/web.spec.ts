@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, type Page, type Route, test } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { Buffer } from 'node:buffer';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
 type MockBackendOptions = Readonly<{
     rooms?: readonly MockGroupSnapshot[];
@@ -15,7 +15,7 @@ type RelicPhase = 'lobby' | 'planning' | 'review' | 'finished';
 type SceneBaselineScenario = Readonly<{
     name: string;
     mode: 'opening' | 'room';
-    viewport: Readonly<{ width: number; height: number }>;
+    viewport: Readonly<{ width: number; height: number; }>;
     snapshot?: RelicSnapshot;
     commandSnapshot?: RelicSnapshot;
     onlineMemberCount?: number;
@@ -23,9 +23,11 @@ type SceneBaselineScenario = Readonly<{
     expectedLightingPreset?: string;
     wait?(page: Page): Promise<void>;
 }>;
-type SceneBaselineMetric = Awaited<ReturnType<typeof sceneCanvasMetrics>> & Readonly<{
-    scenario: string;
-}>;
+type SceneBaselineMetric =
+    & Awaited<ReturnType<typeof sceneCanvasMetrics>>
+    & Readonly<{
+        scenario: string;
+    }>;
 
 const SESSION_TTL_MS = 60 * 60 * 1_000;
 const session = {
@@ -33,7 +35,7 @@ const session = {
     accessToken: 'alice-token',
     username: 'alice',
     sessionId: 'alice-session',
-    expiresAtEpochMs: Date.now() + SESSION_TTL_MS,
+    expiresAtEpochMs: Date.now() + SESSION_TTL_MS
 };
 let clientStateRevision = 0;
 let groupStateRevision = 0;
@@ -64,7 +66,7 @@ test.describe('Relic Hunters web app', () => {
                 name: 'opening-desktop',
                 mode: 'opening',
                 viewport: { width: 1280, height: 720 },
-                expectedLightingPreset: 'day',
+                expectedLightingPreset: 'day'
             },
             {
                 name: 'lobby-desktop',
@@ -75,7 +77,7 @@ test.describe('Relic Hunters web app', () => {
                 wait: async (page) => {
                     await expect(page.getByText('Keeper: Alice')).toBeVisible();
                     await expect(page.getByRole('button', { name: /^Start$/ })).toBeVisible();
-                },
+                }
             },
             {
                 name: 'planning-desktop',
@@ -87,7 +89,7 @@ test.describe('Relic Hunters web app', () => {
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
                     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeVisible();
-                },
+                }
             },
             {
                 name: 'planning-mobile',
@@ -99,14 +101,14 @@ test.describe('Relic Hunters web app', () => {
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
                     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeVisible();
-                },
+                }
             },
             {
                 name: 'waiting-locked-desktop',
                 mode: 'room',
                 viewport: { width: 1280, height: 720 },
                 snapshot: relicSnapshotWithPlayers(2, 'planning', {
-                    submittedPlayerIds: ['alice-session'],
+                    submittedPlayerIds: ['alice-session']
                 }),
                 onlineMemberCount: 2,
                 expectedCameraMode: 'avatar',
@@ -114,7 +116,7 @@ test.describe('Relic Hunters web app', () => {
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText('Plan Locked');
                     await expect(page.getByLabel('Round plan')).toContainText('1 hunter still choosing');
-                },
+                }
             },
             {
                 name: 'split-party-identities-desktop',
@@ -126,12 +128,12 @@ test.describe('Relic Hunters web app', () => {
                         'alice-session': 'entrance',
                         'bob-session': 'shrine',
                         'cara-session': 'monster',
-                        'dain-session': 'exit',
+                        'dain-session': 'exit'
                     },
                     playerRelicIds: {
-                        'dain-session': ['sun-disk'],
+                        'dain-session': ['sun-disk']
                     },
-                    submittedPlayerIds: ['alice-session', 'cara-session'],
+                    submittedPlayerIds: ['alice-session', 'cara-session']
                 }),
                 onlineMemberCount: 4,
                 expectedCameraMode: 'avatar',
@@ -142,7 +144,7 @@ test.describe('Relic Hunters web app', () => {
                     await expect(page.getByLabel('Castle room map')).toContainText('Monster');
                     await expect(page.getByLabel('Castle room map')).toContainText('Treasure');
                     await expect(page.getByLabel('Room occupants')).toContainText('1 hunter here / 3 elsewhere');
-                },
+                }
             },
             {
                 name: 'resolved-timeline-desktop',
@@ -150,7 +152,7 @@ test.describe('Relic Hunters web app', () => {
                 viewport: { width: 1280, height: 720 },
                 snapshot: relicSnapshotWithPlayers(1, 'planning', {
                     includeStorage: true,
-                    playerRoomId: 'storage',
+                    playerRoomId: 'storage'
                 }),
                 commandSnapshot: resolvedStorageSearchSnapshot(),
                 expectedCameraMode: 'avatar',
@@ -158,15 +160,15 @@ test.describe('Relic Hunters web app', () => {
                 wait: async (page) => {
                     await expect(page.getByLabel('Current turn summary')).toContainText(
                         'Choose one plan',
-                        { timeout: 15_000 },
+                        { timeout: 15_000 }
                     );
                     await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
                     await page.getByRole('button', { name: 'Submit Plan' }).click();
                     await expect(page.getByLabel('Turn timeline')).toContainText(
                         'Alice searched the crates and marked a false supply trail.',
-                        { timeout: 15_000 },
+                        { timeout: 15_000 }
                     );
-                },
+                }
             },
             {
                 name: 'finished-desktop',
@@ -177,14 +179,14 @@ test.describe('Relic Hunters web app', () => {
                 wait: async (page) => {
                     await expect(page.getByText('The Heart Relic has chosen')).toBeVisible();
                     await expect(page.getByText('Final score: 5')).toBeVisible();
-                },
-            },
+                }
+            }
         ];
 
         for (const scenario of scenarios) {
             const context = await browser.newContext({
                 viewport: scenario.viewport,
-                deviceScaleFactor: 2,
+                deviceScaleFactor: 2
             });
             const page = await context.newPage();
             try {
@@ -197,20 +199,21 @@ test.describe('Relic Hunters web app', () => {
                         ? [groupSnapshot({ onlineMemberCount: scenario.onlineMemberCount ?? 1 })]
                         : [],
                     relicSnapshot: scenario.snapshot ?? emptyRelicSnapshot(),
-                    commandSnapshot: scenario.commandSnapshot,
+                    commandSnapshot: scenario.commandSnapshot
                 });
 
                 await page.goto('http://127.0.0.1:5175/');
                 if (scenario.mode === 'room') {
                     await openListedRoomIfNeeded(page);
                     await scenario.wait?.(page);
-                } else {
+                }
+                else {
                     await expect(page.getByRole('button', { name: 'Login' })).toBeVisible();
                 }
 
                 await expect.poll(() => sceneCanvasMetrics(page), {
                     message: `${scenario.name} canvas should render visible high-DPI pixels`,
-                    timeout: 20_000,
+                    timeout: 20_000
                 }).toMatchObject({
                     ready: true,
                     devicePixelRatio: 2,
@@ -220,7 +223,7 @@ test.describe('Relic Hunters web app', () => {
                     ...(scenario.expectedLightingPreset
                         ? { lightingPreset: scenario.expectedLightingPreset }
                         : {}),
-                    assetPipeline: 'procedural',
+                    assetPipeline: 'procedural'
                 });
 
                 const metrics = await sceneCanvasMetrics(page);
@@ -234,7 +237,8 @@ test.describe('Relic Hunters web app', () => {
 
                 const screenshot = await captureSceneBaseline(page, scenario.name);
                 expect(screenshot.byteLength).toBeGreaterThan(10_000);
-            } finally {
+            }
+            finally {
                 await context.close();
             }
         }
@@ -243,7 +247,7 @@ test.describe('Relic Hunters web app', () => {
             mkdirSync(SCENE_BASELINE_DIR, { recursive: true });
             writeFileSync(
                 `${SCENE_BASELINE_DIR}/scene-upgrade-metrics.json`,
-                `${JSON.stringify(baselineMetrics, null, 2)}\n`,
+                `${JSON.stringify(baselineMetrics, null, 2)}\n`
             );
         }
     });
@@ -268,7 +272,7 @@ test.describe('Relic Hunters web app', () => {
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [groupSnapshot({ onlineMemberCount: 1 })],
-            relicSnapshot: emptyRelicSnapshot(),
+            relicSnapshot: emptyRelicSnapshot()
         });
 
         await page.setViewportSize({ width: 1280, height: 720 });
@@ -298,7 +302,7 @@ test.describe('Relic Hunters web app', () => {
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [room],
-            relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning')
         });
         await page.addInitScript((storedSession) => {
             window.localStorage.setItem('auth.session', JSON.stringify(storedSession));
@@ -328,7 +332,7 @@ test.describe('Relic Hunters web app', () => {
                 scrollHeight: el.scrollHeight,
                 scrollTop: el.scrollTop,
                 panelBottom: panelBox.bottom,
-                lastChildBottom: lastChildBox?.bottom ?? panelBox.bottom,
+                lastChildBottom: lastChildBox?.bottom ?? panelBox.bottom
             };
         });
         expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
@@ -341,7 +345,7 @@ test.describe('Relic Hunters web app', () => {
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [room],
-            relicSnapshot: relicSnapshotWithPlayers(2),
+            relicSnapshot: relicSnapshotWithPlayers(2)
         });
 
         await page.goto('/');
@@ -364,7 +368,7 @@ test.describe('Relic Hunters web app', () => {
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [room],
-            relicSnapshot: relicSnapshotWithPlayers(2),
+            relicSnapshot: relicSnapshotWithPlayers(2)
         });
 
         await page.goto('/');
@@ -389,7 +393,7 @@ test.describe('Relic Hunters web app', () => {
         await mockBackend(page, {
             rooms: [room],
             relicSnapshot: relicSnapshotWithPlayers(2),
-            requests,
+            requests
         });
 
         await page.goto('/');
@@ -412,7 +416,7 @@ test.describe('Relic Hunters web app', () => {
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [room],
-            relicSnapshot: relicSnapshotWithPlayers(1),
+            relicSnapshot: relicSnapshotWithPlayers(1)
         });
 
         await page.goto('/');
@@ -437,7 +441,7 @@ test.describe('Relic Hunters web app', () => {
         await mockBackend(page, {
             rooms: [room],
             relicSnapshot: emptyRelicSnapshot(),
-            commandBodies,
+            commandBodies
         });
 
         await page.goto('/');
@@ -457,13 +461,13 @@ test.describe('Relic Hunters web app', () => {
             kind: 'join-expedition',
             gameId: 'room-1',
             username: 'alice',
-            characterId: 'kael-ironstride',
+            characterId: 'kael-ironstride'
         });
         expect(commandBodies[1]).toMatchObject({
             protocolVersion: 1,
             kind: 'start-expedition',
             gameId: 'room-1',
-            username: 'alice',
+            username: 'alice'
         });
     });
 
@@ -477,10 +481,10 @@ test.describe('Relic Hunters web app', () => {
             relicSnapshot: relicSnapshotWithPlayers(2, 'planning', {
                 submittedPlayerIds: ['alice-session'],
                 roundStartedAtEpochMs: Date.now() - 90_000,
-                roundTimeLimitMs: 60_000,
+                roundTimeLimitMs: 60_000
             }),
             commandBodies,
-            commandSnapshot: resolvedSearchSnapshot(),
+            commandSnapshot: resolvedSearchSnapshot()
         });
 
         await page.goto('/');
@@ -499,7 +503,7 @@ test.describe('Relic Hunters web app', () => {
             protocolVersion: 1,
             kind: 'force-resolve-round',
             gameId: 'room-1',
-            username: 'alice',
+            username: 'alice'
         });
     });
 
@@ -512,12 +516,18 @@ test.describe('Relic Hunters web app', () => {
             relicSnapshot: emptyRelicSnapshot(),
             commandBodies,
             commandResponse: (body) => {
-                const kind = (body as { kind?: string } | undefined)?.kind;
-                if (kind === 'join-expedition') return relicSnapshotWithPlayers(1);
-                if (kind === 'start-expedition') return relicSnapshotWithPlayers(1, 'planning');
-                if (kind === 'submit-action') return resolvedSearchSnapshot();
+                const kind = (body as { kind?: string; } | undefined)?.kind;
+                if (kind === 'join-expedition') {
+                    return relicSnapshotWithPlayers(1);
+                }
+                if (kind === 'start-expedition') {
+                    return relicSnapshotWithPlayers(1, 'planning');
+                }
+                if (kind === 'submit-action') {
+                    return resolvedSearchSnapshot();
+                }
                 return relicSnapshotWithPlayers(1);
-            },
+            }
         });
 
         await page.goto('/');
@@ -535,7 +545,7 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.locator('.lobby-begin-btn')).toBeEnabled();
         await page.locator('.lobby-begin-btn').click();
         await expect.poll(() => commandBodies.length).toBe(2);
-        expect((commandBodies.at(-1) as { kind?: string }).kind).toBe('start-expedition');
+        expect((commandBodies.at(-1) as { kind?: string; }).kind).toBe('start-expedition');
 
         await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan', { timeout: 15_000 });
         await page.getByRole('button', { name: 'Submit Plan' }).click();
@@ -546,10 +556,10 @@ test.describe('Relic Hunters web app', () => {
         await expect(timeline).toContainText('Your Action', { timeout: 20_000 });
         await expect(timeline).toContainText('Result', { timeout: 20_000 });
         await expect(timeline).toContainText('Alice searched the Entrance.', { timeout: 20_000 });
-        expect(commandBodies.map((body) => (body as { kind?: string }).kind)).toEqual([
+        expect(commandBodies.map((body) => (body as { kind?: string; }).kind)).toEqual([
             'join-expedition',
             'start-expedition',
-            'submit-action',
+            'submit-action'
         ]);
     });
 
@@ -560,7 +570,7 @@ test.describe('Relic Hunters web app', () => {
         await installBrowserDoubles(page);
         await mockBackend(page, {
             rooms: [room],
-            relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
+            relicSnapshot: relicSnapshotWithPlayers(1, 'planning')
         });
 
         await page.goto('/');
@@ -574,12 +584,12 @@ test.describe('Relic Hunters web app', () => {
         const canvas = page.locator('canvas.relic-scene');
         await expect(canvas).toBeVisible();
         await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
-        await expect.poll(() => canvas.evaluate((node) =>
-            (node as HTMLCanvasElement).dataset.sceneRuntime
-        )).toBe('next');
-        await expect.poll(() => canvas.evaluate((node) =>
-            (node as HTMLCanvasElement).dataset.sceneVisualTheme
-        )).toBe('neon-dystopian');
+        await expect.poll(() => canvas.evaluate((node) => (node as HTMLCanvasElement).dataset.sceneRuntime)).toBe(
+            'next'
+        );
+        await expect.poll(() => canvas.evaluate((node) => (node as HTMLCanvasElement).dataset.sceneVisualTheme)).toBe(
+            'neon-dystopian'
+        );
         await expect.poll(async () => (await sceneCanvasMetrics(page)).activeRoomLightCount)
             .toBeGreaterThan(0);
         await expect.poll(async () => (await sceneCanvasMetrics(page)).meshCount)
@@ -590,9 +600,9 @@ test.describe('Relic Hunters web app', () => {
             .toBe('neon-dystopia');
         await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
             .toBe('avatar');
-        await expect.poll(() => canvas.evaluate((node) =>
-            (node as HTMLCanvasElement).dataset.rallarMotionLane
-        )).toBe('realtime');
+        await expect.poll(() => canvas.evaluate((node) => (node as HTMLCanvasElement).dataset.rallarMotionLane)).toBe(
+            'realtime'
+        );
 
         await page.getByRole('button', { name: 'First-person view' }).click();
         await expect.poll(async () => (await sceneCanvasMetrics(page)).cameraMode)
@@ -632,7 +642,7 @@ test.describe('Relic Hunters web app', () => {
         await mockBackend(page, {
             rooms: [room],
             relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
-            commandBodies,
+            commandBodies
         });
 
         await page.goto('/');
@@ -666,7 +676,7 @@ test.describe('Relic Hunters web app', () => {
         await mockBackend(page, {
             rooms: [room],
             relicSnapshot: relicSnapshotWithPlayers(1, 'planning'),
-            commandBodies,
+            commandBodies
         });
 
         await page.goto('/');
@@ -697,9 +707,9 @@ test.describe('Relic Hunters web app', () => {
             relicSnapshot: relicSnapshotWithPlayers(1, 'planning', {
                 carryRelic: true,
                 includeExit: true,
-                playerRoomId: 'exit',
+                playerRoomId: 'exit'
             }),
-            commandBodies,
+            commandBodies
         });
 
         await page.goto('/');
@@ -732,17 +742,17 @@ test.describe('Relic Hunters web app', () => {
                     'alice-session': 'storage',
                     'bob-session': 'storage',
                     'cara-session': 'trap',
-                    'dain-session': 'hallway',
+                    'dain-session': 'hallway'
                 },
                 playerRelicIds: {
-                    'bob-session': ['sun-disk'],
+                    'bob-session': ['sun-disk']
                 },
                 playerScores: {
                     'bob-session': 6,
-                    'cara-session': 1,
+                    'cara-session': 1
                 },
-                submittedPlayerIds: ['alice-session', 'cara-session'],
-            }),
+                submittedPlayerIds: ['alice-session', 'cara-session']
+            })
         });
 
         await page.goto('/');
@@ -778,7 +788,7 @@ test.describe('Relic Hunters web app', () => {
             rooms: [room],
             relicSnapshot: relicSnapshotWithPlayers(1, 'planning', {
                 includeStorage: true,
-                playerRoomId: 'storage',
+                playerRoomId: 'storage'
             }),
             commandSnapshot: relicSnapshotWithPlayers(1, 'planning', {
                 includeStorage: true,
@@ -794,8 +804,8 @@ test.describe('Relic Hunters web app', () => {
                         summary: 'The crates held a torn supply map, but no relic.',
                         hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
                         effect: 'map-fragment',
-                        revealedRoomId: 'trap',
-                    },
+                        revealedRoomId: 'trap'
+                    }
                 ],
                 events: [
                     {
@@ -806,10 +816,10 @@ test.describe('Relic Hunters web app', () => {
                         animationCue: {
                             type: 'noise_pulse',
                             durationMs: 620,
-                            intensity: 'low',
+                            intensity: 'low'
                         },
                         tone: 'mystery',
-                        createdAtEpochMs: Date.now(),
+                        createdAtEpochMs: Date.now()
                     },
                     {
                         id: 'event-search-1',
@@ -821,10 +831,10 @@ test.describe('Relic Hunters web app', () => {
                             playerId: 'alice-session',
                             roomId: 'storage',
                             durationMs: 700,
-                            intensity: 'low',
+                            intensity: 'low'
                         },
                         tone: 'mystery',
-                        createdAtEpochMs: Date.now(),
+                        createdAtEpochMs: Date.now()
                     },
                     {
                         id: 'event-noise-1',
@@ -834,10 +844,10 @@ test.describe('Relic Hunters web app', () => {
                         animationCue: {
                             type: 'noise_pulse',
                             durationMs: 900,
-                            intensity: 'low',
+                            intensity: 'low'
                         },
                         tone: 'mystery',
-                        createdAtEpochMs: Date.now(),
+                        createdAtEpochMs: Date.now()
                     },
                     {
                         id: 'event-round-2',
@@ -845,11 +855,11 @@ test.describe('Relic Hunters web app', () => {
                         type: 'round_started',
                         message: 'Round 2 begins.',
                         tone: 'mystery',
-                        createdAtEpochMs: Date.now(),
-                    },
+                        createdAtEpochMs: Date.now()
+                    }
                 ],
-                round: 2,
-            }),
+                round: 2
+            })
         });
 
         await page.goto('/');
@@ -868,7 +878,11 @@ test.describe('Relic Hunters web app', () => {
         await expect(objective.getByText('Clue trail marked')).toBeVisible();
         await expect(objective.getByText('The crates held a torn supply map, but no relic.')).toBeVisible();
         await expect(objective.getByText('Follow the map fragment toward Trap Room')).toBeVisible();
-        await expect(objective.getByText('Next step: Move to Trap Room. The supply marks point back toward the Entrance and onward through the Trap Room.')).toBeVisible();
+        await expect(
+            objective.getByText(
+                'Next step: Move to Trap Room. The supply marks point back toward the Entrance and onward through the Trap Room.'
+            )
+        ).toBeVisible();
         await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
         const timeline = page.getByLabel('Turn timeline');
         await expect(timeline).toContainText('Your Action');
@@ -876,8 +890,12 @@ test.describe('Relic Hunters web app', () => {
         await expect(timeline).toContainText('Result');
         await expect(timeline).toContainText('Alice searched the crates and marked a false supply trail.');
         await expect(page.getByLabel('Discovered clue trails')).toContainText('Storage - Trap Room');
-        await expect(page.getByLabel('Discovered clue trails')).toContainText('The crates held a torn supply map, but no relic.');
-        await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
+        await expect(page.getByLabel('Discovered clue trails')).toContainText(
+            'The crates held a torn supply map, but no relic.'
+        );
+        await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(
+            /clue-target/
+        );
     });
 
     test('shows the review phase before the director continues to the next turn', async ({ page }) => {
@@ -888,7 +906,7 @@ test.describe('Relic Hunters web app', () => {
             rooms: [groupSnapshot({ onlineMemberCount: 1 })],
             relicSnapshot: relicSnapshotWithPlayers(1, 'planning', {
                 includeStorage: true,
-                playerRoomId: 'storage',
+                playerRoomId: 'storage'
             }),
             commandBodies,
             commandResponse: (body) => {
@@ -896,7 +914,7 @@ test.describe('Relic Hunters web app', () => {
                     return continuedStoragePlanningSnapshot();
                 }
                 return reviewStorageSearchSnapshot();
-            },
+            }
         });
 
         await page.goto('/');
@@ -914,12 +932,10 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByLabel('Round review')).toContainText('Watch the revealed plans');
         await expect(page.getByRole('button', { name: 'Submit Plan' })).toHaveCount(0);
         await expect(page.getByLabel('Turn timeline')).toContainText(
-            'Alice searched the crates and marked a false supply trail.',
+            'Alice searched the crates and marked a false supply trail.'
         );
 
-        await expect.poll(() =>
-            commandBodies.some((body) => isCommandKind(body, 'continue-review'))
-        ).toBe(true);
+        await expect.poll(() => commandBodies.some((body) => isCommandKind(body, 'continue-review'))).toBe(true);
         await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
         await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
     });
@@ -939,15 +955,13 @@ test.describe('Relic Hunters web app', () => {
 
         expect(requests).toContain('GET /api/config');
         expect(
-            requests.some(request =>
-                request.startsWith('POST /api/auth/ws-ticket/requests/')
-            ),
+            requests.some((request) => request.startsWith('POST /api/auth/ws-ticket/requests/'))
         ).toBe(true);
         expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
         expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
 
         const wsUrls = await page.evaluate(() =>
-            (window as unknown as { __rallarWsUrls?: string[] }).__rallarWsUrls ?? []
+            (window as unknown as { __rallarWsUrls?: string[]; }).__rallarWsUrls ?? []
         );
         expect(wsUrls).toContain('ws://127.0.0.1:5175/api/ws/alice-session?ticket=test-ticket');
     });
@@ -972,7 +986,7 @@ async function installBrowserDoubles(page: Page): Promise<void> {
             constructor(url: string) {
                 super();
                 this.url = url;
-                const target = window as unknown as { __rallarWsUrls?: string[] };
+                const target = window as unknown as { __rallarWsUrls?: string[]; };
                 target.__rallarWsUrls ??= [];
                 target.__rallarWsUrls.push(url);
                 window.setTimeout(() => {
@@ -984,7 +998,7 @@ async function installBrowserDoubles(page: Page): Promise<void> {
             }
 
             send(data: unknown): void {
-                const target = window as unknown as { __rallarWsOutbox?: unknown[] };
+                const target = window as unknown as { __rallarWsOutbox?: unknown[]; };
                 target.__rallarWsOutbox ??= [];
                 target.__rallarWsOutbox.push(data);
             }
@@ -1000,7 +1014,7 @@ async function installBrowserDoubles(page: Page): Promise<void> {
         Object.defineProperty(window, 'WebSocket', {
             configurable: true,
             writable: true,
-            value: FakeWebSocket,
+            value: FakeWebSocket
         });
     });
 }
@@ -1011,8 +1025,8 @@ async function restoreRoomSession(page: Page): Promise<void> {
             'auth.session',
             JSON.stringify({
                 ...storedSession,
-                expiresAtEpochMs: Date.now() + 60 * 60 * 1_000,
-            }),
+                expiresAtEpochMs: Date.now() + 60 * 60 * 1_000
+            })
         );
         window.localStorage.setItem('relic.currentRoomId', 'room-1');
     }, session);
@@ -1042,7 +1056,7 @@ async function openListedRoomIfNeeded(page: Page): Promise<void> {
 async function captureSceneBaseline(page: Page, name: string): Promise<Buffer> {
     const options = {
         animations: 'disabled' as const,
-        fullPage: false,
+        fullPage: false
     };
     if (!WRITE_SCENE_BASELINES) {
         return await page.screenshot(options);
@@ -1051,7 +1065,7 @@ async function captureSceneBaseline(page: Page, name: string): Promise<Buffer> {
     mkdirSync(SCENE_BASELINE_DIR, { recursive: true });
     return await page.screenshot({
         ...options,
-        path: `${SCENE_BASELINE_DIR}/${name}.png`,
+        path: `${SCENE_BASELINE_DIR}/${name}.png`
     });
 }
 
@@ -1071,8 +1085,8 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
                 apiBaseUrl: 'http://127.0.0.1:5175',
                 wsBaseUrl: 'ws://127.0.0.1:5175',
                 endpoints: {
-                    createWs: '/api/ws/:id',
-                },
+                    createWs: '/api/ws/:id'
+                }
             });
         }
 
@@ -1082,7 +1096,7 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
                 clientId: session.clientId,
                 username: session.username,
                 displayName: 'Alice',
-                registeredAtEpochMs: Date.now(),
+                registeredAtEpochMs: Date.now()
             }, 201);
         }
 
@@ -1095,14 +1109,14 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
             return json(route, {
                 ticket: 'test-ticket',
                 sessionId: session.sessionId,
-                expiresAtEpochMs: Date.now() + 60_000,
+                expiresAtEpochMs: Date.now() + 60_000
             });
         }
 
         if (path === '/api/webrtc/ice') {
             return json(route, {
                 iceServers: [],
-                expiresAtEpochMs: Date.now() + 60_000,
+                expiresAtEpochMs: Date.now() + 60_000
             });
         }
 
@@ -1158,7 +1172,7 @@ async function json(route: Route, body: unknown, status = 200): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 }
 
@@ -1174,7 +1188,7 @@ function isCommandKind(body: unknown, kind: string): boolean {
     return typeof body === 'object' &&
         body !== null &&
         'kind' in body &&
-        (body as { kind?: unknown }).kind === kind;
+        (body as { kind?: unknown; }).kind === kind;
 }
 
 async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
@@ -1205,7 +1219,7 @@ async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
             [0.34, 0.42],
             [0.66, 0.42],
             [0.5, 0.28],
-            [0.5, 0.72],
+            [0.5, 0.72]
         ];
         for (const [xRatio, yRatio] of samples) {
             gl.readPixels(
@@ -1215,7 +1229,7 @@ async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
                 1,
                 gl.RGBA,
                 gl.UNSIGNED_BYTE,
-                pixels,
+                pixels
             );
             if (pixels[3] > 0 && (pixels[0] > 4 || pixels[1] > 4 || pixels[2] > 4)) {
                 return true;
@@ -1226,33 +1240,35 @@ async function sceneHasVisiblePixels(page: Page): Promise<boolean> {
     });
 }
 
-async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
-    ready: boolean;
-    cssWidth: number;
-    cssHeight: number;
-    drawingBufferWidth: number;
-    drawingBufferHeight: number;
-    devicePixelRatio: number;
-    highDpi: boolean;
-    hasRenderedFrame: boolean;
-    averageLuma: number;
-    cameraMode?: string;
-    lightingPreset?: string;
-    assetPipeline?: string;
-    meshCount: number;
-    activeMeshCount: number;
-    materialCount: number;
-    particleSystemCount: number;
-    activeParticleSystemCount: number;
-    activeRoomLightCount: number;
-    staticBatchCount: number;
-    batchedMeshCount: number;
-    activeEffectCount: number;
-    effectMeshCount: number;
-    drawCalls?: number;
-    fps?: number;
-    readyMs: number;
-}>> {
+async function sceneCanvasMetrics(page: Page): Promise<
+    Readonly<{
+        ready: boolean;
+        cssWidth: number;
+        cssHeight: number;
+        drawingBufferWidth: number;
+        drawingBufferHeight: number;
+        devicePixelRatio: number;
+        highDpi: boolean;
+        hasRenderedFrame: boolean;
+        averageLuma: number;
+        cameraMode?: string;
+        lightingPreset?: string;
+        assetPipeline?: string;
+        meshCount: number;
+        activeMeshCount: number;
+        materialCount: number;
+        particleSystemCount: number;
+        activeParticleSystemCount: number;
+        activeRoomLightCount: number;
+        staticBatchCount: number;
+        batchedMeshCount: number;
+        activeEffectCount: number;
+        effectMeshCount: number;
+        drawCalls?: number;
+        fps?: number;
+        readyMs: number;
+    }>
+> {
     return await page.evaluate(() => {
         const canvas = document.querySelector<HTMLCanvasElement>('canvas.relic-scene');
         if (!canvas) {
@@ -1281,7 +1297,7 @@ async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
                 effectMeshCount: 0,
                 drawCalls: undefined,
                 fps: undefined,
-                readyMs: 0,
+                readyMs: 0
             };
         }
 
@@ -1313,7 +1329,7 @@ async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
                 effectMeshCount: numberDataset(canvas.dataset.sceneEffectMeshCount),
                 drawCalls: optionalNumberDataset(canvas.dataset.sceneDrawCalls),
                 fps: optionalNumberDataset(canvas.dataset.sceneFps),
-                readyMs: numberDataset(canvas.dataset.sceneReadyMs),
+                readyMs: numberDataset(canvas.dataset.sceneReadyMs)
             };
         }
 
@@ -1327,7 +1343,7 @@ async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
             [0.40, 0.62],
             [0.60, 0.62],
             [0.50, 0.24],
-            [0.50, 0.76],
+            [0.50, 0.76]
         ];
         let visibleSamples = 0;
         let lumaTotal = 0;
@@ -1339,7 +1355,7 @@ async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
                 1,
                 gl.RGBA,
                 gl.UNSIGNED_BYTE,
-                pixels,
+                pixels
             );
             const luma = pixels[0] * 0.2126 + pixels[1] * 0.7152 + pixels[2] * 0.0722;
             lumaTotal += luma;
@@ -1375,7 +1391,7 @@ async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
             effectMeshCount: numberDataset(canvas.dataset.sceneEffectMeshCount),
             drawCalls: optionalNumberDataset(canvas.dataset.sceneDrawCalls),
             fps: optionalNumberDataset(canvas.dataset.sceneFps),
-            readyMs: numberDataset(canvas.dataset.sceneReadyMs),
+            readyMs: numberDataset(canvas.dataset.sceneReadyMs)
         };
 
         function numberDataset(value: string | undefined): number {
@@ -1406,7 +1422,7 @@ function clientSnapshot(): MockClientSnapshot {
             profileVersion: 1,
             presenceVersion: 1,
             created: { atEpochMs: now },
-            updated: { atEpochMs: now },
+            updated: { atEpochMs: now }
         },
         instances: [
             {
@@ -1418,8 +1434,8 @@ function clientSnapshot(): MockClientSnapshot {
                 platform: 'web',
                 capabilities: [],
                 registered: { atEpochMs: now },
-                updated: { atEpochMs: now },
-            },
+                updated: { atEpochMs: now }
+            }
         ],
         activeSessions: [
             {
@@ -1434,17 +1450,17 @@ function clientSnapshot(): MockClientSnapshot {
                 authenticatedAtEpochMs: now,
                 connectedAtEpochMs: now,
                 lastHeartbeatAtEpochMs: now,
-                expiresAtEpochMs: now + 60_000,
-            },
+                expiresAtEpochMs: now + 60_000
+            }
         ],
         isOnline: true,
         activeSessionCount: 1,
-        lastSeenAtEpochMs: now,
+        lastSeenAtEpochMs: now
     };
 }
 
 function groupSnapshot(
-    options: Readonly<{ onlineMemberCount: number }>,
+    options: Readonly<{ onlineMemberCount: number; }>
 ): MockGroupSnapshot {
     const now = Date.now();
     return {
@@ -1463,7 +1479,7 @@ function groupSnapshot(
             rosterVersion: 1,
             presenceVersion: 1,
             created: { atEpochMs: now, byPrincipalId: session.clientId },
-            updated: { atEpochMs: now, byPrincipalId: session.clientId },
+            updated: { atEpochMs: now, byPrincipalId: session.clientId }
         },
         members: [
             {
@@ -1474,8 +1490,8 @@ function groupSnapshot(
                 role: 'owner',
                 status: 'active',
                 joined: { atEpochMs: now },
-                updated: { atEpochMs: now },
-            },
+                updated: { atEpochMs: now }
+            }
         ],
         activeSessions: options.onlineMemberCount > 0
             ? [
@@ -1487,12 +1503,12 @@ function groupSnapshot(
                     principalId: session.clientId,
                     connectedAtEpochMs: now,
                     lastHeartbeatAtEpochMs: now,
-                    expiresAtEpochMs: now + 60_000,
-                },
+                    expiresAtEpochMs: now + 60_000
+                }
             ]
             : [],
         memberCount: 1,
-        onlineMemberCount: options.onlineMemberCount,
+        onlineMemberCount: options.onlineMemberCount
     };
 }
 
@@ -1514,13 +1530,13 @@ function relicSnapshotWithPlayers(
         round?: number;
         roundStartedAtEpochMs?: number;
         roundTimeLimitMs?: number;
-    }> = {},
+    }> = {}
 ): RelicSnapshot {
     const playerSpecs = [
         ['alice-session', 'Alice', 'kael-ironstride'],
         ['bob-session', 'Bob', 'nyra-vale'],
         ['cara-session', 'Cara', 'oryn-starcoil'],
-        ['dain-session', 'Dain', 'vessa-thornlock'],
+        ['dain-session', 'Dain', 'vessa-thornlock']
     ] as const;
     const players = playerSpecs.slice(0, playerCount).map(([playerId, username, characterId]) => {
         const relicIds = options.playerRelicIds?.[playerId] ??
@@ -1534,7 +1550,7 @@ function relicSnapshotWithPlayers(
             escaped: false,
             defeated: false,
             score: options.playerScores?.[playerId] ?? 0,
-            relicIds,
+            relicIds
         };
     });
     const carriedRelics = [
@@ -1546,8 +1562,8 @@ function relicSnapshotWithPlayers(
                     value: 5,
                     roomId: 'treasure',
                     foundBy: 'alice-session',
-                    carriedBy: 'alice-session',
-                },
+                    carriedBy: 'alice-session'
+                }
             ]
             : []),
         ...Object.entries(options.playerRelicIds ?? {}).flatMap(([playerId, relicIds]) =>
@@ -1557,9 +1573,9 @@ function relicSnapshotWithPlayers(
                 value: relicId === 'sun-disk' ? 6 : 4,
                 roomId: options.playerRooms?.[playerId] ?? options.playerRoomId ?? 'entrance',
                 foundBy: playerId,
-                carriedBy: playerId,
+                carriedBy: playerId
             }))
-        ),
+        )
     ];
 
     const map = options.includeFullMap
@@ -1570,7 +1586,7 @@ function relicSnapshotWithPlayers(
                 kind: 'entrance',
                 x: 0,
                 z: -6,
-                neighbors: ['hallway', 'storage'],
+                neighbors: ['hallway', 'storage']
             },
             {
                 id: 'hallway',
@@ -1578,7 +1594,7 @@ function relicSnapshotWithPlayers(
                 kind: 'hallway',
                 x: 0,
                 z: -3,
-                neighbors: ['entrance', 'shrine', 'monster'],
+                neighbors: ['entrance', 'shrine', 'monster']
             },
             {
                 id: 'storage',
@@ -1586,7 +1602,7 @@ function relicSnapshotWithPlayers(
                 kind: 'storage',
                 x: -4,
                 z: -3,
-                neighbors: ['entrance', 'trap'],
+                neighbors: ['entrance', 'trap']
             },
             {
                 id: 'trap',
@@ -1594,7 +1610,7 @@ function relicSnapshotWithPlayers(
                 kind: 'trap',
                 x: -4,
                 z: 0,
-                neighbors: ['storage', 'shrine'],
+                neighbors: ['storage', 'shrine']
             },
             {
                 id: 'shrine',
@@ -1602,7 +1618,7 @@ function relicSnapshotWithPlayers(
                 kind: 'shrine',
                 x: 0,
                 z: 0,
-                neighbors: ['hallway', 'trap', 'treasure', 'exit'],
+                neighbors: ['hallway', 'trap', 'treasure', 'exit']
             },
             {
                 id: 'monster',
@@ -1610,7 +1626,7 @@ function relicSnapshotWithPlayers(
                 kind: 'monster',
                 x: 4,
                 z: -3,
-                neighbors: ['hallway', 'treasure'],
+                neighbors: ['hallway', 'treasure']
             },
             {
                 id: 'treasure',
@@ -1618,7 +1634,7 @@ function relicSnapshotWithPlayers(
                 kind: 'treasure',
                 x: 4,
                 z: 0,
-                neighbors: ['monster', 'shrine'],
+                neighbors: ['monster', 'shrine']
             },
             {
                 id: 'exit',
@@ -1626,8 +1642,8 @@ function relicSnapshotWithPlayers(
                 kind: 'exit',
                 x: 0,
                 z: 3,
-                neighbors: ['shrine'],
-            },
+                neighbors: ['shrine']
+            }
         ]
         : [
             {
@@ -1636,7 +1652,7 @@ function relicSnapshotWithPlayers(
                 kind: 'entrance',
                 x: 0,
                 z: -6,
-                neighbors: options.includeStorage ? ['hallway', 'storage'] : ['hallway'],
+                neighbors: options.includeStorage ? ['hallway', 'storage'] : ['hallway']
             },
             {
                 id: 'hallway',
@@ -1644,7 +1660,7 @@ function relicSnapshotWithPlayers(
                 kind: 'hallway',
                 x: 0,
                 z: -3,
-                neighbors: options.includeExit ? ['entrance', 'exit'] : ['entrance'],
+                neighbors: options.includeExit ? ['entrance', 'exit'] : ['entrance']
             },
             ...(options.includeExit
                 ? [
@@ -1654,8 +1670,8 @@ function relicSnapshotWithPlayers(
                         kind: 'exit',
                         x: 0,
                         z: 0,
-                        neighbors: ['hallway'],
-                    },
+                        neighbors: ['hallway']
+                    }
                 ]
                 : []),
             ...(options.includeStorage
@@ -1666,7 +1682,7 @@ function relicSnapshotWithPlayers(
                         kind: 'storage',
                         x: -4,
                         z: -3,
-                        neighbors: ['entrance', 'trap'],
+                        neighbors: ['entrance', 'trap']
                     },
                     {
                         id: 'trap',
@@ -1674,10 +1690,10 @@ function relicSnapshotWithPlayers(
                         kind: 'trap',
                         x: -4,
                         z: 0,
-                        neighbors: ['storage'],
-                    },
+                        neighbors: ['storage']
+                    }
                 ]
-                : []),
+                : [])
         ];
 
     return {
@@ -1696,7 +1712,7 @@ function relicSnapshotWithPlayers(
         players,
         submittedPlayerIds: options.submittedPlayerIds ?? [],
         events: options.events ?? [],
-        winnerIds: [],
+        winnerIds: []
     };
 }
 
@@ -1705,7 +1721,7 @@ function emptyRelicSnapshot(): RelicSnapshot {
         ...relicSnapshotWithPlayers(1),
         players: [],
         submittedPlayerIds: [],
-        events: [],
+        events: []
     };
 }
 
@@ -1720,7 +1736,7 @@ function resolvedSearchSnapshot(): RelicSnapshot {
                 type: 'action_revealed',
                 message: 'Round 1 actions are revealed.',
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'turn-1-search',
@@ -1732,10 +1748,10 @@ function resolvedSearchSnapshot(): RelicSnapshot {
                     playerId: 'alice-session',
                     roomId: 'entrance',
                     durationMs: 700,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'turn-1-round-2',
@@ -1743,9 +1759,9 @@ function resolvedSearchSnapshot(): RelicSnapshot {
                 type: 'round_started',
                 message: 'Round 2 begins.',
                 tone: 'mystery',
-                createdAtEpochMs: now,
-            },
-        ],
+                createdAtEpochMs: now
+            }
+        ]
     });
 }
 
@@ -1765,8 +1781,8 @@ function resolvedStorageSearchSnapshot(): RelicSnapshot {
                 summary: 'The crates held a torn supply map, but no relic.',
                 hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
                 effect: 'map-fragment',
-                revealedRoomId: 'trap',
-            },
+                revealedRoomId: 'trap'
+            }
         ],
         events: [
             {
@@ -1777,10 +1793,10 @@ function resolvedStorageSearchSnapshot(): RelicSnapshot {
                 animationCue: {
                     type: 'noise_pulse',
                     durationMs: 620,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'event-search-1',
@@ -1792,10 +1808,10 @@ function resolvedStorageSearchSnapshot(): RelicSnapshot {
                     playerId: 'alice-session',
                     roomId: 'storage',
                     durationMs: 700,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'event-noise-1',
@@ -1805,10 +1821,10 @@ function resolvedStorageSearchSnapshot(): RelicSnapshot {
                 animationCue: {
                     type: 'noise_pulse',
                     durationMs: 900,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'event-round-2',
@@ -1816,10 +1832,10 @@ function resolvedStorageSearchSnapshot(): RelicSnapshot {
                 type: 'round_started',
                 message: 'Round 2 begins.',
                 tone: 'mystery',
-                createdAtEpochMs: now,
-            },
+                createdAtEpochMs: now
+            }
         ],
-        round: 2,
+        round: 2
     });
 }
 
@@ -1839,8 +1855,8 @@ function reviewStorageSearchSnapshot(): RelicSnapshot {
                 summary: 'The crates held a torn supply map, but no relic.',
                 hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
                 effect: 'map-fragment',
-                revealedRoomId: 'trap',
-            },
+                revealedRoomId: 'trap'
+            }
         ],
         events: [
             {
@@ -1851,10 +1867,10 @@ function reviewStorageSearchSnapshot(): RelicSnapshot {
                 animationCue: {
                     type: 'noise_pulse',
                     durationMs: 620,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'event-search-1',
@@ -1866,10 +1882,10 @@ function reviewStorageSearchSnapshot(): RelicSnapshot {
                     playerId: 'alice-session',
                     roomId: 'storage',
                     durationMs: 700,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'event-noise-1',
@@ -1879,13 +1895,13 @@ function reviewStorageSearchSnapshot(): RelicSnapshot {
                 animationCue: {
                     type: 'noise_pulse',
                     durationMs: 900,
-                    intensity: 'low',
+                    intensity: 'low'
                 },
                 tone: 'mystery',
-                createdAtEpochMs: now,
-            },
+                createdAtEpochMs: now
+            }
         ],
-        submittedPlayerIds: [],
+        submittedPlayerIds: []
     });
 }
 
@@ -1906,9 +1922,9 @@ function continuedStoragePlanningSnapshot(): RelicSnapshot {
                 type: 'round_started',
                 message: 'Round 2 begins.',
                 tone: 'mystery',
-                createdAtEpochMs: Date.now(),
-            },
-        ],
+                createdAtEpochMs: Date.now()
+            }
+        ]
     };
 }
 
@@ -1920,7 +1936,7 @@ function finishedRelicSnapshot(): RelicSnapshot {
         playerRoomId: 'exit',
         playerScores: {
             'alice-session': 5,
-            'bob-session': 1,
+            'bob-session': 1
         },
         events: [
             {
@@ -1929,7 +1945,7 @@ function finishedRelicSnapshot(): RelicSnapshot {
                 type: 'player_escaped',
                 message: 'Alice escaped with the Golden Idol.',
                 tone: 'success',
-                createdAtEpochMs: now,
+                createdAtEpochMs: now
             },
             {
                 id: 'turn-final-finished',
@@ -1937,10 +1953,10 @@ function finishedRelicSnapshot(): RelicSnapshot {
                 type: 'game_finished',
                 message: 'The expedition is over.',
                 tone: 'success',
-                createdAtEpochMs: now,
-            },
+                createdAtEpochMs: now
+            }
         ],
-        round: 3,
+        round: 3
     }) as {
         players: Array<Record<string, unknown>>;
         relics: Array<Record<string, unknown>>;
@@ -1961,10 +1977,10 @@ function finishedRelicSnapshot(): RelicSnapshot {
                 ? {
                     ...relic,
                     carriedBy: undefined,
-                    escapedBy: 'alice-session',
+                    escapedBy: 'alice-session'
                 }
                 : relic
-        ),
+        )
     };
 }
 

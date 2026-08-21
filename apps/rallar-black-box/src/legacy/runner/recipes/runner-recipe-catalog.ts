@@ -1,14 +1,11 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    distributedRecipeCommandPreview,
-    type DistributedRecipeCatalogItem,
-} from '../../../distributed-recipes.ts';
+import { distributedRecipeCommandPreview, type DistributedRecipeCatalogItem } from '../../../distributed-recipes.ts';
 import { RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG } from '../../../shared-test-handoff-fixtures.ts';
 import { json } from '../../shared/json-presentation.ts';
 import {
-    DISTRIBUTED_RECIPE_CATALOG,
     configuredDistributedRecipeCatalogItem,
+    DISTRIBUTED_RECIPE_CATALOG
 } from '../distributed-recipes/distributed-recipe-catalog.ts';
 import { catalogRequirements } from '../shared-test/shared-test-catalog.ts';
 
@@ -31,13 +28,15 @@ export type RunnerRecipeCatalogEntry = Readonly<{
     commandCount?: number;
 }>;
 
-export function runnerRecipeCatalog(input: Readonly<{
-    group: RallarBlackBoxDistributedGroupRef;
-    apiBaseUrl: string;
-    rtcRealtimeDurationSeconds: number;
-}>): readonly RunnerRecipeCatalogEntry[] {
+export function runnerRecipeCatalog(
+    input: Readonly<{
+        group: RallarBlackBoxDistributedGroupRef;
+        apiBaseUrl: string;
+        rtcRealtimeDurationSeconds: number;
+    }>
+): readonly RunnerRecipeCatalogEntry[] {
     const distributedItems = DISTRIBUTED_RECIPE_CATALOG.map((item) =>
-        configuredDistributedRecipeCatalogItem(item, input),
+        configuredDistributedRecipeCatalogItem(item, input)
     );
     const fixtureEntries = distributedItems.map((item) => {
         const preview = distributedRecipeCommandPreview(item.recipe);
@@ -56,9 +55,9 @@ export function runnerRecipeCatalog(input: Readonly<{
             distributedItem: item,
             copyCommand: json({
                 kind: 'recipe.run',
-                recipe: item.recipe,
+                recipe: item.recipe
             }),
-            commandCount: item.recipe.commands.length,
+            commandCount: item.recipe.commands.length
         } satisfies RunnerRecipeCatalogEntry;
     });
     const sharedEntries = RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG.entries.map(
@@ -74,8 +73,8 @@ export function runnerRecipeCatalog(input: Readonly<{
             expectedResult: entry.expectedResult,
             live: entry.support.live,
             copyCommand: entry.commands[0]?.command ?? entry.recipePath,
-            commandCount: entry.commands.length,
-        } satisfies RunnerRecipeCatalogEntry),
+            commandCount: entry.commands.length
+        } satisfies RunnerRecipeCatalogEntry)
     );
 
     return [...fixtureEntries, ...sharedEntries].sort(
@@ -83,7 +82,7 @@ export function runnerRecipeCatalog(input: Readonly<{
             runnerRecipeDefaultScore(left) - runnerRecipeDefaultScore(right) ||
             (left.commandCount ?? Number.MAX_SAFE_INTEGER) -
                 (right.commandCount ?? Number.MAX_SAFE_INTEGER) ||
-            left.title.localeCompare(right.title),
+            left.title.localeCompare(right.title)
     );
 }
 
@@ -99,7 +98,7 @@ export function runnerRecipeMatches(
     entry: RunnerRecipeCatalogEntry,
     query: string,
     profile: string,
-    source: RunnerRecipeSource | 'all',
+    source: RunnerRecipeSource | 'all'
 ): boolean {
     if (source !== 'all' && entry.source !== source) {
         return false;
@@ -119,7 +118,7 @@ export function runnerRecipeMatches(
         entry.providerMode,
         entry.expectedResult,
         ...entry.profiles,
-        ...entry.requirements,
+        ...entry.requirements
     ]
         .join(' ')
         .toLowerCase()

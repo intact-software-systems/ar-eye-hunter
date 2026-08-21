@@ -37,7 +37,7 @@ export class MementoValue<T> {
     public static fromSnapshot<T>(snapshot: MementoSnapshot<T>): MementoValue<T> {
         const memento = new MementoValue<T>({
             undoDepth: snapshot.undoDepth,
-            redoDepth: snapshot.redoDepth,
+            redoDepth: snapshot.redoDepth
         });
 
         memento.value = snapshot.value;
@@ -57,7 +57,7 @@ export class MementoValue<T> {
             undos: [...this.undos],
             redos: [...this.redos],
             undoDepth: this.undoDepth,
-            redoDepth: this.redoDepth,
+            redoDepth: this.redoDepth
         };
     }
 

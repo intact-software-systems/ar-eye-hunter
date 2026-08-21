@@ -5,22 +5,22 @@ server, and runner adapters all use this command vocabulary.
 
 ## Command Kinds
 
-| Command | Purpose |
-| --- | --- |
-| `configure` | Set run ID, agent ID, environment, API base URL, actor, session, room, transport, defaults, and redaction. |
-| `recipe.load` | Validate and load a recipe without running it. |
-| `recipe.run` | Run the loaded recipe or an inline recipe. |
-| `recipe.cancel` | Request cancellation of a running recipe. |
-| `rtc.connect` | Connect an RTC-capable Rallar client for an actor and room. |
-| `rtc.send` | Send a payload over `realtime` or `messages.rtc`. |
-| `ws.open` | Open a browser WebSocket connection. |
-| `ws.send` | Send data over an opened WebSocket connection. |
-| `ws.close` | Close a WebSocket connection. |
-| `http.request` | Execute a browser HTTP request and capture selected response data. |
-| `health` | Return current health without changing connection state. |
-| `stats` | Return a stats snapshot. |
-| `close` | Close runtime connections. |
-| `reset` | Clear runtime state before the next run. |
+| Command         | Purpose                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------- |
+| `configure`     | Set run ID, agent ID, environment, API base URL, actor, session, room, transport, defaults, and redaction. |
+| `recipe.load`   | Validate and load a recipe without running it.                                                             |
+| `recipe.run`    | Run the loaded recipe or an inline recipe.                                                                 |
+| `recipe.cancel` | Request cancellation of a running recipe.                                                                  |
+| `rtc.connect`   | Connect an RTC-capable Rallar client for an actor and room.                                                |
+| `rtc.send`      | Send a payload over `realtime` or `messages.rtc`.                                                          |
+| `ws.open`       | Open a browser WebSocket connection.                                                                       |
+| `ws.send`       | Send data over an opened WebSocket connection.                                                             |
+| `ws.close`      | Close a WebSocket connection.                                                                              |
+| `http.request`  | Execute a browser HTTP request and capture selected response data.                                         |
+| `health`        | Return current health without changing connection state.                                                   |
+| `stats`         | Return a stats snapshot.                                                                                   |
+| `close`         | Close runtime connections.                                                                                 |
+| `reset`         | Clear runtime state before the next run.                                                                   |
 
 Every command should have a stable `commandId` when it is used in recipes or remote control. Stable IDs make duplicate
 delivery and reconnect replay safe.

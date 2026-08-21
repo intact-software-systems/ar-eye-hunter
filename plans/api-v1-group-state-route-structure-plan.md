@@ -575,23 +575,23 @@ The response boundary is exactly:
 
 ```ts
 type GroupStateResponseInput =
-  | Readonly<{ kind: 'mutation'; written: GroupStateWritten }>
-  | Readonly<{ kind: 'join-code'; written: GroupJoinCodeWritten }>
-  | Readonly<{
-      kind: 'presence';
-      receipt: GroupMutationReceipt;
-      ref: GroupRef;
-      service: GroupStateRouteService;
+    | Readonly<{ kind: 'mutation'; written: GroupStateWritten; }>
+    | Readonly<{ kind: 'join-code'; written: GroupJoinCodeWritten; }>
+    | Readonly<{
+        kind: 'presence';
+        receipt: GroupMutationReceipt;
+        ref: GroupRef;
+        service: GroupStateRouteService;
     }>;
 
 function toGroupStateResponse(
-  input: Extract<GroupStateResponseInput, { kind: 'mutation' }>,
+    input: Extract<GroupStateResponseInput, { kind: 'mutation'; }>
 ): GroupMutationWritten;
 function toGroupStateResponse(
-  input: Extract<GroupStateResponseInput, { kind: 'join-code' }>,
+    input: Extract<GroupStateResponseInput, { kind: 'join-code'; }>
 ): GroupJoinCodeResponse;
 function toGroupStateResponse(
-  input: Extract<GroupStateResponseInput, { kind: 'presence' }>,
+    input: Extract<GroupStateResponseInput, { kind: 'presence'; }>
 ): Promise<GroupSnapshot>;
 ```
 
@@ -605,28 +605,31 @@ surface for direct tests and internal consumers:
 
 ```ts
 interface GroupStateRouteDependencies {
-  readonly getGroupStateService?: () => GroupStateRouteService;
-  readonly requireApiAuthSession?: GroupStateRouteRequireAuthSession;
-  readonly processGroupAppInbox?: ProcessGroupAppInbox;
-  readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteCacheHydration;
+    readonly getGroupStateService?: () => GroupStateRouteService;
+    readonly requireApiAuthSession?: GroupStateRouteRequireAuthSession;
+    readonly processGroupAppInbox?: ProcessGroupAppInbox;
+    readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteCacheHydration;
 }
 
 function createGroupStateRouteDependencies(
-  input: GroupStateRouteDependencies,
+    input: GroupStateRouteDependencies
 ): Required<GroupStateRouteDependencies>;
 
 function registerGroupStateRoutes(app: Hono, dependencies?: GroupStateRouteDependencies): void;
 
 interface GroupStateRouteAuthorization {
-  readStrictAuthSession(
-    request: GroupStateRouteRequest,
-  ): Promise<GroupStateRouteAuthSession | undefined>;
-  assertCanReadGroupRef(request: GroupStateRouteRequest, ref: GroupRef): Promise<void>;
-  assertCanReadGroupState(request: GroupStateRouteRequest, snapshot: GroupSnapshot): Promise<void>;
-  assertCanUpdateGroup(principalId: string, ref: GroupRef): Promise<void>;
-  assertSelfPrincipal(clientId: string, principalId: string): void;
-  assertSelfSession(session: GroupStateRouteAuthSession, sessionId: string): void;
-  assertSelfServiceMemberStatus(status: UpsertGroupMemberRequest['status']): void;
+    readStrictAuthSession(
+        request: GroupStateRouteRequest
+    ): Promise<GroupStateRouteAuthSession | undefined>;
+    assertCanReadGroupRef(request: GroupStateRouteRequest, ref: GroupRef): Promise<void>;
+    assertCanReadGroupState(
+        request: GroupStateRouteRequest,
+        snapshot: GroupSnapshot
+    ): Promise<void>;
+    assertCanUpdateGroup(principalId: string, ref: GroupRef): Promise<void>;
+    assertSelfPrincipal(clientId: string, principalId: string): void;
+    assertSelfSession(session: GroupStateRouteAuthSession, sessionId: string): void;
+    assertSelfServiceMemberStatus(status: UpsertGroupMemberRequest['status']): void;
 }
 ```
 

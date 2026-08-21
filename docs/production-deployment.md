@@ -98,11 +98,11 @@ uploads. Configure every application as a **Dynamic App** with **No Preset**,
 blank install, build, and pre-deploy commands, a five-minute build timeout, and
 3 GiB of build memory. Use these path settings:
 
-| App | App directory | Entrypoint | Runtime working directory |
-| --- | --- | --- | --- |
-| `rallar-server` | `(root)` | `apps/api-v1/src/main.ts` | Blank |
-| `rallar-bb-server` | `(root)` | `apps/rallar-black-box-control-server/src/main.ts` | Blank |
-| `relic-hunters` | `(root)` | `apps/relic-hunter-server-v1/src/main.ts` | Blank |
+| App                | App directory | Entrypoint                                         | Runtime working directory |
+| ------------------ | ------------- | -------------------------------------------------- | ------------------------- |
+| `rallar-server`    | `(root)`      | `apps/api-v1/src/main.ts`                          | Blank                     |
+| `rallar-bb-server` | `(root)`      | `apps/rallar-black-box-control-server/src/main.ts` | Blank                     |
+| `relic-hunters`    | `(root)`      | `apps/relic-hunter-server-v1/src/main.ts`          | Blank                     |
 
 Complete the cutover in this order:
 

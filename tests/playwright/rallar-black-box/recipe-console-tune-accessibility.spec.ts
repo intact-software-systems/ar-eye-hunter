@@ -1,11 +1,7 @@
 import { expect, test, type Locator } from '@playwright/test';
 import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
-import { chooseTuneListboxOptionWithKeyboard } from
-    './recipe-console-tune-listbox-helpers.ts';
-import {
-    TUNE_COMPARE_ROUTE,
-    TUNE_LEFT_RUN_ID,
-} from './recipe-console-tune-run-data.ts';
+import { chooseTuneListboxOptionWithKeyboard } from './recipe-console-tune-listbox-helpers.ts';
+import { TUNE_COMPARE_ROUTE, TUNE_LEFT_RUN_ID } from './recipe-console-tune-run-data.ts';
 
 const CANDIDATE_POINTER = '/recipes/0/recipe/commands/0/rateHz';
 
@@ -13,15 +9,14 @@ async function expectMinimumTarget(locator: Locator, label: string): Promise<voi
     await expect(locator, `${label} should be visible`).toBeVisible();
     const bounds = await locator.boundingBox();
     expect(bounds, `${label} should have rendered bounds`).not.toBeNull();
-    if (!bounds) return;
+    if (!bounds) {
+        return;
+    }
     expect(bounds.width, `${label} target width`).toBeGreaterThanOrEqual(44);
     expect(bounds.height, `${label} target height`).toBeGreaterThanOrEqual(44);
 }
 
-test('previews and reads an exact candidate diff from the portrait keyboard path', async ({
-    context,
-    page,
-}) => {
+test('previews and reads an exact candidate diff from the portrait keyboard path', async ({ context, page }) => {
     await page.setViewportSize({ width: 430, height: 932 });
     const fixture = await installRecipeConsoleTuneFixture(context);
     await page.goto(TUNE_COMPARE_ROUTE);
@@ -61,10 +56,7 @@ test('previews and reads an exact candidate diff from the portrait keyboard path
     expect(fixture.mutationRequestCount()).toBe(0);
 });
 
-test('announces keyboard-selected same-run comparison state and its issue atomically', async ({
-    context,
-    page,
-}) => {
+test('announces keyboard-selected same-run comparison state and its issue atomically', async ({ context, page }) => {
     await page.setViewportSize({ width: 430, height: 932 });
     const fixture = await installRecipeConsoleTuneFixture(context);
     await page.goto(TUNE_COMPARE_ROUTE);
@@ -79,12 +71,12 @@ test('announces keyboard-selected same-run comparison state and its issue atomic
     await chooseTuneListboxOptionWithKeyboard(
         page,
         'Candidate run',
-        TUNE_LEFT_RUN_ID,
+        TUNE_LEFT_RUN_ID
     );
 
     await expect(page).toHaveURL(new RegExp(`compareRight=${TUNE_LEFT_RUN_ID}`));
     await expect(announcement).toHaveText(
-        'Comparison state: same run. Baseline and candidate must be different runs.',
+        'Comparison state: same run. Baseline and candidate must be different runs.'
     );
     await expect(comparison.locator('[data-compare-category]')).toHaveCount(0);
     expect(fixture.artifactRequestCount()).toBe(0);

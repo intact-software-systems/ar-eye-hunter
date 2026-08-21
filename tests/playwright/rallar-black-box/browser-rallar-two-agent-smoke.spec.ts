@@ -5,7 +5,7 @@ import {
     type Browser,
     type BrowserContext,
     type Page,
-    type TestInfo,
+    type TestInfo
 } from '@playwright/test';
 
 const SPA_BASE_URL = 'http://127.0.0.1:5176';
@@ -28,7 +28,7 @@ type ControlEvent = Readonly<{
 }>;
 
 type ControlRunSnapshot = Readonly<{
-    agents?: readonly Readonly<{ agentId?: string }>[];
+    agents?: readonly Readonly<{ agentId?: string; }>[];
     results?: readonly ControlResult[];
     events?: readonly ControlEvent[];
     stats?: readonly ControlEvent[];
@@ -39,14 +39,14 @@ type TransportUnderTest = 'realtime' | 'messages.rtc';
 
 type AgentAuth =
     | Readonly<{
-    kind: 'login';
-    username: string;
-    password: string;
-}>
+        kind: 'login';
+        username: string;
+        password: string;
+    }>
     | Readonly<{
-    kind: 'restore';
-    session: RestoredSession;
-}>;
+        kind: 'restore';
+        session: RestoredSession;
+    }>;
 
 type RestoredSession = Readonly<{
     clientId: string;
@@ -75,11 +75,11 @@ const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
 const roomId = envValue('VITE_RALLAR_ROOM_ID');
 const messagesRtcTypeId = firstEnvValue(
     'VITE_RALLAR_MESSAGES_RTC_TYPE_ID',
-    'VITE_RALLAR_TYPE_ID',
+    'VITE_RALLAR_TYPE_ID'
 ) ?? 'manual.type';
 const messagesRtcTopicId = firstEnvValue(
     'VITE_RALLAR_MESSAGES_RTC_TOPIC_ID',
-    'VITE_RALLAR_TOPIC_ID',
+    'VITE_RALLAR_TOPIC_ID'
 ) ?? 'manual.topic';
 
 const agentAAuth = resolveAgentAuth('A');
@@ -126,36 +126,36 @@ function resolveAgentAuth(prefix: 'A' | 'B'): AgentAuth | undefined {
     const username = firstEnvValue(
         `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
         `VITE_RALLAR_${prefix}_USERNAME`,
-        'VITE_RALLAR_USERNAME',
+        'VITE_RALLAR_USERNAME'
     );
     const password = firstEnvValue(
         `VITE_RALLAR_AGENT_${prefix}_PASSWORD`,
         `VITE_RALLAR_${prefix}_PASSWORD`,
-        'VITE_RALLAR_PASSWORD',
+        'VITE_RALLAR_PASSWORD'
     );
     if (username && password) {
         return {
             kind: 'login',
             username,
-            password,
+            password
         };
     }
 
     const restoreUsername = firstEnvValue(
         `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
-        `VITE_RALLAR_${prefix}_USERNAME`,
+        `VITE_RALLAR_${prefix}_USERNAME`
     );
     const token = firstEnvValue(
         `VITE_RALLAR_AGENT_${prefix}_TOKEN`,
-        `VITE_RALLAR_${prefix}_TOKEN`,
+        `VITE_RALLAR_${prefix}_TOKEN`
     );
     const clientId = firstEnvValue(
         `VITE_RALLAR_AGENT_${prefix}_CLIENT_ID`,
-        `VITE_RALLAR_${prefix}_CLIENT_ID`,
+        `VITE_RALLAR_${prefix}_CLIENT_ID`
     );
     const sessionId = firstEnvValue(
         `VITE_RALLAR_AGENT_${prefix}_SESSION_ID`,
-        `VITE_RALLAR_${prefix}_SESSION_ID`,
+        `VITE_RALLAR_${prefix}_SESSION_ID`
     );
     if (!restoreUsername || !token || !clientId || !sessionId) {
         return undefined;
@@ -170,8 +170,8 @@ function resolveAgentAuth(prefix: 'A' | 'B'): AgentAuth | undefined {
             sessionId,
             expiresAtEpochMs: numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
                 numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-                Date.now() + 30 * 60 * 1000,
-        },
+                Date.now() + 30 * 60 * 1000
+        }
     };
 }
 
@@ -191,10 +191,10 @@ function pathSegment(value: string): string {
 
 async function fetchRun(
     request: APIRequestContext,
-    runId: string,
+    runId: string
 ): Promise<ControlRunSnapshot> {
     const response = await request.get(
-        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`,
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
     );
     expect(response.ok()).toBe(true);
     return await response.json() as ControlRunSnapshot;
@@ -205,18 +205,16 @@ async function enqueueCommand(
     runId: string,
     agentId: string,
     commandId: string,
-    command: unknown,
+    command: unknown
 ): Promise<void> {
     const response = await request.post(
-        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
-            encodeURIComponent(agentId)
-        }/commands`,
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${encodeURIComponent(agentId)}/commands`,
         {
             data: {
                 commandId,
-                command,
-            },
-        },
+                command
+            }
+        }
     );
     expect(response.status()).toBe(202);
 }
@@ -225,15 +223,15 @@ async function waitForCommandOk(
     request: APIRequestContext,
     runId: string,
     commandId: string,
-    timeout = 45_000,
+    timeout = 45_000
 ): Promise<ControlResult> {
     let latest: ControlResult | undefined;
     await expect.poll(async () => {
         const run = await fetchRun(request, runId);
-        latest = run.results?.find(result => result.commandId === commandId);
+        latest = run.results?.find((result) => result.commandId === commandId);
         return latest?.ok === true;
     }, {
-        timeout,
+        timeout
     }).toBe(true);
 
     if (!latest) {
@@ -248,7 +246,7 @@ async function executeOk(
     agentId: string,
     commandId: string,
     command: unknown,
-    timeout?: number,
+    timeout?: number
 ): Promise<ControlResult> {
     await enqueueCommand(request, runId, agentId, commandId, command);
     return await waitForCommandOk(request, runId, commandId, timeout);
@@ -278,14 +276,14 @@ function stringArrayValue(value: unknown): readonly string[] {
 
 function expectRallarHealthConnected(
     result: ControlResult,
-    expected: boolean,
+    expected: boolean
 ): void {
     expect(rallarHealthValue(result).connected).toBe(expected);
 }
 
 function expectRallarHealthSession(
     result: ControlResult,
-    expectedSessionId: string,
+    expectedSessionId: string
 ): void {
     expect(stringValue(asRecord(rallarHealthValue(result).session).sessionId))
         .toBe(expectedSessionId);
@@ -293,7 +291,7 @@ function expectRallarHealthSession(
 
 function expectRtcPeerReady(
     result: ControlResult,
-    expectedPeerId: string,
+    expectedPeerId: string
 ): void {
     expect(stringArrayValue(rtcStatusValue(result).readyPeerIds))
         .toContain(expectedPeerId);
@@ -325,7 +323,7 @@ async function openAgent(
         actor: string;
         connection: string;
         transport: TransportUnderTest;
-    }>,
+    }>
 ): Promise<AgentHandle> {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -354,9 +352,9 @@ async function openAgent(
         ...(input.auth.kind === 'login'
             ? {
                 rallarUsername: input.auth.username,
-                rallarPassword: input.auth.password,
+                rallarPassword: input.auth.password
             }
-            : {}),
+            : {})
     });
 
     await page.goto(`${SPA_BASE_URL}/?${query.toString()}`);
@@ -375,7 +373,7 @@ async function openAgent(
         page,
         agentId: input.agentId,
         actor: input.actor,
-        connection: input.connection,
+        connection: input.connection
     };
 }
 
@@ -386,7 +384,7 @@ async function setupGroupMembership(
         owner: AgentHandle;
         members: readonly AgentHandle[];
         suffix: string;
-    }>,
+    }>
 ): Promise<readonly string[]> {
     const groupId = roomId!;
     const groupSegment = pathSegment(groupId);
@@ -407,14 +405,14 @@ async function setupGroupMembership(
                 createdByPrincipalId: '{auth.clientId}',
                 metadata: {
                     source: 'rallar-black-box',
-                    smoke: 'two-agent',
-                },
-            },
+                    smoke: 'two-agent'
+                }
+            }
         },
         response: {
-            body: 'json',
+            body: 'json'
         },
-        timeoutMs: 5_000,
+        timeoutMs: 5_000
     });
 
     for (const member of input.members) {
@@ -426,19 +424,19 @@ async function setupGroupMembership(
                 path: `/api/state/apps/ar-eye-hunter/workspaces/default/groups/${groupSegment}/members/{auth.clientId}`,
                 method: 'PUT',
                 body: {
-                    status: 'active',
-                },
+                    status: 'active'
+                }
             },
             response: {
-                body: 'json',
+                body: 'json'
             },
-            timeoutMs: 5_000,
+            timeoutMs: 5_000
         });
     }
 
     return [
         createCommandId,
-        ...joinCommandIds,
+        ...joinCommandIds
     ];
 }
 
@@ -463,21 +461,21 @@ function rallarConnectConfig(transport: TransportUnderTest): Record<string, unkn
 
 function rallarRestoreConnectConfig(
     transport: TransportUnderTest,
-    expectedSessionId: string,
+    expectedSessionId: string
 ): Record<string, unknown> {
     return {
         ...rallarConnectConfig(transport),
         username: null,
         password: null,
         restoreSession: true,
-        expectedSessionId,
+        expectedSessionId
     };
 }
 
 function sendPayload(
     transport: TransportUnderTest,
     targetSessionId: string,
-    payload: Record<string, unknown>,
+    payload: Record<string, unknown>
 ): Record<string, unknown> {
     if (transport === 'messages.rtc') {
         return {
@@ -485,7 +483,7 @@ function sendPayload(
             nextHopPeerIds: [targetSessionId],
             typeId: messagesRtcTypeId,
             topicId: messagesRtcTopicId,
-            payload,
+            payload
         };
     }
 
@@ -493,7 +491,7 @@ function sendPayload(
         roomId,
         peerIds: [targetSessionId],
         openTimeoutMs: 20_000,
-        data: payload,
+        data: payload
     };
 }
 
@@ -512,7 +510,7 @@ function isMessageFor(
         transport: TransportUnderTest;
         smokeId: string;
         direction: string;
-    }>,
+    }>
 ): boolean {
     const payload = eventPayload(event);
     const data = messageData(event);
@@ -531,13 +529,13 @@ async function waitForMessage(
         transport: TransportUnderTest;
         smokeId: string;
         direction: string;
-    }>,
+    }>
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchRun(request, runId);
-        return run.events?.some(event => isMessageFor(event, input)) ?? false;
+        return run.events?.some((event) => isMessageFor(event, input)) ?? false;
     }, {
-        timeout: 45_000,
+        timeout: 45_000
     }).toBe(true);
 }
 
@@ -559,18 +557,18 @@ async function captureHealthSnapshot(
         suffix: string;
         snapshots: RtcReloadHealthSnapshot[];
         commandIds: string[];
-    }>,
+    }>
 ): Promise<ControlResult> {
     const commandId = `health-${agent.agentId}-${input.phase}-${input.suffix}`;
     const result = await executeOk(request, runId, agent.agentId, commandId, {
-        kind: 'health',
+        kind: 'health'
     });
     input.commandIds.push(commandId);
     input.snapshots.push({
         phase: input.phase,
         agentId: agent.agentId,
         commandId,
-        value: result.result?.value,
+        value: result.result?.value
     });
     return result;
 }
@@ -579,14 +577,14 @@ async function runFinalizationCommands(
     request: APIRequestContext,
     runId: string,
     agent: AgentHandle,
-    suffix: string,
+    suffix: string
 ): Promise<readonly string[]> {
     const commandIds = [
         `health-${agent.agentId}-${suffix}`,
         `stats-${agent.agentId}-${suffix}`,
         `report-${agent.agentId}-${suffix}`,
         `close-${agent.agentId}-${suffix}`,
-        `reset-${agent.agentId}-${suffix}`,
+        `reset-${agent.agentId}-${suffix}`
     ];
 
     await executeOk(request, runId, agent.agentId, commandIds[0], { kind: 'health' });
@@ -598,10 +596,10 @@ async function runFinalizationCommands(
             commands: [
                 {
                     kind: 'health',
-                    commandId: `report-health-${agent.agentId}-${suffix}`,
-                },
-            ],
-        },
+                    commandId: `report-health-${agent.agentId}-${suffix}`
+                }
+            ]
+        }
     });
     await executeOk(request, runId, agent.agentId, commandIds[3], { kind: 'close' });
     await executeOk(request, runId, agent.agentId, commandIds[4], { kind: 'reset' });
@@ -613,11 +611,9 @@ async function runTwoAgentReloadDelivery(
     browser: Browser,
     request: APIRequestContext,
     transport: TransportUnderTest,
-    testInfo: TestInfo,
+    testInfo: TestInfo
 ): Promise<void> {
-    const suffix = `${transport.replace('.', '-')}-reload-${Date.now()}-${
-        Math.random().toString(16).slice(2)
-    }`;
+    const suffix = `${transport.replace('.', '-')}-reload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const runId = `real-rallar-two-agent-reload-${suffix}`;
     const agentAId = `real-rallar-a-${suffix}`;
     const agentBId = `real-rallar-b-${suffix}`;
@@ -633,7 +629,7 @@ async function runTwoAgentReloadDelivery(
             actor: firstEnvValue('VITE_RALLAR_AGENT_A_ACTOR', 'VITE_RALLAR_A_ACTOR') ??
                 `agent-a-${suffix}`,
             connection: `agent-a-rtc-${suffix}`,
-            transport,
+            transport
         });
         handles.push(agentA);
 
@@ -644,14 +640,14 @@ async function runTwoAgentReloadDelivery(
             actor: firstEnvValue('VITE_RALLAR_AGENT_B_ACTOR', 'VITE_RALLAR_B_ACTOR') ??
                 `agent-b-${suffix}`,
             connection: `agent-b-rtc-${suffix}`,
-            transport,
+            transport
         });
         handles.push(agentB);
 
         const setupCommandIds = await setupGroupMembership(request, runId, {
             owner: agentA,
             members: [agentA, agentB],
-            suffix,
+            suffix
         });
 
         const connectACommandId = `connect-a-${suffix}`;
@@ -664,9 +660,9 @@ async function runTwoAgentReloadDelivery(
             transport,
             rallar: {
                 ...rallarConnectConfig(transport),
-                logoutOnClose: false,
+                logoutOnClose: false
             },
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         const connectB = await executeOk(request, runId, agentB.agentId, connectBCommandId, {
             kind: 'rtc.connect',
@@ -676,9 +672,9 @@ async function runTwoAgentReloadDelivery(
             transport,
             rallar: {
                 ...rallarConnectConfig(transport),
-                logoutOnClose: false,
+                logoutOnClose: false
             },
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         const sessionA = requireSessionId(connectA, connectACommandId);
         const sessionB = requireSessionId(connectB, connectBCommandId);
@@ -696,27 +692,27 @@ async function runTwoAgentReloadDelivery(
                 smokeId: beforeReloadSmokeId,
                 direction: 'a-to-b-before-reload',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentB.agentId,
             transport,
             smokeId: beforeReloadSmokeId,
-            direction: 'a-to-b-before-reload',
+            direction: 'a-to-b-before-reload'
         });
 
         const healthABeforeReload = await captureHealthSnapshot(request, runId, agentA, {
             phase: 'before-reload-ready',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         const healthBBeforeReload = await captureHealthSnapshot(request, runId, agentB, {
             phase: 'before-reload-ready',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectRallarHealthConnected(healthABeforeReload, true);
         expectRallarHealthConnected(healthBBeforeReload, true);
@@ -731,7 +727,7 @@ async function runTwoAgentReloadDelivery(
             phase: 'after-page-reload-before-reconnect',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectRallarHealthConnected(healthBAfterPageReload, false);
         expectRallarHealthSession(healthBAfterPageReload, sessionB);
@@ -745,9 +741,9 @@ async function runTwoAgentReloadDelivery(
             transport,
             rallar: {
                 ...rallarRestoreConnectConfig(transport, sessionB),
-                logoutOnClose: false,
+                logoutOnClose: false
             },
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         expect(requireSessionId(reconnectB, reconnectBCommandId)).toBe(sessionB);
 
@@ -755,7 +751,7 @@ async function runTwoAgentReloadDelivery(
             phase: 'after-reconnect',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectRallarHealthConnected(healthBAfterReconnect, true);
         expectRallarHealthSession(healthBAfterReconnect, sessionB);
@@ -772,14 +768,14 @@ async function runTwoAgentReloadDelivery(
                 smokeId: afterReloadAtoBSmokeId,
                 direction: 'a-to-b-after-reload',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentB.agentId,
             transport,
             smokeId: afterReloadAtoBSmokeId,
-            direction: 'a-to-b-after-reload',
+            direction: 'a-to-b-after-reload'
         });
         await agentB.page.getByRole('tab', { name: 'Manual Rallar' }).click();
         await expect(agentB.page.locator('#panel-manual-rallar .received-inbox-panel'))
@@ -797,14 +793,14 @@ async function runTwoAgentReloadDelivery(
                 smokeId: afterReloadBtoASmokeId,
                 direction: 'b-to-a-after-reload',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentA.agentId,
             transport,
             smokeId: afterReloadBtoASmokeId,
-            direction: 'b-to-a-after-reload',
+            direction: 'b-to-a-after-reload'
         });
         await agentA.page.getByRole('tab', { name: 'Manual Rallar' }).click();
         await expect(agentA.page.locator('#panel-manual-rallar .received-inbox-panel'))
@@ -814,13 +810,13 @@ async function runTwoAgentReloadDelivery(
             phase: 'after-reload-delivery-ready',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         const healthBAfterReloadDelivery = await captureHealthSnapshot(request, runId, agentB, {
             phase: 'after-reload-delivery-ready',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectRallarHealthConnected(healthAAfterReloadDelivery, true);
         expectRallarHealthConnected(healthBAfterReloadDelivery, true);
@@ -831,7 +827,7 @@ async function runTwoAgentReloadDelivery(
 
         const finalizedCommandIds = [
             ...(await runFinalizationCommands(request, runId, agentA, suffix)),
-            ...(await runFinalizationCommands(request, runId, agentB, suffix)),
+            ...(await runFinalizationCommands(request, runId, agentB, suffix))
         ];
         const expectedCommandIds = [
             ...setupCommandIds,
@@ -842,77 +838,82 @@ async function runTwoAgentReloadDelivery(
             sendAfterReloadACommandId,
             sendAfterReloadBCommandId,
             ...healthSnapshotCommandIds,
-            ...finalizedCommandIds,
+            ...finalizedCommandIds
         ];
 
         await expect.poll(async () => {
             const run = await fetchRun(request, runId);
-            const resultIds = new Set((run.results ?? [])
-                .filter(result => result.ok === true)
-                .map(result => result.commandId));
+            const resultIds = new Set(
+                (run.results ?? [])
+                    .filter((result) => result.ok === true)
+                    .map((result) => result.commandId)
+            );
             const topics = (run.events ?? [])
-                .map(event => stringValue(eventPayload(event).topic))
+                .map((event) => stringValue(eventPayload(event).topic))
                 .filter((topic): topic is string => Boolean(topic));
             const deliveryMessages = (run.events ?? [])
-                .filter(event =>
+                .filter((event) =>
                     isMessageFor(event, {
                         agentId: agentB.agentId,
                         transport,
                         smokeId: beforeReloadSmokeId,
-                        direction: 'a-to-b-before-reload',
+                        direction: 'a-to-b-before-reload'
                     }) ||
                     isMessageFor(event, {
                         agentId: agentB.agentId,
                         transport,
                         smokeId: afterReloadAtoBSmokeId,
-                        direction: 'a-to-b-after-reload',
+                        direction: 'a-to-b-after-reload'
                     }) ||
                     isMessageFor(event, {
                         agentId: agentA.agentId,
                         transport,
                         smokeId: afterReloadBtoASmokeId,
-                        direction: 'b-to-a-after-reload',
+                        direction: 'b-to-a-after-reload'
                     })
                 ).length;
             return {
                 agents: (run.agents ?? [])
-                    .filter(agent => agent.agentId === agentA.agentId || agent.agentId === agentB.agentId)
+                    .filter((agent) => agent.agentId === agentA.agentId || agent.agentId === agentB.agentId)
                     .length,
-                resultsComplete: expectedCommandIds.every(commandId => resultIds.has(commandId)),
+                resultsComplete: expectedCommandIds.every((commandId) => resultIds.has(commandId)),
                 messagesReceived: deliveryMessages >= 3,
-                fakeTopicCount: topics.filter(topic => topic.startsWith('rallar.bb.fake.')).length,
+                fakeTopicCount: topics.filter((topic) => topic.startsWith('rallar.bb.fake.')).length
             };
         }, {
-            timeout: 20_000,
+            timeout: 20_000
         }).toEqual({
             agents: 2,
             resultsComplete: true,
             messagesReceived: true,
-            fakeTopicCount: 0,
+            fakeTopicCount: 0
         });
-    } finally {
+    }
+    finally {
         if (healthSnapshots.length > 0) {
             await testInfo.attach(`rallar-rtc-reload-snapshots-${transport}.json`, {
-                body: JSON.stringify({
-                    runId,
-                    transport,
-                    snapshots: healthSnapshots,
-                }, null, 2),
-                contentType: 'application/json',
+                body: JSON.stringify(
+                    {
+                        runId,
+                        transport,
+                        snapshots: healthSnapshots
+                    },
+                    null,
+                    2
+                ),
+                contentType: 'application/json'
             });
         }
-        await Promise.all(handles.map(handle => handle.context.close()));
+        await Promise.all(handles.map((handle) => handle.context.close()));
     }
 }
 
 async function runTwoAgentDelivery(
     browser: Browser,
     request: APIRequestContext,
-    transport: TransportUnderTest,
+    transport: TransportUnderTest
 ): Promise<void> {
-    const suffix = `${transport.replace('.', '-')}-${Date.now()}-${
-        Math.random().toString(16).slice(2)
-    }`;
+    const suffix = `${transport.replace('.', '-')}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const runId = `real-rallar-two-agent-${suffix}`;
     const agentAId = `real-rallar-a-${suffix}`;
     const agentBId = `real-rallar-b-${suffix}`;
@@ -926,7 +927,7 @@ async function runTwoAgentDelivery(
             actor: firstEnvValue('VITE_RALLAR_AGENT_A_ACTOR', 'VITE_RALLAR_A_ACTOR') ??
                 `agent-a-${suffix}`,
             connection: `agent-a-rtc-${suffix}`,
-            transport,
+            transport
         });
         handles.push(agentA);
 
@@ -937,14 +938,14 @@ async function runTwoAgentDelivery(
             actor: firstEnvValue('VITE_RALLAR_AGENT_B_ACTOR', 'VITE_RALLAR_B_ACTOR') ??
                 `agent-b-${suffix}`,
             connection: `agent-b-rtc-${suffix}`,
-            transport,
+            transport
         });
         handles.push(agentB);
 
         const setupCommandIds = await setupGroupMembership(request, runId, {
             owner: agentA,
             members: [agentA, agentB],
-            suffix,
+            suffix
         });
 
         const connectACommandId = `connect-a-${suffix}`;
@@ -957,9 +958,9 @@ async function runTwoAgentDelivery(
             transport,
             rallar: {
                 ...rallarConnectConfig(transport),
-                logoutOnClose: false,
+                logoutOnClose: false
             },
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         const connectB = await executeOk(request, runId, agentB.agentId, connectBCommandId, {
             kind: 'rtc.connect',
@@ -969,9 +970,9 @@ async function runTwoAgentDelivery(
             transport,
             rallar: {
                 ...rallarConnectConfig(transport),
-                logoutOnClose: false,
+                logoutOnClose: false
             },
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         const sessionA = requireSessionId(connectA, connectACommandId);
         const sessionB = requireSessionId(connectB, connectBCommandId);
@@ -989,14 +990,14 @@ async function runTwoAgentDelivery(
                 smokeId: smokeAtoB,
                 direction: 'a-to-b',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentB.agentId,
             transport,
             smokeId: smokeAtoB,
-            direction: 'a-to-b',
+            direction: 'a-to-b'
         });
         await agentB.page.getByRole('tab', { name: 'Manual Rallar' }).click();
         await expect(agentB.page.locator('#panel-manual-rallar .received-inbox-panel'))
@@ -1014,14 +1015,14 @@ async function runTwoAgentDelivery(
                 smokeId: smokeBtoA,
                 direction: 'b-to-a',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentA.agentId,
             transport,
             smokeId: smokeBtoA,
-            direction: 'b-to-a',
+            direction: 'b-to-a'
         });
         await agentA.page.getByRole('tab', { name: 'Manual Rallar' }).click();
         await expect(agentA.page.locator('#panel-manual-rallar .received-inbox-panel'))
@@ -1029,7 +1030,7 @@ async function runTwoAgentDelivery(
 
         const finalizedCommandIds = [
             ...(await runFinalizationCommands(request, runId, agentA, suffix)),
-            ...(await runFinalizationCommands(request, runId, agentB, suffix)),
+            ...(await runFinalizationCommands(request, runId, agentB, suffix))
         ];
         const expectedCommandIds = [
             ...setupCommandIds,
@@ -1037,72 +1038,77 @@ async function runTwoAgentDelivery(
             connectBCommandId,
             sendACommandId,
             sendBCommandId,
-            ...finalizedCommandIds,
+            ...finalizedCommandIds
         ];
 
         await expect.poll(async () => {
             const run = await fetchRun(request, runId);
-            const resultIds = new Set((run.results ?? [])
-                .filter(result => result.ok === true)
-                .map(result => result.commandId));
+            const resultIds = new Set(
+                (run.results ?? [])
+                    .filter((result) => result.ok === true)
+                    .map((result) => result.commandId)
+            );
             const topics = (run.events ?? [])
-                .map(event => stringValue(eventPayload(event).topic))
+                .map((event) => stringValue(eventPayload(event).topic))
                 .filter((topic): topic is string => Boolean(topic));
-            const statsAgents = new Set((run.stats ?? [])
-                .map(event => event.agentId)
-                .filter(agentId => agentId === agentA.agentId || agentId === agentB.agentId));
-            const reportAgents = new Set((run.reports ?? [])
-                .map(event => event.agentId)
-                .filter(agentId => agentId === agentA.agentId || agentId === agentB.agentId));
+            const statsAgents = new Set(
+                (run.stats ?? [])
+                    .map((event) => event.agentId)
+                    .filter((agentId) => agentId === agentA.agentId || agentId === agentB.agentId)
+            );
+            const reportAgents = new Set(
+                (run.reports ?? [])
+                    .map((event) => event.agentId)
+                    .filter((agentId) => agentId === agentA.agentId || agentId === agentB.agentId)
+            );
             const deliveryMessages = (run.events ?? [])
-                .filter(event =>
+                .filter((event) =>
                     isMessageFor(event, {
                         agentId: agentA.agentId,
                         transport,
                         smokeId: smokeBtoA,
-                        direction: 'b-to-a',
+                        direction: 'b-to-a'
                     }) ||
                     isMessageFor(event, {
                         agentId: agentB.agentId,
                         transport,
                         smokeId: smokeAtoB,
-                        direction: 'a-to-b',
+                        direction: 'a-to-b'
                     })
                 ).length;
             return {
                 agents: (run.agents ?? [])
-                    .filter(agent => agent.agentId === agentA.agentId || agent.agentId === agentB.agentId)
+                    .filter((agent) => agent.agentId === agentA.agentId || agent.agentId === agentB.agentId)
                     .length,
-                resultsComplete: expectedCommandIds.every(commandId => resultIds.has(commandId)),
+                resultsComplete: expectedCommandIds.every((commandId) => resultIds.has(commandId)),
                 messagesReceived: deliveryMessages >= 2,
                 statsAgents: statsAgents.size,
                 reportAgents: reportAgents.size,
-                fakeTopicCount: topics.filter(topic => topic.startsWith('rallar.bb.fake.')).length,
+                fakeTopicCount: topics.filter((topic) => topic.startsWith('rallar.bb.fake.')).length
             };
         }, {
-            timeout: 20_000,
+            timeout: 20_000
         }).toEqual({
             agents: 2,
             resultsComplete: true,
             messagesReceived: true,
             statsAgents: 2,
             reportAgents: 2,
-            fakeTopicCount: 0,
+            fakeTopicCount: 0
         });
-    } finally {
-        await Promise.all(handles.map(handle => handle.context.close()));
+    }
+    finally {
+        await Promise.all(handles.map((handle) => handle.context.close()));
     }
 }
 
 async function runTwoAgentDisconnectReconnect(
     browser: Browser,
     request: APIRequestContext,
-    testInfo: TestInfo,
+    testInfo: TestInfo
 ): Promise<void> {
     const transport: TransportUnderTest = 'realtime';
-    const suffix = `disconnect-reconnect-${Date.now()}-${
-        Math.random().toString(16).slice(2)
-    }`;
+    const suffix = `disconnect-reconnect-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const runId = `real-rallar-two-agent-disconnect-${suffix}`;
     const agentAId = `real-rallar-a-${suffix}`;
     const agentBId = `real-rallar-b-${suffix}`;
@@ -1118,7 +1124,7 @@ async function runTwoAgentDisconnectReconnect(
             actor: firstEnvValue('VITE_RALLAR_AGENT_A_ACTOR', 'VITE_RALLAR_A_ACTOR') ??
                 `agent-a-${suffix}`,
             connection: `agent-a-rtc-${suffix}`,
-            transport,
+            transport
         });
         handles.push(agentA);
 
@@ -1129,14 +1135,14 @@ async function runTwoAgentDisconnectReconnect(
             actor: firstEnvValue('VITE_RALLAR_AGENT_B_ACTOR', 'VITE_RALLAR_B_ACTOR') ??
                 `agent-b-${suffix}`,
             connection: `agent-b-rtc-${suffix}`,
-            transport,
+            transport
         });
         handles.push(agentB);
 
         const setupCommandIds = await setupGroupMembership(request, runId, {
             owner: agentA,
             members: [agentA, agentB],
-            suffix,
+            suffix
         });
 
         const connectACommandId = `connect-a-${suffix}`;
@@ -1148,7 +1154,7 @@ async function runTwoAgentDisconnectReconnect(
             roomId,
             transport,
             rallar: rallarConnectConfig(transport),
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         const connectB = await executeOk(request, runId, agentB.agentId, connectBCommandId, {
             kind: 'rtc.connect',
@@ -1157,7 +1163,7 @@ async function runTwoAgentDisconnectReconnect(
             roomId,
             transport,
             rallar: rallarConnectConfig(transport),
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         const sessionA = requireSessionId(connectA, connectACommandId);
         const sessionB = requireSessionId(connectB, connectBCommandId);
@@ -1175,21 +1181,21 @@ async function runTwoAgentDisconnectReconnect(
                 smokeId: smokeBeforeClose,
                 direction: 'a-to-b-before-close',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentB.agentId,
             transport,
             smokeId: smokeBeforeClose,
-            direction: 'a-to-b-before-close',
+            direction: 'a-to-b-before-close'
         });
 
         const healthBBeforeClose = await captureHealthSnapshot(request, runId, agentB, {
             phase: 'before-close',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectRallarHealthConnected(healthBBeforeClose, true);
         expectRallarHealthSession(healthBBeforeClose, sessionB);
@@ -1197,11 +1203,11 @@ async function runTwoAgentDisconnectReconnect(
 
         const closeBCommandId = `close-b-${suffix}`;
         const closeB = await executeOk(request, runId, agentB.agentId, closeBCommandId, {
-            kind: 'close',
+            kind: 'close'
         });
         expect(asRecord(resultValue(closeB).rallar)).toMatchObject({
             status: 'closed',
-            disconnected: true,
+            disconnected: true
         });
 
         await agentB.page.waitForTimeout(1_000);
@@ -1209,7 +1215,7 @@ async function runTwoAgentDisconnectReconnect(
             phase: 'after-close',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectWsReconnectSuppressed(healthBAfterClose);
 
@@ -1222,9 +1228,9 @@ async function runTwoAgentDisconnectReconnect(
             transport,
             rallar: {
                 ...rallarRestoreConnectConfig(transport, sessionB),
-                logoutOnClose: false,
+                logoutOnClose: false
             },
-            timeoutMs: 30_000,
+            timeoutMs: 30_000
         });
         expect(requireSessionId(reconnectB, reconnectBCommandId)).toBe(sessionB);
 
@@ -1240,21 +1246,21 @@ async function runTwoAgentDisconnectReconnect(
                 smokeId: smokeAfterReconnect,
                 direction: 'a-to-b-after-reconnect',
                 transport,
-                runId,
-            }),
+                runId
+            })
         });
         await waitForMessage(request, runId, {
             agentId: agentB.agentId,
             transport,
             smokeId: smokeAfterReconnect,
-            direction: 'a-to-b-after-reconnect',
+            direction: 'a-to-b-after-reconnect'
         });
 
         const healthBAfterReconnect = await captureHealthSnapshot(request, runId, agentB, {
             phase: 'after-reconnect',
             suffix,
             snapshots: healthSnapshots,
-            commandIds: healthSnapshotCommandIds,
+            commandIds: healthSnapshotCommandIds
         });
         expectRallarHealthConnected(healthBAfterReconnect, true);
         expectRallarHealthSession(healthBAfterReconnect, sessionB);
@@ -1262,7 +1268,7 @@ async function runTwoAgentDisconnectReconnect(
 
         const finalizedCommandIds = [
             ...(await runFinalizationCommands(request, runId, agentA, suffix)),
-            ...(await runFinalizationCommands(request, runId, agentB, suffix)),
+            ...(await runFinalizationCommands(request, runId, agentB, suffix))
         ];
         const expectedCommandIds = [
             ...setupCommandIds,
@@ -1273,101 +1279,102 @@ async function runTwoAgentDisconnectReconnect(
             closeBCommandId,
             reconnectBCommandId,
             sendAfterReconnectCommandId,
-            ...finalizedCommandIds,
+            ...finalizedCommandIds
         ];
 
         await expect.poll(async () => {
             const run = await fetchRun(request, runId);
-            const resultIds = new Set((run.results ?? [])
-                .filter(result => result.ok === true)
-                .map(result => result.commandId));
+            const resultIds = new Set(
+                (run.results ?? [])
+                    .filter((result) => result.ok === true)
+                    .map((result) => result.commandId)
+            );
             const deliveryMessages = (run.events ?? [])
-                .filter(event =>
+                .filter((event) =>
                     isMessageFor(event, {
                         agentId: agentB.agentId,
                         transport,
                         smokeId: smokeBeforeClose,
-                        direction: 'a-to-b-before-close',
+                        direction: 'a-to-b-before-close'
                     }) ||
                     isMessageFor(event, {
                         agentId: agentB.agentId,
                         transport,
                         smokeId: smokeAfterReconnect,
-                        direction: 'a-to-b-after-reconnect',
+                        direction: 'a-to-b-after-reconnect'
                     })
                 ).length;
             return {
-                resultsComplete: expectedCommandIds.every(commandId => resultIds.has(commandId)),
-                messagesReceived: deliveryMessages >= 2,
+                resultsComplete: expectedCommandIds.every((commandId) => resultIds.has(commandId)),
+                messagesReceived: deliveryMessages >= 2
             };
         }, {
-            timeout: 20_000,
+            timeout: 20_000
         }).toEqual({
             resultsComplete: true,
-            messagesReceived: true,
+            messagesReceived: true
         });
-    } finally {
+    }
+    finally {
         if (healthSnapshots.length > 0) {
             await testInfo.attach('rallar-ws-disconnect-reconnect-snapshots.json', {
                 contentType: 'application/json',
-                body: JSON.stringify({
-                    runId,
-                    transport,
-                    snapshots: healthSnapshots,
-                }, null, 2),
+                body: JSON.stringify(
+                    {
+                        runId,
+                        transport,
+                        snapshots: healthSnapshots
+                    },
+                    null,
+                    2
+                )
             });
         }
-        await Promise.all(handles.map(handle => handle.context.close()));
+        await Promise.all(handles.map((handle) => handle.context.close()));
     }
 }
 
-test('browser-rallar provider delivers realtime payloads between two real agents', async ({
-    browser,
-    request,
-                                                                                        }) => {
+test('browser-rallar provider delivers realtime payloads between two real agents', async ({ browser, request }) => {
     test.setTimeout(120_000);
     test.skip(
         !hasTwoAgentConfig,
-        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live two-agent realtime smoke.',
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live two-agent realtime smoke.'
     );
 
     await runTwoAgentDelivery(browser, request, 'realtime');
 });
 
-test('browser-rallar provider delivers messages.rtc payloads between two real agents', async ({
-                                                                                                 browser,
-                                                                                                 request,
-                                                                                             }) => {
+test('browser-rallar provider delivers messages.rtc payloads between two real agents', async ({ browser, request }) => {
     test.setTimeout(120_000);
     test.skip(
         !hasTwoAgentConfig,
-        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live two-agent messages.rtc smoke.',
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live two-agent messages.rtc smoke.'
     );
 
     await runTwoAgentDelivery(browser, request, 'messages.rtc');
 });
 
 test('browser-rallar provider delivers realtime after reloading one real agent', async ({
-                                                                                           browser,
-                                                                                           request,
-                                                                                       }, testInfo) => {
+    browser,
+    request
+}, testInfo) => {
     test.setTimeout(180_000);
     test.skip(
         !hasTwoAgentConfig,
-        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload realtime smoke.',
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload realtime smoke.'
     );
 
     await runTwoAgentReloadDelivery(browser, request, 'realtime', testInfo);
 });
 
 test('browser-rallar provider delivers messages.rtc after reloading one real agent', async ({
-                                                                                               browser,
-                                                                                               request,
-                                                                                           }, testInfo) => {
+    browser,
+    request
+}, testInfo) => {
     test.setTimeout(180_000);
     test.skip(
         !hasTwoAgentConfig,
-        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload messages.rtc smoke.',
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live reload messages.rtc smoke.'
     );
 
     await runTwoAgentReloadDelivery(browser, request, 'messages.rtc', testInfo);
@@ -1375,11 +1382,11 @@ test('browser-rallar provider delivers messages.rtc after reloading one real age
 
 test('browser-rallar provider suppresses WS reconnect after intentional disconnect and reconnects explicitly', async ({
     browser,
-    request,
+    request
 }, testInfo) => {
     test.skip(
         !hasTwoAgentConfig,
-        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live disconnect/reconnect smoke.',
+        'Set VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and two-agent Rallar login or restore config to run the live disconnect/reconnect smoke.'
     );
 
     await runTwoAgentDisconnectReconnect(browser, request, testInfo);

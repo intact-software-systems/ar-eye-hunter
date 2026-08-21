@@ -1,19 +1,19 @@
-import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { ValueEqualityChecker } from '@shared/cache/ObservableLatestValue.ts';
 import {
     type ObservableKeyedValueEvent,
     type ObservableKeyedValueListener,
-    type Unsubscribe,
+    type Unsubscribe
 } from '@shared/cache/RepositoryInterfaces.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import {
-    type PersistenceErrorHandler,
     WriteBehindObservableLatestRepository,
+    type PersistenceErrorHandler
 } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
 import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
-import type { PersistenceProvider, PersistenceSetItemOptions, } from '@shared/persistence/PersistenceProvider.ts';
-import type { ValueEqualityChecker } from '@shared/cache/ObservableLatestValue.ts';
+import type { PersistenceProvider, PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 
 export type RallarDataScope = 'app' | 'principal' | 'session' | string;
 
@@ -34,7 +34,7 @@ export type RallarDataMigrationContext = Readonly<{
 
 export type RallarDataMigration<V> = (
     persistedValue: unknown,
-    context: RallarDataMigrationContext,
+    context: RallarDataMigrationContext
 ) => V | Promise<V>;
 
 export type RallarDataStorageEstimate = Readonly<{
@@ -85,7 +85,7 @@ export type RallarDataStore<V> = Readonly<{
     update(key: string, updater: (current: V) => V): Promise<V | undefined>;
     updateOrCreate(
         key: string,
-        updater: (current: V | undefined) => V,
+        updater: (current: V | undefined) => V
     ): Promise<V>;
     setIfAbsent(key: string, creator: () => V): Promise<V>;
     compareAndSet(key: string, expect: V | undefined, update: V): Promise<boolean>;
@@ -105,29 +105,29 @@ export type RallarUnsubscribe = () => void;
 export type RallarDataFacade = Readonly<{
     define<V>(
         name: string,
-        options?: RallarDataStoreOptions<V>,
+        options?: RallarDataStoreOptions<V>
     ): RallarDataStoreDefinition<V>;
     open<V>(
         input: string | RallarDataStoreDefinition<V>,
-        options?: RallarDataStoreOptions<V>,
+        options?: RallarDataStoreOptions<V>
     ): Promise<RallarDataStore<V>>;
     lookup<V>(
         input: string | RallarDataStoreDefinition<V>,
-        options?: RallarDataStoreOptions<V>,
+        options?: RallarDataStoreOptions<V>
     ): RallarDataStore<V> | undefined;
     close<V>(
         input: string | RallarDataStoreDefinition<V>,
-        options?: RallarDataStoreOptions<V>,
+        options?: RallarDataStoreOptions<V>
     ): Promise<boolean>;
     closeScope(scope: RallarDataScope): Promise<number>;
     clearScope(scope: RallarDataScope): Promise<number>;
     destroy<V>(
         input: string | RallarDataStoreDefinition<V>,
-        options?: RallarDataStoreOptions<V>,
+        options?: RallarDataStoreOptions<V>
     ): Promise<boolean>;
     destroyStore<V>(
         input: string | RallarDataStoreDefinition<V>,
-        options?: RallarDataStoreOptions<V>,
+        options?: RallarDataStoreOptions<V>
     ): Promise<boolean>;
     destroyScope(scope: RallarDataScope): Promise<number>;
     estimateUsage(): Promise<RallarDataStorageEstimate>;
@@ -154,8 +154,24 @@ type ManagedRallarDataRepository<V> = {
     dispose(): Promise<void>;
 };
 
-type NormalizedRallarDataOptions<V> = Required<
-    Pick<
+type NormalizedRallarDataOptions<V> =
+    & Required<
+        Pick<
+            RallarDataStoreOptions<V>,
+            | 'scope'
+            | 'dbName'
+            | 'storeName'
+            | 'keyPrefix'
+            | 'durability'
+            | 'hydrate'
+            | 'schemaVersion'
+            | 'sync'
+        >
+    >
+    & Readonly<{
+        scopeKey: string;
+    }>
+    & Omit<
         RallarDataStoreOptions<V>,
         | 'scope'
         | 'dbName'
@@ -165,20 +181,7 @@ type NormalizedRallarDataOptions<V> = Required<
         | 'hydrate'
         | 'schemaVersion'
         | 'sync'
-    >
-> & Readonly<{
-    scopeKey: string;
-}> & Omit<
-    RallarDataStoreOptions<V>,
-    | 'scope'
-    | 'dbName'
-    | 'storeName'
-    | 'keyPrefix'
-    | 'durability'
-    | 'hydrate'
-    | 'schemaVersion'
-    | 'sync'
->;
+    >;
 
 type PreparedRallarDataStore<V> = Readonly<{
     name: string;
@@ -208,7 +211,7 @@ const DEFAULT_CUSTOM_DATA_STORE_NAME = 'entries';
 const RALLAR_DATA_ENVELOPE_KIND = 'rallar.custom-data';
 
 export function createRallarDataFacade(
-    options: RallarDataFacadeOptions = {},
+    options: RallarDataFacadeOptions = {}
 ): RallarDataFacade {
     const manager = options.manager ?? defaultRepositoryManager;
     const resolveScopeKey = options.resolveScopeKey ?? ((scope) => String(scope));
@@ -216,7 +219,7 @@ export function createRallarDataFacade(
 
     const open = async <V>(
         input: string | RallarDataStoreDefinition<V>,
-        openOptions?: RallarDataStoreOptions<V>,
+        openOptions?: RallarDataStoreOptions<V>
     ): Promise<RallarDataStore<V>> => {
         const prepared = prepareRallarDataStore(input, openOptions, resolveScopeKey);
         const managed = getOrCreateManagedRepository(manager, prepared);
@@ -224,7 +227,7 @@ export function createRallarDataFacade(
         const store = new RepositoryBackedRallarDataStore<V>(
             prepared.name,
             managed,
-            () => closePreparedStore(manager, activeTokens, prepared),
+            () => closePreparedStore(manager, activeTokens, prepared)
         );
 
         if (prepared.options.hydrate === 'eager') {
@@ -236,12 +239,12 @@ export function createRallarDataFacade(
 
     const lookup = <V>(
         input: string | RallarDataStoreDefinition<V>,
-        lookupOptions?: RallarDataStoreOptions<V>,
+        lookupOptions?: RallarDataStoreOptions<V>
     ): RallarDataStore<V> | undefined => {
         const prepared = prepareRallarDataStore(
             input,
             lookupOptions,
-            resolveScopeKey,
+            resolveScopeKey
         );
         const managed = manager.get(prepared.token);
         if (!managed) {
@@ -253,18 +256,18 @@ export function createRallarDataFacade(
         return new RepositoryBackedRallarDataStore<V>(
             prepared.name,
             managed,
-            () => closePreparedStore(manager, activeTokens, prepared),
+            () => closePreparedStore(manager, activeTokens, prepared)
         );
     };
 
     const close = async <V>(
         input: string | RallarDataStoreDefinition<V>,
-        closeOptions?: RallarDataStoreOptions<V>,
+        closeOptions?: RallarDataStoreOptions<V>
     ): Promise<boolean> => {
         const prepared = prepareRallarDataStore(
             input,
             closeOptions,
-            resolveScopeKey,
+            resolveScopeKey
         );
         return await closePreparedStore(manager, activeTokens, prepared);
     };
@@ -274,7 +277,7 @@ export function createRallarDataFacade(
             manager,
             activeTokens,
             resolveScopeKey(scope),
-            async (token) => await manager.delete(token),
+            async (token) => await manager.delete(token)
         );
     };
 
@@ -288,18 +291,18 @@ export function createRallarDataFacade(
                 broadcastManagedClear(managed);
                 return true;
             },
-            false,
+            false
         );
     };
 
     const destroy = async <V>(
         input: string | RallarDataStoreDefinition<V>,
-        destroyOptions?: RallarDataStoreOptions<V>,
+        destroyOptions?: RallarDataStoreOptions<V>
     ): Promise<boolean> => {
         const prepared = prepareRallarDataStore(
             input,
             destroyOptions,
-            resolveScopeKey,
+            resolveScopeKey
         );
         return await destroyPreparedStore(manager, activeTokens, prepared);
     };
@@ -322,21 +325,21 @@ export function createRallarDataFacade(
                     await clearManagedRepository(managed);
                     broadcastManagedClear(managed);
                     return await manager.delete(token);
-                },
+                }
             );
         },
-        estimateUsage: estimateBrowserStorage,
+        estimateUsage: estimateBrowserStorage
     };
 }
 
 export function defineRallarDataStore<V>(
     name: string,
-    options?: RallarDataStoreOptions<V>,
+    options?: RallarDataStoreOptions<V>
 ): RallarDataStoreDefinition<V> {
     assertValidStoreName(name);
     return {
         name,
-        options,
+        options
     };
 }
 
@@ -350,7 +353,7 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
     public constructor(
         name: string,
         managed: ManagedRallarDataRepository<V>,
-        closeRepository: () => Promise<boolean>,
+        closeRepository: () => Promise<boolean>
     ) {
         this.name = name;
         this.managed = managed;
@@ -437,8 +440,8 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
         return [
             ...new Set([
                 ...this.keys(),
-                ...await this.managed.persistence.getAllKeys(),
-            ]),
+                ...await this.managed.persistence.getAllKeys()
+            ])
         ].sort();
     }
 
@@ -455,13 +458,13 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
         this.broadcast({
             type: 'set',
             key,
-            value,
+            value
         });
     }
 
     public async update(
         key: string,
-        updater: (current: V) => V,
+        updater: (current: V) => V
     ): Promise<V | undefined> {
         const current = await this.get(key);
         if (current === undefined) {
@@ -475,7 +478,7 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
 
     public async updateOrCreate(
         key: string,
-        updater: (current: V | undefined) => V,
+        updater: (current: V | undefined) => V
     ): Promise<V> {
         const next = updater(await this.get(key));
         await this.set(key, next);
@@ -496,7 +499,7 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
     public async compareAndSet(
         key: string,
         expect: V | undefined,
-        update: V,
+        update: V
     ): Promise<boolean> {
         const current = await this.get(key);
         if (!Object.is(current, expect)) {
@@ -517,7 +520,7 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
         const deleted = await this.deleteLocal(key);
         this.broadcast({
             type: 'delete',
-            key,
+            key
         });
         return deleted;
     }
@@ -531,7 +534,7 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
             await Promise.resolve(this.managed.repository.delete(key));
             this.broadcast({
                 type: 'delete',
-                key,
+                key
             });
         }
 
@@ -545,7 +548,7 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
     public async clearAll(): Promise<void> {
         await clearManagedRepository(this.managed);
         this.broadcast({
-            type: 'clear',
+            type: 'clear'
         });
     }
 
@@ -584,33 +587,26 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
     }
 
     private broadcast(
-        message: Omit<
-            RallarDataBroadcastMessage<V>,
-            'version' | 'repositoryId' | 'instanceId'
-        >,
+        message: Omit<RallarDataBroadcastMessage<V>, 'version' | 'repositoryId' | 'instanceId'>
     ): void {
-        this.managed.broadcast?.postMessage({
-            version: 1,
-            repositoryId: this.managed.id,
-            instanceId: this.managed.instanceId,
-            ...message,
-        } satisfies RallarDataBroadcastMessage<V>);
+        this.managed.broadcast?.postMessage(
+            {
+                version: 1,
+                repositoryId: this.managed.id,
+                instanceId: this.managed.instanceId,
+                ...message
+            } satisfies RallarDataBroadcastMessage<V>
+        );
     }
 }
 
 class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V> {
     private readonly inner: PersistenceProvider<string, unknown>;
-    private readonly options: Pick<
-            NormalizedRallarDataOptions<V>,
-            'schemaVersion' | 'migrate'
-        >;
+    private readonly options: Pick<NormalizedRallarDataOptions<V>, 'schemaVersion' | 'migrate'>;
 
     public constructor(
         inner: PersistenceProvider<string, unknown>,
-        options: Pick<
-            NormalizedRallarDataOptions<V>,
-            'schemaVersion' | 'migrate'
-        >,
+        options: Pick<NormalizedRallarDataOptions<V>, 'schemaVersion' | 'migrate'>
     ) {
         this.inner = inner;
         this.options = options;
@@ -628,7 +624,7 @@ class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V>
     public async setItem(
         key: string,
         value: V,
-        options: PersistenceSetItemOptions,
+        options: PersistenceSetItemOptions
     ): Promise<void> {
         await this.inner.setItem(
             key,
@@ -636,9 +632,9 @@ class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V>
                 kind: RALLAR_DATA_ENVELOPE_KIND,
                 schemaVersion: this.options.schemaVersion,
                 updatedAtEpochMs: Date.now(),
-                value,
+                value
             } satisfies RallarDataPersistedEnvelope,
-            options,
+            options
         );
     }
 
@@ -667,7 +663,7 @@ class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V>
             key,
             persisted.value,
             persisted.schemaVersion,
-            persisted.updatedAtEpochMs,
+            persisted.updatedAtEpochMs
         );
     }
 
@@ -675,7 +671,7 @@ class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V>
         key: string,
         persistedValue: unknown,
         fromVersion: number,
-        updatedAtEpochMs: number | undefined,
+        updatedAtEpochMs: number | undefined
     ): Promise<V> {
         if (!this.options.migrate) {
             return persistedValue as V;
@@ -685,7 +681,7 @@ class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V>
             key,
             fromVersion,
             toVersion: this.options.schemaVersion,
-            updatedAtEpochMs,
+            updatedAtEpochMs
         });
     }
 }
@@ -693,38 +689,38 @@ class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V>
 function prepareRallarDataStore<V>(
     input: string | RallarDataStoreDefinition<V>,
     options: RallarDataStoreOptions<V> | undefined,
-    resolveScopeKey: (scope: RallarDataScope) => string,
+    resolveScopeKey: (scope: RallarDataScope) => string
 ): PreparedRallarDataStore<V> {
     const name = typeof input === 'string' ? input : input.name;
     assertValidStoreName(name);
 
     const mergedOptions = {
         ...(typeof input === 'string' ? undefined : input.options),
-        ...options,
+        ...options
     };
     const normalizedOptions = normalizeRallarDataStoreOptions(
         name,
         mergedOptions,
-        resolveScopeKey,
+        resolveScopeKey
     );
     const optionsKey = toOptionsKey(normalizedOptions);
     const token = new RepositoryToken<ManagedRallarDataRepository<V>>(
         toRepositoryId(normalizedOptions),
-        () => createManagedRepository(name, normalizedOptions, optionsKey),
+        () => createManagedRepository(name, normalizedOptions, optionsKey)
     );
 
     return {
         name,
         options: normalizedOptions,
         optionsKey,
-        token,
+        token
     };
 }
 
 function normalizeRallarDataStoreOptions<V>(
     name: string,
     options: RallarDataStoreOptions<V>,
-    resolveScopeKey: (scope: RallarDataScope) => string,
+    resolveScopeKey: (scope: RallarDataScope) => string
 ): NormalizedRallarDataOptions<V> {
     const scope = options.scope ?? 'app';
     const scopeKey = resolveScopeKey(scope);
@@ -749,13 +745,13 @@ function normalizeRallarDataStoreOptions<V>(
         durability: options.durability ?? 'write-through',
         hydrate: options.hydrate ?? 'eager',
         schemaVersion,
-        sync: options.sync ?? true,
+        sync: options.sync ?? true
     };
 }
 
 function getOrCreateManagedRepository<V>(
     manager: RepositoryManager,
-    prepared: PreparedRallarDataStore<V>,
+    prepared: PreparedRallarDataStore<V>
 ): ManagedRallarDataRepository<V> {
     const existing = manager.get(prepared.token);
     if (existing) {
@@ -770,33 +766,33 @@ function getOrCreateManagedRepository<V>(
 
 function assertOptionsMatch<V>(
     managed: ManagedRallarDataRepository<V>,
-    prepared: Pick<PreparedRallarDataStore<V>, 'optionsKey' | 'token'>,
+    prepared: Pick<PreparedRallarDataStore<V>, 'optionsKey' | 'token'>
 ): void {
     if (managed.optionsKey === prepared.optionsKey) {
         return;
     }
 
     throw new Error(
-        `Rallar data store already opened with different options: ${prepared.token.id}`,
+        `Rallar data store already opened with different options: ${prepared.token.id}`
     );
 }
 
 function createManagedRepository<V>(
     name: string,
     options: NormalizedRallarDataOptions<V>,
-    optionsKey: string,
+    optionsKey: string
 ): ManagedRallarDataRepository<V> {
     const rawPersistence = new IndexedDbStringPersistenceProvider<unknown>({
         dbName: options.dbName,
         storeName: options.storeName,
-        keyPrefix: options.keyPrefix,
+        keyPrefix: options.keyPrefix
     });
     const persistence = new RallarDataPersistenceProvider<V>(
         rawPersistence,
         {
             schemaVersion: options.schemaVersion,
-            migrate: options.migrate,
-        },
+            migrate: options.migrate
+        }
     );
     const id = toRepositoryId(options);
     const base = {
@@ -807,7 +803,7 @@ function createManagedRepository<V>(
         scopeKey: options.scopeKey,
         durability: options.durability,
         persistence,
-        instanceId: crypto.randomUUID(),
+        instanceId: crypto.randomUUID()
     };
 
     const repository = options.durability === 'write-behind'
@@ -817,14 +813,14 @@ function createManagedRepository<V>(
             isValid: options.isValid,
             equals: options.equals,
             expireAtFor: options.expireAtFor,
-            onPersistenceError: options.onPersistenceError,
+            onPersistenceError: options.onPersistenceError
         })
         : new WriteThroughObservableLatestRepository<string, V>({
             persistence,
             ttlMs: options.ttlMs,
             isValid: options.isValid,
             equals: options.equals,
-            expireAtFor: options.expireAtFor,
+            expireAtFor: options.expireAtFor
         });
 
     const managed: ManagedRallarDataRepository<V> = {
@@ -834,7 +830,7 @@ function createManagedRepository<V>(
             managed.broadcast?.close();
             managed.broadcast = undefined;
             await repository.dispose();
-        },
+        }
     };
 
     installBroadcastChannel(managed, options.sync);
@@ -843,7 +839,7 @@ function createManagedRepository<V>(
 
 function installBroadcastChannel<V>(
     managed: ManagedRallarDataRepository<V>,
-    sync: boolean,
+    sync: boolean
 ): void {
     if (!sync || typeof BroadcastChannel === 'undefined') {
         return;
@@ -870,7 +866,7 @@ function installBroadcastChannel<V>(
 
 async function applyRemoteChange<V>(
     managed: ManagedRallarDataRepository<V>,
-    message: Partial<RallarDataBroadcastMessage<V>>,
+    message: Partial<RallarDataBroadcastMessage<V>>
 ): Promise<void> {
     if (message.type === 'set') {
         if (message.key === undefined || message.value === undefined) {
@@ -896,7 +892,7 @@ async function applyRemoteChange<V>(
 }
 
 async function clearManagedRepository<V>(
-    managed: ManagedRallarDataRepository<V>,
+    managed: ManagedRallarDataRepository<V>
 ): Promise<void> {
     if (managed.durability === 'write-behind') {
         const keys = await managed.persistence.getAllKeys();
@@ -912,7 +908,7 @@ async function clearManagedRepository<V>(
 async function closePreparedStore<V>(
     manager: RepositoryManager,
     activeTokens: Map<string, RepositoryToken<unknown>>,
-    prepared: PreparedRallarDataStore<V>,
+    prepared: PreparedRallarDataStore<V>
 ): Promise<boolean> {
     activeTokens.delete(prepared.token.id);
     return await manager.delete(prepared.token);
@@ -921,7 +917,7 @@ async function closePreparedStore<V>(
 async function destroyPreparedStore<V>(
     manager: RepositoryManager,
     activeTokens: Map<string, RepositoryToken<unknown>>,
-    prepared: PreparedRallarDataStore<V>,
+    prepared: PreparedRallarDataStore<V>
 ): Promise<boolean> {
     const existing = manager.get(prepared.token);
     const managed = existing ??
@@ -934,7 +930,8 @@ async function destroyPreparedStore<V>(
 
     if (existing) {
         await manager.delete(prepared.token);
-    } else {
+    }
+    else {
         await managed.dispose();
     }
 
@@ -947,15 +944,15 @@ async function forEachActiveScopeRepository(
     scopeKey: string,
     operation: (
         token: RepositoryToken<unknown>,
-        managed: ManagedRallarDataRepository<unknown>,
+        managed: ManagedRallarDataRepository<unknown>
     ) => Promise<boolean>,
-    removeFromActive = true,
+    removeFromActive = true
 ): Promise<number> {
     let count = 0;
 
     for (const [id, token] of [...activeTokens]) {
         const managed = manager.get(
-            token as RepositoryToken<ManagedRallarDataRepository<unknown>>,
+            token as RepositoryToken<ManagedRallarDataRepository<unknown>>
         );
         if (!managed || managed.scopeKey !== scopeKey) {
             continue;
@@ -979,7 +976,7 @@ function toRepositoryId<V>(options: NormalizedRallarDataOptions<V>): string {
         'data',
         encodePrefixPart(options.dbName),
         encodePrefixPart(options.storeName),
-        encodePrefixPart(options.keyPrefix),
+        encodePrefixPart(options.keyPrefix)
     ].join(':');
 }
 
@@ -994,17 +991,19 @@ function toOptionsKey<V>(options: NormalizedRallarDataOptions<V>): string {
         hasIsValid: options.isValid !== undefined,
         hasEquals: options.equals !== undefined,
         hasExpireAtFor: options.expireAtFor !== undefined,
-        hasPersistenceError: options.onPersistenceError !== undefined,
+        hasPersistenceError: options.onPersistenceError !== undefined
     });
 }
 
 function broadcastManagedClear<V>(managed: ManagedRallarDataRepository<V>): void {
-    managed.broadcast?.postMessage({
-        version: 1,
-        repositoryId: managed.id,
-        instanceId: managed.instanceId,
-        type: 'clear',
-    } satisfies RallarDataBroadcastMessage<V>);
+    managed.broadcast?.postMessage(
+        {
+            version: 1,
+            repositoryId: managed.id,
+            instanceId: managed.instanceId,
+            type: 'clear'
+        } satisfies RallarDataBroadcastMessage<V>
+    );
 }
 
 function isRallarDataEnvelope(value: unknown): value is RallarDataPersistedEnvelope {

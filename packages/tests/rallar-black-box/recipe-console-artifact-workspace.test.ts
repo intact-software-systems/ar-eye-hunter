@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
-    createDistributedArtifactWorkspace,
-    type DistributedArtifactWorkspace,
-    type DistributedArtifactWorkspaceInput,
-} from '../../../packages/shared-test/rallar-bb-test/mod.ts';
-import {
     analyzeDistributedRunArtifactFiles,
     distributedArtifactBundleFromFiles,
-    type DistributedRunArtifactFiles,
+    type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    createDistributedArtifactWorkspace,
+    type DistributedArtifactWorkspace,
+    type DistributedArtifactWorkspaceInput
+} from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
 function createWorkspace(input: DistributedArtifactWorkspaceInput): DistributedArtifactWorkspace {
     return createDistributedArtifactWorkspace(input);
 }
 
 function serverV2Files(
-    overrides: DistributedRunArtifactFiles = {},
+    overrides: DistributedRunArtifactFiles = {}
 ): DistributedRunArtifactFiles {
     const distributedRun = {
         distributedRunId: 'distributed-import',
@@ -34,14 +34,14 @@ function serverV2Files(
             recipes: [],
             targetPolicy: {},
             roleAssignments: [],
-            startMode: 'manual',
+            startMode: 'manual'
         },
         rollup: {
             state: 'failed',
             ok: false,
             failures: [{ code: 'rtc-timeout', message: 'Receiver timed out.' }],
-            summary: { blockingFailures: 1 },
-        },
+            summary: { blockingFailures: 1 }
+        }
     };
     const controlRun = {
         runId: 'control-import',
@@ -56,14 +56,14 @@ function serverV2Files(
             receivedResultCount: 0,
             receivedEventCount: 0,
             completedCommandIds: [],
-            resumeCompletedCommandIds: [],
+            resumeCompletedCommandIds: []
         }],
         commands: [],
         results: [],
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
     const summary = {
         total: 1,
@@ -72,7 +72,7 @@ function serverV2Files(
         commandCount: 0,
         eventCount: 0,
         agentCount: 1,
-        reportCount: 0,
+        reportCount: 0
     };
 
     return {
@@ -89,12 +89,12 @@ function serverV2Files(
             ok: false,
             summary,
             resultsList: [],
-            outputs: {},
+            outputs: {}
         }),
         'failures.json': JSON.stringify({
             summary,
             failures: [{ source: 'distributed-rollup', code: 'rtc-timeout' }],
-            outputs: {},
+            outputs: {}
         }),
         'metadata.json': JSON.stringify({
             schemaVersion: 2,
@@ -102,17 +102,17 @@ function serverV2Files(
             generatedAtEpochMs: 3_000,
             config: 'rallar-black-box-control-server',
             execution: 'distributed-run',
-            summary,
+            summary
         }),
-        ...overrides,
+        ...overrides
     };
 }
 
 function inventoryStatus(
     workspace: DistributedArtifactWorkspace,
-    fileName: string,
+    fileName: string
 ): string | undefined {
-    return workspace.inventory.find(item => item.fileName === fileName)?.status;
+    return workspace.inventory.find((item) => item.fileName === fileName)?.status;
 }
 
 describe('Recipe Console distributed artifact workspace compatibility', () => {
@@ -131,14 +131,14 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             files,
             analysis: {
                 artifactSchemaVersion: 2,
-                distributedRunId: 'distributed-import',
+                distributedRunId: 'distributed-import'
             },
             snapshots: {
                 distributedRun: { distributedRunId: 'distributed-import' },
                 controlRun: { runId: 'control-import' },
-                artifactBundle: { artifactSchemaVersion: 2 },
+                artifactBundle: { artifactSchemaVersion: 2 }
             },
-            bundle: { artifactSchemaVersion: 2 },
+            bundle: { artifactSchemaVersion: 2 }
         });
         expect(inventoryStatus(workspace, 'events.jsonl')).toBe('missing-optional');
         expect(inventoryStatus(workspace, 'results.jsonl')).toBe('missing-optional');
@@ -149,7 +149,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         const loose = createWorkspace({
             files,
             artifactSchemaVersion: 2,
-            generatedAtEpochMs: 5_151,
+            generatedAtEpochMs: 5_151
         });
         const envelope = createWorkspace({
             files: {
@@ -157,9 +157,9 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     artifactSchemaVersion: 2,
                     distributedRunId: 'distributed-import',
                     generatedAtEpochMs: 5_151,
-                    files,
-                }),
-            },
+                    files
+                })
+            }
         });
 
         expect(envelope).toMatchObject({
@@ -168,7 +168,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             support: 'supported',
             artifactSchemaVersion: 2,
             generatedAtEpochMs: 5_151,
-            files,
+            files
         });
         expect(envelope.analysis).toEqual(loose.analysis);
         expect(envelope.snapshots).toEqual(loose.snapshots);
@@ -180,18 +180,18 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         const files = serverV2Files({
             'report.json': undefined,
             'failures.json': undefined,
-            'metadata.json': undefined,
+            'metadata.json': undefined
         });
         const analysis = analyzeDistributedRunArtifactFiles({
             files,
             generatedAtEpochMs: 6_161,
-            artifactSchemaVersion: 2,
+            artifactSchemaVersion: 2
         });
         const bundle = distributedArtifactBundleFromFiles(
             files,
             6_161,
             'distributed-import',
-            2,
+            2
         );
 
         expect(analysis.artifactSchemaVersion).toBe(2);
@@ -206,53 +206,57 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     artifactSchemaVersion: 2,
                     distributedRunId: 'distributed-import',
                     generatedAtEpochMs: 7_171,
-                    files: serverV2Files(),
-                }),
-            },
+                    files: serverV2Files()
+                })
+            }
         });
 
         expect(workspace).toMatchObject({
             family: 'distributed-run',
             source: 'bundle-envelope',
-            support: 'incompatible',
+            support: 'incompatible'
         });
         expect(workspace.analysis).toBeUndefined();
         expect(workspace.snapshots).toBeUndefined();
         expect(workspace.bundle).toBeUndefined();
         expect(inventoryStatus(workspace, '$artifactSchemaVersion')).toBe('incompatible');
         expect(workspace.issues).toContainEqual(expect.objectContaining({
-            code: 'schema-version-conflict',
+            code: 'schema-version-conflict'
         }));
     });
 
     it('keeps valid siblings usable when optional evidence is malformed or incompatible', () => {
         const workspace = createWorkspace({
             files: serverV2Files({
-                'events.jsonl': `${JSON.stringify({
-                    kind: 'diagnostic',
-                    agentId: 'agent-eu',
-                    payload: { severity: 'warning', message: 'Valid sibling row.' },
-                })}\nnot-json`,
-                'results.jsonl': `${JSON.stringify({
-                    kind: 'result',
-                    agentId: 'agent-eu',
-                    commandId: 'command-a',
-                    status: 'FAILURE',
-                })}\n`,
+                'events.jsonl': `${
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        agentId: 'agent-eu',
+                        payload: { severity: 'warning', message: 'Valid sibling row.' }
+                    })
+                }\nnot-json`,
+                'results.jsonl': `${
+                    JSON.stringify({
+                        kind: 'result',
+                        agentId: 'agent-eu',
+                        commandId: 'command-a',
+                        status: 'FAILURE'
+                    })
+                }\n`,
                 'failures.json': '{not-json',
-                'metadata.json': '[]',
+                'metadata.json': '[]'
             }),
-            generatedAtEpochMs: 8_181,
+            generatedAtEpochMs: 8_181
         });
 
         expect(workspace.support).toBe('supported');
         expect(workspace.analysis).toMatchObject({
             artifactSchemaVersion: 2,
-            distributedRunId: 'distributed-import',
+            distributedRunId: 'distributed-import'
         });
         expect(workspace.analysis?.parseWarnings).toEqual(expect.arrayContaining([
             expect.objectContaining({ fileName: 'events.jsonl', lineNumber: 2 }),
-            expect.objectContaining({ fileName: 'failures.json' }),
+            expect.objectContaining({ fileName: 'failures.json' })
         ]));
         expect(inventoryStatus(workspace, 'events.jsonl')).toBe('malformed');
         expect(inventoryStatus(workspace, 'failures.json')).toBe('malformed');
@@ -264,32 +268,32 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     it('distinguishes missing, malformed, and incompatible core files', () => {
         const missing = createWorkspace({
             files: serverV2Files({ 'control-run.json': undefined }),
-            generatedAtEpochMs: 9_191,
+            generatedAtEpochMs: 9_191
         });
         const malformed = createWorkspace({
             files: serverV2Files({ 'distributed-run.json': '{bad' }),
-            generatedAtEpochMs: 9_192,
+            generatedAtEpochMs: 9_192
         });
         const incompatible = createWorkspace({
             files: serverV2Files({ 'distributed-run.json': '[]' }),
-            generatedAtEpochMs: 9_193,
+            generatedAtEpochMs: 9_193
         });
 
         expect(missing.support).toBe('incomplete');
         expect(inventoryStatus(missing, 'control-run.json')).toBe('missing-core');
         expect(missing.analysis).toMatchObject({
             distributedRunId: 'distributed-import',
-            controlRunId: 'control-import',
+            controlRunId: 'control-import'
         });
         expect(missing.snapshots).toMatchObject({
             distributedRun: { distributedRunId: 'distributed-import' },
-            controlRun: { runId: 'control-import' },
+            controlRun: { runId: 'control-import' }
         });
         expect(missing.bundle).toBeUndefined();
         expect(malformed.support).toBe('incompatible');
         expect(inventoryStatus(malformed, 'distributed-run.json')).toBe('malformed');
         expect(malformed.analysis?.parseWarnings).toEqual(expect.arrayContaining([
-            expect.objectContaining({ fileName: 'distributed-run.json' }),
+            expect.objectContaining({ fileName: 'distributed-run.json' })
         ]));
         expect(incompatible.support).toBe('incompatible');
         expect(inventoryStatus(incompatible, 'distributed-run.json')).toBe('incompatible');
@@ -303,20 +307,20 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     artifactSchemaVersion: 99,
                     distributedRunId: 'distributed-import',
                     generatedAtEpochMs: 10_101,
-                    files: serverV2Files(),
-                }),
-            },
+                    files: serverV2Files()
+                })
+            }
         });
 
         expect(workspace).toMatchObject({
             family: 'distributed-run',
             artifactSchemaVersion: 99,
-            support: 'unsupported',
+            support: 'unsupported'
         });
         expect(inventoryStatus(workspace, '$artifactSchemaVersion')).toBe('unknown-version');
         expect(workspace.analysis).toMatchObject({
             artifactSchemaVersion: 99,
-            distributedRunId: 'distributed-import',
+            distributedRunId: 'distributed-import'
         });
         expect(workspace.snapshots?.artifactBundle?.artifactSchemaVersion).toBe(99);
         expect(workspace.bundle?.artifactSchemaVersion).toBe(99);
@@ -332,19 +336,19 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     artifactSchemaVersion: 2,
                     distributedRunId: 'distributed-import',
                     generatedAtEpochMs: 10_202,
-                    files,
-                }),
-            },
+                    files
+                })
+            }
         });
 
         expect(workspace).toMatchObject({
             source: 'bundle-envelope',
-            support: 'incompatible',
+            support: 'incompatible'
         });
         expect(workspace.analysis).toBeUndefined();
         expect(workspace.issues).toContainEqual(expect.objectContaining({
             code: 'ambiguous-envelope',
-            severity: 'error',
+            severity: 'error'
         }));
     });
 
@@ -355,21 +359,21 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     artifactSchemaVersion: 2,
                     distributedRunId: 'distributed-other',
                     generatedAtEpochMs: 10_303,
-                    files: serverV2Files(),
-                }),
-            },
+                    files: serverV2Files()
+                })
+            }
         });
 
         expect(workspace).toMatchObject({
             source: 'bundle-envelope',
             support: 'incompatible',
             distributedRunId: 'distributed-import',
-            analysis: { distributedRunId: 'distributed-import' },
+            analysis: { distributedRunId: 'distributed-import' }
         });
         expect(workspace.issues).toContainEqual(expect.objectContaining({
             code: 'identity-conflict',
             severity: 'error',
-            fileName: 'distributed-import-artifact.json',
+            fileName: 'distributed-import-artifact.json'
         }));
     });
 
@@ -386,21 +390,21 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                 ...files,
                 'manifest.json': JSON.stringify(manifest),
                 'control-run.json': JSON.stringify(controlRun),
-                'report.json': JSON.stringify(report),
+                'report.json': JSON.stringify(report)
             },
-            generatedAtEpochMs: 10_353,
+            generatedAtEpochMs: 10_353
         });
 
         expect(workspace).toMatchObject({
             family: 'distributed-run',
             support: 'incompatible',
-            analysis: { distributedRunId: 'distributed-import' },
+            analysis: { distributedRunId: 'distributed-import' }
         });
-        expect(workspace.issues.filter(issue => issue.code === 'identity-conflict'))
+        expect(workspace.issues.filter((issue) => issue.code === 'identity-conflict'))
             .toEqual(expect.arrayContaining([
                 expect.objectContaining({ fileName: 'manifest.json' }),
                 expect.objectContaining({ fileName: 'control-run.json' }),
-                expect.objectContaining({ fileName: 'report.json' }),
+                expect.objectContaining({ fileName: 'report.json' })
             ]));
     });
 
@@ -411,19 +415,19 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     artifactSchemaVersion: '2',
                     distributedRunId: 42,
                     generatedAtEpochMs: 'today',
-                    files: [],
-                }),
+                    files: []
+                })
             },
-            generatedAtEpochMs: 10_404,
+            generatedAtEpochMs: 10_404
         });
 
         expect(workspace).toMatchObject({
             source: 'bundle-envelope',
-            support: 'incompatible',
+            support: 'incompatible'
         });
         expect(workspace.issues).toContainEqual(expect.objectContaining({
             code: 'incompatible-file',
-            fileName: 'broken-artifact.json',
+            fileName: 'broken-artifact.json'
         }));
     });
 
@@ -434,33 +438,33 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                     schemaVersion: 1,
                     summary: { total: 1, success: 0, failure: 1 },
                     resultsList: [{ resultKey: 'http-i1-r1', status: 'FAILURE' }],
-                    outputs: {},
+                    outputs: {}
                 }),
                 'failures.json': JSON.stringify({
                     summary: { total: 1, success: 0, failure: 1 },
                     failures: [],
-                    outputs: {},
+                    outputs: {}
                 }),
                 'metadata.json': JSON.stringify({
                     artifactSchemaVersion: 1,
                     execution: 'run',
-                    command: ['deno', 'run', 'scenario-black-box.ts'],
+                    command: ['deno', 'run', 'scenario-black-box.ts']
                 }),
-                'events.jsonl': '',
+                'events.jsonl': ''
             },
-            generatedAtEpochMs: 11_111,
+            generatedAtEpochMs: 11_111
         });
 
         expect(workspace).toMatchObject({
             family: 'black-box-runner',
             source: 'loose-files',
-            support: 'unsupported',
+            support: 'unsupported'
         });
         expect(workspace.analysis).toBeUndefined();
         expect(workspace.snapshots).toBeUndefined();
         expect(workspace.bundle).toBeUndefined();
         expect(workspace.issues).toContainEqual(expect.objectContaining({
-            code: 'unsupported-family',
+            code: 'unsupported-family'
         }));
     });
 
@@ -468,9 +472,9 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         const workspace = createWorkspace({
             files: serverV2Files({
                 'ci-notes.txt': 'retry on a different host',
-                'mystery.json': '{}',
+                'mystery.json': '{}'
             }),
-            generatedAtEpochMs: 12_121,
+            generatedAtEpochMs: 12_121
         });
 
         expect(workspace.support).toBe('supported');
@@ -478,7 +482,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         expect(inventoryStatus(workspace, 'mystery.json')).toBe('ignored');
         expect(workspace.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({ code: 'ignored-file', fileName: 'ci-notes.txt' }),
-            expect.objectContaining({ code: 'ignored-file', fileName: 'mystery.json' }),
+            expect.objectContaining({ code: 'ignored-file', fileName: 'mystery.json' })
         ]));
     });
 });

@@ -1,26 +1,17 @@
-import { redactRallarBlackBoxValue } from './redaction.ts';
+import {
+    assertValueMatches,
+    isRallarBlackBoxAssertOperator,
+    RALLAR_BLACK_BOX_ASSERT_OPERATORS
+} from './assert/assert-value-operators.ts';
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
     rallarBlackBoxLoopChildResultPath,
     rallarBlackBoxLoopChildSourceRecipePath,
     rallarBlackBoxParallelChildResultPath,
-    rallarBlackBoxParallelChildSourceRecipePath,
+    rallarBlackBoxParallelChildSourceRecipePath
 } from './composite-results.ts';
-import {
-    lookupPayloadPath,
-    type PayloadPathLookup,
-} from './wait/wait-event-match.ts';
-import { waitForEvent } from './wait/wait-for-event.ts';
-import {
-    assertValueMatches,
-    isRallarBlackBoxAssertOperator,
-    RALLAR_BLACK_BOX_ASSERT_OPERATORS,
-} from './assert/assert-value-operators.ts';
-import {
-    runLoopUntilFirstSuccess,
-    validateLoopUntilCommand,
-    type LoopIterationOutcome,
-} from './loop/loop-until.ts';
+import { runLoopUntilFirstSuccess, validateLoopUntilCommand, type LoopIterationOutcome } from './loop/loop-until.ts';
+import { redactRallarBlackBoxValue } from './redaction.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
@@ -56,8 +47,10 @@ import {
     type RallarBlackBoxTestStateListener,
     type RallarBlackBoxTestStatsSnapshot,
     type RallarBlackBoxTestTransport,
-    type RallarBlackBoxTestWaitCommand,
+    type RallarBlackBoxTestWaitCommand
 } from './types.ts';
+import { lookupPayloadPath, type PayloadPathLookup } from './wait/wait-event-match.ts';
+import { waitForEvent } from './wait/wait-for-event.ts';
 
 export type CreateRallarBlackBoxTestRuntimeOptions = Readonly<{
     now?: () => number;
@@ -67,12 +60,12 @@ export type CreateRallarBlackBoxTestRuntimeOptions = Readonly<{
     cleanup?: RallarBlackBoxTestRuntimeCleanup;
 }>;
 
-type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string }>;
-type LoopCommandWithId = RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string }>;
-type ParallelCommandWithId = RallarBlackBoxTestParallelCommand & Readonly<{ commandId: string }>;
-type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string }>;
-type AssertCommandWithId = RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string }>;
-type RecipeRunCommandWithId = RallarBlackBoxTestRecipeRunCommand & Readonly<{ commandId: string }>;
+type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
+type LoopCommandWithId = RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string; }>;
+type ParallelCommandWithId = RallarBlackBoxTestParallelCommand & Readonly<{ commandId: string; }>;
+type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string; }>;
+type AssertCommandWithId = RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string; }>;
+type RecipeRunCommandWithId = RallarBlackBoxTestRecipeRunCommand & Readonly<{ commandId: string; }>;
 
 type CommandOutcome = RallarBlackBoxTestCommandOutcome;
 
@@ -133,13 +126,13 @@ const RALLAR_CONFIG_AUTH_INTENT_KEYS = [
     'token',
     'register',
     'displayName',
-    'restoreSession',
+    'restoreSession'
 ] as const;
 const RALLAR_CONFIG_INHERITED_KEYS = [
     ...RALLAR_CONFIG_AUTH_INTENT_KEYS,
     'logoutOnClose',
     'leaveRoomOnClose',
-    'timeoutMs',
+    'timeoutMs'
 ] as const;
 
 function initialState(): RallarBlackBoxTestState {
@@ -148,7 +141,7 @@ function initialState(): RallarBlackBoxTestState {
         commandHistory: [],
         events: [],
         failures: [],
-        resultCache: {},
+        resultCache: {}
     };
 }
 
@@ -164,14 +157,14 @@ function toError(error: unknown, code = 'RALLAR_BLACK_BOX_COMMAND_FAILED'): Rall
             message: error.message,
             details: {
                 name: error.name,
-                stack: error.stack,
-            },
+                stack: error.stack
+            }
         };
     }
 
     return {
         code,
-        message: String(error),
+        message: String(error)
     };
 }
 
@@ -193,7 +186,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function mergeConfigureConfig(
     current: RallarBlackBoxTestConfig | undefined,
-    next: RallarBlackBoxTestConfig,
+    next: RallarBlackBoxTestConfig
 ): RallarBlackBoxTestConfig {
     if (!next.rallar) {
         return next;
@@ -201,7 +194,7 @@ function mergeConfigureConfig(
 
     const nextRallar = asRecord(next.rallar);
     const hasIncomingAuth = RALLAR_CONFIG_AUTH_INTENT_KEYS
-        .some(key => Object.prototype.hasOwnProperty.call(nextRallar, key));
+        .some((key) => Object.prototype.hasOwnProperty.call(nextRallar, key));
     if (hasIncomingAuth) {
         return next;
     }
@@ -209,8 +202,8 @@ function mergeConfigureConfig(
     const currentRallar = asRecord(current?.rallar);
     const inheritedAuth = Object.fromEntries(
         RALLAR_CONFIG_INHERITED_KEYS
-            .filter(key => currentRallar[key] !== undefined)
-            .map(key => [key, currentRallar[key]]),
+            .filter((key) => currentRallar[key] !== undefined)
+            .map((key) => [key, currentRallar[key]])
     );
     if (Object.keys(inheritedAuth).length === 0) {
         return next;
@@ -220,8 +213,8 @@ function mergeConfigureConfig(
         ...next,
         rallar: {
             ...inheritedAuth,
-            ...nextRallar,
-        },
+            ...nextRallar
+        }
     };
 }
 
@@ -251,9 +244,9 @@ function stringValue(value: unknown): string | undefined {
 
 function transportValue(value: unknown): RallarBlackBoxTestTransport | undefined {
     return value === 'realtime' ||
-    value === 'messages.rtc' ||
-    value === 'ws' ||
-    value === 'http'
+            value === 'messages.rtc' ||
+            value === 'ws' ||
+            value === 'http'
         ? value
         : undefined;
 }
@@ -265,7 +258,7 @@ function booleanValue(value: unknown): boolean | undefined {
 }
 
 function firstDefined<T>(...values: readonly (T | undefined)[]): T | undefined {
-    return values.find(value => value !== undefined);
+    return values.find((value) => value !== undefined);
 }
 
 function roundedMetric(value: number): number {
@@ -307,7 +300,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
             resolve();
         }, ms);
         signal?.addEventListener('abort', abort, {
-            once: true,
+            once: true
         });
     });
 }
@@ -361,20 +354,23 @@ function replaceLoopPlaceholders(value: unknown, context: LoopContext): unknown 
             return loopPlaceholderValue(exact[1], context);
         }
 
-        return value.replace(LOOP_PLACEHOLDER_PATTERN, (_match, name: string) =>
-            String(loopPlaceholderValue(name, context))
+        return value.replace(
+            LOOP_PLACEHOLDER_PATTERN,
+            (_match, name: string) => String(loopPlaceholderValue(name, context))
         );
     }
 
     if (Array.isArray(value)) {
-        return value.map(entry => replaceLoopPlaceholders(entry, context));
+        return value.map((entry) => replaceLoopPlaceholders(entry, context));
     }
 
     if (value && typeof value === 'object') {
-        return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
-            key,
-            replaceLoopPlaceholders(entry, context),
-        ]));
+        return Object.fromEntries(
+            Object.entries(value).map(([key, entry]) => [
+                key,
+                replaceLoopPlaceholders(entry, context)
+            ])
+        );
     }
 
     return value;
@@ -420,14 +416,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     async execute(
-        command: RallarBlackBoxTestCommand,
+        command: RallarBlackBoxTestCommand
     ): Promise<RallarBlackBoxTestResult> {
         return await this.executeCommand(command);
     }
 
     private async executeCommand(
         command: RallarBlackBoxTestCommand,
-        options: Readonly<{ bypassCache?: boolean }> = {},
+        options: Readonly<{ bypassCache?: boolean; }> = {}
     ): Promise<RallarBlackBoxTestResult> {
         const commandWithId = this.withCommandId(command);
         if (
@@ -442,7 +438,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (cached && options.bypassCache !== true) {
             return {
                 ...cached,
-                replayed: true,
+                replayed: true
             };
         }
 
@@ -452,23 +448,24 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             activeCommandStartedAtEpochMs: startedAtEpochMs,
             status: commandWithId.kind === 'recipe.cancel'
                 ? this.currentState.status
-                : 'running',
+                : 'running'
         });
 
         let outcome: CommandOutcome;
         try {
             outcome = await this.perform(commandWithId);
-        } catch (error) {
+        }
+        catch (error) {
             outcome = isAbortError(error)
                 ? {
                     status: 'cancelled',
                     error: toError(error, 'RALLAR_BLACK_BOX_COMMAND_CANCELLED'),
-                    nextStatus: 'cancelled',
+                    nextStatus: 'cancelled'
                 }
                 : {
                     status: 'failed',
                     error: toError(error),
-                    nextStatus: 'failed',
+                    nextStatus: 'failed'
                 };
         }
 
@@ -499,18 +496,18 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 return await this.externalOrDefault(command, () => ({
                     status: 'ok',
                     value: this.toHealth(),
-                    nextStatus: this.currentState.status,
+                    nextStatus: this.currentState.status
                 }));
             case 'stats':
                 return {
                     status: 'ok',
                     value: this.updateStats(command.commandId),
-                    nextStatus: this.currentState.status,
+                    nextStatus: this.currentState.status
                 };
             case 'reset': {
                 const externalOutcome = await this.commandExecutor?.(
                     command,
-                    this.toCommandContext(),
+                    this.toCommandContext()
                 );
 
                 this.currentState = initialState();
@@ -524,14 +521,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 return externalOutcome
                     ? {
                         ...externalOutcome,
-                        nextStatus: 'idle',
+                        nextStatus: 'idle'
                     }
                     : {
                         status: 'ok',
                         value: {
-                            reset: true,
+                            reset: true
                         },
-                        nextStatus: 'idle',
+                        nextStatus: 'idle'
                     };
             }
             case 'close':
@@ -540,14 +537,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                         kind: 'event',
                         topic: 'rallar.bb.closed',
                         commandId: command.commandId,
-                        severity: 'info',
+                        severity: 'info'
                     });
                     return {
                         status: 'ok',
                         value: {
-                            closed: true,
+                            closed: true
                         },
-                        nextStatus: 'idle',
+                        nextStatus: 'idle'
                     };
                 });
             default:
@@ -557,11 +554,11 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private async externalOrDefault(
         command: CommandWithId,
-        fallback: () => CommandOutcome | Promise<CommandOutcome>,
+        fallback: () => CommandOutcome | Promise<CommandOutcome>
     ): Promise<CommandOutcome> {
         const outcome = await this.commandExecutor?.(
             command,
-            this.toCommandContext(),
+            this.toCommandContext()
         );
         return outcome ?? await fallback();
     }
@@ -571,8 +568,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             state: () => this.currentState,
             config: () => this.currentConfig,
             abortSignal: () => this.cancellationController.signal,
-            recordEvent: event => this.emitEvent(event),
-            updateStats: commandId => this.updateStats(commandId),
+            recordEvent: (event) => this.emitEvent(event),
+            updateStats: (commandId) => this.updateStats(commandId)
         };
     }
 
@@ -607,14 +604,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private withBoundedDeadline<T extends RallarBlackBoxTestCommand>(
         command: T,
-        deadlineEpochMs: number,
+        deadlineEpochMs: number
     ): T {
         const commandDeadline = command.deadlineEpochMs;
         return {
             ...command,
             deadlineEpochMs: commandDeadline === undefined
                 ? deadlineEpochMs
-                : Math.min(commandDeadline, deadlineEpochMs),
+                : Math.min(commandDeadline, deadlineEpochMs)
         };
     }
 
@@ -630,9 +627,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 topic: 'rallar.bb.cleanup.completed',
                 commandId: input.commandId,
                 severity: 'info',
-                payload: input,
+                payload: input
             });
-        } catch (error) {
+        }
+        catch (error) {
             this.emitEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.bb.cleanup.failed',
@@ -640,8 +638,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 severity: 'error',
                 payload: {
                     input,
-                    error: toError(error, 'RALLAR_BLACK_BOX_CLEANUP_FAILED'),
-                },
+                    error: toError(error, 'RALLAR_BLACK_BOX_CLEANUP_FAILED')
+                }
             });
         }
     }
@@ -652,20 +650,20 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         this.currentRedaction = mergedConfig.redaction;
         const redactedConfig = this.redact(mergedConfig);
         this.setState({
-            currentConfig: redactedConfig,
+            currentConfig: redactedConfig
         });
         this.emitEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.configured',
             severity: 'info',
-            payload: redactedConfig,
+            payload: redactedConfig
         });
         return {
             status: 'ok',
             value: {
-                config: redactedConfig,
+                config: redactedConfig
             },
-            nextStatus: 'configured',
+            nextStatus: 'configured'
         };
     }
 
@@ -674,7 +672,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         this.loadedRecipe = recipe;
         const redactedRecipe = this.redact(recipe);
         this.setState({
-            loadedRecipe: redactedRecipe,
+            loadedRecipe: redactedRecipe
         });
         this.emitEvent({
             kind: 'diagnostic',
@@ -682,21 +680,21 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             severity: 'info',
             payload: {
                 recipeId: recipe.recipeId,
-                commandCount: recipe.commands.length,
-            },
+                commandCount: recipe.commands.length
+            }
         });
         return {
             status: 'ok',
             value: {
                 recipeId: recipe.recipeId,
-                commandCount: recipe.commands.length,
+                commandCount: recipe.commands.length
             },
-            nextStatus: 'loaded',
+            nextStatus: 'loaded'
         };
     }
 
     private async runRecipe(
-        command: RecipeRunCommandWithId,
+        command: RecipeRunCommandWithId
     ): Promise<CommandOutcome> {
         const recipe = command.recipe ?? this.loadedRecipe;
         if (!recipe) {
@@ -717,9 +715,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                         value: {
                             recipeId: recipe.recipeId,
                             results,
-                            cancelled: true,
+                            cancelled: true
                         },
-                        nextStatus: 'cancelled',
+                        nextStatus: 'cancelled'
                     };
                     await this.cleanupAfterTerminalRecipe(command, recipe, outcome);
                     return outcome;
@@ -734,8 +732,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 const result = await this.executeCommand(
                     this.toRecipeChildCommand(childCommand, deadlineEpochMs),
                     {
-                        bypassCache: true,
-                    },
+                        bypassCache: true
+                    }
                 );
                 results.push(result);
 
@@ -745,9 +743,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                         value: {
                             recipeId: recipe.recipeId,
                             results,
-                            cancelled: true,
+                            cancelled: true
                         },
-                        nextStatus: 'cancelled',
+                        nextStatus: 'cancelled'
                     };
                     await this.cleanupAfterTerminalRecipe(command, recipe, outcome);
                     return outcome;
@@ -758,14 +756,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                         status: 'failed',
                         value: {
                             recipeId: recipe.recipeId,
-                            results,
+                            results
                         },
                         error: {
                             code: 'RALLAR_BLACK_BOX_RECIPE_FAILED',
                             message: `Recipe failed at command ${result.commandId}.`,
-                            details: result.error,
+                            details: result.error
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     };
                     await this.cleanupAfterTerminalRecipe(command, recipe, outcome);
                     return outcome;
@@ -776,18 +774,19 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 status: 'ok',
                 value: {
                     recipeId: recipe.recipeId,
-                    results,
+                    results
                 },
-                nextStatus: 'completed',
+                nextStatus: 'completed'
             };
-        } finally {
+        }
+        finally {
             this.recipeExecutionDepth -= 1;
         }
     }
 
     private toRecipeChildCommand(
         childCommand: RallarBlackBoxTestCommand,
-        recipeDeadlineEpochMs: number | undefined,
+        recipeDeadlineEpochMs: number | undefined
     ): RallarBlackBoxTestCommand {
         if (recipeDeadlineEpochMs === undefined) {
             return childCommand;
@@ -800,14 +799,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: RecipeRunCommandWithId,
         recipe: RallarBlackBoxTestRecipe,
         results: readonly RallarBlackBoxTestResult[],
-        deadlineEpochMs: number,
+        deadlineEpochMs: number
     ): CommandOutcome {
         return {
             status: 'failed',
             value: {
                 recipeId: recipe.recipeId,
                 results,
-                timedOut: true,
+                timedOut: true
             },
             error: {
                 code: 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT',
@@ -816,28 +815,28 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     timeoutMs: command.timeoutMs,
                     deadlineEpochMs,
                     completedCommands: results.length,
-                    totalCommands: recipe.commands.length,
-                },
+                    totalCommands: recipe.commands.length
+                }
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
     private async cleanupAfterTerminalRecipe(
         command: RecipeRunCommandWithId,
         recipe: RallarBlackBoxTestRecipe,
-        outcome: CommandOutcome,
+        outcome: CommandOutcome
     ): Promise<void> {
         await this.cleanupOwnedResources({
             reason: outcome.status === 'cancelled'
                 ? 'cancelled'
                 : outcome.error?.code === 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT'
-                    ? 'timed-out'
-                    : 'failed',
+                ? 'timed-out'
+                : 'failed',
             commandId: command.commandId,
             recipeId: recipe.recipeId,
             status: outcome.status,
-            error: outcome.error,
+            error: outcome.error
         });
     }
 
@@ -851,7 +850,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             : positiveIntegerValue(command.durationMs);
         if (command.durationMs !== undefined && durationMs === undefined) {
             return this.loopInvalid(command, 'Loop durationMs must be a positive integer.', {
-                durationMs: command.durationMs,
+                durationMs: command.durationMs
             });
         }
         if (
@@ -860,7 +859,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         ) {
             return this.loopInvalid(command, 'Loop durationMs exceeds the runtime maximum.', {
                 durationMs,
-                maxLoopDurationMs: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+                maxLoopDurationMs: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
             });
         }
 
@@ -871,13 +870,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             : positiveIntegerValue(command.count);
         if (count === undefined) {
             return this.loopInvalid(command, 'Loop count must be a positive integer.', {
-                count: command.count,
+                count: command.count
             });
         }
         if (count > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount) {
             return this.loopInvalid(command, 'Loop count exceeds the runtime maximum.', {
                 count,
-                maxLoopCount: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
+                maxLoopCount: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount
             });
         }
 
@@ -888,7 +887,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (intervalMs === undefined) {
             return this.loopInvalid(command, 'Loop intervalMs/delayMs must be a non-negative integer.', {
                 intervalMs: command.intervalMs,
-                delayMs: command.delayMs,
+                delayMs: command.delayMs
             });
         }
 
@@ -897,18 +896,18 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             : positiveIntegerValue(command.maxCommands);
         if (requestedMaxCommands === undefined) {
             return this.loopInvalid(command, 'Loop maxCommands must be a positive integer.', {
-                maxCommands: command.maxCommands,
+                maxCommands: command.maxCommands
             });
         }
         const maxCommands = Math.min(
             requestedMaxCommands,
-            RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands,
+            RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands
         );
         const plannedCommandCount = count * command.commands.length;
         if (durationMs === undefined && plannedCommandCount > maxCommands) {
             return this.loopLimitExceeded(command, [], {
                 plannedCommandCount,
-                maxCommands,
+                maxCommands
             });
         }
         const thresholdValidationError = this.validateLoopThresholds(command);
@@ -916,7 +915,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             return this.loopInvalid(
                 command,
                 thresholdValidationError.message,
-                thresholdValidationError.details,
+                thresholdValidationError.details
             );
         }
         const untilIssues = validateLoopUntilCommand(command);
@@ -929,7 +928,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const results: RallarBlackBoxTestCompositeChildResult[] = [];
         const pacingIterations: RallarBlackBoxTestLoopPacingIteration[] = [];
         const toLoopMetrics = (
-            thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[],
+            thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[]
         ): LoopResultMetrics => ({
             intervalMs,
             count,
@@ -937,18 +936,17 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             startedAtEpochMs: loopStartedAtEpochMs,
             endedAtEpochMs: this.now(),
             pacingIterations,
-            thresholdFailures,
+            thresholdFailures
         });
         const toLoopValue = (
             cancelled: boolean,
-            thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[],
-        ) =>
-            this.toLoopResultValue(command, results, cancelled, toLoopMetrics(thresholdFailures));
+            thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[]
+        ) => this.toLoopResultValue(command, results, cancelled, toLoopMetrics(thresholdFailures));
 
         const iterationInput = (
             iterationIndex: number,
             scheduledAtEpochMs: number,
-            stopOnChildFailure: boolean,
+            stopOnChildFailure: boolean
         ): RunLoopIterationInput => ({
             command,
             iterationIndex,
@@ -961,7 +959,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             results,
             pacingIterations,
             toLoopValue,
-            toLoopMetrics,
+            toLoopMetrics
         });
 
         if (command.until === 'first-success') {
@@ -973,18 +971,19 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 deadlineEpochMs,
                 loopStartedAtEpochMs,
                 now: this.now,
-                sleep: ms => this.sleepForLoopUntil(ms),
+                sleep: (ms) => this.sleepForLoopUntil(ms),
                 cancelRequested: () => this.cancelRequested,
                 runIteration: (iterationIndex, scheduledAtEpochMs) =>
                     this.runLoopIteration(iterationInput(iterationIndex, scheduledAtEpochMs, true)),
                 toLoopValue,
-                toTimedOutOutcome: () => this.loopTimedOut(
-                    command,
-                    results,
-                    deadlineEpochMs ?? this.now(),
-                    toLoopMetrics(),
-                ),
-                toSuccessOutcome: () => this.toLoopCompletionOutcome(command, toLoopValue(false)),
+                toTimedOutOutcome: () =>
+                    this.loopTimedOut(
+                        command,
+                        results,
+                        deadlineEpochMs ?? this.now(),
+                        toLoopMetrics()
+                    ),
+                toSuccessOutcome: () => this.toLoopCompletionOutcome(command, toLoopValue(false))
             });
         }
 
@@ -993,7 +992,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 return {
                     status: 'cancelled',
                     value: toLoopValue(true),
-                    nextStatus: 'cancelled',
+                    nextStatus: 'cancelled'
                 };
             }
             if (deadlineEpochMs !== undefined && this.now() >= deadlineEpochMs) {
@@ -1007,7 +1006,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
             const scheduledAtEpochMs = loopStartedAtEpochMs + (iterationIndex * intervalMs);
             const iteration = await this.runLoopIteration(
-                iterationInput(iterationIndex, scheduledAtEpochMs, false),
+                iterationInput(iterationIndex, scheduledAtEpochMs, false)
             );
             if (iteration.kind === 'outcome') {
                 return iteration.outcome;
@@ -1027,12 +1026,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     : Math.max(0, Math.min(intervalMs, deadlineEpochMs - this.now()));
                 try {
                     await this.sleep(deadlineDelayMs, this.cancellationController.signal);
-                } catch (error) {
+                }
+                catch (error) {
                     if (isAbortError(error)) {
                         return {
                             status: 'cancelled',
                             value: toLoopValue(true),
-                            nextStatus: 'cancelled',
+                            nextStatus: 'cancelled'
                         };
                     }
                     throw error;
@@ -1066,9 +1066,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 durationMs: Math.max(0, endedAtEpochMs - iterationStartedAtEpochMs),
                 startDriftMs: Math.max(0, iterationStartedAtEpochMs - input.scheduledAtEpochMs),
                 commandCount: iterationResults.length,
-                passed: iterationResults.filter(result => result.result.ok).length,
-                failed: iterationResults.filter(result => !result.result.ok).length,
-                cancelled,
+                passed: iterationResults.filter((result) => result.result.ok).length,
+                failed: iterationResults.filter((result) => !result.result.ok).length,
+                cancelled
             });
         };
 
@@ -1080,8 +1080,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     outcome: {
                         status: 'cancelled',
                         value: input.toLoopValue(true),
-                        nextStatus: 'cancelled',
-                    },
+                        nextStatus: 'cancelled'
+                    }
                 };
             }
             if (input.deadlineEpochMs !== undefined && this.now() >= input.deadlineEpochMs) {
@@ -1092,8 +1092,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                         command,
                         input.results,
                         input.deadlineEpochMs,
-                        input.toLoopMetrics(),
-                    ),
+                        input.toLoopMetrics()
+                    )
                 };
             }
 
@@ -1103,8 +1103,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     kind: 'outcome',
                     outcome: this.loopLimitExceeded(command, input.results, {
                         plannedCommandCount: input.plannedCommandCount,
-                        maxCommands: input.maxCommands,
-                    }, input.toLoopMetrics()),
+                        maxCommands: input.maxCommands
+                    }, input.toLoopMetrics())
                 };
             }
 
@@ -1116,16 +1116,16 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 index: input.results.length,
                 iteration: input.iterationIndex + 1,
                 elapsedMs,
-                commandIndex,
+                commandIndex
             };
             const childCommand = this.toLoopChildCommand(
                 command,
                 childTemplate,
                 loopContext,
-                input.deadlineEpochMs,
+                input.deadlineEpochMs
             );
             const childResult = await this.executeCommand(childCommand, {
-                bypassCache: true,
+                bypassCache: true
             });
             const childEntry: RallarBlackBoxTestCompositeChildResult = {
                 commandId: childResult.commandId,
@@ -1134,16 +1134,16 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 path: rallarBlackBoxLoopChildResultPath(
                     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
                     input.iterationIndex + 1,
-                    commandIndex,
+                    commandIndex
                 ),
                 sourceRecipePath: rallarBlackBoxLoopChildSourceRecipePath(
                     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
-                    commandIndex,
+                    commandIndex
                 ),
                 childIndex: input.results.length,
                 commandIndex,
                 iteration: input.iterationIndex + 1,
-                result: childResult,
+                result: childResult
             };
             input.results.push(childEntry);
 
@@ -1154,8 +1154,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     outcome: {
                         status: 'cancelled',
                         value: input.toLoopValue(true),
-                        nextStatus: 'cancelled',
-                    },
+                        nextStatus: 'cancelled'
+                    }
                 };
             }
 
@@ -1164,7 +1164,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     recordIteration(false);
                     return {
                         kind: 'completed',
-                        failedChildResult: childEntry,
+                        failedChildResult: childEntry
                     };
                 }
                 if (command.continueOnFailure !== true) {
@@ -1177,10 +1177,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                             error: {
                                 code: 'RALLAR_BLACK_BOX_LOOP_CHILD_FAILED',
                                 message: `Loop failed at child command ${childResult.commandId}.`,
-                                details: childResult.error,
+                                details: childResult.error
                             },
-                            nextStatus: 'failed',
-                        },
+                            nextStatus: 'failed'
+                        }
                     };
                 }
             }
@@ -1194,7 +1194,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         try {
             await this.sleep(ms, this.cancellationController.signal);
             return 'slept';
-        } catch (error) {
+        }
+        catch (error) {
             if (isAbortError(error)) {
                 return 'cancelled';
             }
@@ -1204,7 +1205,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private toLoopCompletionOutcome(
         command: LoopCommandWithId,
-        value: RallarBlackBoxTestLoopResultValue,
+        value: RallarBlackBoxTestLoopResultValue
     ): CommandOutcome {
         const thresholdFailures = this.evaluateLoopThresholds(command, value);
         if (thresholdFailures.length > 0) {
@@ -1212,23 +1213,23 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 status: 'failed',
                 value: {
                     ...value,
-                    thresholdFailures,
+                    thresholdFailures
                 },
                 error: {
                     code: 'RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED',
                     message: 'Loop did not satisfy configured pacing or send thresholds.',
                     details: {
-                        thresholdFailures,
-                    },
+                        thresholdFailures
+                    }
                 },
-                nextStatus: 'failed',
+                nextStatus: 'failed'
             };
         }
 
         return {
             status: 'ok',
             value,
-            nextStatus: 'completed',
+            nextStatus: 'completed'
         };
     }
 
@@ -1236,7 +1237,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         childCommand: RallarBlackBoxTestCommand,
         context: LoopContext,
-        deadlineEpochMs: number | undefined,
+        deadlineEpochMs: number | undefined
     ): RallarBlackBoxTestCommand {
         const resolved = replaceLoopPlaceholders(childCommand, context) as RallarBlackBoxTestCommand;
         const child = {
@@ -1245,7 +1246,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 command.commandId,
                 `i${context.iteration}`,
                 `c${context.commandIndex + 1}`,
-                commandLabelForId(childCommand, context.commandIndex + 1),
+                commandLabelForId(childCommand, context.commandIndex + 1)
             ].join(':'),
             metadata: {
                 ...asRecord(resolved.metadata),
@@ -1255,9 +1256,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     iteration: context.iteration,
                     elapsedMs: context.elapsedMs,
                     commandIndex: context.commandIndex,
-                    originalCommandId: childCommand.commandId,
-                },
-            },
+                    originalCommandId: childCommand.commandId
+                }
+            }
         } as RallarBlackBoxTestCommand;
 
         return deadlineEpochMs === undefined
@@ -1269,12 +1270,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         results: readonly RallarBlackBoxTestCompositeChildResult[],
         cancelled: boolean,
-        metrics?: LoopResultMetrics,
+        metrics?: LoopResultMetrics
     ): RallarBlackBoxTestLoopResultValue {
         const iterations = new Set(
             results
-                .map(result => result.iteration)
-                .filter((iteration): iteration is number => iteration !== undefined),
+                .map((result) => result.iteration)
+                .filter((iteration): iteration is number => iteration !== undefined)
         ).size;
         const pacing = metrics
             ? this.toLoopPacingSummary(metrics)
@@ -1284,24 +1285,22 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             commandId: command.commandId,
             iterations,
             childResultCount: results.length,
-            passed: results.filter(result => result.result.ok).length,
-            failed: results.filter(result => !result.result.ok).length,
+            passed: results.filter((result) => result.result.ok).length,
+            failed: results.filter((result) => !result.result.ok).length,
             cancelled,
             pacing,
             sends,
             thresholdFailures: metrics?.thresholdFailures,
-            results,
+            results
         };
     }
 
     private toLoopPacingSummary(metrics: LoopResultMetrics): RallarBlackBoxTestLoopPacingSummary {
         const iterations = [...metrics.pacingIterations];
-        const driftValues = iterations.map(iteration => iteration.startDriftMs);
+        const driftValues = iterations.map((iteration) => iteration.startDriftMs);
         const jitterValues = iterations
             .slice(1)
-            .map((iteration, index) =>
-                Math.abs(iteration.startDriftMs - iterations[index].startDriftMs)
-            );
+            .map((iteration, index) => Math.abs(iteration.startDriftMs - iterations[index].startDriftMs));
         const elapsedMs = Math.max(0, metrics.endedAtEpochMs - metrics.startedAtEpochMs);
         const completedIterations = iterations.length;
         const plannedIterations = metrics.durationMs === undefined
@@ -1322,32 +1321,32 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             plannedIterations,
             completedIterations,
             skippedIterations: Math.max(0, plannedIterations - completedIterations),
-            cancelledIterations: iterations.filter(iteration => iteration.cancelled).length,
+            cancelledIterations: iterations.filter((iteration) => iteration.cancelled).length,
             startedAtEpochMs: metrics.startedAtEpochMs,
             endedAtEpochMs: metrics.endedAtEpochMs,
             elapsedMs,
             targetElapsedMs,
             achievedRateHz,
-            averageIterationDurationMs: average(iterations.map(iteration => iteration.durationMs)),
+            averageIterationDurationMs: average(iterations.map((iteration) => iteration.durationMs)),
             minStartDriftMs: driftValues.length > 0 ? Math.min(...driftValues) : undefined,
             maxStartDriftMs: driftValues.length > 0 ? Math.max(...driftValues) : undefined,
             averageStartDriftMs: average(driftValues),
             maxJitterMs: jitterValues.length > 0 ? Math.max(...jitterValues) : undefined,
             averageJitterMs: average(jitterValues),
-            lateIterationCount: driftValues.filter(value => value > lateThresholdMs).length,
+            lateIterationCount: driftValues.filter((value) => value > lateThresholdMs).length,
             lateThresholdMs,
-            iterations,
+            iterations
         };
     }
 
     private toLoopSendSummary(
-        results: readonly RallarBlackBoxTestCompositeChildResult[],
+        results: readonly RallarBlackBoxTestCompositeChildResult[]
     ): RallarBlackBoxTestLoopSendSummary {
         const observations = results
-            .map(result => this.toSendObservation(result.result))
+            .map((result) => this.toSendObservation(result.result))
             .filter((observation): observation is RallarBlackBoxTestSendObservation => observation !== undefined);
-        const durations = observations.map(observation => observation.durationMs);
-        const succeeded = observations.filter(observation => observation.ok).length;
+        const durations = observations.map((observation) => observation.durationMs);
+        const succeeded = observations.filter((observation) => observation.ok).length;
         const failed = observations.length - succeeded;
         const perTransportFailureCounts = observations.reduce<Record<string, number>>((counts, observation) => {
             if (observation.ok) {
@@ -1370,27 +1369,27 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     minMs: Math.min(...durations),
                     maxMs: Math.max(...durations),
                     averageMs: average(durations),
-                    totalMs: durations.reduce((sum, value) => sum + value, 0),
+                    totalMs: durations.reduce((sum, value) => sum + value, 0)
                 }
                 : undefined,
-            queuedCount: observations.filter(observation => observation.queued).length,
-            enqueuedCount: observations.filter(observation => observation.enqueued).length,
-            backpressureCount: observations.filter(observation => observation.backpressured).length,
+            queuedCount: observations.filter((observation) => observation.queued).length,
+            enqueuedCount: observations.filter((observation) => observation.enqueued).length,
+            backpressureCount: observations.filter((observation) => observation.backpressured).length,
             droppedPayloadCount: observations.reduce(
                 (sum, observation) => sum + (observation.droppedPayloadCount ?? 0),
-                0,
+                0
             ),
             replacedPayloadCount: observations.reduce(
                 (sum, observation) => sum + (observation.replacedPayloadCount ?? 0),
-                0,
+                0
             ),
             perTransportFailureCounts,
-            observations,
+            observations
         };
     }
 
     private toSendObservation(
-        result: RallarBlackBoxTestResult,
+        result: RallarBlackBoxTestResult
     ): RallarBlackBoxTestSendObservation | undefined {
         if (result.kind !== 'rtc.send' && result.kind !== 'ws.send') {
             return undefined;
@@ -1406,41 +1405,41 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             stringValue(explicitObservation.status),
             stringValue(diagnostics.status),
             stringValue(message.status),
-            stringValue(root.status),
+            stringValue(root.status)
         );
         const transport = result.kind === 'ws.send'
             ? 'ws'
             : transportValue(root.transport);
         const observationTransport = firstDefined(
             transportValue(explicitObservation.transport),
-            transportValue(root.transport),
+            transportValue(root.transport)
         );
         const droppedPayloadCount = firstDefined(
             finiteNumberValue(explicitObservation.droppedPayloadCount),
             finiteNumberValue(diagnostics.droppedPayloadCount),
             finiteNumberValue(root.droppedPayloadCount),
-            this.countRtcSendPeerStatuses(diagnostics, 'dropped'),
+            this.countRtcSendPeerStatuses(diagnostics, 'dropped')
         );
         const replacedPayloadCount = firstDefined(
             finiteNumberValue(explicitObservation.replacedPayloadCount),
             finiteNumberValue(diagnostics.replacedPayloadCount),
-            finiteNumberValue(root.replacedPayloadCount),
+            finiteNumberValue(root.replacedPayloadCount)
         );
         const queued = firstDefined(
             booleanValue(explicitObservation.queued),
-            status === 'queued' || status === 'buffered',
+            status === 'queued' || status === 'buffered'
         );
         const enqueued = firstDefined(
             booleanValue(explicitObservation.enqueued),
-            status === 'enqueued',
+            status === 'enqueued'
         );
         const backpressured = firstDefined(
             booleanValue(explicitObservation.backpressured),
             status === 'backpressure' ||
-            status === 'backpressured' ||
-            status === 'rate-limited' ||
-            status === 'buffer-full' ||
-            status === 'circuit-open',
+                status === 'backpressured' ||
+                status === 'rate-limited' ||
+                status === 'buffer-full' ||
+                status === 'circuit-open'
         );
 
         return {
@@ -1455,7 +1454,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             backpressured,
             droppedPayloadCount,
             replacedPayloadCount,
-            errorCode: result.error?.code,
+            errorCode: result.error?.code
         };
     }
 
@@ -1473,7 +1472,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private evaluateLoopThresholds(
         command: LoopCommandWithId,
-        value: RallarBlackBoxTestLoopResultValue,
+        value: RallarBlackBoxTestLoopResultValue
     ): readonly RallarBlackBoxTestLoopThresholdFailure[] {
         const thresholds = command.thresholds;
         if (!thresholds) {
@@ -1493,7 +1492,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 category: 'pacing',
                 threshold: thresholds.minAchievedRateHz,
                 actual: pacing.achievedRateHz,
-                message: `Loop achieved ${pacing.achievedRateHz} Hz, below the configured ${thresholds.minAchievedRateHz} Hz minimum.`,
+                message:
+                    `Loop achieved ${pacing.achievedRateHz} Hz, below the configured ${thresholds.minAchievedRateHz} Hz minimum.`
             });
         }
         if (
@@ -1506,7 +1506,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 category: 'pacing',
                 threshold: thresholds.maxAverageStartDriftMs,
                 actual: pacing.averageStartDriftMs,
-                message: `Average loop start drift was ${pacing.averageStartDriftMs} ms, above the configured ${thresholds.maxAverageStartDriftMs} ms maximum.`,
+                message:
+                    `Average loop start drift was ${pacing.averageStartDriftMs} ms, above the configured ${thresholds.maxAverageStartDriftMs} ms maximum.`
             });
         }
         if (
@@ -1519,7 +1520,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 category: 'pacing',
                 threshold: thresholds.maxStartDriftMs,
                 actual: pacing.maxStartDriftMs,
-                message: `Maximum loop start drift was ${pacing.maxStartDriftMs} ms, above the configured ${thresholds.maxStartDriftMs} ms maximum.`,
+                message:
+                    `Maximum loop start drift was ${pacing.maxStartDriftMs} ms, above the configured ${thresholds.maxStartDriftMs} ms maximum.`
             });
         }
         if (
@@ -1532,7 +1534,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 category: 'pacing',
                 threshold: thresholds.maxJitterMs,
                 actual: pacing.maxJitterMs,
-                message: `Maximum loop jitter was ${pacing.maxJitterMs} ms, above the configured ${thresholds.maxJitterMs} ms maximum.`,
+                message:
+                    `Maximum loop jitter was ${pacing.maxJitterMs} ms, above the configured ${thresholds.maxJitterMs} ms maximum.`
             });
         }
         if (
@@ -1545,7 +1548,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 category: 'delivery',
                 threshold: thresholds.minSendSuccessRatio,
                 actual: sends.successRatio,
-                message: `Loop send success ratio was ${sends.successRatio}, below the configured ${thresholds.minSendSuccessRatio} minimum.`,
+                message:
+                    `Loop send success ratio was ${sends.successRatio}, below the configured ${thresholds.minSendSuccessRatio} minimum.`
             });
         }
         if (
@@ -1558,7 +1562,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 category: 'backpressure',
                 threshold: true,
                 actual: true,
-                message: 'Loop observed send backpressure, dropped payloads, or replaced payloads.',
+                message: 'Loop observed send backpressure, dropped payloads, or replaced payloads.'
             });
         }
 
@@ -1566,8 +1570,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     private validateLoopThresholds(
-        command: LoopCommandWithId,
-    ): Readonly<{ message: string; details: unknown }> | undefined {
+        command: LoopCommandWithId
+    ): Readonly<{ message: string; details: unknown; }> | undefined {
         if (command.thresholds === undefined) {
             return undefined;
         }
@@ -1575,8 +1579,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             return {
                 message: 'Loop thresholds must be an object.',
                 details: {
-                    thresholds: command.thresholds,
-                },
+                    thresholds: command.thresholds
+                }
             };
         }
 
@@ -1586,7 +1590,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             'minAchievedRateHz',
             'maxAverageStartDriftMs',
             'maxStartDriftMs',
-            'maxJitterMs',
+            'maxJitterMs'
         ];
         for (const key of nonNegativeNumbers) {
             const value = thresholds[key];
@@ -1595,8 +1599,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     message: 'Loop threshold values must be non-negative finite numbers.',
                     details: {
                         threshold: key,
-                        value,
-                    },
+                        value
+                    }
                 };
             }
         }
@@ -1615,8 +1619,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 message: 'Loop minSendSuccessRatio threshold must be between 0 and 1.',
                 details: {
                     threshold: 'minSendSuccessRatio',
-                    value: minSendSuccessRatio,
-                },
+                    value: minSendSuccessRatio
+                }
             };
         }
 
@@ -1628,8 +1632,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 message: 'Loop failOnBackpressure threshold must be a boolean.',
                 details: {
                     threshold: 'failOnBackpressure',
-                    value: thresholds.failOnBackpressure,
-                },
+                    value: thresholds.failOnBackpressure
+                }
             };
         }
 
@@ -1639,7 +1643,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private loopInvalid(
         command: LoopCommandWithId,
         message: string,
-        details?: unknown,
+        details?: unknown
     ): CommandOutcome {
         return {
             status: 'failed',
@@ -1647,9 +1651,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             error: {
                 code: 'RALLAR_BLACK_BOX_LOOP_INVALID',
                 message,
-                details,
+                details
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
@@ -1657,7 +1661,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         results: readonly RallarBlackBoxTestCompositeChildResult[],
         details: unknown,
-        metrics?: LoopResultMetrics,
+        metrics?: LoopResultMetrics
     ): CommandOutcome {
         return {
             status: 'failed',
@@ -1665,9 +1669,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             error: {
                 code: 'RALLAR_BLACK_BOX_LOOP_LIMIT_EXCEEDED',
                 message: 'Loop would exceed the configured maximum child command count.',
-                details,
+                details
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
@@ -1675,7 +1679,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: LoopCommandWithId,
         results: readonly RallarBlackBoxTestCompositeChildResult[],
         deadlineEpochMs: number,
-        metrics?: LoopResultMetrics,
+        metrics?: LoopResultMetrics
     ): CommandOutcome {
         return {
             status: 'failed',
@@ -1686,10 +1690,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 details: {
                     timeoutMs: command.timeoutMs,
                     deadlineEpochMs,
-                    completedCommands: results.length,
-                },
+                    completedCommands: results.length
+                }
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
@@ -1697,13 +1701,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (!Array.isArray(command.groups) || command.groups.length === 0) {
             return this.parallelInvalid(command, 'Parallel requires at least one group.');
         }
-        const emptyGroupIndex = command.groups.findIndex(group =>
+        const emptyGroupIndex = command.groups.findIndex((group) =>
             !Array.isArray(group.commands) || group.commands.length === 0
         );
         if (emptyGroupIndex >= 0) {
             return this.parallelInvalid(command, 'Parallel groups require at least one child command.', {
                 groupIndex: emptyGroupIndex,
-                groupId: command.groups[emptyGroupIndex]?.groupId,
+                groupId: command.groups[emptyGroupIndex]?.groupId
             });
         }
 
@@ -1712,13 +1716,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             : positiveIntegerValue(command.maxConcurrency);
         if (requestedConcurrency === undefined) {
             return this.parallelInvalid(command, 'Parallel maxConcurrency must be a positive integer.', {
-                maxConcurrency: command.maxConcurrency,
+                maxConcurrency: command.maxConcurrency
             });
         }
         if (requestedConcurrency > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency) {
             return this.parallelInvalid(command, 'Parallel maxConcurrency exceeds the runtime maximum.', {
                 maxConcurrency: requestedConcurrency,
-                maxParallelConcurrency: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency,
+                maxParallelConcurrency: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency
             });
         }
         const maxConcurrency = Math.max(1, Math.min(requestedConcurrency, command.groups.length));
@@ -1756,7 +1760,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     command,
                     command.groups[groupIndex],
                     groupIndex,
-                    deadlineEpochMs,
+                    deadlineEpochMs
                 );
                 groupResults[groupIndex] = groupExecution;
                 if (groupExecution.timedOut) {
@@ -1771,10 +1775,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         await Promise.all(Array.from({ length: maxConcurrency }, () => worker()));
 
         const cancelled = this.cancelRequested ||
-            groupResults.some(result => result?.cancelled === true);
+            groupResults.some((result) => result?.cancelled === true);
         const completeGroupResults = command.groups.map((group, index) =>
             groupResults[index]?.result ??
-            this.emptyParallelGroupResult(command, group, index, cancelled && index >= nextGroupIndex)
+                this.emptyParallelGroupResult(command, group, index, cancelled && index >= nextGroupIndex)
         );
         const value = this.toParallelResultValue(command, completeGroupResults, maxConcurrency, cancelled);
 
@@ -1782,7 +1786,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             return {
                 status: 'cancelled',
                 value,
-                nextStatus: 'cancelled',
+                nextStatus: 'cancelled'
             };
         }
 
@@ -1796,11 +1800,11 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     details: {
                         timeoutMs: command.timeoutMs,
                         deadlineEpochMs: command.deadlineEpochMs,
-                        completedGroups: completeGroupResults.filter(result => result.commandCount > 0).length,
-                        totalGroups: command.groups.length,
-                    },
+                        completedGroups: completeGroupResults.filter((result) => result.commandCount > 0).length,
+                        totalGroups: command.groups.length
+                    }
                 },
-                nextStatus: 'failed',
+                nextStatus: 'failed'
             };
         }
 
@@ -1816,18 +1820,18 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     details: {
                         firstFailure: firstFailedResult?.error,
                         failedGroups: completeGroupResults
-                            .filter(result => result.failed > 0)
-                            .map(result => result.groupId),
-                    },
+                            .filter((result) => result.failed > 0)
+                            .map((result) => result.groupId)
+                    }
                 },
-                nextStatus: 'failed',
+                nextStatus: 'failed'
             };
         }
 
         return {
             status: 'ok',
             value,
-            nextStatus: 'completed',
+            nextStatus: 'completed'
         };
     }
 
@@ -1835,7 +1839,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: ParallelCommandWithId,
         group: RallarBlackBoxTestParallelGroup,
         groupIndex: number,
-        deadlineEpochMs: number | undefined,
+        deadlineEpochMs: number | undefined
     ): Promise<ParallelGroupExecution> {
         const groupStartedAtEpochMs = this.now();
         const groupId = group.groupId ?? `group-${groupIndex + 1}`;
@@ -1860,17 +1864,17 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 parallelCommandId: command.commandId,
                 groupId,
                 groupIndex,
-                commandIndex,
+                commandIndex
             };
             const childCommand = this.toParallelChildCommand(
                 command,
                 group,
                 childTemplate,
                 parallelContext,
-                deadlineEpochMs,
+                deadlineEpochMs
             );
             const childResult = await this.executeCommand(childCommand, {
-                bypassCache: true,
+                bypassCache: true
             });
             results.push({
                 commandId: childResult.commandId,
@@ -1880,18 +1884,18 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
                     groupIndex,
                     groupId,
-                    commandIndex,
+                    commandIndex
                 ),
                 sourceRecipePath: rallarBlackBoxParallelChildSourceRecipePath(
                     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
                     groupIndex,
-                    commandIndex,
+                    commandIndex
                 ),
                 childIndex: results.length,
                 commandIndex,
                 groupId,
                 groupIndex,
-                result: childResult,
+                result: childResult
             });
 
             if (this.cancelRequested || childResult.status === 'cancelled') {
@@ -1911,15 +1915,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             result: {
                 groupId,
                 commandCount: results.length,
-                passed: results.filter(result => result.result.ok).length,
-                failed: results.filter(result => !result.result.ok).length,
+                passed: results.filter((result) => result.result.ok).length,
+                failed: results.filter((result) => !result.result.ok).length,
                 cancelled,
                 durationMs,
-                results,
+                results
             },
             failedResult,
             cancelled,
-            timedOut,
+            timedOut
         };
     }
 
@@ -1928,7 +1932,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         group: RallarBlackBoxTestParallelGroup,
         childCommand: RallarBlackBoxTestCommand,
         context: ParallelContext,
-        deadlineEpochMs: number | undefined,
+        deadlineEpochMs: number | undefined
     ): RallarBlackBoxTestCommand {
         const child = {
             ...childCommand,
@@ -1937,7 +1941,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 `g${context.groupIndex + 1}`,
                 groupLabelForId(group, context.groupIndex + 1),
                 `c${context.commandIndex + 1}`,
-                commandLabelForId(childCommand, context.commandIndex + 1),
+                commandLabelForId(childCommand, context.commandIndex + 1)
             ].join(':'),
             metadata: {
                 ...asRecord(childCommand.metadata),
@@ -1946,9 +1950,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     groupId: context.groupId,
                     groupIndex: context.groupIndex,
                     commandIndex: context.commandIndex,
-                    originalCommandId: childCommand.commandId,
-                },
-            },
+                    originalCommandId: childCommand.commandId
+                }
+            }
         } as RallarBlackBoxTestCommand;
 
         return deadlineEpochMs === undefined
@@ -1960,7 +1964,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         command: ParallelCommandWithId,
         groups: readonly RallarBlackBoxTestParallelGroupResult[],
         maxConcurrency: number,
-        cancelled: boolean,
+        cancelled: boolean
     ): RallarBlackBoxTestParallelResultValue {
         return {
             commandId: command.commandId,
@@ -1969,7 +1973,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             passed: groups.reduce((sum, group) => sum + group.passed, 0),
             failed: groups.reduce((sum, group) => sum + group.failed, 0),
             cancelled,
-            groups,
+            groups
         };
     }
 
@@ -1977,7 +1981,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         _command: ParallelCommandWithId,
         group: RallarBlackBoxTestParallelGroup,
         groupIndex: number,
-        cancelled: boolean,
+        cancelled: boolean
     ): RallarBlackBoxTestParallelGroupResult {
         return {
             groupId: group.groupId ?? `group-${groupIndex + 1}`,
@@ -1986,7 +1990,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             failed: 0,
             cancelled,
             durationMs: 0,
-            results: [],
+            results: []
         };
     }
 
@@ -1997,14 +2001,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         return command.deadlineEpochMs === undefined
             ? timeoutDeadline
             : timeoutDeadline === undefined
-                ? command.deadlineEpochMs
-                : Math.min(timeoutDeadline, command.deadlineEpochMs);
+            ? command.deadlineEpochMs
+            : Math.min(timeoutDeadline, command.deadlineEpochMs);
     }
 
     private parallelInvalid(
         command: ParallelCommandWithId,
         message: string,
-        details?: unknown,
+        details?: unknown
     ): CommandOutcome {
         return {
             status: 'failed',
@@ -2012,9 +2016,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             error: {
                 code: 'RALLAR_BLACK_BOX_PARALLEL_INVALID',
                 message,
-                details,
+                details
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
@@ -2027,7 +2031,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             cancelRequested: () => this.cancelRequested,
             currentStatus: () => this.currentState.status,
             currentEvents: () => this.currentState.events,
-            subscribe: listener => this.subscribe(() => listener()),
+            subscribe: (listener) => this.subscribe(() => listener())
         });
     }
 
@@ -2038,7 +2042,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (!isRallarBlackBoxAssertOperator(command.operator)) {
             return this.assertInvalid(command, 'Assert operator is not supported.', {
                 operator: command.operator,
-                supportedOperators: RALLAR_BLACK_BOX_ASSERT_OPERATORS,
+                supportedOperators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
             });
         }
 
@@ -2046,7 +2050,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const passed = assertValueMatches(
             source,
             command.operator,
-            command.expected,
+            command.expected
         );
         const value = this.toAssertResultValue(command, source, passed);
 
@@ -2054,7 +2058,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             return {
                 status: 'ok',
                 value,
-                nextStatus: this.currentState.status,
+                nextStatus: this.currentState.status
             };
         }
 
@@ -2064,15 +2068,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             error: {
                 code: 'RALLAR_BLACK_BOX_ASSERT_FAILED',
                 message: `Assert failed for ${command.source}.`,
-                details: value,
+                details: value
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
     private resolveAssertSource(source: string): PayloadPathLookup {
         const trimmed = source.trim();
-        const [rootName, ...pathParts] = trimmed.split('.').filter(part => part.length > 0);
+        const [rootName, ...pathParts] = trimmed.split('.').filter((part) => part.length > 0);
         if (!rootName) {
             return { exists: false };
         }
@@ -2086,7 +2090,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (pathParts.length === 0) {
             return {
                 exists: root !== undefined,
-                value: root,
+                value: root
             };
         }
 
@@ -2095,16 +2099,16 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private toAssertSourceRoots(): Record<string, unknown> {
         const events = this.currentState.events;
-        const messages = events.filter(event => event.kind === 'message');
-        const diagnostics = events.filter(event => event.kind === 'diagnostic');
-        const reports = events.filter(event => event.kind === 'report');
+        const messages = events.filter((event) => event.kind === 'message');
+        const diagnostics = events.filter((event) => event.kind === 'diagnostic');
+        const reports = events.filter((event) => event.kind === 'report');
         const results = this.currentState.commandHistory;
         const stateView = {
             ...this.currentState,
             results,
             messages,
             diagnostics,
-            reports,
+            reports
         };
 
         return {
@@ -2122,14 +2126,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             latestStats: this.currentState.latestStats,
             stats: this.currentState.latestStats,
             failures: this.currentState.failures,
-            resultCache: this.currentState.resultCache,
+            resultCache: this.currentState.resultCache
         };
     }
 
     private toAssertResultValue(
         command: AssertCommandWithId,
         source: PayloadPathLookup,
-        passed: boolean,
+        passed: boolean
     ): RallarBlackBoxTestAssertResultValue {
         return {
             commandId: command.commandId,
@@ -2138,14 +2142,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             expected: command.expected,
             actual: source.value,
             exists: source.exists,
-            passed,
+            passed
         };
     }
 
     private assertInvalid(
         command: AssertCommandWithId,
         message: string,
-        details?: unknown,
+        details?: unknown
     ): CommandOutcome {
         return {
             status: 'failed',
@@ -2155,18 +2159,18 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 operator: command.operator,
                 expected: command.expected,
                 exists: false,
-                passed: false,
+                passed: false
             } satisfies RallarBlackBoxTestAssertResultValue,
             error: {
                 code: 'RALLAR_BLACK_BOX_ASSERT_INVALID',
                 message,
-                details,
+                details
             },
-            nextStatus: 'failed',
+            nextStatus: 'failed'
         };
     }
 
-    private async cancelRecipe(command: Extract<CommandWithId, { kind: 'recipe.cancel' }>): Promise<CommandOutcome> {
+    private async cancelRecipe(command: Extract<CommandWithId, { kind: 'recipe.cancel'; }>): Promise<CommandOutcome> {
         this.requestCancellation(command.reason);
         this.emitEvent({
             kind: 'diagnostic',
@@ -2174,25 +2178,25 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             commandId: command.commandId,
             severity: 'warning',
             payload: {
-                reason: command.reason,
-            },
+                reason: command.reason
+            }
         });
         if (this.recipeExecutionDepth === 0) {
             await this.cleanupOwnedResources({
                 reason: 'cancelled',
                 commandId: command.commandId,
-                status: 'cancelled',
+                status: 'cancelled'
             });
         }
         return {
             status: 'ok',
             value: {
                 cancelRequested: true,
-                reason: command.reason,
+                reason: command.reason
             },
             nextStatus: this.currentState.status === 'running'
                 ? 'cancelled'
-                : this.currentState.status,
+                : this.currentState.status
         };
     }
 
@@ -2203,24 +2207,24 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             commandId: command.commandId,
             severity: 'info',
             payload: {
-                command: this.redact(command),
-            },
+                command: this.redact(command)
+            }
         });
         return {
             status: 'ok',
             value: {
                 fake: true,
                 kind: command.kind,
-                commandId: command.commandId,
+                commandId: command.commandId
             },
-            nextStatus: this.currentState.status,
+            nextStatus: this.currentState.status
         };
     }
 
     private toResult(
         command: CommandWithId,
         startedAtEpochMs: number,
-        outcome: CommandOutcome,
+        outcome: CommandOutcome
     ): RallarBlackBoxTestResult {
         const endedAtEpochMs = this.now();
         const result: RallarBlackBoxTestResult = {
@@ -2232,14 +2236,14 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             endedAtEpochMs,
             durationMs: Math.max(0, endedAtEpochMs - startedAtEpochMs),
             value: this.redact(outcome.value),
-            error: this.redact(outcome.error),
+            error: this.redact(outcome.error)
         };
         return result;
     }
 
     private commitResult(
         result: RallarBlackBoxTestResult,
-        nextStatus: RallarBlackBoxTestRuntimeStatus | undefined,
+        nextStatus: RallarBlackBoxTestRuntimeStatus | undefined
     ): void {
         const commandHistory = [...this.currentState.commandHistory, result];
         const failures = result.ok
@@ -2247,7 +2251,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             : [...this.currentState.failures, result];
         const resultCache = {
             ...this.currentState.resultCache,
-            [result.commandId]: result,
+            [result.commandId]: result
         };
 
         this.currentState = {
@@ -2257,7 +2261,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             activeCommandStartedAtEpochMs: undefined,
             commandHistory,
             failures,
-            resultCache,
+            resultCache
         };
 
         this.emitEvent({
@@ -2265,7 +2269,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             topic: 'rallar.bb.command.result',
             commandId: result.commandId,
             severity: result.ok ? 'info' : 'error',
-            payload: result,
+            payload: result
         });
         this.notify();
     }
@@ -2273,15 +2277,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot {
         const events = this.currentState.events;
         const config = this.currentState.currentConfig;
-        const durations = this.currentState.commandHistory.map(result => result.durationMs);
-        const loopResults = this.currentState.commandHistory.filter(result => result.kind === 'loop');
+        const durations = this.currentState.commandHistory.map((result) => result.durationMs);
+        const loopResults = this.currentState.commandHistory.filter((result) => result.kind === 'loop');
         const latestLoopResult = loopResults.at(-1);
         const latestLoopValue = this.loopResultValue(latestLoopResult?.value);
-        const streamResults = this.currentState.commandHistory.filter(result => result.kind === 'rtc.stream');
+        const streamResults = this.currentState.commandHistory.filter((result) => result.kind === 'rtc.stream');
         const latestStreamResult = streamResults.at(-1);
         const latestStreamValue = this.streamResultValue(latestStreamResult?.value);
         const lastRallarDiagnostic = events
-            .filter(event =>
+            .filter((event) =>
                 event.topic.includes('rtc.connected') ||
                 event.topic.includes('rallar.bb.fake.rtc.connected') ||
                 event.topic.includes('rallar.browser.connect_completed')
@@ -2299,9 +2303,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 failures: this.currentState.failures.length,
                 messages: events.filter((event) => event.kind === 'message').length,
                 diagnostics: events.filter((event) => event.kind === 'diagnostic').length,
-                reconnects: events.filter((event) =>
-                    event.topic.toLowerCase().includes('reconnect')
-                ).length,
+                reconnects: events.filter((event) => event.topic.toLowerCase().includes('reconnect')).length
             },
             lastCommandId: this.currentState.commandHistory.at(-1)?.commandId,
             lastEventAtEpochMs: events.at(-1)?.atEpochMs,
@@ -2312,7 +2314,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 averageMs: durations.length > 0
                     ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
                     : undefined,
-                lastMs: durations.at(-1),
+                lastMs: durations.at(-1)
             },
             rallar: {
                 connected: lastRallarDiagnostic !== undefined,
@@ -2323,7 +2325,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 peerCount: typeof lastRallarPayload.peerCount === 'number'
                     ? lastRallarPayload.peerCount
                     : undefined,
-                laneHealth: lastRallarPayload.laneHealth,
+                laneHealth: lastRallarPayload.laneHealth
             },
             load: loopResults.length > 0 || streamResults.length > 0
                 ? {
@@ -2334,21 +2336,21 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     thresholdFailures: latestLoopValue?.thresholdFailures,
                     streamCount: streamResults.length,
                     latestStreamCommandId: latestStreamResult?.commandId,
-                    latestStream: this.toStatsStreamSummary(latestStreamValue),
+                    latestStream: this.toStatsStreamSummary(latestStreamValue)
                 }
-                : undefined,
+                : undefined
         };
 
         this.currentState = {
             ...this.currentState,
-            latestStats,
+            latestStats
         };
         this.emitEvent({
             kind: 'stats',
             topic: 'rallar.bb.stats',
             commandId,
             severity: 'info',
-            payload: latestStats,
+            payload: latestStats
         });
         return latestStats;
     }
@@ -2363,15 +2365,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private streamResultValue(value: unknown): RallarBlackBoxTestRtcStreamResultValue | undefined {
         const record = asRecord(value);
         return typeof record.commandId === 'string' &&
-        typeof record.plannedFrames === 'number' &&
-        record.pacing !== undefined &&
-        record.duration !== undefined
+                typeof record.plannedFrames === 'number' &&
+                record.pacing !== undefined &&
+                record.duration !== undefined
             ? value as RallarBlackBoxTestRtcStreamResultValue
             : undefined;
     }
 
     private toStatsPacingSummary(
-        pacing: RallarBlackBoxTestLoopPacingSummary | undefined,
+        pacing: RallarBlackBoxTestLoopPacingSummary | undefined
     ): Omit<RallarBlackBoxTestLoopPacingSummary, 'iterations'> | undefined {
         if (!pacing) {
             return undefined;
@@ -2396,12 +2398,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             maxJitterMs: pacing.maxJitterMs,
             averageJitterMs: pacing.averageJitterMs,
             lateIterationCount: pacing.lateIterationCount,
-            lateThresholdMs: pacing.lateThresholdMs,
+            lateThresholdMs: pacing.lateThresholdMs
         };
     }
 
     private toStatsSendSummary(
-        sends: RallarBlackBoxTestLoopSendSummary | undefined,
+        sends: RallarBlackBoxTestLoopSendSummary | undefined
     ): Omit<RallarBlackBoxTestLoopSendSummary, 'observations'> | undefined {
         if (!sends) {
             return undefined;
@@ -2418,12 +2420,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             backpressureCount: sends.backpressureCount,
             droppedPayloadCount: sends.droppedPayloadCount,
             replacedPayloadCount: sends.replacedPayloadCount,
-            perTransportFailureCounts: sends.perTransportFailureCounts,
+            perTransportFailureCounts: sends.perTransportFailureCounts
         };
     }
 
     private toStatsStreamSummary(
-        stream: RallarBlackBoxTestRtcStreamResultValue | undefined,
+        stream: RallarBlackBoxTestRtcStreamResultValue | undefined
     ): Omit<RallarBlackBoxTestRtcStreamResultValue, 'observations'> | undefined {
         if (!stream) {
             return undefined;
@@ -2447,7 +2449,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             achievedCompletionHz: stream.achievedCompletionHz,
             pacing: stream.pacing,
             duration: stream.duration,
-            thresholdFailures: stream.thresholdFailures,
+            thresholdFailures: stream.thresholdFailures
         };
     }
 
@@ -2459,22 +2461,22 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             activeCommandId: this.currentState.activeCommand?.commandId,
             commandCount: this.currentState.commandHistory.length,
             eventCount: this.currentState.events.length,
-            failureCount: this.currentState.failures.length,
+            failureCount: this.currentState.failures.length
         };
     }
 
     private emitEvent(
-        event: RallarBlackBoxTestRuntimeEventInput,
+        event: RallarBlackBoxTestRuntimeEventInput
     ): void {
         const created: RallarBlackBoxTestEvent = {
             ...event,
             eventId: this.idFactory('event'),
             atEpochMs: this.now(),
-            payload: this.redact(event.payload),
+            payload: this.redact(event.payload)
         };
         this.currentState = {
             ...this.currentState,
-            events: [...this.currentState.events, created],
+            events: [...this.currentState.events, created]
         };
         this.notify();
     }
@@ -2482,7 +2484,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private setState(patch: Partial<RallarBlackBoxTestState>): void {
         this.currentState = {
             ...this.currentState,
-            ...patch,
+            ...patch
         };
         this.notify();
     }
@@ -2491,7 +2493,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         for (const listener of this.listeners) {
             try {
                 void Promise.resolve(listener(this.currentState));
-            } catch (_error) {
+            }
+            catch (_error) {
                 // State listeners are observational and should not break command execution.
             }
         }
@@ -2500,20 +2503,20 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private withCommandId(command: RallarBlackBoxTestCommand): CommandWithId {
         return {
             ...command,
-            commandId: command.commandId ?? this.idFactory('command'),
+            commandId: command.commandId ?? this.idFactory('command')
         } as CommandWithId;
     }
 
     private redact<T>(value: T): T {
         return redactRallarBlackBoxValue(
             value,
-            this.currentRedaction,
+            this.currentRedaction
         );
     }
 }
 
 export function createRallarBlackBoxTestRuntime(
-    options: CreateRallarBlackBoxTestRuntimeOptions = {},
+    options: CreateRallarBlackBoxTestRuntimeOptions = {}
 ): RallarBlackBoxTestRuntime {
     return new InMemoryRallarBlackBoxTestRuntime(options);
 }

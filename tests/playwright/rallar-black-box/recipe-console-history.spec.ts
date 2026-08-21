@@ -1,20 +1,18 @@
-import { expect, type Page, test } from '@playwright/test';
-import { installRecipeConsoleTuneFixture } from
-    './recipe-console-tune-fixture.ts';
-import { chooseTuneListboxOption, tuneListboxTrigger } from
-    './recipe-console-tune-listbox-helpers.ts';
+import { expect, test, type Page } from '@playwright/test';
+import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
+import { chooseTuneListboxOption, tuneListboxTrigger } from './recipe-console-tune-listbox-helpers.ts';
 import {
-    TUNE_COMPARE_ROUTE,
     TUNE_BASE_EPOCH_MS,
+    TUNE_COMPARE_ROUTE,
     TUNE_LEFT_CONTROL_RUN_ID,
     TUNE_LEFT_RUN_ID,
     TUNE_RIGHT_CONTROL_RUN_ID,
     TUNE_RIGHT_RUN_ID,
+    TUNE_ROUTE,
     TUNE_SHARED_AGENT_ID,
     TUNE_SLOW_AGENT_ID,
     TUNE_STREAM_COMMAND_ID,
-    TUNE_STREAM_RECIPE_ID,
-    TUNE_ROUTE,
+    TUNE_STREAM_RECIPE_ID
 } from './recipe-console-tune-run-data.ts';
 
 const RECIPE_CONSOLE_VIEWS = [
@@ -23,7 +21,7 @@ const RECIPE_CONSOLE_VIEWS = [
     'analyze',
     'tune',
     'fleet',
-    'advanced',
+    'advanced'
 ] as const;
 
 const SPA_ORIGIN = 'http://127.0.0.1:5176';
@@ -33,7 +31,7 @@ const RETENTION_PREVIEW_REQUEST = {
     dryRun: true,
     hasPlanToken: false,
     body: null,
-    authorization: null,
+    authorization: null
 } as const;
 const RETENTION_CONFIRM_REQUEST = {
     kind: 'confirm',
@@ -41,7 +39,7 @@ const RETENTION_CONFIRM_REQUEST = {
     dryRun: false,
     hasPlanToken: true,
     body: null,
-    authorization: null,
+    authorization: null
 } as const;
 
 type RecipeConsoleView = typeof RECIPE_CONSOLE_VIEWS[number];
@@ -52,7 +50,7 @@ const VIEW_LABELS: Readonly<Record<RecipeConsoleView, string>> = {
     analyze: 'Analyze',
     tune: 'Tune',
     fleet: 'Fleet',
-    advanced: 'Advanced',
+    advanced: 'Advanced'
 };
 
 async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<void> {
@@ -73,7 +71,7 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             await expect(page.locator('[data-analyze-source]')).toBeVisible();
             await expect(page.getByText('Choose files', { exact: true })).toBeVisible();
             await expect(page.getByRole('heading', {
-                name: 'Import distributed-run evidence',
+                name: 'Import distributed-run evidence'
             })).toBeVisible();
             await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
             break;
@@ -83,7 +81,7 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             const candidateRunId = currentUrl(page).searchParams.get('compareRight');
             await expect(candidateRun).toBeVisible();
             await expect(candidateRun).toContainText(
-                candidateRunId ?? 'Select candidate',
+                candidateRunId ?? 'Select candidate'
             );
             break;
         case 'fleet':
@@ -126,7 +124,7 @@ test('commits all six views and restores them with browser back and forward', as
         futureField: 'keep',
         v: '1',
         experience: 'recipe-console',
-        view: 'execute',
+        view: 'execute'
     });
     await page.goto(`/?${initial.toString()}`);
     const initialHistoryLength = await page.evaluate(() => history.length);
@@ -176,7 +174,7 @@ test('restores versioned view selection filters comparison and timing metric fro
     await installRecipeConsoleTuneFixture(context);
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
     const fullState = new URLSearchParams({
         provider: 'simulated',
@@ -203,16 +201,16 @@ test('restores versioned view selection filters comparison and timing metric fro
         compareRight: TUNE_RIGHT_RUN_ID,
         timingMetric: 'stream-cadence',
         fleetRegion: 'eu-north',
-        fleetMapLayers: 'observed-routes,failures,live-agents',
+        fleetMapLayers: 'observed-routes,failures,live-agents'
     });
     await page.goto(`/?${fullState.toString()}`);
 
     await expectVisibleView(page, 'tune');
     await expect(page.locator('[data-tune-comparison]')).toContainText(
-        TUNE_LEFT_RUN_ID,
+        TUNE_LEFT_RUN_ID
     );
     await expect(page.locator('[data-tune-comparison]')).toContainText(
-        TUNE_RIGHT_RUN_ID,
+        TUNE_RIGHT_RUN_ID
     );
     await expect(page.getByRole('button', { name: 'Cadence', exact: true }))
         .toHaveAttribute('aria-pressed', 'true');
@@ -222,20 +220,20 @@ test('restores versioned view selection filters comparison and timing metric fro
         .toHaveValue(TUNE_STREAM_RECIPE_ID);
     await expect(page.getByLabel('Profile', { exact: true })).toHaveValue('candidate');
     await expect(page.getByLabel('Failure category')).toHaveValue(
-        'rtc-stream-performance',
+        'rtc-stream-performance'
     );
     await expect(page.getByLabel('Run status')).toHaveValue('failed');
     await expect(page.getByLabel('From (UTC)')).toHaveValue(
-        utcInput(TUNE_BASE_EPOCH_MS),
+        utcInput(TUNE_BASE_EPOCH_MS)
     );
     await expect(page.getByLabel('To (UTC)')).toHaveValue(
-        utcInput(TUNE_BASE_EPOCH_MS + 10_000),
+        utcInput(TUNE_BASE_EPOCH_MS + 10_000)
     );
     const history = page.getByRole('region', { name: 'Recipe run history' });
     await expect(history).toContainText(TUNE_RIGHT_RUN_ID);
     await expect(history).not.toContainText(TUNE_LEFT_RUN_ID);
     await expect(page.locator('[data-history-workspace]')).toContainText(
-        '1 filtered · 1 rendered · 0 omitted',
+        '1 filtered · 1 rendered · 0 omitted'
     );
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
     const copiedHref = await readClipboardHref(page);
@@ -244,7 +242,7 @@ test('restores versioned view selection filters comparison and timing metric fro
         expect(copied.searchParams.get(key), key).toBe(
             key === 'fleetMapLayers'
                 ? 'live-agents,failures,observed-routes'
-                : value,
+                : value
         );
     }
     expect(copied.origin).toBe(SPA_ORIGIN);
@@ -255,7 +253,7 @@ test('restores versioned view selection filters comparison and timing metric fro
     await expect(page.getByRole('button', { name: 'Cadence', exact: true }))
         .toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByLabel('Failure category')).toHaveValue(
-        'rtc-stream-performance',
+        'rtc-stream-performance'
     );
     await expect(history).toContainText(TUNE_RIGHT_RUN_ID);
 
@@ -281,30 +279,31 @@ function utcInput(epochMs: number): string {
     return new Date(epochMs).toISOString().slice(0, 19);
 }
 
-test('restores explicit Tune comparison and atomic focus through history', async ({
-    context,
-    page,
-}) => {
+test('restores explicit Tune comparison and atomic focus through history', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context);
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
-    await page.goto(`${TUNE_COMPARE_ROUTE}` +
-        `&agentId=${TUNE_SHARED_AGENT_ID}` +
-        `&recipeId=${TUNE_STREAM_RECIPE_ID}` +
-        `&commandId=${TUNE_STREAM_COMMAND_ID}`);
+    await page.goto(
+        `${TUNE_COMPARE_ROUTE}` +
+            `&agentId=${TUNE_SHARED_AGENT_ID}` +
+            `&recipeId=${TUNE_STREAM_RECIPE_ID}` +
+            `&commandId=${TUNE_STREAM_COMMAND_ID}`
+    );
 
     const comparison = page.locator('[data-tune-comparison]');
     await expect(comparison).toBeVisible();
-    for (const category of [
-        'recipe',
-        'participant',
-        'failure',
-        'timing',
-        'received-message',
-        'performance',
-    ]) {
+    for (
+        const category of [
+            'recipe',
+            'participant',
+            'failure',
+            'timing',
+            'received-message',
+            'performance'
+        ]
+    ) {
         await expect(comparison.locator(`[data-compare-category="${category}"]`))
             .toBeVisible();
     }
@@ -339,9 +338,9 @@ test('restores explicit Tune comparison and atomic focus through history', async
         .toContainText(TUNE_SLOW_AGENT_ID);
     const rightLegacyHref = new URL(
         await inspector.getByRole('link', {
-            name: 'Open this run in legacy Runs',
+            name: 'Open this run in legacy Runs'
         }).getAttribute('href') ?? '',
-        page.url(),
+        page.url()
     );
     expect(rightLegacyHref.searchParams.get('controlRunId'))
         .toBe(TUNE_RIGHT_CONTROL_RUN_ID);
@@ -360,7 +359,7 @@ test('restores explicit Tune comparison and atomic focus through history', async
             controlRunId: url.searchParams.get('controlRunId'),
             agentId: url.searchParams.get('agentId'),
             recipeId: url.searchParams.get('recipeId'),
-            commandId: url.searchParams.get('commandId'),
+            commandId: url.searchParams.get('commandId')
         };
     }).toEqual({
         compareRight: TUNE_LEFT_RUN_ID,
@@ -368,21 +367,21 @@ test('restores explicit Tune comparison and atomic focus through history', async
         controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
         agentId: null,
         recipeId: null,
-        commandId: null,
+        commandId: null
     });
     await expect(comparison).toContainText(
-        'Baseline and candidate must be different runs.',
+        'Baseline and candidate must be different runs.'
     );
 
     await page.goBack();
     await expect.poll(() => ({
         compareRight: currentUrl(page).searchParams.get('compareRight'),
         distributedRunId: currentUrl(page).searchParams.get('distributedRunId'),
-        controlRunId: currentUrl(page).searchParams.get('controlRunId'),
+        controlRunId: currentUrl(page).searchParams.get('controlRunId')
     })).toEqual({
         compareRight: TUNE_RIGHT_RUN_ID,
         distributedRunId: TUNE_RIGHT_RUN_ID,
-        controlRunId: TUNE_RIGHT_CONTROL_RUN_ID,
+        controlRunId: TUNE_RIGHT_CONTROL_RUN_ID
     });
     await expect(comparison.locator('[data-compare-category="performance"]'))
         .toContainText('stream-drift');
@@ -390,11 +389,11 @@ test('restores explicit Tune comparison and atomic focus through history', async
     await expect.poll(() => ({
         compareRight: currentUrl(page).searchParams.get('compareRight'),
         distributedRunId: currentUrl(page).searchParams.get('distributedRunId'),
-        controlRunId: currentUrl(page).searchParams.get('controlRunId'),
+        controlRunId: currentUrl(page).searchParams.get('controlRunId')
     })).toEqual({
         compareRight: TUNE_LEFT_RUN_ID,
         distributedRunId: TUNE_LEFT_RUN_ID,
-        controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
+        controlRunId: TUNE_LEFT_CONTROL_RUN_ID
     });
     expect(fixture.artifactRequestCount()).toBe(0);
     expect(fixture.mutationRequestCount()).toBe(0);
@@ -403,7 +402,7 @@ test('restores explicit Tune comparison and atomic focus through history', async
 test('scrubs sensitive state from copied and committed URLs while harmless fields survive', async ({ context, page }) => {
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
     const query = new URLSearchParams({
         provider: 'simulated',
@@ -415,10 +414,10 @@ test('scrubs sensitive state from copied and committed URLs while harmless field
         controlRunId: 'control-safe',
         token: 'query-secret',
         PaSsWoRd: 'query-password',
-        agentSessionTicket: 'query-ticket',
+        agentSessionTicket: 'query-ticket'
     });
     await page.goto(
-        `/?${query.toString()}#agentSessionTicket=fragment-ticket&trace=keep&PaSsWoRd=fragment-password&pane=evidence`,
+        `/?${query.toString()}#agentSessionTicket=fragment-ticket&trace=keep&PaSsWoRd=fragment-password&pane=evidence`
     );
 
     await expectVisibleView(page, 'execute');
@@ -430,26 +429,26 @@ test('scrubs sensitive state from copied and committed URLs while harmless field
         'accesstoken',
         'refreshtoken',
         'password',
-        'token',
+        'token'
     ]);
     await expect.poll(() => {
         const url = currentUrl(page);
         return {
             hash: url.hash,
             sensitive: [...url.searchParams.keys()]
-                .filter(key => sensitiveKeys.has(key.toLowerCase())),
-            version: url.searchParams.get('v'),
+                .filter((key) => sensitiveKeys.has(key.toLowerCase())),
+            version: url.searchParams.get('v')
         };
     }).toEqual({
         hash: '#trace=keep&pane=evidence',
         sensitive: [],
-        version: '1',
+        version: '1'
     });
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
     const copied = new URL(await readClipboardHref(page));
     expect(
         [...copied.searchParams.keys()]
-            .filter(key => sensitiveKeys.has(key.toLowerCase())),
+            .filter((key) => sensitiveKeys.has(key.toLowerCase()))
     ).toEqual([]);
     expect(copied.hash).toBe('#trace=keep&pane=evidence');
 
@@ -463,7 +462,7 @@ test('scrubs sensitive state from copied and committed URLs while harmless field
     expect(url.searchParams.get('controlRunId')).toBe('control-safe');
     expect(url.searchParams.get('view')).toBe('monitor');
     expect(
-        [...url.searchParams.keys()].filter(key => sensitiveKeys.has(key.toLowerCase())),
+        [...url.searchParams.keys()].filter((key) => sensitiveKeys.has(key.toLowerCase()))
     ).toEqual([]);
     expect(url.hash).toBe('#trace=keep&pane=evidence');
     expect(url.href).not.toContain('query-secret');
@@ -476,23 +475,23 @@ test('scrubs sensitive state from copied and committed URLs while harmless field
 test('shows the exact visible fallback for an invalid view', async ({ context, page }) => {
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
     await page.setViewportSize({ width: 430, height: 932 });
     await page.goto(
         '/?provider=simulated&roomId=room-safe&v=1&experience=recipe-console' +
-        '&view=not-a-view&controlRunId=control-safe',
+            '&view=not-a-view&controlRunId=control-safe'
     );
 
     await expectVisibleView(page, 'execute');
     await expect(page.getByText(
         'view is not a supported Recipe Console view.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     const issueBounds = await page.locator('[data-url-issues]').boundingBox();
     const headingBounds = await page.getByRole('heading', {
         level: 1,
-        name: 'Execute recipe',
+        name: 'Execute recipe'
     }).boundingBox();
     expect(issueBounds).not.toBeNull();
     expect(headingBounds).not.toBeNull();
@@ -519,7 +518,7 @@ test('canonicalizes initial and popstate URLs with replaceState', async ({ page 
             replaceState(data, unused, url);
         };
         Object.defineProperty(window, '__recipeConsoleReplaceCalls', {
-            value: calls,
+            value: calls
         });
     });
 
@@ -527,10 +526,12 @@ test('canonicalizes initial and popstate URLs with replaceState', async ({ page 
     await expectVisibleView(page, 'execute');
     const initialLength = await page.evaluate(() => history.length);
     await expect.poll(() => currentUrl(page).searchParams.get('v')).toBe('1');
-    await expect.poll(() => page.evaluate(() =>
-        (window as Window & { __recipeConsoleReplaceCalls: string[] })
-            .__recipeConsoleReplaceCalls.length
-    )).toBe(1);
+    await expect.poll(() =>
+        page.evaluate(() =>
+            (window as Window & { __recipeConsoleReplaceCalls: string[]; })
+                .__recipeConsoleReplaceCalls.length
+        )
+    ).toBe(1);
     await expect.poll(() => currentUrl(page).searchParams.get('recipeId'))
         .toBe('rtc-realtime-stability');
 
@@ -538,20 +539,22 @@ test('canonicalizes initial and popstate URLs with replaceState', async ({ page 
         history.pushState(
             {},
             '',
-            '/?provider=simulated&futureField=keep&experience=recipe-console&view=invalid',
+            '/?provider=simulated&futureField=keep&experience=recipe-console&view=invalid'
         );
         dispatchEvent(new PopStateEvent('popstate'));
     });
     await expectVisibleView(page, 'execute');
     await expect(page.getByText(
         'view is not a supported Recipe Console view.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     await expect.poll(() => currentUrl(page).searchParams.get('view')).toBe('execute');
-    await expect.poll(() => page.evaluate(() =>
-        (window as Window & { __recipeConsoleReplaceCalls: string[] })
-            .__recipeConsoleReplaceCalls.length
-    )).toBe(3);
+    await expect.poll(() =>
+        page.evaluate(() =>
+            (window as Window & { __recipeConsoleReplaceCalls: string[]; })
+                .__recipeConsoleReplaceCalls.length
+        )
+    ).toBe(3);
     expect(await page.evaluate(() => history.length)).toBe(initialLength + 1);
     expect(currentUrl(page).searchParams.get('futureField')).toBe('keep');
 });
@@ -569,7 +572,7 @@ test('mounts the legacy 250ms clock only for the active legacy experience', asyn
                 active.set(id, timeout ?? 0);
                 return id;
             },
-            writable: true,
+            writable: true
         });
         Object.defineProperty(window, 'clearInterval', {
             configurable: true,
@@ -579,21 +582,21 @@ test('mounts the legacy 250ms clock only for the active legacy experience', asyn
                     nativeClearInterval(id);
                 }
             },
-            writable: true,
+            writable: true
         });
         Object.defineProperty(window, '__recipeConsoleIntervalProbe', {
             value: {
-                active250: (): number =>
-                    [...active.values()].filter(timeout => timeout === 250).length,
-            },
+                active250: (): number => [...active.values()].filter((timeout) => timeout === 250).length
+            }
         });
     });
 
-    const active250 = (): Promise<number> => page.evaluate(() =>
-        (window as Window & {
-            __recipeConsoleIntervalProbe: { active250(): number };
-        }).__recipeConsoleIntervalProbe.active250()
-    );
+    const active250 = (): Promise<number> =>
+        page.evaluate(() =>
+            (window as Window & {
+                __recipeConsoleIntervalProbe: { active250(): number; };
+            }).__recipeConsoleIntervalProbe.active250()
+        );
 
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
     await expect(page.locator('.recipe-console')).toBeVisible();
@@ -607,7 +610,7 @@ test('mounts the legacy 250ms clock only for the active legacy experience', asyn
         history.pushState(
             {},
             '',
-            '/?provider=simulated&v=1&experience=recipe-console&view=monitor',
+            '/?provider=simulated&v=1&experience=recipe-console&view=monitor'
         );
         dispatchEvent(new PopStateEvent('popstate'));
     });
@@ -626,19 +629,21 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
         apiBaseUrl,
         rallarAuthStorage: 'session',
         rallarRestoreSession: '1',
-        autoConnect: '0',
+        autoConnect: '0'
     });
     const consumedTickets: string[] = [];
 
     await context.route(`${apiBaseUrl}/**`, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
-        if (request.method() === 'POST' &&
-            url.pathname.startsWith('/api/auth/agent-session-tickets/consume/requests/')) {
-            const body = await request.postDataJSON() as { ticket?: string };
+        if (
+            request.method() === 'POST' &&
+            url.pathname.startsWith('/api/auth/agent-session-tickets/consume/requests/')
+        ) {
+            const body = await request.postDataJSON() as { ticket?: string; };
             expect(body).not.toHaveProperty('requestId');
             consumedTickets.push(body.ticket ?? '');
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
             await route.fulfill({
                 contentType: 'application/json',
                 json: {
@@ -646,8 +651,8 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
                     accessToken: 'runner-agent-access-token',
                     username: 'runner-agent',
                     sessionId: 'runner-agent-session',
-                    expiresAtEpochMs: Date.now() + 60_000,
-                },
+                    expiresAtEpochMs: Date.now() + 60_000
+                }
             });
             return;
         }
@@ -657,20 +662,20 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
                 json: {
                     apiBaseUrl,
                     wsBaseUrl: 'wss://api.recipe-console-ticket.test',
-                    endpoints: { createWs: `${apiBaseUrl}/api/ws` },
-                },
+                    endpoints: { createWs: `${apiBaseUrl}/api/ws` }
+                }
             });
             return;
         }
         await route.fulfill({
             contentType: 'application/json',
             status: 404,
-            json: { error: `Unhandled ${request.method()} ${url.pathname}` },
+            json: { error: `Unhandled ${request.method()} ${url.pathname}` }
         });
     });
 
     await page.goto(
-        `/?${query.toString()}#agentSessionTicket=runner-ticket&trace=keep`,
+        `/?${query.toString()}#agentSessionTicket=runner-ticket&trace=keep`
     );
 
     await expect.poll(() => consumedTickets).toEqual(['runner-ticket']);
@@ -678,8 +683,10 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
     await expect(page.getByRole('tab', { name: 'Advanced', exact: true }))
         .toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('#panel-local-workbench')).toBeVisible();
-    await expect(page.locator('#panel-local-workbench')
-        .getByRole('heading', { name: 'Local Workbench', exact: true }))
+    await expect(
+        page.locator('#panel-local-workbench')
+            .getByRole('heading', { name: 'Local Workbench', exact: true })
+    )
         .toBeVisible();
 
     const finalUrl = currentUrl(page);
@@ -688,27 +695,28 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
     expect(consumedTickets).toEqual(['runner-ticket']);
 });
 
-test('previews retention impact before confirmed destructive cleanup', async ({
-    context,
-    page,
-}) => {
+test('previews retention impact before confirmed destructive cleanup', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context, {
-        retention: 'ready',
+        retention: 'ready'
     });
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
     const filterFrom = Date.UTC(2039, 0, 1);
     const filterTo = Date.UTC(2040, 0, 1);
-    await page.goto(`${TUNE_COMPARE_ROUTE.replace(
-        'timingMetric=stream-send-duration',
-        'timingMetric=stream-drift',
-    )}` +
-        '&historyQuery=tune&historyGroup=tune-ci' +
-        '&historyRecipeId=tune-rtc-stream&historyProfile=candidate' +
-        '&failureCategory=rtc-stream-performance&status=failed' +
-        `&from=${filterFrom}&to=${filterTo}`);
+    await page.goto(
+        `${
+            TUNE_COMPARE_ROUTE.replace(
+                'timingMetric=stream-send-duration',
+                'timingMetric=stream-drift'
+            )
+        }` +
+            '&historyQuery=tune&historyGroup=tune-ci' +
+            '&historyRecipeId=tune-rtc-stream&historyProfile=candidate' +
+            '&failureCategory=rtc-stream-performance&status=failed' +
+            `&from=${filterFrom}&to=${filterTo}`
+    );
 
     await page.getByRole('button', { name: 'Preview cleanup' }).click();
     const retention = page.locator('[data-retention-panel]');
@@ -717,31 +725,31 @@ test('previews retention impact before confirmed destructive cleanup', async ({
     await expect(retention).toContainText('Cap 1');
     await expect(retention).toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
     await retention.getByText('Linked distributed runs (1)', {
-        exact: true,
+        exact: true
     }).click();
     await expect(retention).toContainText(TUNE_RIGHT_RUN_ID);
     await expect(retention).toContainText(
-        'Existing connected sockets and stored artifact files remain.',
+        'Existing connected sockets and stored artifact files remain.'
     );
     expect(fixture.retentionRequests()).toEqual([RETENTION_PREVIEW_REQUEST]);
     expect(fixture.snapshotIds()).toEqual({
         controlRunIds: [TUNE_LEFT_CONTROL_RUN_ID, TUNE_RIGHT_CONTROL_RUN_ID],
-        distributedRunIds: [TUNE_LEFT_RUN_ID, TUNE_RIGHT_RUN_ID],
+        distributedRunIds: [TUNE_LEFT_RUN_ID, TUNE_RIGHT_RUN_ID]
     });
     expect(page.url()).not.toContain('history-plan-');
     expect(await page.locator('body').innerHTML()).not.toContain('history-plan-');
 
     await page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     }).click();
     const dialog = page.getByRole('alertdialog', {
-        name: 'Delete previewed runs?',
+        name: 'Delete previewed runs?'
     });
     await expect(dialog.getByRole('button', { name: 'Keep history' }))
         .toBeFocused();
     const confirm = dialog.getByRole('button', {
-        name: 'Delete previewed runs',
+        name: 'Delete previewed runs'
     });
     await page.keyboard.press('Tab');
     await expect(confirm).toBeFocused();
@@ -749,20 +757,20 @@ test('previews retention impact before confirmed destructive cleanup', async ({
 
     await expect(retention).toContainText('Cleanup completed');
     await expect(retention.getByRole('status')).toContainText(
-        'Retention cleanup succeeded.',
+        'Retention cleanup succeeded.'
     );
     const cleanupResult = retention.getByRole('heading', {
-        name: 'Cleanup completed',
+        name: 'Cleanup completed'
     }).locator('..');
     const deletedIds = cleanupResult.getByText(
         'Deleted control run IDs (1)',
-        { exact: true },
+        { exact: true }
     );
     await deletedIds.click();
     await expect(cleanupResult).toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
     expect(fixture.retentionRequests()).toEqual([
         RETENTION_PREVIEW_REQUEST,
-        RETENTION_CONFIRM_REQUEST,
+        RETENTION_CONFIRM_REQUEST
     ]);
     await expect.poll(() => {
         const url = currentUrl(page);
@@ -779,7 +787,7 @@ test('previews retention impact before confirmed destructive cleanup', async ({
             status: url.searchParams.get('status'),
             from: url.searchParams.get('from'),
             to: url.searchParams.get('to'),
-            timingMetric: url.searchParams.get('timingMetric'),
+            timingMetric: url.searchParams.get('timingMetric')
         };
     }).toEqual({
         controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
@@ -794,14 +802,18 @@ test('previews retention impact before confirmed destructive cleanup', async ({
         status: 'failed',
         from: String(filterFrom),
         to: String(filterTo),
-        timingMetric: 'stream-drift',
+        timingMetric: 'stream-drift'
     });
     expect(page.url()).not.toContain('history-plan-');
     expect(await page.locator('body').innerHTML()).not.toContain('history-plan-');
-    expect(await page.evaluate(() => JSON.stringify({
-        local: Object.entries(localStorage),
-        session: Object.entries(sessionStorage),
-    }))).not.toContain('history-plan-');
+    expect(
+        await page.evaluate(() =>
+            JSON.stringify({
+                local: Object.entries(localStorage),
+                session: Object.entries(sessionStorage)
+            })
+        )
+    ).not.toContain('history-plan-');
 
     const copy = page.getByRole('button', { name: 'Copy filtered link' });
     await copy.focus();
@@ -816,59 +828,56 @@ test('previews retention impact before confirmed destructive cleanup', async ({
         failureCategory: 'rtc-stream-performance',
         status: 'failed',
         from: String(filterFrom),
-        to: String(filterTo),
+        to: String(filterTo)
     });
     expect(copiedHref).not.toContain('history-plan-');
 
     await page.getByRole('button', { name: 'Reset', exact: true }).click();
     await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
-        EMPTY_HISTORY_FILTER_PARAMS,
+        EMPTY_HISTORY_FILTER_PARAMS
     );
     await page.goBack();
     await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
-        historyFilterParams(copied),
+        historyFilterParams(copied)
     );
     await page.goForward();
     await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
-        EMPTY_HISTORY_FILTER_PARAMS,
+        EMPTY_HISTORY_FILTER_PARAMS
     );
     const order = fixture.requestOrder();
     const confirmIndex = order.lastIndexOf('confirm');
     expect(confirmIndex).toBeGreaterThan(-1);
     expect(order.slice(confirmIndex + 1)).toEqual(
-        expect.arrayContaining(['runs', 'distributed-runs']),
+        expect.arrayContaining(['runs', 'distributed-runs'])
     );
     expect(fixture.snapshotIds()).toEqual({
         controlRunIds: [TUNE_LEFT_CONTROL_RUN_ID],
-        distributedRunIds: [TUNE_LEFT_RUN_ID],
+        distributedRunIds: [TUNE_LEFT_RUN_ID]
     });
     await expect(page.getByRole('region', { name: 'Recipe run history' }))
         .not.toContainText(TUNE_RIGHT_RUN_ID);
 });
 
-test('cancels cleanup without issuing a destructive request', async ({
-    context,
-    page,
-}) => {
+test('cancels cleanup without issuing a destructive request', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context, {
-        retention: 'ready',
+        retention: 'ready'
     });
     await page.goto(TUNE_ROUTE);
     const preview = page.getByRole('button', {
         name: 'Preview cleanup',
-        exact: true,
+        exact: true
     });
     await preview.focus();
     await preview.press('Enter');
     const review = page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     });
     await review.focus();
     await review.press('Enter');
 
     const dialog = page.getByRole('alertdialog', {
-        name: 'Delete previewed runs?',
+        name: 'Delete previewed runs?'
     });
     await expect(dialog.getByRole('button', { name: 'Keep history' }))
         .toBeFocused();
@@ -879,26 +888,23 @@ test('cancels cleanup without issuing a destructive request', async ({
     expect(fixture.retentionRequests()).toEqual([RETENTION_PREVIEW_REQUEST]);
     expect(fixture.snapshotIds().distributedRunIds).toEqual([
         TUNE_LEFT_RUN_ID,
-        TUNE_RIGHT_RUN_ID,
+        TUNE_RIGHT_RUN_ID
     ]);
 });
 
-test('requires a fresh preview after retention drift', async ({
-    context,
-    page,
-}) => {
+test('requires a fresh preview after retention drift', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context, {
-        retention: 'drift-once',
+        retention: 'drift-once'
     });
     await page.goto(TUNE_ROUTE);
     const preview = page.getByRole('button', {
         name: 'Preview cleanup',
-        exact: true,
+        exact: true
     });
     await preview.click();
     await page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     }).click();
     await page.getByRole('button', { name: 'Delete previewed runs' }).click();
 
@@ -907,79 +913,73 @@ test('requires a fresh preview after retention drift', async ({
     await expect(retention).toContainText('Stale preview · not current');
     await expect(page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     })).toHaveCount(0);
     expect(fixture.snapshotIds().distributedRunIds).toEqual([
         TUNE_LEFT_RUN_ID,
-        TUNE_RIGHT_RUN_ID,
+        TUNE_RIGHT_RUN_ID
     ]);
-    expect(fixture.retentionRequests().map(request => request.kind)).toEqual([
+    expect(fixture.retentionRequests().map((request) => request.kind)).toEqual([
         'preview',
-        'confirm',
+        'confirm'
     ]);
 
     await preview.click();
     await expect(page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     })).toBeVisible();
-    expect(fixture.retentionRequests().map(request => request.kind)).toEqual([
+    expect(fixture.retentionRequests().map((request) => request.kind)).toEqual([
         'preview',
         'confirm',
-        'preview',
+        'preview'
     ]);
 });
 
-test('shows retention authorization failure without consequence disclosure', async ({
-    context,
-    page,
-}) => {
+test('shows retention authorization failure without consequence disclosure', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context, {
-        retention: 'authorization-required',
+        retention: 'authorization-required'
     });
     await page.goto(TUNE_ROUTE);
     await page.getByRole('button', {
         name: 'Preview cleanup',
-        exact: true,
+        exact: true
     }).click();
 
     const retention = page.locator('[data-retention-panel]');
     await expect(retention.getByRole('status')).toContainText(
-        'Operator authorization required.',
+        'Operator authorization required.'
     );
     await expect(retention).not.toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
     await expect(retention).not.toContainText(TUNE_RIGHT_RUN_ID);
     await expect(page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     })).toHaveCount(0);
     expect(fixture.retentionRequests()).toEqual([RETENTION_PREVIEW_REQUEST]);
     expect(fixture.snapshotIds().distributedRunIds).toEqual([
         TUNE_LEFT_RUN_ID,
-        TUNE_RIGHT_RUN_ID,
+        TUNE_RIGHT_RUN_ID
     ]);
 });
 
-test('finds a past failure, compares it, and manages saved filters', async ({
-    context,
-    page,
-}) => {
+test('finds a past failure, compares it, and manages saved filters', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context);
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
     await page.goto(TUNE_ROUTE);
 
     const history = page.getByRole('region', { name: 'Recipe run history' });
     await expect(history.locator('tbody tr')).toHaveCount(2);
     const baseline = page.getByRole('button', {
-        name: `Set ${TUNE_LEFT_RUN_ID} as comparison baseline`,
+        name: `Set ${TUNE_LEFT_RUN_ID} as comparison baseline`
     });
     await baseline.focus();
     await baseline.press('Enter');
     const candidate = page.getByRole('button', {
-        name: `Set ${TUNE_RIGHT_RUN_ID} as comparison candidate`,
+        name: `Set ${TUNE_RIGHT_RUN_ID} as comparison candidate`
     });
     await candidate.focus();
     await candidate.press('Enter');
@@ -1033,7 +1033,7 @@ test('finds a past failure, compares it, and manages saved filters', async ({
     await expect(history).toContainText(TUNE_RIGHT_RUN_ID);
     await expect(history).toContainText('RTC stream exceeded pacing');
     await expect(page.locator('[data-history-workspace]')).toContainText(
-        '1 filtered · 1 rendered · 0 omitted',
+        '1 filtered · 1 rendered · 0 omitted'
     );
 
     const presetName = page.getByLabel('Preset name');
@@ -1042,7 +1042,7 @@ test('finds a past failure, compares it, and manages saved filters', async ({
     await save.focus();
     await save.press('Enter');
     await expect(page.getByRole('button', {
-        name: 'Apply Failed RTC candidate',
+        name: 'Apply Failed RTC candidate'
     })).toBeVisible();
 
     const copy = page.getByRole('button', { name: 'Copy filtered link' });
@@ -1057,7 +1057,7 @@ test('finds a past failure, compares it, and manages saved filters', async ({
         failureCategory: 'rtc-stream-performance',
         status: 'failed',
         from: historyControlEpoch(selectedFrom),
-        to: historyControlEpoch(selectedTo),
+        to: historyControlEpoch(selectedTo)
     };
     expect(historyFilterParams(copied)).toEqual(savedFilterParams);
 
@@ -1065,11 +1065,11 @@ test('finds a past failure, compares it, and manages saved filters', async ({
     await reset.press('Enter');
     await expect(history.locator('tbody tr')).toHaveCount(2);
     await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
-        EMPTY_HISTORY_FILTER_PARAMS,
+        EMPTY_HISTORY_FILTER_PARAMS
     );
 
     const applyPreset = page.getByRole('button', {
-        name: 'Apply Failed RTC candidate',
+        name: 'Apply Failed RTC candidate'
     });
     await applyPreset.focus();
     await applyPreset.press('Enter');
@@ -1080,7 +1080,7 @@ test('finds a past failure, compares it, and manages saved filters', async ({
     await page.goBack();
     await expect(history.locator('tbody tr')).toHaveCount(2);
     await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
-        EMPTY_HISTORY_FILTER_PARAMS,
+        EMPTY_HISTORY_FILTER_PARAMS
     );
     await expectHistoryFilterControls(page, EMPTY_HISTORY_FILTER_PARAMS);
     await page.goForward();
@@ -1090,7 +1090,7 @@ test('finds a past failure, compares it, and manages saved filters', async ({
     await expectHistoryFilterControls(page, savedFilterParams);
 
     const deletePreset = page.getByRole('button', {
-        name: 'Delete Failed RTC candidate',
+        name: 'Delete Failed RTC candidate'
     });
     await deletePreset.focus();
     await deletePreset.press('Enter');
@@ -1101,7 +1101,7 @@ test('finds a past failure, compares it, and manages saved filters', async ({
 
 async function keyboardFill(
     locator: ReturnType<Page['locator']>,
-    value: string,
+    value: string
 ): Promise<void> {
     await locator.focus();
     await locator.press('ControlOrMeta+A');
@@ -1116,7 +1116,7 @@ const EMPTY_HISTORY_FILTER_PARAMS = {
     failureCategory: null,
     status: null,
     from: null,
-    to: null,
+    to: null
 } as const;
 
 function historyFilterParams(url: URL) {
@@ -1128,7 +1128,7 @@ function historyFilterParams(url: URL) {
         failureCategory: url.searchParams.get('failureCategory'),
         status: url.searchParams.get('status'),
         from: url.searchParams.get('from'),
-        to: url.searchParams.get('to'),
+        to: url.searchParams.get('to')
     };
 }
 
@@ -1136,7 +1136,7 @@ async function keyboardDateTimeUntil(
     page: Page,
     locator: ReturnType<Page['locator']>,
     next: ReturnType<Page['locator']>,
-    year: number,
+    year: number
 ): Promise<void> {
     await expect(locator).toBeFocused();
     await page.keyboard.press('ArrowUp');
@@ -1146,7 +1146,7 @@ async function keyboardDateTimeUntil(
     await page.keyboard.type(String(year));
     for (let step = 0; step < 8; step += 1) {
         await page.keyboard.press('Tab');
-        if (await next.evaluate(element => document.activeElement === element)) {
+        if (await next.evaluate((element) => document.activeElement === element)) {
             return;
         }
         await page.keyboard.press('ArrowUp');
@@ -1156,7 +1156,7 @@ async function keyboardDateTimeUntil(
 
 async function expectHistoryFilterControls(
     page: Page,
-    expected: ReturnType<typeof historyFilterParams>,
+    expected: ReturnType<typeof historyFilterParams>
 ): Promise<void> {
     const values = {
         historyQuery: await page.getByLabel('Query', { exact: true }).inputValue(),
@@ -1168,11 +1168,13 @@ async function expectHistoryFilterControls(
         failureCategory: await page.getByLabel('Failure category').inputValue(),
         status: await page.getByLabel('Run status').inputValue(),
         from: historyControlEpoch(await page.getByLabel('From (UTC)').inputValue()),
-        to: historyControlEpoch(await page.getByLabel('To (UTC)').inputValue()),
+        to: historyControlEpoch(await page.getByLabel('To (UTC)').inputValue())
     };
-    expect(values).toEqual(Object.fromEntries(Object.entries(expected).map(
-        ([key, value]) => [key, value ?? ''],
-    )));
+    expect(values).toEqual(Object.fromEntries(
+        Object.entries(expected).map(
+            ([key, value]) => [key, value ?? '']
+        )
+    ));
 }
 
 function historyControlEpoch(value: string): string {

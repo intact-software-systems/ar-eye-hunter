@@ -15,7 +15,7 @@ import {
     ANALYZE_RESULT_FAILURE_STACK,
     createAnalyzeControlRun,
     createAnalyzeDistributedRun,
-    createAnalyzeManifest,
+    createAnalyzeManifest
 } from './recipe-console-analyze-run-data.ts';
 
 export type AnalyzeUploadFile = Readonly<{
@@ -33,7 +33,7 @@ export function createAnalyzeTimeoutLooseFiles(): readonly AnalyzeUploadFile[] {
 }
 
 function looseFiles(
-    files: Readonly<Record<string, string>>,
+    files: Readonly<Record<string, string>>
 ): readonly AnalyzeUploadFile[] {
     return [
         ...Object.entries(files).map(([name, contents]) => ({
@@ -41,13 +41,13 @@ function looseFiles(
             mimeType: name.endsWith('.jsonl')
                 ? 'application/x-ndjson'
                 : 'application/json',
-            buffer: Buffer.from(contents),
+            buffer: Buffer.from(contents)
         })),
         {
             name: 'operator-notes.txt',
             mimeType: 'text/plain',
-            buffer: Buffer.from('This file must be inventoried as ignored.'),
-        },
+            buffer: Buffer.from('This file must be inventoried as ignored.')
+        }
     ];
 }
 
@@ -55,7 +55,7 @@ export function createAnalyzeEnvelopeFile(): AnalyzeUploadFile {
     return {
         name: `${ANALYZE_DISTRIBUTED_RUN_ID}-artifact.json`,
         mimeType: 'application/json',
-        buffer: Buffer.from(JSON.stringify(createAnalyzeArtifactEnvelope(), null, 2)),
+        buffer: Buffer.from(JSON.stringify(createAnalyzeArtifactEnvelope(), null, 2))
     };
 }
 
@@ -63,81 +63,100 @@ export function createAnalyzeTimeoutEnvelopeFile(): AnalyzeUploadFile {
     return {
         name: `${ANALYZE_DISTRIBUTED_RUN_ID}-timeout-artifact.json`,
         mimeType: 'application/json',
-        buffer: Buffer.from(JSON.stringify({
-            ...createAnalyzeArtifactEnvelope(),
-            files: createAnalyzeArtifactFiles(timeoutFailureError()),
-        }, null, 2)),
+        buffer: Buffer.from(JSON.stringify(
+            {
+                ...createAnalyzeArtifactEnvelope(),
+                files: createAnalyzeArtifactFiles(timeoutFailureError())
+            },
+            null,
+            2
+        ))
     };
 }
 
 export function createAnalyzeEnvelopeFileForSchema(
-    artifactSchemaVersion: number,
+    artifactSchemaVersion: number
 ): AnalyzeUploadFile {
-    return upload('future-schema-artifact.json', JSON.stringify({
-        ...createAnalyzeArtifactEnvelope(),
-        artifactSchemaVersion,
-    }, null, 2));
+    return upload(
+        'future-schema-artifact.json',
+        JSON.stringify(
+            {
+                ...createAnalyzeArtifactEnvelope(),
+                artifactSchemaVersion
+            },
+            null,
+            2
+        )
+    );
 }
 
 export function createAnalyzeCandidateFiles(
-    count: number,
+    count: number
 ): readonly AnalyzeUploadFile[] {
-    return Array.from({ length: count }, (_, index) => upload(
-        `candidate-${String(index + 1).padStart(2, '0')}.json`,
-        JSON.stringify({ candidate: index + 1 }),
-    ));
+    return Array.from({ length: count }, (_, index) =>
+        upload(
+            `candidate-${String(index + 1).padStart(2, '0')}.json`,
+            JSON.stringify({ candidate: index + 1 })
+        ));
 }
 
-export function createAnalyzeLooseFilesForIdentity(identity: Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-}>): readonly AnalyzeUploadFile[] {
-    return createAnalyzeLooseFiles().map(file => ({
+export function createAnalyzeLooseFilesForIdentity(
+    identity: Readonly<{
+        distributedRunId: string;
+        controlRunId: string;
+    }>
+): readonly AnalyzeUploadFile[] {
+    return createAnalyzeLooseFiles().map((file) => ({
         ...file,
         buffer: file.name.endsWith('.json') || file.name.endsWith('.jsonl')
             ? Buffer.from(replaceArtifactIdentity(
                 file.buffer.toString('utf8'),
-                identity,
+                identity
             ))
-            : file.buffer,
+            : file.buffer
     }));
 }
 
-export function createAnalyzeArtifactEnvelopeForIdentity(input: Readonly<{
-    outerDistributedRunId: string;
-    fileDistributedRunId: string;
-    fileControlRunId: string;
-}>): ControlDistributedRunArtifactBundle {
+export function createAnalyzeArtifactEnvelopeForIdentity(
+    input: Readonly<{
+        outerDistributedRunId: string;
+        fileDistributedRunId: string;
+        fileControlRunId: string;
+    }>
+): ControlDistributedRunArtifactBundle {
     const files = Object.fromEntries(
         Object.entries(createAnalyzeArtifactFiles()).map(([fileName, contents]) => [
             fileName,
             replaceArtifactIdentity(contents, {
                 distributedRunId: input.fileDistributedRunId,
-                controlRunId: input.fileControlRunId,
-            }),
-        ]),
+                controlRunId: input.fileControlRunId
+            })
+        ])
     );
     return {
         artifactSchemaVersion: 2,
         distributedRunId: input.outerDistributedRunId,
         generatedAtEpochMs: ANALYZE_GENERATED_AT_EPOCH_MS,
-        files: files as ControlDistributedRunArtifactBundle['files'],
+        files: files as ControlDistributedRunArtifactBundle['files']
     };
 }
 
 export function createMalformedAnalyzeFiles(): readonly AnalyzeUploadFile[] {
-    return [upload('malformed-artifact-envelope.json', JSON.stringify({
-        artifactSchemaVersion: '2',
-        distributedRunId: ANALYZE_DISTRIBUTED_RUN_ID,
-        generatedAtEpochMs: ANALYZE_GENERATED_AT_EPOCH_MS,
-        files: createAnalyzeArtifactFiles(),
-    }))];
+    return [upload(
+        'malformed-artifact-envelope.json',
+        JSON.stringify({
+            artifactSchemaVersion: '2',
+            distributedRunId: ANALYZE_DISTRIBUTED_RUN_ID,
+            generatedAtEpochMs: ANALYZE_GENERATED_AT_EPOCH_MS,
+            files: createAnalyzeArtifactFiles()
+        })
+    )];
 }
 
 export function createDuplicateAnalyzeFiles(): readonly AnalyzeUploadFile[] {
     return [
         upload('manifest.json', JSON.stringify({ source: 'first' })),
-        upload('manifest.json', JSON.stringify({ source: 'second' })),
+        upload('manifest.json', JSON.stringify({ source: 'second' }))
     ];
 }
 
@@ -146,7 +165,7 @@ export function createAnalyzeArtifactEnvelope(): ControlDistributedRunArtifactBu
         artifactSchemaVersion: 2,
         distributedRunId: ANALYZE_DISTRIBUTED_RUN_ID,
         generatedAtEpochMs: ANALYZE_GENERATED_AT_EPOCH_MS,
-        files: createAnalyzeArtifactFiles() as ControlDistributedRunArtifactBundle['files'],
+        files: createAnalyzeArtifactFiles() as ControlDistributedRunArtifactBundle['files']
     };
 }
 
@@ -154,11 +173,12 @@ function createAnalyzeArtifactFiles(
     resultError: Readonly<Record<string, unknown>> = {
         code: 'RTC_NO_RELAY',
         message: ANALYZE_FAILURE_MESSAGE,
-        details: { expectedCandidate: 'relay', region: 'eu-north' },
-    },
+        details: { expectedCandidate: 'relay', region: 'eu-north' }
+    }
 ): Readonly<Record<string, string>> {
     const diagnostic = {
-        kind: 'diagnostic', protocolVersion: 1,
+        kind: 'diagnostic',
+        protocolVersion: 1,
         runId: ANALYZE_CONTROL_RUN_ID,
         agentId: ANALYZE_AGENT_ID,
         commandId: ANALYZE_COMMAND_ID,
@@ -167,13 +187,15 @@ function createAnalyzeArtifactFiles(
         payload: {
             topic: 'rtc.route',
             diagnosticTypeId: 'rallar.browser.rtc.no_relay',
-            severity: 'error', transport: 'messages.rtc',
+            severity: 'error',
+            transport: 'messages.rtc',
             message: ANALYZE_DIAGNOSTIC_MESSAGE,
-            data: { candidate: 'relay', region: 'eu-north', allocation: 'missing' },
-        },
+            data: { candidate: 'relay', region: 'eu-north', allocation: 'missing' }
+        }
     };
     const priorEvent = {
-        kind: 'event', protocolVersion: 1,
+        kind: 'event',
+        protocolVersion: 1,
         runId: ANALYZE_CONTROL_RUN_ID,
         agentId: ANALYZE_AGENT_ID,
         commandId: ANALYZE_COMMAND_ID,
@@ -182,8 +204,8 @@ function createAnalyzeArtifactFiles(
         payload: {
             topic: 'rtc.route.prior',
             message: 'Previous relay allocation succeeded before the regression.',
-            transport: 'rtc',
-        },
+            transport: 'rtc'
+        }
     };
     const failedResult = {
         resultKey: `result:${ANALYZE_COMMAND_ID}`,
@@ -191,11 +213,13 @@ function createAnalyzeArtifactFiles(
         agentId: ANALYZE_AGENT_ID,
         recipeId: ANALYZE_RECIPE_ID,
         commandId: ANALYZE_COMMAND_ID,
-        status: 'FAILURE', action: 'send', transport: 'rtc',
+        status: 'FAILURE',
+        action: 'send',
+        transport: 'rtc',
         startedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 300,
         endedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500,
         durationMs: 1_200,
-        error: resultError,
+        error: resultError
     };
     return {
         'distributed-run.json': JSON.stringify(createAnalyzeDistributedRun(), null, 2),
@@ -206,8 +230,8 @@ function createAnalyzeArtifactFiles(
             JSON.stringify(priorEvent),
             JSON.stringify(diagnostic),
             JSON.stringify(diagnostic),
-            '{malformed-optional-row',
-        ].join('\n'),
+            '{malformed-optional-row'
+        ].join('\n')
     };
 }
 
@@ -216,9 +240,9 @@ function timeoutFailureError(): Readonly<Record<string, unknown>> {
         code: ANALYZE_RESULT_FAILURE_CODE,
         details: {
             name: ANALYZE_RESULT_FAILURE_NAME,
-            stack: ANALYZE_RESULT_FAILURE_STACK,
+            stack: ANALYZE_RESULT_FAILURE_STACK
         },
-        message: ANALYZE_RESULT_FAILURE_MESSAGE,
+        message: ANALYZE_RESULT_FAILURE_MESSAGE
     };
 }
 
@@ -228,7 +252,7 @@ function upload(name: string, contents: string): AnalyzeUploadFile {
 
 function replaceArtifactIdentity(
     contents: string,
-    identity: Readonly<{ distributedRunId: string; controlRunId: string }>,
+    identity: Readonly<{ distributedRunId: string; controlRunId: string; }>
 ): string {
     return contents
         .replaceAll(ANALYZE_DISTRIBUTED_RUN_ID, identity.distributedRunId)

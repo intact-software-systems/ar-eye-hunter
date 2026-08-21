@@ -1,21 +1,18 @@
 import { expect, test } from '@playwright/test';
-import {
-    createAnalyzeEnvelopeFile,
-    createAnalyzeLooseFiles,
-} from './recipe-console-analyze-artifacts.ts';
+import { createAnalyzeEnvelopeFile, createAnalyzeLooseFiles } from './recipe-console-analyze-artifacts.ts';
 import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
 import {
     analyzeLegacyRunsLink,
     analyzeSource,
     analyzeVerdict,
     chooseAnalyzeFiles,
-    dropAnalyzeFiles,
+    dropAnalyzeFiles
 } from './recipe-console-analyze-helpers.ts';
 import {
     ANALYZE_CONTROL_RUN_ID,
     ANALYZE_DISTRIBUTED_RUN_ID,
     ANALYZE_FAILURE_MESSAGE,
-    ANALYZE_ROUTE,
+    ANALYZE_ROUTE
 } from './recipe-console-analyze-run-data.ts';
 
 test('keyboard-activates the Choose files import trigger', async ({ context, page }) => {
@@ -24,7 +21,7 @@ test('keyboard-activates the Choose files import trigger', async ({ context, pag
     const trigger = analyzeSource(page).getByText('Choose files', { exact: true });
     await trigger.focus();
     const focusWasOnTrigger = await trigger.evaluate(
-        element => element === document.activeElement,
+        (element) => element === document.activeElement
     );
     const chooserPromise = page.waitForEvent('filechooser', { timeout: 2_000 });
     await page.keyboard.press('Enter');
@@ -69,7 +66,7 @@ test('opens the generic exporter on the exact legacy Shared Test surface', async
     await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
     await analyzeSource(page).getByRole('link', {
-        name: 'Open generic export in legacy Shared Test',
+        name: 'Open generic export in legacy Shared Test'
     }).click();
     await expect(page).toHaveURL(/experience=legacy/);
     await expect(page).toHaveURL(/workspace=black-box-runner/);

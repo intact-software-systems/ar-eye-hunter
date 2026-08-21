@@ -26,7 +26,7 @@ const runtime = createRallarMiddleware({
             resourceInboxResultsRepository,
             groupStateService,
             createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId,
+            serverId
         ),
     createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
         new AppClientInboxService(
@@ -35,20 +35,20 @@ const runtime = createRallarMiddleware({
             resourceInboxResultsRepository,
             clientStateService,
             createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId,
+            serverId
         ),
     resilience: {
         inbox: appInboxResilience,
-        outbox: wsOutboxResilience,
-    },
+        outbox: wsOutboxResilience
+    }
 });
 
 const rallarServer = createRallarServerApplication({
     runtime,
     routes: {
         ws: installWsRoutes,
-        rest: [installAuthRoutes, installStateRoutes],
-    },
+        rest: [installAuthRoutes, installStateRoutes]
+    }
 });
 
 rallarServer.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();

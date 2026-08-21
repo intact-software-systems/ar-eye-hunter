@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-    ControlFleetAgentLabel,
-    ControlFleetAgentRunOutcome,
-    ControlFleetFailureSignature,
-    ControlFleetRunReport,
-} from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
+import {
+    fleetAgentDetail,
+    fleetHeatmapRows,
+    fleetMissingLabelAgents,
+    fleetRegionRows
+} from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-derivations.ts';
 import {
     applyFleetLabelOverrides,
     buildFleetShareUrl,
@@ -14,38 +14,35 @@ import {
     readFleetWorldMapLayersFromUrl,
     writeFleetFiltersToSearchParams,
     writeFleetFiltersToUrl,
-    writeFleetWorldMapLayersToSearchParams,
+    writeFleetWorldMapLayersToSearchParams
 } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-helpers.ts';
-import {
-    fleetAgentDetail,
-    fleetHeatmapRows,
-    fleetMissingLabelAgents,
-    fleetRegionRows,
-} from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-derivations.ts';
-import {
-    fleetDisplaySummary,
-    fleetFailureRows,
-} from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-rollups.ts';
-import {
-    fleetTimingDistribution,
-    fleetTimingGroupsByRecipe,
-    fleetTimingGroupsByRegion,
-} from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-timing.ts';
 import {
     fleetAgentStateTone,
     fleetCellTitle,
     fleetFailureTone,
     fleetRegionKey,
     fleetRegionLabel,
-    shortSignatureId,
+    shortSignatureId
 } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-presentation.ts';
+import { fleetDisplaySummary, fleetFailureRows } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-rollups.ts';
+import {
+    fleetTimingDistribution,
+    fleetTimingGroupsByRecipe,
+    fleetTimingGroupsByRegion
+} from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-timing.ts';
 import type { FleetFilterState } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/fleet-types.ts';
+import type {
+    ControlFleetAgentLabel,
+    ControlFleetAgentRunOutcome,
+    ControlFleetFailureSignature,
+    ControlFleetRunReport
+} from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
 
 function agent(
     agentId: string,
     label: ControlFleetAgentLabel,
     state: ControlFleetAgentRunOutcome['state'],
-    options: Partial<ControlFleetAgentRunOutcome> = {},
+    options: Partial<ControlFleetAgentRunOutcome> = {}
 ): ControlFleetAgentRunOutcome {
     return {
         agentId,
@@ -63,7 +60,7 @@ function agent(
         reconnectCount: 0,
         durationMs: 100,
         failureSignatureIds: [],
-        ...options,
+        ...options
     };
 }
 
@@ -71,7 +68,7 @@ function failure(
     signatureId: string,
     count: number,
     runId: string,
-    lastSeenAtEpochMs: number,
+    lastSeenAtEpochMs: number
 ): ControlFleetFailureSignature {
     return {
         signatureId,
@@ -85,7 +82,7 @@ function failure(
         affectedRegions: ['eu-north'],
         affectedRuns: [runId],
         likelyCause: 'Runtime failed.',
-        nextAction: 'Inspect logs.',
+        nextAction: 'Inspect logs.'
     };
 }
 
@@ -96,7 +93,7 @@ function report(
         recipeIds?: readonly string[];
         runDurationMs?: number;
         failures?: readonly ControlFleetFailureSignature[];
-    }> = {},
+    }> = {}
 ): ControlFleetRunReport {
     const passed = agents.filter((entry) => entry.state === 'passed').length;
     const failed = agents.filter((entry) => entry.state === 'failed').length;
@@ -111,7 +108,7 @@ function report(
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'fleet-group',
+            groupId: 'fleet-group'
         },
         recipeIds: options.recipeIds ?? ['rtc-smoke'],
         runDurationMs: options.runDurationMs,
@@ -124,11 +121,11 @@ function report(
             flaky: agents.filter((entry) => entry.flaky).length,
             stale: agents.filter((entry) => entry.stale).length,
             passRate: agents.length > 0 ? passed / agents.length : 0,
-            failureGroups: options.failures?.length ?? 0,
+            failureGroups: options.failures?.length ?? 0
         },
         timing: {
             run: { count: 1, p95Ms: options.runDurationMs },
-            commands: { count: agents.length },
+            commands: { count: agents.length }
         },
         agents,
         regions: [],
@@ -136,12 +133,12 @@ function report(
         artifactRefs: {
             distributedRun: `distributed-run:${distributedRunId}`,
             controlRun: `control-run:control-${distributedRunId}`,
-            fleetReport: `fleet-report:${distributedRunId}`,
-        },
+            fleetReport: `fleet-report:${distributedRunId}`
+        }
     };
 }
 
-function stubWindow(href: string): { replaced(): string } {
+function stubWindow(href: string): { replaced(): string; } {
     let nextHref = '';
     vi.stubGlobal('window', {
         location: { href },
@@ -149,8 +146,8 @@ function stubWindow(href: string): { replaced(): string } {
             state: { retained: true },
             replaceState: (_state: unknown, _title: string, value: string) => {
                 nextHref = value;
-            },
-        },
+            }
+        }
     });
     return { replaced: () => nextHref };
 }
@@ -169,7 +166,7 @@ describe('fleet analysis helpers', () => {
             recipeId: '',
             groupId: '',
             state: '',
-            window: '7d',
+            window: '7d'
         });
 
         stubWindow('https://fleet.test/app?window=invalid&timeWindow=1h');
@@ -182,10 +179,10 @@ describe('fleet analysis helpers', () => {
             recipeId: 'rtc-smoke',
             groupId: '',
             state: 'failed',
-            window: '7d',
+            window: '7d'
         });
         expect(params.toString()).toBe(
-            'keep=yes&window=7d&provider=+hetzner+&recipeId=rtc-smoke&state=failed',
+            'keep=yes&window=7d&provider=+hetzner+&recipeId=rtc-smoke&state=failed'
         );
 
         const browser = stubWindow('https://fleet.test/app?keep=yes#trace');
@@ -195,7 +192,7 @@ describe('fleet analysis helpers', () => {
             recipeId: '',
             groupId: '',
             state: '',
-            window: '24h',
+            window: '24h'
         });
         expect(browser.replaced()).toBe('https://fleet.test/app?keep=yes#trace');
     });
@@ -206,44 +203,44 @@ describe('fleet analysis helpers', () => {
             'live-agents': true,
             'historical-regions': true,
             failures: true,
-            'observed-routes': true,
+            'observed-routes': true
         });
         stubWindow('https://fleet.test/app?fleetMapLayers=none');
         expect(readFleetWorldMapLayersFromUrl()).toEqual({
             'live-agents': false,
             'historical-regions': false,
             failures: false,
-            'observed-routes': false,
+            'observed-routes': false
         });
         stubWindow('https://fleet.test/app?fleetMapLayers=failures,invalid,live-agents');
         expect(readFleetWorldMapLayersFromUrl()).toEqual({
             'live-agents': true,
             'historical-regions': false,
             failures: true,
-            'observed-routes': false,
+            'observed-routes': false
         });
         const params = new URLSearchParams('keep=yes');
         writeFleetWorldMapLayersToSearchParams(params, {
             'live-agents': true,
             'historical-regions': true,
             failures: true,
-            'observed-routes': true,
+            'observed-routes': true
         });
         expect(params.has('fleetMapLayers')).toBe(false);
         writeFleetWorldMapLayersToSearchParams(params, {
             'live-agents': true,
             'historical-regions': false,
             failures: true,
-            'observed-routes': true,
+            'observed-routes': true
         });
         expect(params.get('fleetMapLayers')).toBe(
-            'live-agents,failures,observed-routes',
+            'live-agents,failures,observed-routes'
         );
         writeFleetWorldMapLayersToSearchParams(params, {
             'live-agents': false,
             'historical-regions': false,
             failures: false,
-            'observed-routes': false,
+            'observed-routes': false
         });
         expect(params.get('fleetMapLayers')).toBe('none');
     });
@@ -257,16 +254,16 @@ describe('fleet analysis helpers', () => {
                 recipeId: '',
                 groupId: 'group-a',
                 state: '',
-                window: 'all',
+                window: 'all'
             },
             {
                 'live-agents': true,
                 'historical-regions': false,
                 failures: true,
-                'observed-routes': false,
-            },
+                'observed-routes': false
+            }
         )).toBe(
-            'https://fleet.test/app?keep=yes&mode=black-box-runner&tab=fleet&region=eu-north&window=all&provider=hetzner&groupId=group-a&fleetMapLayers=live-agents%2Cfailures#trace',
+            'https://fleet.test/app?keep=yes&mode=black-box-runner&tab=fleet&region=eu-north&window=all&provider=hetzner&groupId=group-a&fleetMapLayers=live-agents%2Cfailures#trace'
         );
     });
 
@@ -279,7 +276,7 @@ describe('fleet analysis helpers', () => {
             recipeId: ' rtc-smoke ',
             groupId: ' fleet-group ',
             state: ' failed ',
-            window: '1h',
+            window: '1h'
         };
         expect(fleetReportFilterFromUi(filters)).toEqual({
             region: 'eu-north',
@@ -287,7 +284,7 @@ describe('fleet analysis helpers', () => {
             recipeId: 'rtc-smoke',
             groupId: 'fleet-group',
             state: 'failed',
-            fromEpochMs: Date.now() - 60 * 60 * 1000,
+            fromEpochMs: Date.now() - 60 * 60 * 1000
         });
         expect(fleetReportFilterFromUi({ ...filters, window: '24h' }))
             .toHaveProperty('fromEpochMs', Date.now() - 24 * 60 * 60 * 1000);
@@ -300,15 +297,15 @@ describe('fleet analysis helpers', () => {
             'agent-a': {
                 region: ' eu-west ',
                 provider: ' ',
-                tags: [' alpha ', 7, ''],
+                tags: [' alpha ', 7, '']
             },
-            ignored: 5,
+            ignored: 5
         }));
         expect(parsed).toEqual({
-            value: { 'agent-a': { region: 'eu-west', tags: ['alpha'] } },
+            value: { 'agent-a': { region: 'eu-west', tags: ['alpha'] } }
         });
         expect(parseFleetLabelOverrides('[]').error).toBe(
-            'Overrides must be an object keyed by agent id.',
+            'Overrides must be an object keyed by agent id.'
         );
         expect(parseFleetLabelOverrides('{').error).toBeTruthy();
 
@@ -316,16 +313,16 @@ describe('fleet analysis helpers', () => {
             agentId: 'agent-a',
             region: 'eu-north',
             provider: 'hetzner',
-            tags: ['base'],
+            tags: ['base']
         }, 'passed')]);
         const overridden = applyFleetLabelOverrides([base], parsed.value);
         expect(overridden[0].agents[0].label).toMatchObject({
             region: 'eu-west',
             provider: 'hetzner',
-            tags: ['alpha'],
+            tags: ['alpha']
         });
         const inheritedTags = applyFleetLabelOverrides([base], {
-            'agent-a': { region: 'eu-west' },
+            'agent-a': { region: 'eu-west' }
         });
         expect(inheritedTags[0].agents[0].label.tags).toEqual(['base']);
     });
@@ -338,19 +335,19 @@ describe('fleet analysis helpers', () => {
                 stale: true,
                 reconnectCount: 3,
                 diagnosticCount: 2,
-                failureSignatureIds: ['sig-a'],
+                failureSignatureIds: ['sig-a']
             }),
             agent('agent-a', { agentId: 'agent-a', region: 'us-east', provider: 'aws' }, 'passed', {
-                durationMs: 100,
+                durationMs: 100
             }),
-            agent('agent-c', { agentId: 'agent-c', provider: 'lab' }, 'missing'),
+            agent('agent-c', { agentId: 'agent-c', provider: 'lab' }, 'missing')
         ]);
         const older = report('run-1', [
             agent('agent-a', { agentId: 'agent-a', region: 'us-east', provider: 'aws' }, 'failed', {
                 reconnectCount: 1,
-                diagnosticCount: 1,
+                diagnosticCount: 1
             }),
-            agent('agent-b', { agentId: 'agent-b', region: 'eu-north', provider: 'hetzner' }, 'passed'),
+            agent('agent-b', { agentId: 'agent-b', region: 'eu-north', provider: 'hetzner' }, 'passed')
         ]);
         const reports = [newest, older];
 
@@ -360,7 +357,7 @@ describe('fleet analysis helpers', () => {
         expect(heatmap.find((row) => row.agent.agentId === 'agent-a'))
             .toMatchObject({
                 agent: { state: 'passed' },
-                cells: [{ state: 'passed' }, { state: 'failed' }],
+                cells: [{ state: 'passed' }, { state: 'failed' }]
             });
         expect(fleetRegionRows(reports).map((row) => [row.region, row.failed]))
             .toEqual([['eu-north', 1], ['us-east', 1], ['unlabeled', 0]]);
@@ -369,13 +366,13 @@ describe('fleet analysis helpers', () => {
             agent: { state: 'passed' },
             runs: [
                 { run: { distributedRunId: 'run-2' } },
-                { run: { distributedRunId: 'run-1' } },
+                { run: { distributedRunId: 'run-1' } }
             ],
             passed: 1,
             failed: 1,
             missing: 0,
             reconnectCount: 1,
-            diagnosticCount: 1,
+            diagnosticCount: 1
         });
         expect(fleetAgentDetail('unknown', reports)).toBeUndefined();
     });
@@ -386,16 +383,16 @@ describe('fleet analysis helpers', () => {
                 agent('agent-z', {
                     agentId: 'agent-z',
                     region: 'z',
-                    provider: 'provider',
-                }, 'passed'),
+                    provider: 'provider'
+                }, 'passed')
             ]),
             report('run-umlaut', [
                 agent('agent-umlaut', {
                     agentId: 'agent-umlaut',
                     region: 'ä',
-                    provider: 'provider',
-                }, 'passed'),
-            ]),
+                    provider: 'provider'
+                }, 'passed')
+            ])
         ];
         const expectedRegions = ['z', 'ä']
             .sort((left, right) => left.localeCompare(right));
@@ -409,18 +406,18 @@ describe('fleet analysis helpers', () => {
     it('rolls up summaries, failures, and nearest-rank timing groups', () => {
         const first = report('run-1', [
             agent('agent-a', { agentId: 'agent-a', region: 'eu', provider: 'p1' }, 'passed', { durationMs: 10 }),
-            agent('agent-b', { agentId: 'agent-b', region: 'eu', provider: 'p1' }, 'failed', { durationMs: 100, stale: true }),
+            agent('agent-b', { agentId: 'agent-b', region: 'eu', provider: 'p1' }, 'failed', { durationMs: 100, stale: true })
         ], {
             runDurationMs: 1_000,
             recipeIds: ['recipe-a'],
-            failures: [failure('sig-a', 2, 'run-1', 200)],
+            failures: [failure('sig-a', 2, 'run-1', 200)]
         });
         const second = report('run-2', [
-            agent('agent-a', { agentId: 'agent-a', region: 'eu', provider: 'p1' }, 'passed', { durationMs: 20 }),
+            agent('agent-a', { agentId: 'agent-a', region: 'eu', provider: 'p1' }, 'passed', { durationMs: 20 })
         ], {
             runDurationMs: 2_000,
             recipeIds: ['recipe-a', 'recipe-b'],
-            failures: [failure('sig-a', 1, 'run-2', 400)],
+            failures: [failure('sig-a', 1, 'run-2', 400)]
         });
         const reports = [first, second];
         expect(fleetDisplaySummary(reports, undefined)).toEqual({
@@ -430,14 +427,14 @@ describe('fleet analysis helpers', () => {
             passRate: 2 / 3,
             failureGroups: 1,
             p95DurationMs: 2_000,
-            stale: 1,
+            stale: 1
         });
         expect(fleetFailureRows(reports)[0]).toMatchObject({
             signatureId: 'sig-a',
             count: 3,
             firstSeenAtEpochMs: 100,
             lastSeenAtEpochMs: 400,
-            affectedRuns: ['run-1', 'run-2'],
+            affectedRuns: ['run-1', 'run-2']
         });
         expect(fleetTimingDistribution([Number.NaN, 5, 10, 20, 100])).toEqual({
             count: 4,
@@ -445,11 +442,11 @@ describe('fleet analysis helpers', () => {
             p50Ms: 10,
             p90Ms: 100,
             p95Ms: 100,
-            maxMs: 100,
+            maxMs: 100
         });
         expect(fleetTimingGroupsByRegion(reports)[0]).toMatchObject({
             id: 'eu / p1',
-            timing: { count: 3, p95Ms: 100 },
+            timing: { count: 3, p95Ms: 100 }
         });
         expect(fleetTimingGroupsByRecipe(reports).map((group) => group.id))
             .toEqual(['recipe-a', 'recipe-b']);
@@ -460,30 +457,30 @@ describe('fleet analysis helpers', () => {
         const failed = agent('agent-a', label, 'failed');
         expect(fleetRegionKey(label)).toBe('eu / p1');
         expect(fleetRegionLabel({ agentId: 'agent-b' })).toBe(
-            'unlabeled / unknown provider',
+            'unlabeled / unknown provider'
         );
         expect([
             fleetAgentStateTone('passed'),
             fleetAgentStateTone('failed'),
             fleetAgentStateTone('missing'),
             fleetAgentStateTone('running'),
-            fleetAgentStateTone(undefined),
+            fleetAgentStateTone(undefined)
         ]).toEqual(['good', 'bad', 'warn', 'active', 'muted']);
         expect([
             fleetFailureTone('runtime'),
             fleetFailureTone('diagnostic'),
             fleetFailureTone('readiness'),
-            fleetFailureTone('unknown'),
+            fleetFailureTone('unknown')
         ]).toEqual(['bad', 'warn', 'active', 'muted']);
         expect(fleetCellTitle(undefined)).toBe(
-            'No result for this agent and run',
+            'No result for this agent and run'
         );
         expect(fleetCellTitle(failed)).toBe(
-            'agent-a: failed, 1 failed commands',
+            'agent-a: failed, 1 failed commands'
         );
         expect(shortSignatureId(undefined)).toBe('-');
         expect(shortSignatureId('1234567890123456789')).toBe(
-            '123456789012345678...',
+            '123456789012345678...'
         );
     });
 });

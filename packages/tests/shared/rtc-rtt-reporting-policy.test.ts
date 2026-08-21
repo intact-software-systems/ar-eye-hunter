@@ -1,9 +1,5 @@
+import { DEFAULT_RTT_REPORTING_DEGREE_LIMIT, normalizeRttReportingDegreeLimit, selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
-    normalizeRttReportingDegreeLimit,
-    selectRttReportingPeers,
-} from '@shared/rtc/rtt-reporting-policy.ts';
 
 describe('RTT reporting policy', () => {
     it('defaults to the topology degree limit fallback', () => {
@@ -20,7 +16,7 @@ describe('RTT reporting policy', () => {
             degreeLimit: 3,
             overlayNextHopSessionIds: ['peer-c', 'peer-a', 'self'],
             activePeerSessionIds: ['peer-a', 'peer-b', 'peer-c', 'peer-d'],
-            groupKey: 'app:workspace:room',
+            groupKey: 'app:workspace:room'
         });
 
         expect(result.selectedPeerIds).toEqual(['peer-a', 'peer-c', 'peer-d']);
@@ -32,7 +28,7 @@ describe('RTT reporting policy', () => {
             localSessionId: 'self',
             degreeLimit: 2,
             activePeerSessionIds: ['peer-d', 'peer-a', 'peer-c', 'self', 'peer-b'],
-            groupKey: 'app:workspace:room',
+            groupKey: 'app:workspace:room'
         };
 
         expect(selectRttReportingPeers(input).selectedPeerIds)

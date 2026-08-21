@@ -1,10 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-    analyzeSourceFile,
-    type SourceAnalysis,
-} from '../helpers/source-analysis';
+import { analyzeSourceFile, type SourceAnalysis } from '../helpers/source-analysis';
 
 const repoRoot = process.cwd();
 
@@ -13,40 +10,42 @@ describe('shared-web app import boundaries', () => {
         const analysis = readSourceAnalysis('apps/ar-eye-hunter-v1/src/main.tsx');
         const sideEffectImports = collectSideEffectImports(analysis);
 
-        for (const broadBarrel of [
-            '@shared/mod.ts',
-            '@shared-graph/mod.ts',
-            '@shared-web/mod.ts',
-        ]) {
+        for (
+            const broadBarrel of [
+                '@shared/mod.ts',
+                '@shared-graph/mod.ts',
+                '@shared-web/mod.ts'
+            ]
+        ) {
             expect(sideEffectImports, broadBarrel).not.toContain(broadBarrel);
         }
         expect(collectNamedImports(analysis)).toContainEqual({
             moduleSpecifier: '@shared-web/browser/rallar.ts',
-            importedName: 'rallar',
+            importedName: 'rallar'
         });
     });
 
     it('keeps Relic on its runtime adapter boundary without the broad shared-web barrel', () => {
         const runtimeSource = readSource(
-            'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
+            'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts'
         );
         const relicSources = [
             'apps/relic-hunters-v1/src/main.tsx',
             'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
             'apps/relic-hunters-v1/src/game/scene/networking.ts',
-            'apps/relic-hunters-v1/src/game/ai/useRelicPlanningAi.ts',
+            'apps/relic-hunters-v1/src/game/ai/useRelicPlanningAi.ts'
         ];
 
         expect(runtimeSource).toContain('export type RelicHuntersRuntimeDeps');
         expect(runtimeSource).toContain(
-            'constructor(deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps())',
+            'constructor(deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps())'
         );
 
         for (const sourcePath of relicSources) {
             const analysis = readSourceAnalysis(sourcePath);
             expect(
                 collectModuleImports(analysis),
-                sourcePath,
+                sourcePath
             ).not.toContain('@shared-web/mod.ts');
         }
     });
@@ -54,11 +53,11 @@ describe('shared-web app import boundaries', () => {
     it('keeps Rallar Black Box as the full-facade dynamic compatibility consumer', () => {
         const dynamicTargets = [
             ...collectDynamicImports(
-                readSourceAnalysis('apps/rallar-black-box/src/direct-rallar-operations.ts'),
+                readSourceAnalysis('apps/rallar-black-box/src/direct-rallar-operations.ts')
             ),
             ...collectDynamicImports(
-                readSourceAnalysis('apps/rallar-black-box/src/App.tsx'),
-            ),
+                readSourceAnalysis('apps/rallar-black-box/src/App.tsx')
+            )
         ];
 
         expect(dynamicTargets).toContain('@shared-web/browser/rallar.ts');
@@ -72,13 +71,13 @@ function collectSideEffectImports(analysis: SourceAnalysis): readonly string[] {
 }
 
 function collectNamedImports(
-    analysis: SourceAnalysis,
-): readonly Readonly<{ moduleSpecifier: string; importedName: string }>[] {
+    analysis: SourceAnalysis
+): readonly Readonly<{ moduleSpecifier: string; importedName: string; }>[] {
     return analysis.imports.flatMap((entry) =>
         entry.namedImports.map((namedImport) => ({
             moduleSpecifier: entry.specifier,
-            importedName: namedImport.local,
-        })),
+            importedName: namedImport.local
+        }))
     );
 }
 
@@ -87,9 +86,7 @@ function collectModuleImports(analysis: SourceAnalysis): readonly string[] {
 }
 
 function collectDynamicImports(analysis: SourceAnalysis): readonly string[] {
-    return analysis.dynamicImports.flatMap((entry) =>
-        entry.literal && entry.specifier ? [entry.specifier] : [],
-    );
+    return analysis.dynamicImports.flatMap((entry) => entry.literal && entry.specifier ? [entry.specifier] : []);
 }
 
 function readSourceAnalysis(filePath: string): SourceAnalysis {

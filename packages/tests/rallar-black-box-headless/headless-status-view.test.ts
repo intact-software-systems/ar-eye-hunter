@@ -30,7 +30,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             rallarRestoreSession: false,
             rallarLogoutOnClose: false,
             rallarLeaveRoomOnClose: false,
-            source: 'url',
+            source: 'url'
         },
         control: {
             state: 'registered',
@@ -51,16 +51,16 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
                 region: 'eu-north',
                 provider: 'hetzner',
                 datacenter: 'fsn1',
-                hostId: 'host-1',
-            },
+                hostId: 'host-1'
+            }
         },
         state: {
             status: 'configured',
             commandHistory: [],
             events: [],
             failures: [],
-            resultCache: {},
-        },
+            resultCache: {}
+        }
     };
 }
 
@@ -95,8 +95,8 @@ describe('headless status view', () => {
             lastError: unsafe,
             bootstrap: {
                 ...snapshot().bootstrap,
-                agentId: unsafe,
-            },
+                agentId: unsafe
+            }
         });
 
         expect(root.querySelector('img')).toBeNull();
@@ -112,7 +112,7 @@ describe('headless status view', () => {
             ...snapshot(),
             control: {
                 ...snapshot().control,
-                identity: undefined,
+                identity: undefined
             },
             bootstrap: {
                 ...snapshot().bootstrap,
@@ -120,12 +120,12 @@ describe('headless status view', () => {
                 workspaceId: '',
                 roomId: '',
                 fleetRegion: undefined,
-                fleetProvider: undefined,
-            },
+                fleetProvider: undefined
+            }
         });
 
         expect(root.querySelector('[data-fleet-identity-warning]')?.textContent).toContain(
-            'Missing global fleet identity',
+            'Missing global fleet identity'
         );
     });
 });

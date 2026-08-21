@@ -1,5 +1,5 @@
-import type { RallarCrdtDocumentTypePolicy, RallarCrdtFeatureFlags } from './crdt-hardening.ts';
 import type { RallarCrdtQuotaPolicy, RallarCrdtRetentionPolicy } from './crdt-durable-log.ts';
+import type { RallarCrdtDocumentTypePolicy, RallarCrdtFeatureFlags } from './crdt-hardening.ts';
 
 const POLICY_KEYS = new Set([
     'applicationId',
@@ -10,7 +10,7 @@ const POLICY_KEYS = new Set([
     'flags',
     'quota',
     'retention',
-    'sensitiveFields',
+    'sensitiveFields'
 ]);
 const FLAG_KEYS = new Set([
     'networkSend',
@@ -23,20 +23,20 @@ const FLAG_KEYS = new Set([
     'customScope',
     'graphDocuments',
     'sequenceTextDocuments',
-    'killSwitchReason',
+    'killSwitchReason'
 ]);
 const QUOTA_KEYS = new Set([
     'maxUpdateBytes',
     'maxDocumentBytes',
     'maxUpdateCount',
     'maxPendingUpdatesPerReplica',
-    'maxUpdatesPerMinutePerActor',
+    'maxUpdatesPerMinutePerActor'
 ]);
 const RETENTION_KEYS = new Set([
     'mode',
     'ttlMs',
     'sensitivePayloads',
-    'reason',
+    'reason'
 ]);
 const SCOPES = new Set(['room', 'principal', 'app', 'custom', 'any']);
 const ROLLOUTS = new Set([
@@ -44,12 +44,12 @@ const ROLLOUTS = new Set([
     'experimental-local',
     'experimental-live',
     'durable-beta',
-    'production',
+    'production'
 ]);
 const RETENTION_MODES = new Set(['retain', 'redact-after', 'delete-after']);
 
 export function decodeRallarCrdtDocumentTypePolicies(
-    value: unknown,
+    value: unknown
 ): readonly RallarCrdtDocumentTypePolicy[] {
     if (!Array.isArray(value)) {
         throw new TypeError('CRDT document policies must be an array');
@@ -61,7 +61,7 @@ export function decodeRallarCrdtDocumentTypePolicies(
 }
 
 export function decodeRallarCrdtDocumentTypePolicy(
-    value: unknown,
+    value: unknown
 ): RallarCrdtDocumentTypePolicy {
     const policy = exactRecord(value, POLICY_KEYS, 'CRDT document policy');
     const documentType = nonEmptyString(policy.documentType, 'policy.documentType');
@@ -88,7 +88,7 @@ export function decodeRallarCrdtDocumentTypePolicy(
         ...(policy.retention === undefined ? {} : { retention: decodeRetention(policy.retention) }),
         ...(policy.sensitiveFields === undefined
             ? {}
-            : { sensitiveFields: decodeSensitiveFields(policy.sensitiveFields) }),
+            : { sensitiveFields: decodeSensitiveFields(policy.sensitiveFields) })
     };
 }
 
@@ -97,12 +97,16 @@ function decodeFlags(value: unknown): RallarCrdtFeatureFlags {
     const result: Record<string, boolean | string> = {};
     for (const key of FLAG_KEYS) {
         const field = flags[key];
-        if (field === undefined) continue;
+        if (field === undefined) {
+            continue;
+        }
         if (key === 'killSwitchReason') {
             result[key] = nonEmptyString(field, `policy.flags.${key}`);
-        } else if (typeof field === 'boolean') {
+        }
+        else if (typeof field === 'boolean') {
             result[key] = field;
-        } else {
+        }
+        else {
             throw new TypeError(`policy.flags.${key} must be boolean`);
         }
     }
@@ -148,7 +152,7 @@ function decodeRetention(value: unknown): RallarCrdtRetentionPolicy {
         ...(retention.sensitivePayloads === undefined
             ? {}
             : { sensitivePayloads: retention.sensitivePayloads }),
-        ...(reason === undefined ? {} : { reason }),
+        ...(reason === undefined ? {} : { reason })
     };
 }
 
@@ -156,9 +160,7 @@ function decodeSensitiveFields(value: unknown): readonly string[] {
     if (!Array.isArray(value) || value.length === 0) {
         throw new TypeError('policy.sensitiveFields must be a non-empty array');
     }
-    const fields = value.map((field, index) =>
-        nonEmptyString(field, `policy.sensitiveFields[${index}]`)
-    );
+    const fields = value.map((field, index) => nonEmptyString(field, `policy.sensitiveFields[${index}]`));
     if (new Set(fields).size !== fields.length) {
         throw new TypeError('policy.sensitiveFields must not contain duplicates');
     }
@@ -168,7 +170,7 @@ function decodeSensitiveFields(value: unknown): readonly string[] {
 function exactRecord(
     value: unknown,
     allowedKeys: ReadonlySet<string>,
-    label: string,
+    label: string
 ): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be an object`);

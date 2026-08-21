@@ -1,6 +1,4 @@
-import type {
-    RallarServerRestMethod,
-} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import type { RallarServerRestMethod } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 
 export type RallarServerRequestFeedback = Readonly<{
     state: 'idle' | 'sending' | 'success' | 'error';

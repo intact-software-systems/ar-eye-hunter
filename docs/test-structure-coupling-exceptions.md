@@ -26,7 +26,7 @@ distinct executable assertions remain separately reviewable.
 An entry's `id` is derived from the occurrence's path, kind, whitespace-normalized
 source text, and its occurrence order within the file. It deliberately excludes
 line and column so that reformatting cannot re-key a registered review; a change
-in what an occurrence *asserts* re-keys it, a change in where it *sits* does not.
+in what an occurrence _asserts_ re-keys it, a change in where it _sits_ does not.
 The checker report still prints the live `path:line:column` for navigation.
 
 Every entry has a named `owner`. A `durable-boundary` entry additionally

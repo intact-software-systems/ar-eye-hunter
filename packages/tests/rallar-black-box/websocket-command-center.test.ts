@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { AuthSession } from '../../shared/api/api-config.ts';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState,
-} from '../../shared-test/rallar-bb-test/types.ts';
+import type { WebSocketCommandCenterValues, WebSocketDiagnostic } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
+import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts';
 import {
     DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,
     WEBSOCKET_PAYLOAD_PRESETS,
     webSocketPayloadPresetById,
-    webSocketPayloadPresetText,
+    webSocketPayloadPresetText
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts';
+import { webSocketCommandCenterRecipe } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts';
 import {
     defaultWebSocketApiUrl,
     defaultWebSocketScope,
@@ -19,19 +15,16 @@ import {
     defaultWebSocketTypeId,
     defaultWebSocketValuesFromContext,
     resolveWebSocketUrlTemplate,
-    webSocketRoutePreview,
+    webSocketRoutePreview
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts';
-import { webSocketCommandCenterRecipe } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts';
-import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts';
-import type {
-    WebSocketCommandCenterValues,
-    WebSocketDiagnostic,
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(
     '?apiBaseUrl=https%3A%2F%2Fbootstrap.example%2Fapi&applicationId=bootstrap-app&workspaceId=bootstrap-workspace&roomId=bootstrap-room&actor=bootstrap-actor&sessionId=bootstrap-session',
     {},
-    '',
+    ''
 );
 
 const authSession: AuthSession = {
@@ -39,7 +32,7 @@ const authSession: AuthSession = {
     accessToken: 'access-secret',
     username: 'alice',
     sessionId: 'session/with spaces',
-    expiresAtEpochMs: 9_999,
+    expiresAtEpochMs: 9_999
 };
 
 const values: WebSocketCommandCenterValues = {
@@ -58,13 +51,13 @@ const values: WebSocketCommandCenterValues = {
     payloadText: '{"text":"hello"}',
     timeoutMs: 2_500,
     closeCode: 1001,
-    closeReason: 'done',
+    closeReason: 'done'
 };
 
 function event(
     eventId: string,
     atEpochMs: number,
-    overrides: Partial<RallarBlackBoxTestEvent> = {},
+    overrides: Partial<RallarBlackBoxTestEvent> = {}
 ): RallarBlackBoxTestEvent {
     return {
         eventId,
@@ -73,13 +66,13 @@ function event(
         atEpochMs,
         connection: 'primary-ws',
         transport: 'ws',
-        ...overrides,
+        ...overrides
     };
 }
 
 function result(
     commandId: string,
-    overrides: Partial<RallarBlackBoxTestResult> = {},
+    overrides: Partial<RallarBlackBoxTestResult> = {}
 ): RallarBlackBoxTestResult {
     return {
         commandId,
@@ -90,25 +83,25 @@ function result(
         endedAtEpochMs: 110,
         durationMs: 10,
         value: { connection: 'primary-ws' },
-        ...overrides,
+        ...overrides
     };
 }
 
 function state(
     events: readonly RallarBlackBoxTestEvent[] = [],
-    commandHistory: readonly RallarBlackBoxTestResult[] = [],
+    commandHistory: readonly RallarBlackBoxTestResult[] = []
 ): RallarBlackBoxTestState {
     return {
         status: 'completed',
         currentConfig: {
             roomId: 'group-a',
             transport: 'ws',
-            defaults: { connection: 'primary-ws' },
+            defaults: { connection: 'primary-ws' }
         },
         commandHistory,
         events,
         failures: commandHistory.filter((entry) => !entry.ok),
-        resultCache: {},
+        resultCache: {}
     };
 }
 
@@ -118,7 +111,7 @@ describe('WebSocket command-center presets and routing', () => {
         expect(WEBSOCKET_PAYLOAD_PRESETS.map((preset) => preset.presetId)).toEqual([
             'ping',
             'group-message',
-            'parity-probe',
+            'parity-probe'
         ]);
         expect(defaultWebSocketScope()).toBe('room');
         expect(defaultWebSocketTypeId()).toBe('room.manual.message');
@@ -127,19 +120,19 @@ describe('WebSocket command-center presets and routing', () => {
         expect(webSocketPayloadPresetText('missing')).toBeUndefined();
         expect(JSON.parse(webSocketPayloadPresetText('group-message') ?? '')).toEqual({
             deliveryMode: 'broadcast',
-            text: 'hello from rallar-black-box',
+            text: 'hello from rallar-black-box'
         });
     });
 
     it('derives WebSocket endpoints and encodes every route-template credential', () => {
         expect(defaultWebSocketApiUrl('https://api.example.test/base?old=1')).toBe(
-            'wss://api.example.test/api/ws/%7Bauth.sessionId%7D?ticket={auth.wsTicket}',
+            'wss://api.example.test/api/ws/%7Bauth.sessionId%7D?ticket={auth.wsTicket}'
         );
         expect(defaultWebSocketApiUrl('http://localhost:9090')).toBe(
-            'ws://localhost:9090/api/ws/%7Bauth.sessionId%7D?ticket={auth.wsTicket}',
+            'ws://localhost:9090/api/ws/%7Bauth.sessionId%7D?ticket={auth.wsTicket}'
         );
         expect(defaultWebSocketApiUrl('not a URL')).toBe(
-            'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
+            'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}'
         );
 
         expect(
@@ -151,19 +144,19 @@ describe('WebSocket command-center presets and routing', () => {
                     ticket: 'ticket/? +',
                     sessionId: 'ticket-session',
                     expiresAtEpochMs: 8_000,
-                    issuedAtEpochMs: 7_000,
-                },
-            ),
+                    issuedAtEpochMs: 7_000
+                }
+            )
         ).toBe(
-            'wss://api.example.test/api/ws/session%2Fwith%20spaces?ticket=ticket%2F%3F%20%2B',
+            'wss://api.example.test/api/ws/session%2Fwith%20spaces?ticket=ticket%2F%3F%20%2B'
         );
         expect(
             resolveWebSocketUrlTemplate(
                 '{config.wsBaseUrl}/{auth.sessionId}/{auth.wsTicket}',
                 'invalid',
                 undefined,
-                undefined,
-            ),
+                undefined
+            )
         ).toBe('ws://localhost:8080//');
     });
 
@@ -176,44 +169,44 @@ describe('WebSocket command-center presets and routing', () => {
                     workspaceId: 'global-workspace',
                     clientId: 'global-client',
                     sessionId: 'global-session',
-                    roomId: 'global-room',
+                    roomId: 'global-room'
                 },
                 {
                     apiBaseUrl: 'https://config.example',
                     roomId: 'config-room',
                     rallar: {
                         applicationId: 'config-app',
-                        workspaceId: 'config-workspace',
-                    },
+                        workspaceId: 'config-workspace'
+                    }
                 },
-                bootstrap,
-            ),
+                bootstrap
+            )
         ).toEqual({
             apiBaseUrl: 'https://global.example',
             applicationId: 'global-app',
             workspaceId: 'global-workspace',
             groupId: 'global-room',
-            contextId: 'global-room',
+            contextId: 'global-room'
         });
 
         expect(
             defaultWebSocketValuesFromContext(
                 undefined,
                 { apiBaseUrl: '', roomId: '', rallar: {} },
-                { ...bootstrap, roomId: '' },
-            ),
+                { ...bootstrap, roomId: '' }
+            )
         ).toMatchObject({
             applicationId: 'rallar-black-box',
             workspaceId: 'default',
             groupId: '',
-            contextId: 'all',
+            contextId: 'all'
         });
     });
 
     it('normalizes untyped payloads while preserving typed routing overrides through copied recipes', () => {
         const recipeFor = (
             nextValues: WebSocketCommandCenterValues,
-            payload: unknown,
+            payload: unknown
         ): Record<string, unknown> => {
             const recipe = JSON.parse(
                 webSocketCommandCenterRecipe({
@@ -221,9 +214,9 @@ describe('WebSocket command-center presets and routing', () => {
                     payload,
                     bootstrap,
                     providerMode: 'real',
-                    sequence: 1,
-                }),
-            ) as { commands: readonly Record<string, unknown>[] };
+                    sequence: 1
+                })
+            ) as { commands: readonly Record<string, unknown>[]; };
             return recipe.commands.find((command) => command.kind === 'ws.send') ?? {};
         };
 
@@ -237,7 +230,7 @@ describe('WebSocket command-center presets and routing', () => {
             typeId: 'room.message',
             topicId: 'room.chat',
             contextId: 'context-a',
-            resourceId: 'resource-a',
+            resourceId: 'resource-a'
         });
         expect(
             recipeFor(
@@ -248,9 +241,9 @@ describe('WebSocket command-center presets and routing', () => {
                     groupId: 'explicit-group',
                     typeId: 'override-type',
                     contextId: '',
-                    resourceId: 'explicit-resource',
-                },
-            ).data,
+                    resourceId: 'explicit-resource'
+                }
+            ).data
         ).toEqual({
             payload: 'typed',
             scope: 'world',
@@ -261,7 +254,7 @@ describe('WebSocket command-center presets and routing', () => {
             applicationId: 'black-box-app',
             workspaceId: 'workspace-a',
             roomId: 'explicit-group',
-            topicId: 'room.chat',
+            topicId: 'room.chat'
         });
     });
 
@@ -274,7 +267,7 @@ describe('WebSocket command-center presets and routing', () => {
             outboundCount: 0,
             errorCount: 0,
             recentEvents: [],
-            receivedMessages: [],
+            receivedMessages: []
         };
         const browserStatus = {
             signalingLabel: 'open',
@@ -286,7 +279,7 @@ describe('WebSocket command-center presets and routing', () => {
             rtcGroup: '-',
             rtcConnection: '-',
             rtcTransport: '-',
-            peerSummary: 'ready 0 / active 0 / known 0',
+            peerSummary: 'ready 0 / active 0 / known 0'
         };
 
         expect(
@@ -294,8 +287,8 @@ describe('WebSocket command-center presets and routing', () => {
                 values,
                 diagnostics,
                 providerMode: 'browser-rallar',
-                browserStatus,
-            }),
+                browserStatus
+            })
         ).toEqual({
             destination: 'Group group-a',
             destinationDetail: 'Application black-box-app / workspace workspace-a',
@@ -303,7 +296,7 @@ describe('WebSocket command-center presets and routing', () => {
             selectorDetail: 'Context context-a',
             transport: 'Rallar app WS',
             transportDetail: 'Uses open Rallar signaling for primary-ws',
-            sendLabel: 'Send JSON to group group-a',
+            sendLabel: 'Send JSON to group group-a'
         });
         expect(
             webSocketRoutePreview({
@@ -312,45 +305,45 @@ describe('WebSocket command-center presets and routing', () => {
                     groupId: ' ',
                     topicId: ' ',
                     typeId: ' ',
-                    contextId: ' ',
+                    contextId: ' '
                 },
                 diagnostics: { ...diagnostics, status: 'closed' },
                 providerMode: 'real',
-                browserStatus,
-            }),
+                browserStatus
+            })
         ).toMatchObject({
             destination: 'No group selected',
             destinationDetail: 'Room-scoped messages need a Group before send.',
             selector: '* / -',
             selectorDetail: 'Context room',
             transport: 'No open WS',
-            sendLabel: 'Send JSON to group',
+            sendLabel: 'Send JSON to group'
         });
         expect(
             webSocketRoutePreview({
                 values: { ...values, wsScope: 'all' },
                 diagnostics: { ...diagnostics, status: 'idle' },
                 providerMode: 'simulated',
-                browserStatus,
-            }),
+                browserStatus
+            })
         ).toMatchObject({
             destination: 'All WS subscribers',
             destinationDetail: 'Group is ignored for this send.',
             transport: 'Simulated WebSocket',
-            sendLabel: 'Send JSON to all',
+            sendLabel: 'Send JSON to all'
         });
         expect(
             webSocketRoutePreview({
                 values: { ...values, wsScope: 'world' },
                 diagnostics,
                 providerMode: 'real',
-                browserStatus,
-            }),
+                browserStatus
+            })
         ).toMatchObject({
             destination: 'World scope',
             destinationDetail: 'Uses Rallar world scope; Group is ignored.',
             transport: 'Raw WebSocket',
-            sendLabel: 'Send JSON to world',
+            sendLabel: 'Send JSON to world'
         });
     });
 });
@@ -366,10 +359,10 @@ describe('WebSocket command-center copied recipes', () => {
                 sequence: 7,
                 payload: {
                     deliveryMode: 'broadcast',
-                    text: 'hello from rallar-black-box',
-                },
-            }),
-        ) as { commands: readonly Record<string, unknown>[] };
+                    text: 'hello from rallar-black-box'
+                }
+            })
+        ) as { commands: readonly Record<string, unknown>[]; };
 
         expect(recipe.commands[0]).toMatchObject({
             kind: 'configure',
@@ -388,18 +381,18 @@ describe('WebSocket command-center copied recipes', () => {
                     roomRef: {
                         applicationId: 'black-box-app',
                         workspaceId: 'workspace-a',
-                        groupId: 'group-a',
+                        groupId: 'group-a'
                     },
                     typeId: 'room.message',
-                    topicId: 'room.chat',
+                    topicId: 'room.chat'
                 },
                 control: {
                     mode: 'websocket-command-center',
                     providerMode: 'browser-rallar',
                     protocolVersion: 1,
-                    connected: false,
-                },
-            },
+                    connected: false
+                }
+            }
         });
         expect(recipe.commands[1]).toEqual({
             kind: 'ws.open',
@@ -408,7 +401,7 @@ describe('WebSocket command-center copied recipes', () => {
             connection: 'primary-ws',
             url: values.wsUrl,
             protocols: ['json', 'rallar.v1'],
-            timeoutMs: 2_500,
+            timeoutMs: 2_500
         });
         expect(recipe.commands[2]).toMatchObject({
             kind: 'ws.send',
@@ -417,11 +410,11 @@ describe('WebSocket command-center copied recipes', () => {
             data: {
                 payload: {
                     deliveryMode: 'broadcast',
-                    text: 'hello from rallar-black-box',
+                    text: 'hello from rallar-black-box'
                 },
                 roomId: 'group-a',
-                scope: 'room',
-            },
+                scope: 'room'
+            }
         });
         expect(recipe.commands[3]).toEqual({
             kind: 'ws.close',
@@ -430,7 +423,7 @@ describe('WebSocket command-center copied recipes', () => {
             connection: 'primary-ws',
             code: 1000,
             reason: 'done',
-            timeoutMs: 2_500,
+            timeoutMs: 2_500
         });
     });
 
@@ -443,15 +436,15 @@ describe('WebSocket command-center copied recipes', () => {
                 providerMode: 'browser-rallar',
                 authSession,
                 sequence: 20,
-                includeRtcParity: true,
-            }),
+                includeRtcParity: true
+            })
         ) as {
             recipeId: string;
             commands: readonly Record<string, unknown>[];
         };
 
         expect(recipe.recipeId).toBe(
-            'rallar-websocket-rtc-parity-command-center',
+            'rallar-websocket-rtc-parity-command-center'
         );
         expect(recipe.commands.map((command) => command.kind)).toEqual([
             'configure',
@@ -459,7 +452,7 @@ describe('WebSocket command-center copied recipes', () => {
             'ws.send',
             'rtc.connect',
             'rtc.send',
-            'ws.close',
+            'ws.close'
         ]);
         expect(recipe.commands.map((command) => command.commandId)).toEqual([
             'ws-configure-20',
@@ -467,7 +460,7 @@ describe('WebSocket command-center copied recipes', () => {
             'ws-send-22',
             'ws-rtc-parity-connect-23',
             'ws-rtc-parity-send-24',
-            'ws-close-26',
+            'ws-close-26'
         ]);
         expect(JSON.stringify(recipe)).not.toContain('access-secret');
         expect(JSON.stringify(recipe)).not.toContain('password-secret');
@@ -481,12 +474,12 @@ describe('WebSocket command-center diagnostics', () => {
                 [
                     event('opened', 100, {
                         topic: 'rallar.bb.ws.opened',
-                        payload: { readyState: 'open' },
+                        payload: { readyState: 'open' }
                     }),
                     event('other', 150, {
                         connection: 'other-ws',
                         severity: 'error',
-                        topic: 'rallar.bb.ws.error',
+                        topic: 'rallar.bb.ws.error'
                     }),
                     event('message', 200, {
                         kind: 'message',
@@ -499,32 +492,32 @@ describe('WebSocket command-center diagnostics', () => {
                                 topicId: 'nested-topic',
                                 contextId: 'nested-context',
                                 resourceId: 'nested-resource',
-                                payload: { text: 'received' },
-                            },
-                        },
+                                payload: { text: 'received' }
+                            }
+                        }
                     }),
                     event('closed', 300, {
                         topic: 'rallar.bb.ws.closed',
-                        payload: { code: 1001, reason: 'closed first' },
+                        payload: { code: 1001, reason: 'closed first' }
                     }),
                     event('error', 400, {
                         topic: 'rallar.bb.ws.error',
-                        severity: 'error',
-                    }),
+                        severity: 'error'
+                    })
                 ],
                 [
                     result('send-ok'),
                     result('send-other', {
-                        value: { connection: 'other-ws' },
+                        value: { connection: 'other-ws' }
                     }),
                     result('open-failed', {
                         kind: 'ws.open',
                         status: 'failed',
-                        ok: false,
-                    }),
-                ],
+                        ok: false
+                    })
+                ]
             ),
-            'primary-ws',
+            'primary-ws'
         );
 
         expect(diagnostics).toMatchObject({
@@ -537,13 +530,13 @@ describe('WebSocket command-center diagnostics', () => {
             closeReason: 'closed first',
             inboundCount: 1,
             outboundCount: 1,
-            errorCount: 2,
+            errorCount: 2
         });
         expect(diagnostics.recentEvents.map((entry) => entry.eventId)).toEqual([
             'opened',
             'message',
             'closed',
-            'error',
+            'error'
         ]);
         expect(diagnostics.receivedMessages).toEqual([
             {
@@ -555,8 +548,8 @@ describe('WebSocket command-center diagnostics', () => {
                 topicId: 'nested-topic',
                 contextId: 'nested-context',
                 resourceId: 'nested-resource',
-                payload: { text: 'received' },
-            },
+                payload: { text: 'received' }
+            }
         ]);
     });
 
@@ -567,67 +560,65 @@ describe('WebSocket command-center diagnostics', () => {
                 state([
                     event('closed', 100, { topic: 'rallar.bb.ws.closed' }),
                     event('simulated', 200, {
-                        topic: 'rallar.bb.ws.open_skipped',
-                    }),
+                        topic: 'rallar.bb.ws.open_skipped'
+                    })
                 ]),
-                'primary-ws',
-            ).status,
+                'primary-ws'
+            ).status
         ).toBe('simulated');
         expect(
             deriveWebSocketDiagnostics(
                 state([
                     event('closed', 100, { topic: 'rallar.bb.ws.closed' }),
-                    event('opened', 200, { topic: 'rallar.bb.ws.opened' }),
+                    event('opened', 200, { topic: 'rallar.bb.ws.opened' })
                 ]),
-                'primary-ws',
-            ).status,
+                'primary-ws'
+            ).status
         ).toBe('open');
         expect(
             deriveWebSocketDiagnostics(
                 state([
                     event('error', 100, {
                         topic: 'rallar.bb.ws.error',
-                        severity: 'error',
+                        severity: 'error'
                     }),
-                    event('closed', 200, { topic: 'rallar.bb.ws.closed' }),
+                    event('closed', 200, { topic: 'rallar.bb.ws.closed' })
                 ]),
-                'primary-ws',
-            ).status,
+                'primary-ws'
+            ).status
         ).toBe('closed');
         expect(
             deriveWebSocketDiagnostics(
                 state([
                     event('simulated', 100, {
-                        topic: 'rallar.bb.ws.open_skipped',
+                        topic: 'rallar.bb.ws.open_skipped'
                     }),
                     event('error', 200, {
                         topic: 'rallar.bb.ws.error',
-                        severity: 'error',
-                    }),
+                        severity: 'error'
+                    })
                 ]),
-                'primary-ws',
-            ).status,
+                'primary-ws'
+            ).status
         ).toBe('error');
         expect(
             deriveWebSocketDiagnostics(
                 state([
                     event('closed', 200, { topic: 'rallar.bb.ws.closed' }),
-                    event('opened', 200, { topic: 'rallar.bb.ws.opened' }),
+                    event('opened', 200, { topic: 'rallar.bb.ws.opened' })
                 ]),
-                'primary-ws',
-            ).status,
+                'primary-ws'
+            ).status
         ).toBe('open');
 
         const ordered = deriveWebSocketDiagnostics(
             state(
-                Array.from({ length: 18 }, (_, index) =>
-                    event(`ordered-${index}`, index),
-                ),
+                Array.from({ length: 18 }, (_, index) => event(`ordered-${index}`, index))
             ),
-            '',
+            ''
         );
         expect(ordered.recentEvents.map((entry) => entry.eventId)).toEqual(
-            Array.from({ length: 16 }, (_, index) => `ordered-${index + 2}`),
+            Array.from({ length: 16 }, (_, index) => `ordered-${index + 2}`)
         );
     });
 });

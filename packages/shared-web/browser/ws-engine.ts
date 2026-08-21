@@ -1,18 +1,18 @@
-import { ClientInfo } from '@shared/api/api-config.ts';
-import { Command } from '@shared/cache/Command.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import WsQueueBoxClientService, {
-    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-} from '@shared/services/WsQueueBoxClientService.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
 import {
     resolveBrowserWsClientALInboundRuntimeStores,
-    resolveBrowserWsClientALOutboundRuntimeStores,
+    resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/browser-al-runtime-stores.ts';
-import { readSession } from '@shared/api/auth.ts';
+import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import { ClientInfo } from '@shared/api/api-config.ts';
+import { readSession } from '@shared/api/auth.ts';
+import { Command } from '@shared/cache/Command.ts';
+import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import WsQueueBoxClientService, {
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
+} from '@shared/services/WsQueueBoxClientService.ts';
+import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 export type WsEngineInitOptions = Readonly<{
     signal?: AbortSignal;
@@ -26,45 +26,41 @@ export async function initialiseWsEngine(
     socket: JsonWebSocketClient,
     clientData: ClientInfo,
     resilience: ResilienceDto,
-    options: WsEngineInitOptions = {},
+    options: WsEngineInitOptions = {}
 ) {
-    const wsQueueBox =
-        new WsQueueBoxClientService(
-            createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
-            createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
-            socket,
-            {
-                sessionId: clientData.sessionId,
-            },
-            {
-                inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
-                outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
-                outboundDiagnostics: options.outboundDiagnostics,
-                newConnectionRequestId: options.newConnectionRequestId,
-                reconnect: {
-                    ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-                    canReconnect: () =>
-                        readSession()?.sessionId === clientData.sessionId,
-                },
-            },
-        );
+    const wsQueueBox = new WsQueueBoxClientService(
+        createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
+        createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
+        socket,
+        {
+            sessionId: clientData.sessionId
+        },
+        {
+            inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
+            outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
+            outboundDiagnostics: options.outboundDiagnostics,
+            newConnectionRequestId: options.newConnectionRequestId,
+            reconnect: {
+                ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+                canReconnect: () => readSession()?.sessionId === clientData.sessionId
+            }
+        }
+    );
 
     qboxEngine.includeTask(
         WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
         {
             name: WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE,
             maxConcurrency: () => 1,
-            isWork:
-                () =>
-                    wsQueueBox
-                        .outbox
-                        .isAnyEntryToLock(
-                            WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                            resilience.toWorkAdvertisementOptions(),
-                        ),
-            runnable:
-                () => wsQueueBox.dequeueOutbox(WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES, resilience),
-            ongoingTasks: [],
+            isWork: () =>
+                wsQueueBox
+                    .outbox
+                    .isAnyEntryToLock(
+                        WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
+                        resilience.toWorkAdvertisementOptions()
+                    ),
+            runnable: () => wsQueueBox.dequeueOutbox(WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES, resilience),
+            ongoingTasks: []
         }
     );
 
@@ -73,17 +69,15 @@ export async function initialiseWsEngine(
         {
             name: WsQueueBoxClientService.INBOX_ENQUEUE_TYPE,
             maxConcurrency: () => 1,
-            isWork:
-                () =>
-                    wsQueueBox
-                        .inbox
-                        .isAnyEntryToLock(
-                            WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
-                            resilience.toWorkAdvertisementOptions(),
-                        ),
-            runnable:
-                () => wsQueueBox.dequeueInbox(WsQueueBoxClientService.INBOX_DEQUEUE_TYPES, resilience),
-            ongoingTasks: [],
+            isWork: () =>
+                wsQueueBox
+                    .inbox
+                    .isAnyEntryToLock(
+                        WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
+                        resilience.toWorkAdvertisementOptions()
+                    ),
+            runnable: () => wsQueueBox.dequeueInbox(WsQueueBoxClientService.INBOX_DEQUEUE_TYPES, resilience),
+            ongoingTasks: []
         }
     );
 
@@ -97,7 +91,7 @@ export async function initialiseWsEngine(
 
 async function connectInitialSocket(
     socket: JsonWebSocketClient,
-    options: WsEngineInitOptions,
+    options: WsEngineInitOptions
 ): Promise<void> {
     const requestId = options.newConnectionRequestId?.();
     const connectTimeoutMs = options.connectTimeoutMs ??
@@ -105,7 +99,7 @@ async function connectInitialSocket(
     if (connectTimeoutMs <= 0) {
         await socket.connect({
             requestId,
-            signal: options.signal,
+            signal: options.signal
         });
         return;
     }
@@ -114,12 +108,12 @@ async function connectInitialSocket(
         (signal) =>
             socket.connect({
                 requestId,
-                signal,
+                signal
             }),
         {
             signal: options.signal,
             timeoutMs: connectTimeoutMs,
-            errorOnNull: false,
-        },
+            errorOnNull: false
+        }
     ).run();
 }

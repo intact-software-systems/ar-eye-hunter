@@ -184,28 +184,28 @@ keeps tests simple and makes Rallar Game usable with isolated facades.
 Add these public types:
 
 ```ts
-RallarGameLaneIds
-RallarGameTypeIds
-RallarGameMatchPhase
-RallarGameMatchStatus
-RallarGameHostCapability
-RallarGameHostCandidate
-RallarGameHostElectionInput
-RallarGameHostElectionResult
-RallarGameHostLease
-RallarGameHostAppointResult
-RallarGameEnvelope<T>
-RallarGameEnvelopeKind
-RallarGameEnvelopeCreateInput<T>
-RallarGameSequenceTracker
-RallarGamePeerReadiness
-RallarGameLaneReadyOptions
-RallarGameRecoveryState
-RallarGameDiagnostics
-RallarGameDiagnosticsInput
-RallarGameSendResult
-RallarGameStatusHandler
-RallarGameEnvelopeHandler<T>
+RallarGameLaneIds;
+RallarGameTypeIds;
+RallarGameMatchPhase;
+RallarGameMatchStatus;
+RallarGameHostCapability;
+RallarGameHostCandidate;
+RallarGameHostElectionInput;
+RallarGameHostElectionResult;
+RallarGameHostLease;
+RallarGameHostAppointResult;
+RallarGameEnvelope<T>;
+RallarGameEnvelopeKind;
+RallarGameEnvelopeCreateInput<T>;
+RallarGameSequenceTracker;
+RallarGamePeerReadiness;
+RallarGameLaneReadyOptions;
+RallarGameRecoveryState;
+RallarGameDiagnostics;
+RallarGameDiagnosticsInput;
+RallarGameSendResult;
+RallarGameStatusHandler;
+RallarGameEnvelopeHandler<T>;
 ```
 
 Default lane IDs:
@@ -260,10 +260,7 @@ type RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent> = {
     typeIds?: Partial<RallarGameTypeIds>;
     heartbeatTtlMs?: number;
     capabilityTtlMs?: number;
-    readCapability?: () => Omit<
-        RallarGameHostCapability,
-        'peerId' | 'reportedAtEpochMs'
-    >;
+    readCapability?: () => Omit<RallarGameHostCapability, 'peerId' | 'reportedAtEpochMs'>;
     resolvePeerIds?: (roomState: RallarRoomState) => readonly string[];
     scoreHost?: (capability: RallarGameHostCapability) => number;
     readSnapshot?: () =>
@@ -300,18 +297,18 @@ type RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent> = {
     status(): RallarGameMatchStatus;
     diagnostics(): RallarGameDiagnostics;
     reportCapability(
-        capability?: Partial<RallarGameHostCapability>,
+        capability?: Partial<RallarGameHostCapability>
     ): Promise<RallarGameSendResult>;
     election(): RallarGameHostElectionResult;
     appointIfElected(): Promise<RallarGameHostAppointResult>;
     waitForReadyLanes(
-        options?: RallarGameLaneReadyOptions,
+        options?: RallarGameLaneReadyOptions
     ): Promise<RallarGamePeerReadiness>;
     sendInput(input: TInput): Promise<RallarGameSendResult>;
     sendIntent(intent: TIntent): Promise<RallarGameSendResult>;
     publishSnapshot(
         snapshot: TSnapshot,
-        options?: { reliable?: boolean },
+        options?: { reliable?: boolean; }
     ): Promise<RallarGameSendResult>;
     publishEvent(event: TEvent): Promise<RallarGameSendResult>;
     requestSync(payload?: unknown): Promise<RallarGameSendResult>;
@@ -464,7 +461,7 @@ await rallar.start({
     connect: true,
     refreshRooms: true,
     refreshPeople: true,
-    dataChannelLanes: createRallarGameLanePresets(),
+    dataChannelLanes: createRallarGameLanePresets()
 });
 ```
 
@@ -564,7 +561,7 @@ const game = createRallarGameMatch<
     onInput: ({ payload }) => directorRuntime.enqueueInput(payload),
     onIntent: ({ payload }) => directorRuntime.handleIntent(payload),
     onSnapshot: ({ payload }) => clientRuntime.acceptSnapshot(payload),
-    onEvent: ({ payload }) => clientRuntime.applyEvent(payload),
+    onEvent: ({ payload }) => clientRuntime.applyEvent(payload)
 });
 ```
 

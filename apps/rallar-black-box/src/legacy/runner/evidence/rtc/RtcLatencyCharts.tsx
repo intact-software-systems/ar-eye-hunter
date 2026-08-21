@@ -1,7 +1,4 @@
-import type {
-    RtcPerformanceHistogramBucket,
-    RtcPerformanceScatterPoint,
-} from '../../../../rtc-diagnostics.ts';
+import type { RtcPerformanceHistogramBucket, RtcPerformanceScatterPoint } from '../../../../rtc-diagnostics.ts';
 import { formatDuration } from '../../../shared/time-format.ts';
 
 function scatterCircleClass(point: RtcPerformanceScatterPoint): string {
@@ -24,18 +21,18 @@ type RtcPercentileMarkers = Readonly<{
 }>;
 
 function rtcPercentileMarkerEntries(
-    percentiles: RtcPercentileMarkers,
-): readonly Readonly<{ label: string; value: number }>[] {
+    percentiles: RtcPercentileMarkers
+): readonly Readonly<{ label: string; value: number; }>[] {
     return [
         percentiles.p50Ms !== undefined ? { label: 'P50', value: percentiles.p50Ms } : undefined,
         percentiles.p95Ms !== undefined ? { label: 'P95', value: percentiles.p95Ms } : undefined,
-        percentiles.p99Ms !== undefined ? { label: 'P99', value: percentiles.p99Ms } : undefined,
-    ].filter((entry): entry is { label: string; value: number } => entry !== undefined);
+        percentiles.p99Ms !== undefined ? { label: 'P99', value: percentiles.p99Ms } : undefined
+    ].filter((entry): entry is { label: string; value: number; } => entry !== undefined);
 }
 
 export function RtcLatencyScatterChart({
     points,
-    percentiles,
+    percentiles
 }: {
     points: readonly RtcPerformanceScatterPoint[];
     percentiles: RtcPercentileMarkers;
@@ -100,7 +97,9 @@ export function RtcLatencyScatterChart({
                 return (
                     <g key={point.commandId}>
                         <circle
-                            className={`${scatterCircleClass(point)} ${point.source === 'distributed-agent' ? 'distributed' : ''}`}
+                            className={`${scatterCircleClass(point)} ${
+                                point.source === 'distributed-agent' ? 'distributed' : ''
+                            }`}
                             cx={x}
                             cy={y}
                             r={radius}
@@ -117,7 +116,7 @@ export function RtcLatencyScatterChart({
 
 export function RtcLatencyHistogram({
     buckets,
-    percentiles,
+    percentiles
 }: {
     buckets: readonly RtcPerformanceHistogramBucket[];
     percentiles: RtcPercentileMarkers;
@@ -135,7 +134,7 @@ export function RtcLatencyHistogram({
                     <div className="rtc-histogram-column" key={bucket.label}>
                         <span
                             style={{
-                                height: `${Math.max(8, (bucket.count / max) * 100)}%`,
+                                height: `${Math.max(8, (bucket.count / max) * 100)}%`
                             }}
                         />
                         <small>{bucket.label}</small>

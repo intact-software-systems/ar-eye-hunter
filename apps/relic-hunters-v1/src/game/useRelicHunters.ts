@@ -1,25 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RallarRoomState, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import {
+    isRelicSnapshot,
     type RelicActionInput,
     type RelicCharacterId,
     type RelicPublicSnapshot,
-    type RelicServerEvent,
-    isRelicSnapshot,
+    type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import type { RallarRoomState, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     initialRelicDiagnostics,
     RelicHuntersRuntime,
+    toErrorMessage,
     type RelicCommandDraft,
     type RelicHuntersRuntimePhase,
-    type RelicRuntimeDiagnostics,
-    toErrorMessage,
+    type RelicRuntimeDiagnostics
 } from './relic-hunters-runtime.ts';
-import {
-    classifyRelicSnapshotAcceptance,
-    type RelicSnapshotSource,
-} from './relic-snapshot-ordering.ts';
+import { classifyRelicSnapshotAcceptance, type RelicSnapshotSource } from './relic-snapshot-ordering.ts';
 
 const RTC_SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
 const ROUND_TIMEOUT_SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
@@ -56,10 +53,10 @@ export function useRelicHunters(): RelicHuntersConnection {
 
     const [session, setSession] = useState<AuthSession | undefined>(initialSessionRef.current);
     const [connectionState, setConnectionState] = useState<RelicHuntersRuntimePhase>(
-        () => initialSessionRef.current ? 'connecting' : 'signed-out',
+        () => initialSessionRef.current ? 'connecting' : 'signed-out'
     );
     const [diagnostics, setDiagnostics] = useState<RelicRuntimeDiagnostics>(
-        () => initialRelicDiagnostics(initialSessionRef.current),
+        () => initialRelicDiagnostics(initialSessionRef.current)
     );
     const [error, setError] = useState<string | undefined>();
     const [roomId, setRoomId] = useState<string | undefined>();
@@ -75,13 +72,13 @@ export function useRelicHunters(): RelicHuntersConnection {
 
     const setPhase = useCallback((
         phase: RelicHuntersRuntimePhase,
-        patch: Partial<RelicRuntimeDiagnostics> = {},
+        patch: Partial<RelicRuntimeDiagnostics> = {}
     ) => {
         setConnectionState(phase);
         setDiagnostics((prev) => ({
             ...prev,
             ...patch,
-            phase,
+            phase
         }));
     }, []);
 
@@ -89,7 +86,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         sessionRef.current = session;
         setDiagnostics((prev) => ({
             ...prev,
-            authenticated: !!session,
+            authenticated: !!session
         }));
     }, [session]);
 
@@ -103,8 +100,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             authorityReady: prev.middlewareConnected && !!roomId &&
                 !!runtimeRef.current?.authorityStatus()?.started,
             authorityPhase: runtimeRef.current?.authorityStatus()?.phase,
-            authorityPeerAssistReadyPeers:
-                runtimeRef.current?.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
+            authorityPeerAssistReadyPeers: runtimeRef.current?.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0
         }));
     }, [roomId]);
 
@@ -117,8 +113,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             authorityReady: prev.middlewareConnected && !!roomIdRef.current &&
                 !!runtimeRef.current?.authorityStatus()?.started,
             authorityPhase: runtimeRef.current?.authorityStatus()?.phase,
-            authorityPeerAssistReadyPeers:
-                runtimeRef.current?.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
+            authorityPeerAssistReadyPeers: runtimeRef.current?.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0
         }));
     }, [snapshot]);
 
@@ -128,13 +123,13 @@ export function useRelicHunters(): RelicHuntersConnection {
         setDiagnostics((prev) => ({
             ...prev,
             snapshotReady: false,
-            lastSnapshotSource: undefined,
+            lastSnapshotSource: undefined
         }));
     }, []);
 
     const publishSnapshotToRtc = useCallback((
         next: RelicPublicSnapshot,
-        source: RelicSnapshotSource,
+        source: RelicSnapshotSource
     ) => {
         if (source === 'rallar-rtc') {
             return;
@@ -148,7 +143,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         void runtime.publishRtcSnapshot(next).catch((err) => {
             setDiagnostics((prev) => ({
                 ...prev,
-                lastError: `RTC snapshot sync failed: ${toErrorMessage(err)}`,
+                lastError: `RTC snapshot sync failed: ${toErrorMessage(err)}`
             }));
         });
     }, [runtime]);
@@ -156,13 +151,13 @@ export function useRelicHunters(): RelicHuntersConnection {
     const acceptSnapshotCandidate = useCallback((
         next: RelicPublicSnapshot,
         source: RelicSnapshotSource,
-        expectedRoomId = roomIdRef.current,
+        expectedRoomId = roomIdRef.current
     ): boolean => {
         const acceptance = classifyRelicSnapshotAcceptance({
             current: snapshotRef.current,
             candidate: next,
             expectedRoomId,
-            allowSemanticRegression: source === 'rest-reset',
+            allowSemanticRegression: source === 'rest-reset'
         });
 
         if (!acceptance.accepted) {
@@ -170,7 +165,7 @@ export function useRelicHunters(): RelicHuntersConnection {
                 ...prev,
                 ignoredSnapshotCount: prev.ignoredSnapshotCount + 1,
                 lastIgnoredSnapshotReason: acceptance.reason,
-                lastIgnoredSnapshot: summarizeRuntimeSnapshot(next, source),
+                lastIgnoredSnapshot: summarizeRuntimeSnapshot(next, source)
             }));
             return false;
         }
@@ -184,7 +179,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             lastAcceptedSnapshot: summarizeRuntimeSnapshot(next, source),
             lastIgnoredSnapshotReason: undefined,
             lastIgnoredSnapshot: undefined,
-            lastHydratedAtEpochMs: Date.now(),
+            lastHydratedAtEpochMs: Date.now()
         }));
         publishSnapshotToRtc(next, source);
         return true;
@@ -200,7 +195,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             rtcReady: false,
             authorityReady: false,
             authorityPhase: undefined,
-            authorityPeerAssistReadyPeers: 0,
+            authorityPeerAssistReadyPeers: 0
         }));
     }, []);
 
@@ -230,7 +225,7 @@ export function useRelicHunters(): RelicHuntersConnection {
 
     const acceptSnapshotFromSource = useCallback((
         value: unknown,
-        source: RelicSnapshotSource,
+        source: RelicSnapshotSource
     ) => {
         const next = isRelicServerEvent(value) ? value.snapshot : value;
         if (!isRelicSnapshot(next)) {
@@ -263,17 +258,19 @@ export function useRelicHunters(): RelicHuntersConnection {
                     if (!accepted && snapshotRef.current?.roomId !== nextRoomId) {
                         clearSnapshot();
                     }
-                } else {
+                }
+                else {
                     clearSnapshot();
                 }
                 setDiagnostics((prev) => ({ ...prev, lastError: undefined }));
             }
-        } catch (err) {
+        }
+        catch (err) {
             if (requestId === roomSnapshotRequestRef.current) {
                 setError(toErrorMessage(err));
                 setPhase('degraded', {
                     lastError: toErrorMessage(err),
-                    snapshotReady: false,
+                    snapshotReady: false
                 });
             }
         }
@@ -285,10 +282,11 @@ export function useRelicHunters(): RelicHuntersConnection {
             if (next) {
                 acceptSnapshotCandidate(next, 'timeout-repair', nextRoomId);
             }
-        } catch (err) {
+        }
+        catch (err) {
             setDiagnostics((prev) => ({
                 ...prev,
-                lastError: `Timed-out round snapshot repair failed: ${toErrorMessage(err)}`,
+                lastError: `Timed-out round snapshot repair failed: ${toErrorMessage(err)}`
             }));
         }
     }, [acceptSnapshotCandidate, runtime]);
@@ -303,7 +301,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             ...prev,
             roomReady: !!nextRoomId,
             roomId: nextRoomId,
-            rtcReady: prev.middlewareConnected && !!nextRoomId,
+            rtcReady: prev.middlewareConnected && !!nextRoomId
         }));
 
         if (!nextRoomId) {
@@ -345,14 +343,14 @@ export function useRelicHunters(): RelicHuntersConnection {
             authorityReady: false,
             authorityPhase: undefined,
             authorityPeerAssistReadyPeers: 0,
-            lastError: undefined,
+            lastError: undefined
         });
 
         try {
             const hydration = await runtime.connectAndHydrate(
                 acceptWsSnapshot,
                 applyRoomState,
-                acceptRtcSnapshot,
+                acceptRtcSnapshot
             );
             if (!hydration) {
                 setPhase('signed-out', initialRelicDiagnostics(undefined));
@@ -368,13 +366,15 @@ export function useRelicHunters(): RelicHuntersConnection {
                 ? acceptSnapshotCandidate(
                     hydration.snapshot,
                     'bootstrap',
-                    hydration.roomState.currentRoomId,
+                    hydration.roomState.currentRoomId
                 )
                 : false;
-            if (!hydration.snapshot ||
+            if (
+                !hydration.snapshot ||
                 (hydration.roomState.currentRoomId &&
                     !snapshotAccepted &&
-                    snapshotRef.current?.roomId !== hydration.roomState.currentRoomId)) {
+                    snapshotRef.current?.roomId !== hydration.roomState.currentRoomId)
+            ) {
                 clearSnapshot();
             }
             const ready = !!hydration.roomState.currentRoomId && snapshotAccepted;
@@ -390,16 +390,16 @@ export function useRelicHunters(): RelicHuntersConnection {
                     !!hydration.roomState.currentRoomId &&
                     !!runtime.authorityStatus()?.started,
                 authorityPhase: runtime.authorityStatus()?.phase,
-                authorityPeerAssistReadyPeers:
-                    runtime.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
+                authorityPeerAssistReadyPeers: runtime.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
                 roomId: hydration.roomState.currentRoomId,
                 lastHydratedAtEpochMs: Date.now(),
-                lastError: hydration.degradedError,
+                lastError: hydration.degradedError
             });
             if (hydration.degradedError) {
                 setError(hydration.degradedError);
             }
-        } catch (err) {
+        }
+        catch (err) {
             const message = toErrorMessage(err);
             setError(message);
             setPhase('error', {
@@ -413,7 +413,7 @@ export function useRelicHunters(): RelicHuntersConnection {
                 authorityReady: false,
                 authorityPhase: undefined,
                 authorityPeerAssistReadyPeers: 0,
-                lastError: message,
+                lastError: message
             });
         }
     }, [
@@ -424,7 +424,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         clearSnapshot,
         closeSubscriptions,
         runtime,
-        setPhase,
+        setPhase
     ]);
 
     useEffect(() => {
@@ -448,7 +448,7 @@ export function useRelicHunters(): RelicHuntersConnection {
             void runtime.publishRtcSnapshot(current).catch((err) => {
                 setDiagnostics((prev) => ({
                     ...prev,
-                    lastError: `RTC snapshot sync failed: ${toErrorMessage(err)}`,
+                    lastError: `RTC snapshot sync failed: ${toErrorMessage(err)}`
                 }));
             });
         }, RTC_SNAPSHOT_REPAIR_INTERVAL_MS);
@@ -481,13 +481,14 @@ export function useRelicHunters(): RelicHuntersConnection {
             poll();
             intervalId = window.setInterval(
                 poll,
-                ROUND_TIMEOUT_SNAPSHOT_REPAIR_INTERVAL_MS,
+                ROUND_TIMEOUT_SNAPSHOT_REPAIR_INTERVAL_MS
             );
         };
         const delayMs = repair.deadlineEpochMs - Date.now();
         if (delayMs <= 0) {
             startPolling();
-        } else {
+        }
+        else {
             timeoutId = window.setTimeout(startPolling, delayMs);
         }
 
@@ -513,12 +514,13 @@ export function useRelicHunters(): RelicHuntersConnection {
         setPhase('authenticating', {
             authenticated: false,
             middlewareConnected: false,
-            lastError: undefined,
+            lastError: undefined
         });
         try {
             setSession(await runtime.login(username, password));
             await connectAndHydrate();
-        } catch (err) {
+        }
+        catch (err) {
             const message = toErrorMessage(err);
             setError(message);
             setPhase('error', { lastError: message });
@@ -528,19 +530,20 @@ export function useRelicHunters(): RelicHuntersConnection {
     const register = useCallback(async (
         username: string,
         password: string,
-        displayName?: string,
+        displayName?: string
     ) => {
         closeSubscriptions();
         setError(undefined);
         setPhase('authenticating', {
             authenticated: false,
             middlewareConnected: false,
-            lastError: undefined,
+            lastError: undefined
         });
         try {
             setSession(await runtime.register(username, password, displayName));
             await connectAndHydrate();
-        } catch (err) {
+        }
+        catch (err) {
             const message = toErrorMessage(err);
             setError(message);
             setPhase('error', { lastError: message });
@@ -553,16 +556,18 @@ export function useRelicHunters(): RelicHuntersConnection {
         resetForSignedOutAuth();
     }, [closeSubscriptions, resetForSignedOutAuth, runtime]);
 
-    const hydrateRoom = useCallback(async (work: () => Promise<{
-        roomId: string;
-        roomState: RallarRoomState;
-        snapshot?: RelicPublicSnapshot;
-    }>) => {
+    const hydrateRoom = useCallback(async (
+        work: () => Promise<{
+            roomId: string;
+            roomState: RallarRoomState;
+            snapshot?: RelicPublicSnapshot;
+        }>
+    ) => {
         setError(undefined);
         setPhase('joining-room', {
             lastError: undefined,
             roomReady: false,
-            snapshotReady: false,
+            snapshotReady: false
         });
         try {
             const result = await work();
@@ -572,8 +577,10 @@ export function useRelicHunters(): RelicHuntersConnection {
             const snapshotAccepted = result.snapshot
                 ? acceptSnapshotCandidate(result.snapshot, 'room-hydration', result.roomId)
                 : false;
-            if (!result.snapshot ||
-                (!snapshotAccepted && snapshotRef.current?.roomId !== result.roomId)) {
+            if (
+                !result.snapshot ||
+                (!snapshotAccepted && snapshotRef.current?.roomId !== result.roomId)
+            ) {
                 clearSnapshot();
             }
             setPhase(snapshotAccepted ? 'ready' : 'degraded', {
@@ -583,13 +590,13 @@ export function useRelicHunters(): RelicHuntersConnection {
                 rtcReady: true,
                 authorityReady: !!runtime.authorityStatus()?.started,
                 authorityPhase: runtime.authorityStatus()?.phase,
-                authorityPeerAssistReadyPeers:
-                    runtime.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
+                authorityPeerAssistReadyPeers: runtime.authorityStatus()?.peerAssist.readyPeerIds.length ?? 0,
                 roomId: result.roomId,
                 lastHydratedAtEpochMs: Date.now(),
-                lastError: snapshotAccepted ? undefined : 'No current relic snapshot accepted for room.',
+                lastError: snapshotAccepted ? undefined : 'No current relic snapshot accepted for room.'
             });
-        } catch (err) {
+        }
+        catch (err) {
             const message = toErrorMessage(err);
             setError(message);
             setPhase('error', { lastError: message });
@@ -605,7 +612,7 @@ export function useRelicHunters(): RelicHuntersConnection {
     }, [hydrateRoom, runtime]);
 
     const sendCommand = useCallback(async (
-        input: RelicCommandDraft,
+        input: RelicCommandDraft
     ) => {
         const currentSession = sessionRef.current;
         const currentRoomId = roomIdRef.current;
@@ -623,7 +630,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         setDiagnostics((prev) => ({
             ...prev,
             commandInFlight: commandKey,
-            lastError: undefined,
+            lastError: undefined
         }));
 
         try {
@@ -635,9 +642,10 @@ export function useRelicHunters(): RelicHuntersConnection {
             setPhase(snapshotReady ? 'ready' : 'degraded', {
                 snapshotReady,
                 lastHydratedAtEpochMs: Date.now(),
-                lastError: next ? undefined : 'No relic snapshot returned for command.',
+                lastError: next ? undefined : 'No relic snapshot returned for command.'
             });
-        } catch (err) {
+        }
+        catch (err) {
             const message = toErrorMessage(err);
             if (
                 input.kind === 'continue-review' &&
@@ -646,17 +654,18 @@ export function useRelicHunters(): RelicHuntersConnection {
             ) {
                 setPhase('ready', {
                     snapshotReady: !!snapshotRef.current,
-                    lastError: undefined,
+                    lastError: undefined
                 });
                 return;
             }
             setError(message);
             setPhase('degraded', { lastError: message });
-        } finally {
+        }
+        finally {
             commandInFlightRef.current = undefined;
             setDiagnostics((prev) => ({
                 ...prev,
-                commandInFlight: undefined,
+                commandInFlight: undefined
             }));
         }
     }, [acceptSnapshotCandidate, runtime, setPhase]);
@@ -672,7 +681,7 @@ export function useRelicHunters(): RelicHuntersConnection {
     const submitAction = useCallback(async (action: RelicActionInput) => {
         await sendCommand({
             kind: 'submit-action',
-            action,
+            action
         });
     }, [sendCommand]);
 
@@ -711,9 +720,10 @@ export function useRelicHunters(): RelicHuntersConnection {
             setPhase(snapshotReady ? 'ready' : 'degraded', {
                 snapshotReady,
                 lastHydratedAtEpochMs: Date.now(),
-                lastError: next ? undefined : 'No relic snapshot returned for reset.',
+                lastError: next ? undefined : 'No relic snapshot returned for reset.'
             });
-        } catch (err) {
+        }
+        catch (err) {
             const message = toErrorMessage(err);
             setError(message);
             setPhase('degraded', { lastError: message });
@@ -741,7 +751,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         pickupRelic,
         continueReview,
         setRoundLimit,
-        resetExpedition,
+        resetExpedition
     }), [
         session,
         connectionState,
@@ -763,7 +773,7 @@ export function useRelicHunters(): RelicHuntersConnection {
         pickupRelic,
         continueReview,
         setRoundLimit,
-        resetExpedition,
+        resetExpedition
     ]);
 }
 
@@ -786,7 +796,7 @@ function commandInFlightKey(input: RelicCommandDraft): string {
 
 function summarizeRuntimeSnapshot(
     snapshot: RelicPublicSnapshot,
-    source: RelicSnapshotSource,
+    source: RelicSnapshotSource
 ) {
     return {
         source,
@@ -798,7 +808,7 @@ function summarizeRuntimeSnapshot(
         playerCount: snapshot.players.length,
         submittedCount: snapshot.submittedPlayerIds.length,
         eventCount: snapshot.events.length,
-        roomInvestigationCount: snapshot.roomInvestigations.length,
+        roomInvestigationCount: snapshot.roomInvestigations.length
     };
 }
 
@@ -810,7 +820,7 @@ function toTimedOutRoundRepairKey(snapshot: RelicPublicSnapshot): string {
             repair.round,
             repair.deadlineEpochMs,
             repair.activePlayerCount,
-            repair.submittedPlayerCount,
+            repair.submittedPlayerCount
         ].join(':')
         : 'none';
 }
@@ -828,9 +838,7 @@ function toTimedOutRoundRepair(snapshot: RelicPublicSnapshot):
         return undefined;
     }
 
-    const activePlayerCount = snapshot.players.filter((player) =>
-        !player.escaped && !player.defeated
-    ).length;
+    const activePlayerCount = snapshot.players.filter((player) => !player.escaped && !player.defeated).length;
     const submittedPlayerCount = snapshot.submittedPlayerIds.length;
     if (activePlayerCount === 0 || submittedPlayerCount >= activePlayerCount) {
         return undefined;
@@ -841,6 +849,6 @@ function toTimedOutRoundRepair(snapshot: RelicPublicSnapshot):
         round: snapshot.round,
         deadlineEpochMs: snapshot.roundStartedAtEpochMs + snapshot.roundTimeLimitMs,
         activePlayerCount,
-        submittedPlayerCount,
+        submittedPlayerCount
     };
 }

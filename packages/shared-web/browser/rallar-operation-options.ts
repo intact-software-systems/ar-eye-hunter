@@ -1,12 +1,12 @@
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 
 export type RallarOperationRetryPredicate = (
     error: unknown,
-    attempt: number,
+    attempt: number
 ) => boolean;
 
 export type RallarOperationOptions = Readonly<{
@@ -22,7 +22,7 @@ export type RallarOperationOptions = Readonly<{
 }>;
 
 export function toRallarWorkflowPolicies<V>(
-    options?: RallarOperationOptions,
+    options?: RallarOperationOptions
 ): CommandsOrchestratorPolicies<V> {
     if (
         !options?.signal &&
@@ -34,12 +34,12 @@ export function toRallarWorkflowPolicies<V>(
     }
 
     return {
-        command: toRallarCommandOptions(options),
+        command: toRallarCommandOptions(options)
     };
 }
 
 export function toRallarOperationOptions(
-    options: RallarOperationOptions,
+    options: RallarOperationOptions
 ): RallarOperationOptions {
     if (
         !options.signal &&
@@ -98,7 +98,7 @@ export function toRallarOperationOptions(
 }
 
 export function toRallarCommandOptions<T>(
-    options: RallarOperationOptions,
+    options: RallarOperationOptions
 ): CommandOptions<T> {
     const commandOptions: CommandOptions<T> = {};
     if (options.signal) {
@@ -112,7 +112,8 @@ export function toRallarCommandOptions<T>(
     }
     if (options.shouldRetry) {
         commandOptions.shouldRetry = options.shouldRetry;
-    } else if (options.maxAttempts !== undefined) {
+    }
+    else if (options.maxAttempts !== undefined) {
         commandOptions.shouldRetry = shouldRetryRallarOperation;
     }
 

@@ -17,11 +17,13 @@ export type SearchableListboxRow = Readonly<{
 }>;
 
 export function duplicateSearchableListboxKey(
-    options: readonly SearchableListboxOption[],
+    options: readonly SearchableListboxOption[]
 ): string | undefined {
     const keys = new Set<string>();
     for (const option of options) {
-        if (keys.has(option.key)) return option.key;
+        if (keys.has(option.key)) {
+            return option.key;
+        }
         keys.add(option.key);
     }
     return undefined;
@@ -29,13 +31,15 @@ export function duplicateSearchableListboxKey(
 
 export function filterSearchableListboxRows(
     options: readonly SearchableListboxOption[],
-    query: string,
+    query: string
 ): readonly SearchableListboxRow[] {
     const needle = normalizedSearch(query);
     const rows: SearchableListboxRow[] = [];
     for (let sourceIndex = 0; sourceIndex < options.length; sourceIndex += 1) {
         const option = options[sourceIndex];
-        if (!option || (needle && !searchValue(option).includes(needle))) continue;
+        if (!option || (needle && !searchValue(option).includes(needle))) {
+            continue;
+        }
         rows.push({ option, sourceIndex });
     }
     return rows;
@@ -43,46 +47,46 @@ export function filterSearchableListboxRows(
 
 export function searchableListboxFingerprint(
     contextKey: string,
-    query: string,
+    query: string
 ): string {
     return JSON.stringify([
         'searchable-windowed-listbox-v1',
         contextKey,
-        normalizedSearch(query),
+        normalizedSearch(query)
     ]);
 }
 
 export function findSearchableListboxRow(
     rows: readonly SearchableListboxRow[],
-    key: string | undefined,
+    key: string | undefined
 ): number {
-    if (key === undefined) return -1;
-    return rows.findIndex(row => row.option.key === key);
+    if (key === undefined) {
+        return -1;
+    }
+    return rows.findIndex((row) => row.option.key === key);
 }
 
 export function searchableListboxOptionId(
     id: string,
-    row: SearchableListboxRow,
+    row: SearchableListboxRow
 ): string {
     return `${id}-option-${row.sourceIndex}`;
 }
 
 export function searchableListboxRangeLabel(
     model: ExplicitWindowModel,
-    query: string,
+    query: string
 ): string {
     if (model.total === 0) {
         return normalizedSearch(query)
             ? 'No options match this search.'
             : 'No options available.';
     }
-    return `Showing ${number(model.displayStart)}–${number(model.displayEnd)} of ${
-        number(model.total)
-    } options.`;
+    return `Showing ${number(model.displayStart)}–${number(model.displayEnd)} of ${number(model.total)} options.`;
 }
 
 export function searchableListboxOutsideCount(
-    model: ExplicitWindowModel,
+    model: ExplicitWindowModel
 ): number {
     return model.total - (model.endIndexExclusive - model.startIndex);
 }
@@ -98,7 +102,7 @@ function searchValue(option: SearchableListboxOption): string {
         option.label,
         option.searchText,
         option.detail ?? '',
-        option.exactIdentifier ?? '',
+        option.exactIdentifier ?? ''
     ].join('\u0000').toLocaleLowerCase('en-US');
 }
 

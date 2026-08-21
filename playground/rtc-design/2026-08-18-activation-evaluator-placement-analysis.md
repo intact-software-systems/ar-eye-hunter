@@ -35,38 +35,38 @@ internal transition command.
 
 **Pros**
 
-- *Zero-lag threshold activation.* The handler runs exactly when evidence changes — a new RTT sample
+- _Zero-lag threshold activation._ The handler runs exactly when evidence changes — a new RTT sample
   or membership change re-plans, and the same authority read feeds the readiness fraction. The mesh
   activates the moment it is observably ready, which is the UX the `match`/`managed` presets exist
   for.
-- *No second reader.* The planning authority (group snapshot, config, measurements, now) is already
+- _No second reader._ The planning authority (group snapshot, config, measurements, now) is already
   assembled once per work item; readiness derivation reuses it. A separate evaluator would re-read
   the same three stores on its own schedule.
-- *The doctrine absorbs staleness.* The handler only **enqueues** a transition; the AppInbox compute
+- _The doctrine absorbs staleness._ The handler only **enqueues** a transition; the AppInbox compute
   re-reads state, re-authorizes against the policy, and the transition table rejects anything no
   longer legal (`lifecycle-transition-invalid` if the group left ESTABLISHING meanwhile). Duplicate
   or stale evaluations are harmless by construction — the same property that made 2b-ii's commands
   safe.
-- *Cluster-correct for free.* Work is competitively dequeued; whichever server evaluates, the
+- _Cluster-correct for free._ Work is competitively dequeued; whichever server evaluates, the
   command re-authorizes centrally. No leader election, no pinned evaluator.
 
 **Cons**
 
-- *Plane crossing.* The topology worker becomes a producer of **intent** commands. Until now the
+- _Plane crossing._ The topology worker becomes a producer of **intent** commands. Until now the
   planes were strictly layered: intent (lifecycle) gates observation (planning); observation never
   wrote intent. The design document's own invariant — "the RTC activation projection observes
   connectivity and never decides this" — reads uncomfortably close to this, though what it forbids
-  is the *projection* deciding state directly; an enqueued command that re-authorizes is arguably
-  the sanctioned way for observation to *petition* intent. The distinction is real but subtle enough
+  is the _projection_ deciding state directly; an enqueued command that re-authorizes is arguably
+  the sanctioned way for observation to _petition_ intent. The distinction is real but subtle enough
   to deserve this paragraph in the code.
-- *Handler density.* `create-rtc-topology-work-handler.ts` is 432 lines and already carries claim
+- _Handler density._ `create-rtc-topology-work-handler.ts` is 432 lines and already carries claim
   gating, fingerprint gating, publication, and replay. The evaluation itself must live in its own
   file with a one-call seam, or the handler tips into the review tier.
-- *Internal-authority widening.* `validateTrustedAuthorityMode` currently restricts internal
+- _Internal-authority widening._ `validateTrustedAuthorityMode` currently restricts internal
   authority to `disconnectPresence`. It must widen to the activate and below-floor transitions —
   deliberate, auditable, and the riskiest reviewed line of 3b regardless of which option wins,
   since automation needs it in every design.
-- *Deadline half still needs a timer* (the constraint above). Option A alone is incomplete.
+- _Deadline half still needs a timer_ (the constraint above). Option A alone is incomplete.
 
 ## Option B — dedicated maintenance loop
 
@@ -75,22 +75,22 @@ derives readiness, evaluates the criterion (threshold and deadline both), and en
 
 **Pros**
 
-- *One place, both halves.* Threshold and deadline evaluate in the same sweep; no hybrid.
-- *No plane crossing in the topology worker;* the handler stays untouched.
-- *Deadline precision is naturally bounded by the tick interval* — acceptable, since a formation
+- _One place, both halves._ Threshold and deadline evaluate in the same sweep; no hybrid.
+- _No plane crossing in the topology worker;_ the handler stays untouched.
+- _Deadline precision is naturally bounded by the tick interval_ — acceptable, since a formation
   deadline is product-scale (tens of seconds), not real-time.
 
 **Cons**
 
-- *Threshold activation lags by up to a full tick.* The presets' deadlines are 20–30s; a tick
+- _Threshold activation lags by up to a full tick._ The presets' deadlines are 20–30s; a tick
   interval meaningfully smaller than that (say 1–5s) turns the sweep into a polling hot loop over
   every establishing group — re-reading planned overlay, measurements, and group snapshot per group
   per tick, cluster-wide. The evidence-driven path gets all of this for free at the moment it
   matters.
-- *A second derivation site.* The sweep re-assembles what the work handler already assembled,
+- _A second derivation site._ The sweep re-assembles what the work handler already assembled,
   and the two can disagree transiently (different read moments), which makes test-writing and
   incident forensics harder.
-- *An index problem option A does not have.* "Scan establishing groups" needs a way to enumerate
+- _An index problem option A does not have._ "Scan establishing groups" needs a way to enumerate
   them; nothing indexes groups by lifecycle state today. Either a new index/registry (new
   persistence surface) or a full scan (what the admin prune does — acceptable for maintenance,
   ugly per-tick).
@@ -122,7 +122,7 @@ deadline-only maintenance tick.**
 
 What makes this honest rather than a committee answer: each leg exists for a reason the other
 cannot serve — A cannot see time pass, B cannot match evidence latency without hot polling. The
-evaluation *logic* lives in exactly one function either way.
+evaluation _logic_ lives in exactly one function either way.
 
 ## Consequences for 3a (already approved, being built now)
 
@@ -134,7 +134,7 @@ evaluation *logic* lives in exactly one function either way.
   now) with an explicit evidence-freshness window — server default constant initially, policy knob
   later if needed.
 - The observed rate is derived on read, never stored; `lastFormationOutcome.observedRate` is the
-  rate *at decision time*, which is a recorded decision, not live observation.
+  rate _at decision time_, which is a recorded decision, not live observation.
 
 ## Refinement adopted (owner discussion, 2026-08-18)
 
@@ -177,7 +177,7 @@ Two corrections to the caveats above, discovered while landing the time leg:
   consumer clock); the retry release walks a skew-caught entry forward.
 - Landing this exposed a pre-existing scheduling defect in the resource-inbox SQL: the naive
   `timestamp` columns hold UTC wall clocks, but `next_ts <= now()` (and the `expire_ts`
-  comparisons) promoted the column through the *session* time zone. Docker Postgres defaults to
+  comparisons) promoted the column through the _session_ time zone. Docker Postgres defaults to
   UTC so CI never saw it; PGlite inherits the host zone, so under `pglite-memory` every scheduled
   entry appeared hours in the past — released immediately, retry delays void, and the fairness
   lane's stale threshold trivially satisfied (a deadline timer burned all 20 retry attempts in

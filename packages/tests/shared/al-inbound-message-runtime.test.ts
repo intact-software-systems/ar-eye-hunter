@@ -1,10 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    type ALControlAcceptance,
     ALInboundMessageRuntime,
-    type ALInboundRuntimeStores,
-    type ALMessage,
-    type ALMessageHandlingPlan,
     createALInboundAdmissionStore,
     createInMemoryALInboundRuntimeStores,
     InMemoryPersistenceProvider,
@@ -14,8 +9,13 @@ import {
     parseALControlMessage,
     planALMessageHandling,
     QueueBoxUtilities,
-    type ResourceEntry,
+    type ALControlAcceptance,
+    type ALInboundRuntimeStores,
+    type ALMessage,
+    type ALMessageHandlingPlan,
+    type ResourceEntry
 } from '@shared/mod.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('ALInboundMessageRuntime', () => {
     afterEach(() => {
@@ -23,20 +23,19 @@ describe('ALInboundMessageRuntime', () => {
     });
 
     it('buffers ordered gaps, emits negative controls, and releases buffered messages in order', async () => {
-        const { runtime, dispatchedTexts, controlMessages, forwardedIds } =
-            createInboundHarness();
+        const { runtime, dispatchedTexts, controlMessages, forwardedIds } = createInboundHarness();
 
         const seq2 = newALMulticastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-2',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'two',
+                text: 'two'
             },
             {
                 seq: 2,
@@ -44,22 +43,22 @@ describe('ALInboundMessageRuntime', () => {
                 ack: 'none',
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
         const seq1 = newALMulticastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'one',
+                text: 'one'
             },
             {
                 seq: 1,
@@ -67,10 +66,10 @@ describe('ALInboundMessageRuntime', () => {
                 ack: 'none',
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(seq2, 'peer-1');
@@ -78,7 +77,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(dispatchedTexts).toEqual([]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toEqual([
             'al.control.nack.v1',
-            'al.control.repair.v1',
+            'al.control.repair.v1'
         ]);
 
         await runtime.handleIncomingMessage(seq1, 'peer-1');
@@ -94,7 +93,7 @@ describe('ALInboundMessageRuntime', () => {
     it('acks delivered without forwarding when the transport disowns a message', async () => {
         const { runtime, controlMessages, forwardedIds, dispatchedTexts } = createInboundHarness(
             undefined,
-            { canForwardMessage: () => false },
+            { canForwardMessage: () => false }
         );
         const msg = createOrderedMessage(1, 'kept-local', 'all-logical-recipients');
 
@@ -110,7 +109,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
-            status: 'delivered',
+            status: 'delivered'
         });
     });
 
@@ -129,19 +128,13 @@ describe('ALInboundMessageRuntime', () => {
             ...stores,
             admissionStore: {
                 ready: async () => await baseAdmission.ready(),
-                readIncomingMessage: async (msg, fromPeerId, planner) =>
-                    await baseAdmission.readIncomingMessage(msg, fromPeerId, planner),
-                readBufferedRelease: async (trackKey, seq) =>
-                    await baseAdmission.readBufferedRelease(trackKey, seq),
-                planStoredEntry: async (msg, planner) =>
-                    await baseAdmission.planStoredEntry(msg, planner),
-                acceptControlMessage: async (msg) =>
-                    await baseAdmission.acceptControlMessage(msg),
-                commitMutations: async (request) =>
-                    await baseAdmission.commitMutations(request),
+                readIncomingMessage: async (msg, fromPeerId, planner) => await baseAdmission.readIncomingMessage(msg, fromPeerId, planner),
+                readBufferedRelease: async (trackKey, seq) => await baseAdmission.readBufferedRelease(trackKey, seq),
+                planStoredEntry: async (msg, planner) => await baseAdmission.planStoredEntry(msg, planner),
+                acceptControlMessage: async (msg) => await baseAdmission.acceptControlMessage(msg),
+                commitMutations: async (request) => await baseAdmission.commitMutations(request),
                 commitBundle: async (bundle) => {
-                    const rejectsGapBuffer =
-                        !rejectedFirstCommit &&
+                    const rejectsGapBuffer = !rejectedFirstCommit &&
                         bundle.senderId === 'peer-1' &&
                         bundle.mutations.some((mutation) => mutation.kind === 'set-buffered');
 
@@ -154,25 +147,22 @@ describe('ALInboundMessageRuntime', () => {
                                 {
                                     kind: 'set-msg-owner',
                                     msgId: 'external-version-bump',
-                                    senderId: 'peer-1',
-                                },
+                                    senderId: 'peer-1'
+                                }
                             ],
-                            durableEffects: [],
+                            durableEffects: []
                         });
                         return 'conflict';
                     }
 
                     return await baseAdmission.commitBundle(bundle);
                 },
-                claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) =>
-                    await baseAdmission.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
-                completeEffect: async (effectId, workerId) =>
-                    await baseAdmission.completeEffect(effectId, workerId),
+                claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) => await baseAdmission.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
+                completeEffect: async (effectId, workerId) => await baseAdmission.completeEffect(effectId, workerId),
                 rescheduleEffect: async (effectId, workerId, retryAtMs, lastError) =>
                     await baseAdmission.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-                peekNextEffectReadyAt: async (nowMs) =>
-                    await baseAdmission.peekNextEffectReadyAt(nowMs),
-            },
+                peekNextEffectReadyAt: async (nowMs) => await baseAdmission.peekNextEffectReadyAt(nowMs)
+            }
         };
 
         const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(wrappedStores);
@@ -210,17 +200,12 @@ describe('ALInboundMessageRuntime', () => {
             ...stores,
             admissionStore: {
                 ready: async () => await baseAdmission.ready(),
-                readIncomingMessage: async (msg, fromPeerId, planner) =>
-                    await baseAdmission.readIncomingMessage(msg, fromPeerId, planner),
-                readBufferedRelease: async (trackKey, seq) =>
-                    await baseAdmission.readBufferedRelease(trackKey, seq),
-                planStoredEntry: async (msg, planner) =>
-                    await baseAdmission.planStoredEntry(msg, planner),
-                acceptControlMessage: async (msg) =>
-                    await baseAdmission.acceptControlMessage(msg),
+                readIncomingMessage: async (msg, fromPeerId, planner) => await baseAdmission.readIncomingMessage(msg, fromPeerId, planner),
+                readBufferedRelease: async (trackKey, seq) => await baseAdmission.readBufferedRelease(trackKey, seq),
+                planStoredEntry: async (msg, planner) => await baseAdmission.planStoredEntry(msg, planner),
+                acceptControlMessage: async (msg) => await baseAdmission.acceptControlMessage(msg),
                 commitMutations: async (request) => {
-                    const blocksOnBufferedRelease =
-                        !didBlock &&
+                    const blocksOnBufferedRelease = !didBlock &&
                         request.senderId === 'peer-1' &&
                         request.mutations.some((mutation) => mutation.kind === 'delete-buffered');
 
@@ -233,8 +218,7 @@ describe('ALInboundMessageRuntime', () => {
                     return await baseAdmission.commitMutations(request);
                 },
                 commitBundle: async (bundle) => {
-                    const blocksOnBufferedRelease =
-                        !didBlock &&
+                    const blocksOnBufferedRelease = !didBlock &&
                         bundle.senderId === 'peer-1' &&
                         bundle.mutations.some((mutation) => mutation.kind === 'delete-buffered');
 
@@ -246,15 +230,12 @@ describe('ALInboundMessageRuntime', () => {
 
                     return await baseAdmission.commitBundle(bundle);
                 },
-                claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) =>
-                    await baseAdmission.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
-                completeEffect: async (effectId, workerId) =>
-                    await baseAdmission.completeEffect(effectId, workerId),
+                claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) => await baseAdmission.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
+                completeEffect: async (effectId, workerId) => await baseAdmission.completeEffect(effectId, workerId),
                 rescheduleEffect: async (effectId, workerId, retryAtMs, lastError) =>
                     await baseAdmission.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-                peekNextEffectReadyAt: async (nowMs) =>
-                    await baseAdmission.peekNextEffectReadyAt(nowMs),
-            },
+                peekNextEffectReadyAt: async (nowMs) => await baseAdmission.peekNextEffectReadyAt(nowMs)
+            }
         };
 
         const { runtime, controlMessages, forwardedIds } = createInboundHarness(wrappedStores);
@@ -269,7 +250,7 @@ describe('ALInboundMessageRuntime', () => {
 
         await runtime.handleIncomingMessage(
             newALAckControlMessage('peer-2', 'self', seq2.id.msgId, 'delivered'),
-            'peer-2',
+            'peer-2'
         );
 
         releaseFirstCommit();
@@ -284,36 +265,35 @@ describe('ALInboundMessageRuntime', () => {
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: seq2.id.msgId,
             toPeerId: 'peer-1',
-            status: 'subtree-complete',
+            status: 'subtree-complete'
         });
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
     it('waits for downstream acknowledgements before sending the deferred subtree ack upstream', async () => {
-        const { runtime, controlMessages, forwardedIds, controlAcceptances } =
-            createInboundHarness();
+        const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
 
         const msg = newALMulticastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-ack',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'hello',
+                text: 'hello'
             },
             {
                 reliability: 'at-least-once',
                 ack: 'all-logical-recipients',
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
@@ -323,7 +303,7 @@ describe('ALInboundMessageRuntime', () => {
 
         await runtime.handleIncomingMessage(
             newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2',
+            'peer-2'
         );
 
         expect(controlAcceptances).toHaveLength(1);
@@ -334,27 +314,26 @@ describe('ALInboundMessageRuntime', () => {
         expect(parsed?.payload).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
-            status: 'subtree-complete',
+            status: 'subtree-complete'
         });
     });
 
     it('does not complete deferred subtree ack after the source message expires', async () => {
         vi.useFakeTimers();
 
-        const { runtime, controlMessages, forwardedIds, controlAcceptances } =
-            createInboundHarness();
+        const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
 
         const msg = newALMulticastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-expiring-pending-ack',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'hello',
+                text: 'hello'
             },
             {
                 ttlMs: 10,
@@ -362,10 +341,10 @@ describe('ALInboundMessageRuntime', () => {
                 ack: 'all-logical-recipients',
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
@@ -376,7 +355,7 @@ describe('ALInboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(100);
         await runtime.handleIncomingMessage(
             newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2',
+            'peer-2'
         );
 
         expect(controlAcceptances).toHaveLength(1);
@@ -399,21 +378,21 @@ describe('ALInboundMessageRuntime', () => {
                         throw new Error('temporary nack failure');
                     }
                     sentControls.push(msg);
-                },
-            },
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(createOrderedMessage(2, 'two'), 'peer-1');
 
         expect(sentControls.map((msg) => msg.payload.typeId)).toEqual([
-            'al.control.repair.v1',
+            'al.control.repair.v1'
         ]);
 
         await vi.advanceTimersByTimeAsync(100);
 
         expect(sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
             'al.control.nack.v1',
-            'al.control.repair.v1',
+            'al.control.repair.v1'
         ]);
     });
 
@@ -427,20 +406,20 @@ describe('ALInboundMessageRuntime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-dispatch',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'hello',
+                text: 'hello'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
         const { runtime } = createInboundHarness(
             createInMemoryALInboundRuntimeStores(),
@@ -452,8 +431,8 @@ describe('ALInboundMessageRuntime', () => {
                         throw new Error('temporary dispatch failure');
                     }
                     delivered.push(parsed.id.msgId);
-                },
-            },
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
@@ -475,21 +454,21 @@ describe('ALInboundMessageRuntime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-expiring-dispatch',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'expires',
+                text: 'expires'
             },
             {
                 ttlMs: 10,
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
         const { runtime } = createInboundHarness(
             createInMemoryALInboundRuntimeStores(),
@@ -501,8 +480,8 @@ describe('ALInboundMessageRuntime', () => {
                         throw new Error('temporary dispatch failure');
                     }
                     delivered.push(parsed.id.msgId);
-                },
-            },
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
@@ -525,10 +504,10 @@ describe('ALInboundMessageRuntime', () => {
                 expiry: {
                     algo: 'expires-at' as const,
                     opts: {
-                        expiresAtMs: Date.now() + 10,
-                    },
-                },
-            },
+                        expiresAtMs: Date.now() + 10
+                    }
+                }
+            }
         };
         const seq1 = createOrderedMessage(1, 'one');
 
@@ -549,22 +528,22 @@ describe('ALInboundMessageRuntime', () => {
             {
                 sendControlMessage: async () => {
                     throw new Error('offline');
-                },
-            },
+                }
+            }
         ).runtime;
 
         await runtime1.handleIncomingMessage(createOrderedMessage(2, 'two'), 'peer-1');
         runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
-            createPersistentInboundStores(provider),
+            createPersistentInboundStores(provider)
         );
         await runtime2.ready();
         await vi.advanceTimersByTimeAsync(100);
 
         expect(controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
             'al.control.nack.v1',
-            'al.control.repair.v1',
+            'al.control.repair.v1'
         ]);
     });
 
@@ -582,8 +561,8 @@ describe('ALInboundMessageRuntime', () => {
                 },
                 forwardMessage: async (msg) => {
                     forwardedIds.push(msg.id.msgId);
-                },
-            },
+                }
+            }
         ).runtime;
 
         const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
@@ -592,12 +571,12 @@ describe('ALInboundMessageRuntime', () => {
 
         await runtime1.handleIncomingMessage(
             newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
-            'peer-2',
+            'peer-2'
         );
         runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
-            createPersistentInboundStores(provider),
+            createPersistentInboundStores(provider)
         );
         await runtime2.ready();
         await vi.advanceTimersByTimeAsync(100);
@@ -611,7 +590,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
-            status: 'subtree-complete',
+            status: 'subtree-complete'
         });
     });
 });
@@ -621,16 +600,16 @@ function createInboundHarness(
     overrides: Partial<{
         dispatchInboxEntry: (
             entry: ResourceEntry,
-            plan?: ALMessageHandlingPlan,
+            plan?: ALMessageHandlingPlan
         ) => Promise<void>;
         sendControlMessage: (msg: ALMessage) => Promise<void>;
         forwardMessage: (
             msg: ALMessage,
             fromPeerId: string,
-            plan: ALMessageHandlingPlan,
+            plan: ALMessageHandlingPlan
         ) => Promise<void>;
         canForwardMessage: (msg: ALMessage) => boolean;
-    }> = {},
+    }> = {}
 ) {
     const inbox = new InMemoryQueueBox(new Map());
     const dispatchedTexts: string[] = [];
@@ -651,17 +630,16 @@ function createInboundHarness(
                 overlayNeighborPeerIds: ['peer-2'],
                 dedupStore: runtimeStores.dedupStore,
                 orderingStore: runtimeStores.orderingStore,
-                supersedenceStore: runtimeStores.supersedenceStore,
+                supersedenceStore: runtimeStores.supersedenceStore
             }),
         readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
-        toInboxEntry: (msg) =>
-            QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: overrides.dispatchInboxEntry ?? (async (
             entry: ResourceEntry,
-            _plan?: ALMessageHandlingPlan,
+            _plan?: ALMessageHandlingPlan
         ) => {
             const msg = JSON.parse(entry.resource) as ALMessage;
-            const payload = JSON.parse(msg.payload.resource) as { text?: string };
+            const payload = JSON.parse(msg.payload.resource) as { text?: string; };
             dispatchedTexts.push(payload.text ?? msg.id.msgId);
         }),
         sendControlMessage: overrides.sendControlMessage ?? (async (msg) => {
@@ -673,7 +651,7 @@ function createInboundHarness(
         forwardMessage: overrides.forwardMessage ?? (async (msg) => {
             forwardedIds.push(msg.id.msgId);
         }),
-        canForwardMessage: overrides.canForwardMessage,
+        canForwardMessage: overrides.canForwardMessage
     });
 
     return {
@@ -682,26 +660,26 @@ function createInboundHarness(
         dispatchedTexts,
         controlMessages,
         forwardedIds,
-        controlAcceptances,
+        controlAcceptances
     };
 }
 
 function createOrderedMessage(
     seq: number,
     text: string,
-    ack: 'none' | 'all-logical-recipients' = 'none',
+    ack: 'none' | 'all-logical-recipients' = 'none'
 ) {
     return newALMulticastMessage(
         'peer-1',
         {
             topicId: 'chat',
             resourceId: `msg-${seq}`,
-            contextId: 'group-1',
+            contextId: 'group-1'
         },
         groupRef('group-1'),
         'chat.message.v1',
         {
-            text,
+            text
         },
         {
             seq,
@@ -709,15 +687,15 @@ function createOrderedMessage(
             ack,
             qos: {
                 durability: {
-                    algo: 'volatile',
-                },
-            },
-        },
+                    algo: 'volatile'
+                }
+            }
+        }
     );
 }
 
 function createPersistentInboundStores(
-    provider: InMemoryPersistenceProvider<string, unknown>,
+    provider: InMemoryPersistenceProvider<string, unknown>
 ) {
     return {
         admissionStore: createALInboundAdmissionStore({
@@ -726,8 +704,8 @@ function createPersistentInboundStores(
             provider,
             coordinationKey: 'al-inbound-runtime-test:provider',
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000,
-        }),
+            supersedenceTrackTtlMs: 5 * 60_000
+        })
     };
 }
 
@@ -735,6 +713,6 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }

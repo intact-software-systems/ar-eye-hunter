@@ -70,8 +70,8 @@ Create `packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts`:
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
-    type ControlCommandEnvelope,
     parseControlServerMessage,
+    type ControlCommandEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
@@ -82,7 +82,7 @@ function envelope(commandId: string, command: RallarBlackBoxTestCommand): Contro
         runId: 'run-1',
         agentId: 'agent-1',
         commandId,
-        command,
+        command
     };
 }
 
@@ -107,13 +107,13 @@ describe('rallar-bb-test control protocol', () => {
                             readiness: {
                                 minReadyPeers: 1,
                                 timeoutMs: 10_000,
-                                intervalMs: 100,
-                            },
-                        },
-                    ],
-                },
+                                intervalMs: 100
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed.ok).toBe(true);
@@ -133,18 +133,19 @@ describe('rallar-bb-test control protocol', () => {
                             commandId: 'rtc-connect-invalid-ready',
                             connection: 'rtc',
                             readiness: {
-                                timeoutMs: 0,
-                            },
-                        },
-                    ],
-                },
+                                timeoutMs: 0
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed).toEqual({
             ok: false,
-            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.',
+            error:
+                'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.'
         });
     });
 });
@@ -285,7 +286,7 @@ const FILES = [
     'apps/rallar-black-box-control-server/src/control-artifacts.ts',
     'apps/rallar-black-box-control-server/src/main.ts',
     'apps/rallar-black-box-control-server/test/control-service.test.ts',
-    'apps/rallar-black-box-control-server/test/control-artifacts.test.ts',
+    'apps/rallar-black-box-control-server/test/control-artifacts.test.ts'
 ];
 
 describe('black-box control protocol package boundary', () => {
@@ -449,7 +450,7 @@ import { describe, expect, it } from 'vitest';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 
 describe('rallar-bb-test control snapshot contracts', () => {
@@ -464,7 +465,7 @@ describe('rallar-bb-test control snapshot contracts', () => {
             events: [],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         } satisfies ControlRunSnapshot;
 
         const distributedRun = {
@@ -475,13 +476,13 @@ describe('rallar-bb-test control snapshot contracts', () => {
                 group: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
                 recipes: [],
                 targetPolicy: {
                     mode: 'selected-agents',
-                    agentIds: [],
-                },
+                    agentIds: []
+                }
             },
             state: 'draft',
             createdAtEpochMs: 1,
@@ -500,12 +501,12 @@ describe('rallar-bb-test control snapshot contracts', () => {
                     cancelled: 0,
                     timedOut: 0,
                     disconnected: 0,
-                    blockingFailures: 0,
+                    blockingFailures: 0
                 },
                 participants: [],
                 recipes: [],
-                failures: [],
-            },
+                failures: []
+            }
         } satisfies ControlDistributedRunSnapshot;
 
         const artifact = {
@@ -520,8 +521,8 @@ describe('rallar-bb-test control snapshot contracts', () => {
                 'results.jsonl': '',
                 'events.jsonl': '',
                 'failures.json': '{}',
-                'metadata.json': '{}',
-            },
+                'metadata.json': '{}'
+            }
         } satisfies ControlDistributedRunArtifactBundle;
 
         expect(artifact.distributedRunId).toBe('dist-1');
@@ -564,7 +565,7 @@ import type {
     ControlCommandEnvelope,
     ControlEventEnvelope,
     ControlHeartbeatEnvelope,
-    ControlResultEnvelope,
+    ControlResultEnvelope
 } from './control-protocol.ts';
 ```
 
@@ -575,7 +576,7 @@ import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRollup,
-    RallarBlackBoxDistributedRunState,
+    RallarBlackBoxDistributedRunState
 } from './distributed-run.ts';
 import type {
     ControlFleetAgentRunOutcome,
@@ -584,7 +585,7 @@ import type {
     ControlFleetReportBundle,
     ControlFleetReportsResponse,
     ControlFleetRunReport,
-    ControlFleetTimingDistribution,
+    ControlFleetTimingDistribution
 } from './fleet-report.ts';
 ```
 
@@ -612,7 +613,7 @@ import type {
     ControlRunArtifactFileName,
     ControlRunSnapshot,
     ControlServerSnapshot,
-    ControlSnapshotBounds,
+    ControlSnapshotBounds
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 ```
 
@@ -673,7 +674,7 @@ Create `packages/tests/shared-test/rallar-bb-test-distributed-artifact-analysis.
 import {
     analyzeDistributedRunArtifactFiles,
     distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
+    distributedArtifactSnapshotsFromFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
 ```
@@ -727,7 +728,7 @@ Import shared monitor functions from:
 import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
-    deriveRunVerdictView,
+    deriveRunVerdictView
 } from './distributed-run-monitor.ts';
 ```
 
@@ -748,12 +749,12 @@ export {
     deriveDistributedRunMonitor,
     deriveDistributedRunWarningRegressionReport,
     deriveRunVerdictView,
-    filterDistributedRuns,
+    filterDistributedRuns
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 export type {
     DistributedRunAnalysisReport,
     DistributedRunMonitor,
-    RunVerdictView,
+    RunVerdictView
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 ```
 
@@ -763,7 +764,7 @@ Update `apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts`:
 
 ```ts
 import {
-    analyzeDistributedRunArtifactFiles,
+    analyzeDistributedRunArtifactFiles
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 ```
 
@@ -828,44 +829,48 @@ import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
+    RALLAR_BLACK_BOX_RECIPE_FIXTURES
 } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
-    validateJsonSchema,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+    validateJsonSchema
 } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
 
 describe('rallar-bb-test recipe fixtures', () => {
     it('builds live RTC recipes with optional ready-peer contracts', () => {
         const smoke = createRallarBlackBoxRtcSmokeRecipe({
             readyPeerCount: 1,
-            readyTimeoutMs: 10_000,
+            readyTimeoutMs: 10_000
         });
-        const connect = smoke.commands.find(command => command.kind === 'rtc.connect');
+        const connect = smoke.commands.find((command) => command.kind === 'rtc.connect');
 
         expect(connect).toMatchObject({
             kind: 'rtc.connect',
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
-                intervalMs: 100,
-            },
+                intervalMs: 100
+            }
         });
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, smoke).ok).toBe(true);
     });
 
     it('keeps default local fixtures flexible without forced readiness', () => {
         const realtime = createRallarBlackBoxRtcRealtimeRecipe();
-        const connect = realtime.commands.find(command => command.kind === 'rtc.connect');
+        const connect = realtime.commands.find((command) => command.kind === 'rtc.connect');
 
         expect(connect).toMatchObject({ kind: 'rtc.connect' });
-        expect((connect as { readiness?: unknown } | undefined)?.readiness).toBeUndefined();
+        expect((connect as { readiness?: unknown; } | undefined)?.readiness).toBeUndefined();
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, realtime).ok).toBe(true);
     });
 
     it('exports a stable fixture catalog for SPA and manifest generation', () => {
-        expect(RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(fixture => fixture.fixtureId)).toContain('composite-evidence');
-        expect(RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(fixture => fixture.fixtureId)).toContain('expected-failure');
+        expect(RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((fixture) => fixture.fixtureId)).toContain(
+            'composite-evidence'
+        );
+        expect(RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((fixture) => fixture.fixtureId)).toContain(
+            'expected-failure'
+        );
     });
 });
 ```
@@ -921,12 +926,12 @@ export {
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
-    recipeFixtureText,
+    recipeFixtureText
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 export type {
     RallarBlackBoxLiveRecipeOptions,
     RallarBlackBoxRecipeFixture,
-    RallarBlackBoxRtcRealtimeRecipeOptions,
+    RallarBlackBoxRtcRealtimeRecipeOptions
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 ```
 
@@ -1096,15 +1101,15 @@ Expected result before edits: only intentional SPA UI imports remain for `recipe
 Replace remaining imports of:
 
 ```ts
-apps/rallar-black-box/src/control-protocol.ts
-apps/rallar-black-box/src/distributed-run-artifact-analysis.ts
+apps / rallar - black - box / src / control - protocol.ts;
+apps / rallar - black - box / src / distributed - run - artifact - analysis.ts;
 ```
 
 with:
 
 ```ts
-@shared-test/rallar-bb-test/control-protocol.ts
-@shared-test/rallar-bb-test/distributed-artifact-analysis.ts
+-test / rallar - bb - test / control - protocol.ts;
+-test / rallar - bb - test / distributed - artifact - analysis.ts;
 ```
 
 - [ ] **Step 3: Remove obsolete app shims if no imports remain**
@@ -1119,7 +1124,7 @@ Extend `packages/tests/rallar-black-box/control-protocol-boundary.test.ts`:
 const FORBIDDEN_IMPORTS = [
     '../../rallar-black-box/src/control-protocol.ts',
     '../../../apps/rallar-black-box/src/control-protocol.ts',
-    '../../../apps/rallar-black-box/src/distributed-run-artifact-analysis.ts',
+    '../../../apps/rallar-black-box/src/distributed-run-artifact-analysis.ts'
 ];
 
 for (const forbidden of FORBIDDEN_IMPORTS) {

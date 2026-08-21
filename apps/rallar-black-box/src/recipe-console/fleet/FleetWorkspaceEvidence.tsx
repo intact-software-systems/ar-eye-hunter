@@ -1,3 +1,4 @@
+import type { FleetWorkspaceProps } from './fleet-workspace-contract.ts';
 import { FleetArtifactEvidence } from './FleetArtifactEvidence.tsx';
 import { FleetEvidenceQuality } from './FleetEvidenceQuality.tsx';
 import { FleetFailures } from './FleetFailures.tsx';
@@ -11,24 +12,23 @@ import { FleetSourceBar } from './FleetSourceBar.tsx';
 import { FleetSummary } from './FleetSummary.tsx';
 import { FleetTiming } from './FleetTiming.tsx';
 import { FleetWindowControls } from './FleetWindowControls.tsx';
-import type { FleetWorkspaceProps } from './fleet-workspace-contract.ts';
-import type { FleetWorkspaceController } from './use-fleet-workspace.ts';
-import type { useFleetWorkspaceActions } from
-    './use-fleet-workspace-actions.ts';
 import styles from './FleetWorkspaceEvidence.module.css';
+import type { useFleetWorkspaceActions } from './use-fleet-workspace-actions.ts';
+import type { FleetWorkspaceController } from './use-fleet-workspace.ts';
 
 export function FleetWorkspaceEvidence({
     actions,
     input,
-    workspace,
+    workspace
 }: Readonly<{
     actions: ReturnType<typeof useFleetWorkspaceActions>;
     input: FleetWorkspaceProps;
     workspace: FleetWorkspaceController;
 }>) {
     const { evidence, model, windows } = workspace;
-    const reportSelectionIssue = model.selectionIssues.find(issue =>
-        issue.field === 'distributedRunId' || issue.field === 'controlRunId');
+    const reportSelectionIssue = model.selectionIssues.find((issue) =>
+        issue.field === 'distributedRunId' || issue.field === 'controlRunId'
+    );
     return (
         <>
             <FleetSourceBar
@@ -74,84 +74,86 @@ export function FleetWorkspaceEvidence({
                         selectedAgentId={input.selection.agentId}
                     />
                 </div>
-                {evidence ? (
-                    <>
-                        <div className={styles.dualControls}>
-                            <FleetWindowControls
-                                contentId="fleet-heatmap"
-                                itemLabel="agents"
-                                label="Fleet heatmap agents"
-                                window={windows.heatmapAgents}
-                            />
-                            <FleetWindowControls
-                                contentId="fleet-heatmap"
-                                itemLabel="runs"
-                                label="Fleet heatmap runs"
-                                window={windows.heatmapRuns}
-                            />
-                        </div>
-                        <div id="fleet-heatmap" {...windows.heatmapAgents.contentFocusProps}>
-                            <FleetHeatmap
-                                heatmap={evidence.heatmap}
-                                onSelectAgent={actions.selectAgent}
-                                onSelectReport={actions.selectReportAndInspect}
-                            />
-                        </div>
-                        <div className={styles.twoColumn}>
-                            <div>
+                {evidence
+                    ? (
+                        <>
+                            <div className={styles.dualControls}>
                                 <FleetWindowControls
-                                    contentId="fleet-regions"
-                                    itemLabel="regions"
-                                    label="Fleet regions"
-                                    window={windows.regions}
+                                    contentId="fleet-heatmap"
+                                    itemLabel="agents"
+                                    label="Fleet heatmap agents"
+                                    window={windows.heatmapAgents}
                                 />
-                                <div id="fleet-regions" {...windows.regions.contentFocusProps}>
-                                    <FleetRegions
-                                        onSelectRegion={actions.selectRegion}
-                                        regions={evidence.regions}
-                                        selectedRegion={input.urlState.fleetRegion}
+                                <FleetWindowControls
+                                    contentId="fleet-heatmap"
+                                    itemLabel="runs"
+                                    label="Fleet heatmap runs"
+                                    window={windows.heatmapRuns}
+                                />
+                            </div>
+                            <div id="fleet-heatmap" {...windows.heatmapAgents.contentFocusProps}>
+                                <FleetHeatmap
+                                    heatmap={evidence.heatmap}
+                                    onSelectAgent={actions.selectAgent}
+                                    onSelectReport={actions.selectReportAndInspect}
+                                />
+                            </div>
+                            <div className={styles.twoColumn}>
+                                <div>
+                                    <FleetWindowControls
+                                        contentId="fleet-regions"
+                                        itemLabel="regions"
+                                        label="Fleet regions"
+                                        window={windows.regions}
                                     />
+                                    <div id="fleet-regions" {...windows.regions.contentFocusProps}>
+                                        <FleetRegions
+                                            onSelectRegion={actions.selectRegion}
+                                            regions={evidence.regions}
+                                            selectedRegion={input.urlState.fleetRegion}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <FleetWindowControls
+                                        contentId="fleet-failures"
+                                        itemLabel="failure groups"
+                                        label="Fleet failure groups"
+                                        window={windows.failures}
+                                    />
+                                    <div id="fleet-failures" {...windows.failures.contentFocusProps}>
+                                        <FleetFailures
+                                            failures={evidence.failures}
+                                            onOpenHistory={actions.openHistory}
+                                            onOpenRun={actions.openFailureRun}
+                                            onSelectAgent={actions.selectAgent}
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                            <div>
+                            <div className={styles.dualControls}>
                                 <FleetWindowControls
-                                    contentId="fleet-failures"
-                                    itemLabel="failure groups"
-                                    label="Fleet failure groups"
-                                    window={windows.failures}
+                                    contentId="fleet-timing"
+                                    itemLabel="region timing groups"
+                                    label="Fleet region timing"
+                                    window={windows.regionTiming}
                                 />
-                                <div id="fleet-failures" {...windows.failures.contentFocusProps}>
-                                    <FleetFailures
-                                        failures={evidence.failures}
-                                        onOpenHistory={actions.openHistory}
-                                        onOpenRun={actions.openFailureRun}
-                                        onSelectAgent={actions.selectAgent}
-                                    />
-                                </div>
+                                <FleetWindowControls
+                                    contentId="fleet-timing"
+                                    itemLabel="recipe timing groups"
+                                    label="Fleet recipe timing"
+                                    window={windows.recipeTiming}
+                                />
                             </div>
-                        </div>
-                        <div className={styles.dualControls}>
-                            <FleetWindowControls
-                                contentId="fleet-timing"
-                                itemLabel="region timing groups"
-                                label="Fleet region timing"
-                                window={windows.regionTiming}
-                            />
-                            <FleetWindowControls
-                                contentId="fleet-timing"
-                                itemLabel="recipe timing groups"
-                                label="Fleet recipe timing"
-                                window={windows.recipeTiming}
-                            />
-                        </div>
-                        <div id="fleet-timing" {...windows.regionTiming.contentFocusProps}>
-                            <FleetTiming
-                                recipeTiming={evidence.recipeTiming}
-                                regionTiming={evidence.regionTiming}
-                            />
-                        </div>
-                    </>
-                ) : null}
+                            <div id="fleet-timing" {...windows.regionTiming.contentFocusProps}>
+                                <FleetTiming
+                                    recipeTiming={evidence.recipeTiming}
+                                    regionTiming={evidence.regionTiming}
+                                />
+                            </div>
+                        </>
+                    )
+                    : null}
                 <FleetMap
                     model={workspace.map}
                     onSelectAgent={actions.selectAgent}
@@ -172,12 +174,8 @@ export function FleetWorkspaceEvidence({
                     routeWindow={windows.mapRoutes}
                     unresolvedAgentIds={workspace.map.unresolved.agentIds}
                     unresolvedAgentWindow={windows.unresolvedAgents}
-                    unresolvedEndpointAgentIds={
-                        workspace.map.unresolved.routeEndpointAgentIds
-                    }
-                    unresolvedEndpointObservationCount={
-                        workspace.map.unresolved.routeObservationCount
-                    }
+                    unresolvedEndpointAgentIds={workspace.map.unresolved.routeEndpointAgentIds}
+                    unresolvedEndpointObservationCount={workspace.map.unresolved.routeObservationCount}
                     unresolvedEndpointWindow={windows.unresolvedRouteEndpoints}
                 />
                 <FleetArtifactEvidence
@@ -196,7 +194,9 @@ export function FleetWorkspaceEvidence({
                         collection={model.collection}
                         issues={model.validationIssues}
                         missingLabelAgentIds={evidence?.missingLabels ?? {
-                            items: [], total: 0, omitted: 0,
+                            items: [],
+                            total: 0,
+                            omitted: 0
                         }}
                         omittedIssueCount={model.omittedValidationIssueCount}
                         quarantinedCount={model.reports.quarantinedCount}

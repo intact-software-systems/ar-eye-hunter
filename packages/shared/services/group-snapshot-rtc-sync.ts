@@ -1,15 +1,9 @@
 import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
-import {
-    type BootstrapOverlayPolicy,
-    createAndSetBootstrapOverlays,
-} from '@shared/repository/overlay-bootstrap.ts';
+import { createAndSetBootstrapOverlays, type BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import {
-    resolveRtcGroupFormationMode,
-    type RtcGroupFormationMode,
-} from '@shared/rtc/group-formation-mode.ts';
+import { resolveRtcGroupFormationMode, type RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
 export type GroupFormationPolicyInput = Readonly<{
@@ -19,19 +13,19 @@ export type GroupFormationPolicyInput = Readonly<{
 
 export function resolveBootstrapOverlayPolicy(
     groupFormation: GroupFormationPolicyInput | undefined,
-    localSessionId: string,
+    localSessionId: string
 ): BootstrapOverlayPolicy {
     return {
         localSessionId,
         mode: resolveRtcGroupFormationMode(groupFormation?.mode),
         bootstrapDegree: groupFormation?.bootstrapDegree ??
-            resolveBootstrapDegree({}),
+            resolveBootstrapDegree({})
     };
 }
 
 export function isSameBootstrapOverlayPolicy(
     left: BootstrapOverlayPolicy,
-    right: BootstrapOverlayPolicy,
+    right: BootstrapOverlayPolicy
 ): boolean {
     return left.localSessionId === right.localSessionId &&
         left.mode === right.mode &&
@@ -41,7 +35,7 @@ export function isSameBootstrapOverlayPolicy(
 export async function acceptGroupSnapshotUpdate(
     snapshot: GroupStateSnapshot,
     webRtcGroupManager: WebRtcGroupManager,
-    bootstrapOverlayPolicy: BootstrapOverlayPolicy,
+    bootstrapOverlayPolicy: BootstrapOverlayPolicy
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
         overlaysRepository.removeOverlayByGroupRef(snapshot.group);
@@ -56,7 +50,8 @@ export async function acceptGroupSnapshotUpdate(
         overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
         if (webRtcGroupManager.has(snapshot.group)) {
             await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
-        } else {
+        }
+        else {
             await webRtcGroupManager.ensureAllGroupsConnected();
         }
         return;
@@ -68,7 +63,7 @@ export async function acceptGroupSnapshotUpdate(
 
 export async function acceptGroupSnapshotRemoval(
     snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager,
+    webRtcGroupManager: WebRtcGroupManager
 ): Promise<void> {
     overlaysRepository.removeOverlayByGroupRef(snapshot.group);
     overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);

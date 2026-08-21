@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type {
-    RetentionCleanupController,
-} from './use-retention-cleanup.ts';
-import {
-    RetentionCleanupResult,
-    RetentionPreviewEvidence,
-} from './RetentionConsequenceViews.tsx';
+import { RetentionCleanupResult, RetentionPreviewEvidence } from './RetentionConsequenceViews.tsx';
 import styles from './RetentionPanel.module.css';
+import type { RetentionCleanupController } from './use-retention-cleanup.ts';
 
 export type RetentionPanelProps = Readonly<{
     controller: RetentionCleanupController;
@@ -17,7 +12,7 @@ export type RetentionPanelProps = Readonly<{
 export function RetentionPanel({
     controller,
     onRequestConfirm,
-    reviewing = false,
+    reviewing = false
 }: RetentionPanelProps) {
     const previewButtonRef = useRef<HTMLButtonElement>(null);
     const [openDisclosure, setOpenDisclosure] = useState<string>();
@@ -29,8 +24,8 @@ export function RetentionPanel({
     const disclosureController = {
         openKey: openDisclosure,
         toggle(key: string): void {
-            setOpenDisclosure(current => current === key ? undefined : key);
-        },
+            setOpenDisclosure((current) => current === key ? undefined : key);
+        }
     } as const;
     useEffect(() => {
         setOpenDisclosure(undefined);
@@ -60,18 +55,20 @@ export function RetentionPanel({
                     >
                         Preview cleanup
                     </button>
-                    {reviewable ? (
-                        <button
-                            className={styles.review}
-                            onClick={() => {
-                                setOpenDisclosure(undefined);
-                                onRequestConfirm(previewButtonRef.current!);
-                            }}
-                            type="button"
-                        >
-                            Review cleanup
-                        </button>
-                    ) : null}
+                    {reviewable
+                        ? (
+                            <button
+                                className={styles.review}
+                                onClick={() => {
+                                    setOpenDisclosure(undefined);
+                                    onRequestConfirm(previewButtonRef.current!);
+                                }}
+                                type="button"
+                            >
+                                Review cleanup
+                            </button>
+                        )
+                        : null}
                 </div>
             </header>
 
@@ -82,27 +79,33 @@ export function RetentionPanel({
                 role="status"
             >
                 {controller.state.message ?? statusMessage(
-                    controller.state.status,
+                    controller.state.status
                 )}
             </p>
 
-            {preview ? <RetentionPreviewEvidence
-                controller={disclosureController}
-                preview={preview}
-                suppressPressure={reviewing}
-            /> : null}
-            {controller.state.confirmation ? (
-                <RetentionCleanupResult
-                    confirmation={controller.state.confirmation}
-                    controller={disclosureController}
-                />
-            ) : null}
+            {preview
+                ? (
+                    <RetentionPreviewEvidence
+                        controller={disclosureController}
+                        preview={preview}
+                        suppressPressure={reviewing}
+                    />
+                )
+                : null}
+            {controller.state.confirmation
+                ? (
+                    <RetentionCleanupResult
+                        confirmation={controller.state.confirmation}
+                        controller={disclosureController}
+                    />
+                )
+                : null}
         </section>
     );
 }
 
 function statusMessage(
-    status: RetentionCleanupController['state']['status'],
+    status: RetentionCleanupController['state']['status']
 ): string {
     switch (status) {
         case 'idle':

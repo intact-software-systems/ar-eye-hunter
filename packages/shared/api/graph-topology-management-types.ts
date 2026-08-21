@@ -63,9 +63,9 @@ export type GroupTopologyConfigPatch = Readonly<{
 }>;
 
 export type CanonicalGroupTopologyConfigField<T> =
-    | Readonly<{ action: 'preserve' }>
-    | Readonly<{ action: 'set'; value: T }>
-    | Readonly<{ action: 'clear' }>;
+    | Readonly<{ action: 'preserve'; }>
+    | Readonly<{ action: 'set'; value: T; }>
+    | Readonly<{ action: 'clear'; }>;
 
 /**
  * Mandatory JSON representation used after a sparse topology request crosses a
@@ -97,9 +97,11 @@ export type StoredGroupTopologyConfig = Readonly<{
     requestId: string | null;
 }>;
 
-export type StoredGroupTopologyOverride = StoredGroupTopologyConfig & Readonly<{
-    expiresAtEpochMs: number;
-}>;
+export type StoredGroupTopologyOverride =
+    & StoredGroupTopologyConfig
+    & Readonly<{
+        expiresAtEpochMs: number;
+    }>;
 
 export type GroupTopologyConfigMutationOperation =
     | 'putConfig'
@@ -151,10 +153,12 @@ export type GroupTopologyManagementView = Readonly<{
     overlayId: string;
     snapshot: RallarOverlayTopologySnapshot | null;
     config: GroupTopologyConfigView;
-    pending: Readonly<{
-        reconfigureQueued: boolean;
-        dueAtEpochMs: number | null;
-    }> | null;
+    pending:
+        | Readonly<{
+            reconfigureQueued: boolean;
+            dueAtEpochMs: number | null;
+        }>
+        | null;
 }>;
 
 export type PutGroupTopologyConfigRequest = Readonly<{

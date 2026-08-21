@@ -63,16 +63,16 @@ differ materially.
 
 ### Burst window (T1−T0)
 
-| Tier × backend | Server | Mutations | Expansions | Recomputes T/E/P | fp-skips | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 12 | 12 | 12 / 2 / 2 (12/12/12) | 1 | 14 (36) | 24 (113) |
-| medium × memory | primary | 40 | 40 | 40 / 2 / 2 (40/40/40) | 0 | 101 (117) | 345 (1,229) |
-| small × postgres | primary | 12 | 6 | 6 / 1 / 1 (12/12/12) | 1 | 26 (36) | 96 (165) |
-| small × postgres | secondary | 0 | 6 | 6 / 1 / 1 (0/0/0) | 0 | 0 | 0 |
-| medium × postgres | primary | 31 | 30 | 30 / 2 / 2 (23/26/21) | 0 | 87 (117) | 925 (1,485) |
-| medium × postgres | secondary | 9 | 10 | 10 / 1 / 0 (17/29/19) | 1 | 0 | 0 |
-| large × postgres | primary | 34 | 28 | 28 / 4 / 4 (41/44/36) | 1 | 232 (306) | 4,934 (8,467) |
-| large × postgres | secondary | 34 | 42 | 42 / 1 / 1 (22/42/33) | 0 | 0 | 0 |
+| Tier × backend    | Server    | Mutations | Expansions | Recomputes T/E/P      | fp-skips | WS sends  | Deliveries    |
+| ----------------- | --------- | --------- | ---------- | --------------------- | -------- | --------- | ------------- |
+| small × memory    | primary   | 12        | 12         | 12 / 2 / 2 (12/12/12) | 1        | 14 (36)   | 24 (113)      |
+| medium × memory   | primary   | 40        | 40         | 40 / 2 / 2 (40/40/40) | 0        | 101 (117) | 345 (1,229)   |
+| small × postgres  | primary   | 12        | 6          | 6 / 1 / 1 (12/12/12)  | 1        | 26 (36)   | 96 (165)      |
+| small × postgres  | secondary | 0         | 6          | 6 / 1 / 1 (0/0/0)     | 0        | 0         | 0             |
+| medium × postgres | primary   | 31        | 30         | 30 / 2 / 2 (23/26/21) | 0        | 87 (117)  | 925 (1,485)   |
+| medium × postgres | secondary | 9         | 10         | 10 / 1 / 0 (17/29/19) | 1        | 0         | 0             |
+| large × postgres  | primary   | 34        | 28         | 28 / 4 / 4 (41/44/36) | 1        | 232 (306) | 4,934 (8,467) |
+| large × postgres  | secondary | 34        | 42         | 42 / 1 / 1 (22/42/33) | 0        | 0         | 0             |
 
 Joins issued/succeeded: 6/6, 20/20, and 50/50; every client observed full
 membership (`memberCount == N+1`, `onlineMemberCount == N`) and received at
@@ -90,16 +90,16 @@ superseded by the newer revision).
 
 ### Steady-state window (T2−T1, ~60 s ≈ per minute)
 
-| Tier × backend | Server | Mutations | Expansions | Recomputes T/E/P | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 12 | 0 (12) | 0 / 0 / 0 (12/12/12) | 0 (48) | 0 (288) |
-| medium × memory | primary | 40 | 0 (40) | 0 / 0 / 0 (40/40/40) | 0 (160) | 0 (3,200) |
-| small × postgres | primary | 12 | 0 (12) | 0 / 0 / 0 (12/12/12) | 0 (48) | 0 (288) |
-| small × postgres | secondary | 0 | 0 | 0 / 0 / 0 | 0 | 0 |
-| medium × postgres | primary | 40 | 0 (37) | 0 / 0 / 0 (37/40/39) | 0 (160) | 0 (3,200) |
-| medium × postgres | secondary | 0 | 0 | 0 / 0 / 0 | 0 | 0 |
-| large × postgres | primary | 84 | 0 (56) | 0 / 0 / 0 (56/62/34) | 0 (400) | 0 (20,000) |
-| large × postgres | secondary | 0 | 0 (23) | 0 / 0 / 0 (23/62/40) | 0 | 0 |
+| Tier × backend    | Server    | Mutations | Expansions | Recomputes T/E/P     | WS sends | Deliveries |
+| ----------------- | --------- | --------- | ---------- | -------------------- | -------- | ---------- |
+| small × memory    | primary   | 12        | 0 (12)     | 0 / 0 / 0 (12/12/12) | 0 (48)   | 0 (288)    |
+| medium × memory   | primary   | 40        | 0 (40)     | 0 / 0 / 0 (40/40/40) | 0 (160)  | 0 (3,200)  |
+| small × postgres  | primary   | 12        | 0 (12)     | 0 / 0 / 0 (12/12/12) | 0 (48)   | 0 (288)    |
+| small × postgres  | secondary | 0         | 0          | 0 / 0 / 0            | 0        | 0          |
+| medium × postgres | primary   | 40        | 0 (37)     | 0 / 0 / 0 (37/40/39) | 0 (160)  | 0 (3,200)  |
+| medium × postgres | secondary | 0         | 0          | 0 / 0 / 0            | 0        | 0          |
+| large × postgres  | primary   | 84        | 0 (56)     | 0 / 0 / 0 (56/62/34) | 0 (400)  | 0 (20,000) |
+| large × postgres  | secondary | 0         | 0 (23)     | 0 / 0 / 0 (23/62/40) | 0        | 0          |
 
 The steady-state mutations remain exactly the two heartbeat rounds (2 × N,
 split across servers under the cluster): heartbeats still write their session
@@ -112,13 +112,13 @@ primary alone). S7 ("the storm never ends") is closed.
 
 ### Queue depth (rows in `resource_inbox` at capture instants)
 
-| Tier × backend | T0 | T1 | T2 | Burst Δ | Steady Δ |
-| --- | --- | --- | --- | --- | --- |
-| small × memory | 127 | 249 | 262 | +122 (+144) | +13 (+85) |
-| medium × memory | 296 | 698 | 739 | +402 (+481) | +41 (+281) |
-| small × postgres | 4,690 | 4,812 | 4,829 | +122 (+144) | +17 (+87) |
-| medium × postgres | 4,862 | 5,265 | 5,306 | +403 (+480) | +41 (+283) |
-| large × postgres | 12 | 1,026 | 1,129 | +1,014 (+1,200) | +103 (+703) |
+| Tier × backend    | T0    | T1    | T2    | Burst Δ         | Steady Δ    |
+| ----------------- | ----- | ----- | ----- | --------------- | ----------- |
+| small × memory    | 127   | 249   | 262   | +122 (+144)     | +13 (+85)   |
+| medium × memory   | 296   | 698   | 739   | +402 (+481)     | +41 (+281)  |
+| small × postgres  | 4,690 | 4,812 | 4,829 | +122 (+144)     | +17 (+87)   |
+| medium × postgres | 4,862 | 5,265 | 5,306 | +403 (+480)     | +41 (+283)  |
+| large × postgres  | 12    | 1,026 | 1,129 | +1,014 (+1,200) | +103 (+703) |
 
 Absolute Postgres standard-profile totals include the whole suite session
 (reading rules); the deltas are comparable. Steady-state queue-row growth
@@ -137,13 +137,13 @@ throughout; they were not touched.
 
 Uncontended workload summaries (100 groups, concurrency 10; latencies in ms):
 
-| Artifact | p50 | p95 | p99 | Throughput/s | Hot throughput/s |
-| --- | --- | --- | --- | --- | --- |
-| baseline run 1 (`main`, cold machine) | 30.6 | 55.0 | 69.2 | 290.7 | 38.9 |
-| baseline run 2 (`main`, after ~1.5 h of benching) | 31.2 | 55.5 | 78.1 | 286.4 | 52.9 |
-| candidate run 2 (branch) | 31.6 | 57.6 | 79.7 | 280.7 | 44.0 |
-| candidate run 3 (branch) | 31.5 | 55.2 | 73.2 | 284.0 | 44.6 |
-| candidate run 4 (branch, back-to-back after baseline 2) | 31.4 | 59.0 | 72.4 | 282.2 | 51.2 |
+| Artifact                                                | p50  | p95  | p99  | Throughput/s | Hot throughput/s |
+| ------------------------------------------------------- | ---- | ---- | ---- | ------------ | ---------------- |
+| baseline run 1 (`main`, cold machine)                   | 30.6 | 55.0 | 69.2 | 290.7        | 38.9             |
+| baseline run 2 (`main`, after ~1.5 h of benching)       | 31.2 | 55.5 | 78.1 | 286.4        | 52.9             |
+| candidate run 2 (branch)                                | 31.6 | 57.6 | 79.7 | 280.7        | 44.0             |
+| candidate run 3 (branch)                                | 31.5 | 55.2 | 73.2 | 284.0        | 44.6             |
+| candidate run 4 (branch, back-to-back after baseline 2) | 31.4 | 59.0 | 72.4 | 282.2        | 51.2             |
 
 - **Instrument noise floor, measured**: comparing baseline run 1 against
   baseline run 2 — identical `main` code — FAILS the comparator (uncontended
@@ -161,7 +161,7 @@ Uncontended workload summaries (100 groups, concurrency 10; latencies in ms):
   pairings flipped uncontended p99 (+15.2%, then +5.9%) while p50/p95 and
   throughput stayed inside the gates.
 - **Matched-conditions pairing (baseline 2 vs candidate run 3)**: uncontended
-  p99 73.2 vs 78.1 — the candidate is *faster* than the paired baseline; the
+  p99 73.2 vs 78.1 — the candidate is _faster_ than the paired baseline; the
   only flag is hot throughput 44.6 vs 52.9, where identical-code baselines
   themselves span 38.9 → 52.9 (+36%).
 - **Back-to-back pairing (baseline 2 vs candidate run 4)**: p99 passes (72.4

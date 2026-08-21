@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from 'react';
-import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser-adapter.ts';
 import {
     bootstrapFleetMetadata,
@@ -8,9 +6,18 @@ import {
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
     validateRallarBlackBoxProviderConfig,
-    type RallarBlackBoxBootstrapConfig,
+    type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import {
+    createBrowserWebSocketFactory,
+    createSpaBrowserRallarRuntime,
+    installSpaBrowserRallarEventBridge
+} from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import {
+    RallarBlackBoxControlClient,
+    type RallarBlackBoxControlSnapshot
+} from '@shared-test/rallar-bb-test/control-client.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -22,15 +29,11 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestRuntimeEventInput,
-    RallarBlackBoxTestState,
+    RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/types.ts';
-import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
-import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from '@shared-test/rallar-bb-test/control-client.ts';
-import {
-    createBrowserWebSocketFactory,
-    createSpaBrowserRallarRuntime,
-    installSpaBrowserRallarEventBridge,
-} from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import { configureAuthSessionStorage } from '@shared/api/auth.ts';
+import { useSyncExternalStore } from 'react';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 
 export {
     bootstrapFleetMetadata,
@@ -38,7 +41,7 @@ export {
     rallarConfigFromBootstrap,
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig,
+    validateRallarBlackBoxProviderConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 export type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
@@ -63,24 +66,24 @@ function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
 }
 
 function initialControlSnapshot(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): RallarBlackBoxControlSnapshot {
     return {
         state: 'idle',
         url: bootstrap.controlUrl,
         reconnectAttempt: 0,
         sentCount: 0,
-        receivedCount: 0,
+        receivedCount: 0
     };
 }
 
 function delay(ms: number): Promise<void> {
-    return new Promise(resolve => window.setTimeout(resolve, ms));
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function recordAndThrowProviderConfigError(
     runtime: RallarBlackBoxTestRuntime,
-    config: RallarBlackBoxTestConfig,
+    config: RallarBlackBoxTestConfig
 ): void {
     const configError = validateRallarBlackBoxProviderConfig(config);
     if (!configError) {
@@ -91,7 +94,7 @@ function recordAndThrowProviderConfigError(
         kind: 'diagnostic',
         topic: 'rallar.bb.provider.browser_rallar.config_invalid',
         severity: 'error',
-        payload: configError,
+        payload: configError
     });
     throw new Error(configError.message);
 }
@@ -123,8 +126,8 @@ function commandString(value: unknown, fallback: string): string {
 }
 
 function browserRallarProviderNotReadyOutcome(
-    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
-    context: RallarBlackBoxTestCommandContext,
+    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
+    context: RallarBlackBoxTestCommandContext
 ): RallarBlackBoxTestCommandOutcome {
     const config = context.config();
     if (config) {
@@ -135,35 +138,36 @@ function browserRallarProviderNotReadyOutcome(
                 topic: 'rallar.bb.provider.browser_rallar.config_invalid',
                 commandId: command.commandId,
                 severity: 'error',
-                payload: configError,
+                payload: configError
             });
             return {
                 status: 'failed',
                 error: configError,
-                nextStatus: 'failed',
+                nextStatus: 'failed'
             };
         }
     }
 
     const error: RallarBlackBoxTestError = {
         code: 'RALLAR_BLACK_BOX_PROVIDER_NOT_IMPLEMENTED',
-        message: 'browser-rallar provider is selected, but the real browser Rallar SPA adapter is planned for Iteration 15B.',
+        message:
+            'browser-rallar provider is selected, but the real browser Rallar SPA adapter is planned for Iteration 15B.',
         details: {
             providerMode: 'browser-rallar',
-            commandKind: command.kind,
-        },
+            commandKind: command.kind
+        }
     };
     context.recordEvent({
         kind: 'diagnostic',
         topic: 'rallar.bb.provider.browser_rallar.not_ready',
         commandId: command.commandId,
         severity: 'error',
-        payload: error,
+        payload: error
     });
     return {
         status: 'failed',
         error,
-        nextStatus: 'failed',
+        nextStatus: 'failed'
     };
 }
 
@@ -172,8 +176,8 @@ function canInstallSpaBrowserRallarRuntime(): boolean {
 }
 
 async function providerCommandExecutor(
-    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>,
-    context: RallarBlackBoxTestCommandContext,
+    command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
+    context: RallarBlackBoxTestCommandContext
 ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
     const providerMode = rallarBlackBoxProviderModeFromConfig(context.config());
     if (providerMode === 'browser-rallar' && command.kind !== 'reset') {
@@ -187,7 +191,7 @@ async function providerCommandExecutor(
             const config = context.config();
             const sessionId = commandString(
                 command.rallar?.sessionId ?? config?.sessionId,
-                'visible-session-alice',
+                'visible-session-alice'
             );
             const manualMetadata = command.metadata?.manual as Record<string, unknown> | undefined;
             const manualExpectedClients = Array.isArray(manualMetadata?.expectedClients)
@@ -201,7 +205,7 @@ async function providerCommandExecutor(
                 connection: command.connection,
                 actor: command.actor,
                 transport: command.transport,
-                severity: 'info' as const,
+                severity: 'info' as const
             };
             const stages = [
                 ['auth', 'rallar.bb.fake.connect.authenticated'],
@@ -209,7 +213,7 @@ async function providerCommandExecutor(
                 ['group-join', 'rallar.bb.fake.connect.group_joined'],
                 ['signaling', 'rallar.bb.fake.connect.signaling_ready'],
                 ['peer-discovery', 'rallar.bb.fake.connect.peer_discovered'],
-                ['data-channel', 'rallar.bb.fake.connect.data_channel_ready'],
+                ['data-channel', 'rallar.bb.fake.connect.data_channel_ready']
             ] as const;
             for (const [phase, topic] of stages) {
                 context.recordEvent({
@@ -234,8 +238,8 @@ async function providerCommandExecutor(
                         peerCount: phase === 'peer-discovery' || phase === 'data-channel'
                             ? expectedClients.length
                             : 1,
-                        laneHealth: phase === 'data-channel' ? 'open' : 'opening',
-                    },
+                        laneHealth: phase === 'data-channel' ? 'open' : 'opening'
+                    }
                 });
             }
             context.recordEvent({
@@ -259,8 +263,8 @@ async function providerCommandExecutor(
                     readyPeerIds: expectedClients,
                     activePeerIds: expectedClients,
                     peerCount: expectedClients.length,
-                    laneHealth: 'open',
-                },
+                    laneHealth: 'open'
+                }
             });
             return {
                 status: 'ok',
@@ -278,9 +282,9 @@ async function providerCommandExecutor(
                     transport: command.transport,
                     sessionId,
                     expectedClients,
-                    observedClients: expectedClients,
+                    observedClients: expectedClients
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
         }
         case 'rtc.send': {
@@ -312,10 +316,10 @@ async function providerCommandExecutor(
                         nack: negativeCase === 'not-yet-in-sync'
                             ? {
                                 code: 'not-yet-in-sync',
-                                message: 'Snapshot is behind the minimum requested version.',
+                                message: 'Snapshot is behind the minimum requested version.'
                             }
-                            : undefined,
-                    },
+                            : undefined
+                    }
                 });
             }
             context.recordEvent({
@@ -339,8 +343,8 @@ async function providerCommandExecutor(
                     activePeerIds: targets,
                     peerCount: targets.length,
                     laneHealth: negativeCase ? 'degraded' : 'open',
-                    firstPayloadMs: runtimeDelayFor(command),
-                },
+                    firstPayloadMs: runtimeDelayFor(command)
+                }
             });
             context.recordEvent({
                 kind: 'message',
@@ -354,8 +358,8 @@ async function providerCommandExecutor(
                     data: command.send,
                     receivedAtEpochMs: Date.now(),
                     deliveryMode,
-                    targets,
-                },
+                    targets
+                }
             });
             return {
                 status: 'ok',
@@ -371,9 +375,9 @@ async function providerCommandExecutor(
                     scope: command.scope,
                     roomRef: command.roomRef,
                     minSnapshotVersion: command.minSnapshotVersion,
-                    payloadBytes: JSON.stringify(command.send ?? {}).length,
+                    payloadBytes: JSON.stringify(command.send ?? {}).length
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
         }
         case 'ws.open':
@@ -386,8 +390,8 @@ async function providerCommandExecutor(
                 severity: 'warning',
                 payload: {
                     url: command.url,
-                    reason: 'local scaffold does not open remote sockets',
-                },
+                    reason: 'local scaffold does not open remote sockets'
+                }
             });
             return {
                 status: 'ok',
@@ -396,9 +400,9 @@ async function providerCommandExecutor(
                     opened: false,
                     simulated: true,
                     connection: command.connection,
-                    url: command.url,
+                    url: command.url
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
         case 'ws.send':
             context.recordEvent({
@@ -410,8 +414,8 @@ async function providerCommandExecutor(
                 severity: 'info',
                 payload: {
                     direction: 'loopback',
-                    data: command.data,
-                },
+                    data: command.data
+                }
             });
             return {
                 status: 'ok',
@@ -420,9 +424,9 @@ async function providerCommandExecutor(
                     sent: true,
                     simulated: true,
                     connection: command.connection,
-                    data: command.data,
+                    data: command.data
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
         case 'ws.close':
             context.recordEvent({
@@ -434,8 +438,8 @@ async function providerCommandExecutor(
                 severity: 'info',
                 payload: {
                     code: command.code,
-                    reason: command.reason,
-                },
+                    reason: command.reason
+                }
             });
             return {
                 status: 'ok',
@@ -443,9 +447,9 @@ async function providerCommandExecutor(
                     providerMode,
                     closed: true,
                     simulated: true,
-                    connection: command.connection,
+                    connection: command.connection
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
         case 'http.request':
             if (!command.request.url && !command.request.path) {
@@ -462,9 +466,9 @@ async function providerCommandExecutor(
                     ok: true,
                     request: command.request,
                     body: {
-                        status: 'ok',
-                    },
-                },
+                        status: 'ok'
+                    }
+                }
             });
             return {
                 status: 'ok',
@@ -475,10 +479,10 @@ async function providerCommandExecutor(
                     simulated: true,
                     request: command.request,
                     body: {
-                        status: 'ok',
-                    },
+                        status: 'ok'
+                    }
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
         default:
             return undefined;
@@ -502,13 +506,14 @@ class RallarBlackBoxRuntimeStore {
             const browserRuntime = createRallarBlackBoxBrowserTestRuntime({
                 rallarRuntime: createSpaBrowserRallarRuntime(),
                 fetch: globalThis.fetch?.bind(globalThis) as typeof fetch | undefined,
-                webSocketFactory: createBrowserWebSocketFactory(),
+                webSocketFactory: createBrowserWebSocketFactory()
             });
             this.runtime = browserRuntime;
             installSpaBrowserRallarEventBridge(browserRuntime);
-        } else {
+        }
+        else {
             this.runtime = createRallarBlackBoxTestRuntime({
-                commandExecutor: providerCommandExecutor,
+                commandExecutor: providerCommandExecutor
             });
         }
         this.snapshot = {
@@ -517,7 +522,7 @@ class RallarBlackBoxRuntimeStore {
             bootstrap: this.bootstrapConfig,
             bootstrapping: false,
             busy: false,
-            runState: 'waiting',
+            runState: 'waiting'
         };
         this.controlClient = new RallarBlackBoxControlClient({
             runtime: this.runtime,
@@ -525,18 +530,18 @@ class RallarBlackBoxRuntimeStore {
             heartbeatIntervalMs: this.bootstrapConfig.heartbeatIntervalMs,
             statsIntervalMs: this.bootstrapConfig.statsIntervalMs,
             finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
-            onSnapshot: control => {
+            onSnapshot: (control) => {
                 this.snapshot = {
                     ...this.snapshot,
-                    control,
+                    control
                 };
                 this.emit();
-            },
+            }
         });
-        this.runtime.subscribe(state => {
+        this.runtime.subscribe((state) => {
             this.snapshot = {
                 ...this.snapshot,
-                state,
+                state
             };
             this.emit();
         });
@@ -544,7 +549,7 @@ class RallarBlackBoxRuntimeStore {
 
     getSnapshot = (): RuntimeStoreSnapshot => this.snapshot;
 
-    subscribe = (listener: StoreListener): (() => void) => {
+    subscribe = (listener: StoreListener): () => void => {
         this.listeners.add(listener);
         return () => {
             this.listeners.delete(listener);
@@ -552,15 +557,15 @@ class RallarBlackBoxRuntimeStore {
     };
 
     updateBootstrapConfig(
-        patch: Partial<RallarBlackBoxBootstrapConfig>,
+        patch: Partial<RallarBlackBoxBootstrapConfig>
     ): void {
         this.bootstrapConfig = {
             ...this.bootstrapConfig,
-            ...patch,
+            ...patch
         };
         this.snapshot = {
             ...this.snapshot,
-            bootstrap: this.bootstrapConfig,
+            bootstrap: this.bootstrapConfig
         };
         this.emit();
     }
@@ -591,14 +596,14 @@ class RallarBlackBoxRuntimeStore {
         this.snapshot = {
             ...this.snapshot,
             lastAction: 'Connecting control WebSocket',
-            lastError: undefined,
+            lastError: undefined
         };
         this.emit();
         this.controlClient.connect({
             url,
             runId: effectiveRunId,
             agentId: effectiveAgentId,
-            token: this.bootstrapConfig.controlToken,
+            token: this.bootstrapConfig.controlToken
         });
     }
 
@@ -606,20 +611,20 @@ class RallarBlackBoxRuntimeStore {
         this.controlClient.disconnect();
         this.snapshot = {
             ...this.snapshot,
-            lastAction: 'Control WebSocket disconnected',
+            lastAction: 'Control WebSocket disconnected'
         };
         this.emit();
     }
 
     recordRuntimeEvent(
         event: RallarBlackBoxTestRuntimeEventInput,
-        lastAction?: string,
+        lastAction?: string
     ): void {
         this.runtime.recordEvent(event);
         if (lastAction) {
             this.snapshot = {
                 ...this.snapshot,
-                lastAction,
+                lastAction
             };
             this.emit();
         }
@@ -630,17 +635,18 @@ class RallarBlackBoxRuntimeStore {
             await this.resetForRun('Loading local scaffold recipe');
             await this.loadRecipe(
                 RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].recipe,
-                RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId,
+                RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId
             );
             await this.runLoadedRecipe();
-        } catch (error) {
+        }
+        catch (error) {
             this.snapshot = {
                 ...this.snapshot,
                 bootstrapping: false,
                 busy: false,
                 runState: 'failed',
                 lastAction: 'Local sample failed',
-                lastError: toMessage(error),
+                lastError: toMessage(error)
             };
             this.emit();
         }
@@ -655,7 +661,7 @@ class RallarBlackBoxRuntimeStore {
                 busy: true,
                 runState: 'waiting',
                 lastAction: 'Configuring local browser-rallar workbench',
-                lastError: undefined,
+                lastError: undefined
             };
             this.emit();
 
@@ -667,9 +673,10 @@ class RallarBlackBoxRuntimeStore {
                 runState: 'waiting',
                 loadedFixtureId: undefined,
                 lastAction: 'Local browser-rallar workbench configured',
-                lastError: undefined,
+                lastError: undefined
             };
-        } catch (error) {
+        }
+        catch (error) {
             this.snapshot = {
                 ...this.snapshot,
                 bootstrapping: false,
@@ -677,7 +684,7 @@ class RallarBlackBoxRuntimeStore {
                 runState: 'failed',
                 loadedFixtureId: undefined,
                 lastAction: 'Local browser-rallar workbench configuration failed',
-                lastError: toMessage(error),
+                lastError: toMessage(error)
             };
         }
 
@@ -693,19 +700,19 @@ class RallarBlackBoxRuntimeStore {
             busy: true,
             runState: 'waiting',
             lastAction: 'Bootstrapping remote control agent',
-            lastError: undefined,
+            lastError: undefined
         };
         this.emit();
 
         try {
             await this.runtime.execute({
                 kind: 'reset',
-                commandId: `reset-control-${runNumber}`,
+                commandId: `reset-control-${runNumber}`
             });
             await this.runtime.execute({
                 kind: 'configure',
                 commandId: `configure-control-${runNumber}`,
-                config,
+                config
             });
             recordAndThrowProviderConfigError(this.runtime, config);
 
@@ -717,7 +724,7 @@ class RallarBlackBoxRuntimeStore {
                 lastAction: this.bootstrapConfig.autoConnect
                     ? 'Remote control agent configured; connecting'
                     : 'Remote control agent configured',
-                lastError: undefined,
+                lastError: undefined
             };
             this.emit();
 
@@ -725,17 +732,18 @@ class RallarBlackBoxRuntimeStore {
                 this.connectControl(
                     this.bootstrapConfig.controlUrl,
                     config.runId,
-                    this.bootstrapConfig.agentId,
+                    this.bootstrapConfig.agentId
                 );
             }
-        } catch (error) {
+        }
+        catch (error) {
             this.snapshot = {
                 ...this.snapshot,
                 bootstrapping: false,
                 busy: false,
                 runState: 'failed',
                 lastAction: 'Remote control bootstrap failed',
-                lastError: toMessage(error),
+                lastError: toMessage(error)
             };
             this.emit();
         }
@@ -744,7 +752,7 @@ class RallarBlackBoxRuntimeStore {
     async loadRecipeFromJson(recipeJson: string, fixtureId?: string): Promise<void> {
         const parsed = this.parseJson<RallarBlackBoxTestRecipe>(
             recipeJson,
-            'Recipe JSON is invalid',
+            'Recipe JSON is invalid'
         );
         await this.loadRecipe(parsed, fixtureId);
     }
@@ -756,14 +764,14 @@ class RallarBlackBoxRuntimeStore {
             busy: true,
             runState: 'running',
             lastAction: 'Running loaded local recipe',
-            lastError: undefined,
+            lastError: undefined
         };
         this.emit();
 
         try {
             const result = await this.runtime.execute({
                 kind: 'recipe.run',
-                commandId: `recipe-run-local-${runNumber}`,
+                commandId: `recipe-run-local-${runNumber}`
             });
             this.snapshot = {
                 ...this.snapshot,
@@ -772,21 +780,22 @@ class RallarBlackBoxRuntimeStore {
                 runState: result.status === 'cancelled'
                     ? 'cancelled'
                     : result.ok
-                        ? 'passed'
-                        : 'failed',
+                    ? 'passed'
+                    : 'failed',
                 lastAction: result.ok
                     ? 'Local recipe completed'
                     : 'Local recipe finished with failures',
-                lastError: result.error?.message,
+                lastError: result.error?.message
             };
-        } catch (error) {
+        }
+        catch (error) {
             this.snapshot = {
                 ...this.snapshot,
                 busy: false,
                 bootstrapping: false,
                 runState: 'failed',
                 lastAction: 'Local recipe failed',
-                lastError: toMessage(error),
+                lastError: toMessage(error)
             };
         }
 
@@ -796,21 +805,21 @@ class RallarBlackBoxRuntimeStore {
     async executeCommandFromJson(commandJson: string): Promise<void> {
         const command = this.parseJson<RallarBlackBoxTestCommand>(
             commandJson,
-            'Command JSON is invalid',
+            'Command JSON is invalid'
         );
         await this.executeManualCommand(command, `Executing ${command.kind}`);
     }
 
     async executeManualCommand(
         command: RallarBlackBoxTestCommand,
-        actionLabel = `Executing ${command.kind}`,
+        actionLabel = `Executing ${command.kind}`
     ): Promise<void> {
         await this.executeManualCommands([command], actionLabel);
     }
 
     async executeManualCommands(
         commands: readonly RallarBlackBoxTestCommand[],
-        actionLabel: string,
+        actionLabel: string
     ): Promise<void> {
         if (commands.length === 0) {
             return;
@@ -821,7 +830,7 @@ class RallarBlackBoxRuntimeStore {
             busy: true,
             runState: 'running',
             lastAction: actionLabel,
-            lastError: undefined,
+            lastError: undefined
         };
         this.emit();
 
@@ -841,15 +850,16 @@ class RallarBlackBoxRuntimeStore {
                     ? failed.status === 'cancelled' ? 'cancelled' : 'failed'
                     : 'passed',
                 lastAction: failed ? `${actionLabel} failed` : actionLabel,
-                lastError: failed?.error?.message,
+                lastError: failed?.error?.message
             };
-        } catch (error) {
+        }
+        catch (error) {
             this.snapshot = {
                 ...this.snapshot,
                 busy: false,
                 runState: 'failed',
                 lastAction: `${actionLabel} failed`,
-                lastError: toMessage(error),
+                lastError: toMessage(error)
             };
         }
 
@@ -860,14 +870,14 @@ class RallarBlackBoxRuntimeStore {
         const wasBusy = this.snapshot.busy;
         this.snapshot = {
             ...this.snapshot,
-            lastAction: 'Requesting recipe cancellation',
+            lastAction: 'Requesting recipe cancellation'
         };
         this.emit();
 
         const result = await this.runtime.execute({
             kind: 'recipe.cancel',
             commandId: `recipe-cancel-local-${this.runSequence++}`,
-            reason: 'cancelled from local workbench',
+            reason: 'cancelled from local workbench'
         });
         this.snapshot = {
             ...this.snapshot,
@@ -877,7 +887,7 @@ class RallarBlackBoxRuntimeStore {
             lastAction: result.ok
                 ? 'Recipe cancellation requested'
                 : 'Recipe cancellation failed',
-            lastError: result.error?.message,
+            lastError: result.error?.message
         };
         this.emit();
     }
@@ -889,7 +899,7 @@ class RallarBlackBoxRuntimeStore {
             busy: false,
             bootstrapping: false,
             runState: 'reset',
-            loadedFixtureId: undefined,
+            loadedFixtureId: undefined
         };
         this.emit();
     }
@@ -902,13 +912,13 @@ class RallarBlackBoxRuntimeStore {
             busy: true,
             runState: 'reset',
             lastAction,
-            lastError: undefined,
+            lastError: undefined
         };
         this.emit();
 
         await this.runtime.execute({
             kind: 'reset',
-            commandId: `reset-local-${runNumber}`,
+            commandId: `reset-local-${runNumber}`
         });
         await this.configureRuntime(runNumber);
     }
@@ -929,26 +939,26 @@ class RallarBlackBoxRuntimeStore {
                 mode: 'local-workbench',
                 providerMode: this.bootstrapConfig.providerMode,
                 protocolVersion: 1,
-                connected: false,
+                connected: false
             },
             defaults: {
                 timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
                 connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
-                providerMode: this.bootstrapConfig.providerMode,
+                providerMode: this.bootstrapConfig.providerMode
             },
-            fleet: bootstrapFleetMetadata(this.bootstrapConfig),
+            fleet: bootstrapFleetMetadata(this.bootstrapConfig)
         };
         await this.runtime.execute({
             kind: 'configure',
             commandId: `configure-local-${runNumber}`,
-            config,
+            config
         });
         recordAndThrowProviderConfigError(this.runtime, config);
     }
 
     private async loadRecipe(
         recipe: RallarBlackBoxTestRecipe,
-        fixtureId?: string,
+        fixtureId?: string
     ): Promise<void> {
         const loadNumber = this.runSequence++;
         this.snapshot = {
@@ -956,14 +966,14 @@ class RallarBlackBoxRuntimeStore {
             busy: true,
             runState: 'waiting',
             lastAction: `Loading recipe ${recipe.recipeId ?? ''}`.trim(),
-            lastError: undefined,
+            lastError: undefined
         };
         this.emit();
 
         const result = await this.runtime.execute({
             kind: 'recipe.load',
             commandId: `recipe-load-local-${loadNumber}`,
-            recipe,
+            recipe
         });
         if (!result.ok) {
             this.snapshot = {
@@ -972,7 +982,7 @@ class RallarBlackBoxRuntimeStore {
                 bootstrapping: false,
                 runState: 'failed',
                 lastAction: `Recipe ${recipe.recipeId ?? ''} is invalid`.trim(),
-                lastError: result.error?.message,
+                lastError: result.error?.message
             };
             this.emit();
             return;
@@ -984,7 +994,7 @@ class RallarBlackBoxRuntimeStore {
             bootstrapping: false,
             runState: 'waiting',
             lastAction: `Loaded recipe ${recipe.recipeId}`,
-            loadedFixtureId: fixtureId,
+            loadedFixtureId: fixtureId
         };
         this.emit();
     }
@@ -992,12 +1002,13 @@ class RallarBlackBoxRuntimeStore {
     private parseJson<T>(input: string, message: string): T {
         try {
             return JSON.parse(input) as T;
-        } catch (error) {
+        }
+        catch (error) {
             this.snapshot = {
                 ...this.snapshot,
                 runState: 'failed',
                 lastAction: message,
-                lastError: toMessage(error),
+                lastError: toMessage(error)
             };
             this.emit();
             throw error;
@@ -1005,7 +1016,7 @@ class RallarBlackBoxRuntimeStore {
     }
 
     private emit(): void {
-        this.listeners.forEach(listener => listener());
+        this.listeners.forEach((listener) => listener());
     }
 }
 
@@ -1015,7 +1026,7 @@ export function useRallarBlackBoxRuntimeStore(): RuntimeStoreSnapshot {
     return useSyncExternalStore(
         rallarBlackBoxRuntimeStore.subscribe,
         rallarBlackBoxRuntimeStore.getSnapshot,
-        rallarBlackBoxRuntimeStore.getSnapshot,
+        rallarBlackBoxRuntimeStore.getSnapshot
     );
 }
 

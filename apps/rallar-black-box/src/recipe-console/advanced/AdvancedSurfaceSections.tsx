@@ -2,15 +2,15 @@ import type { AdvancedWorkspaceSection } from './advanced-workspace-contract.ts'
 import styles from './AdvancedWorkspace.module.css';
 
 export function AdvancedSurfaceSections({
-    sections,
-}: Readonly<{ sections: readonly AdvancedWorkspaceSection[] }>) {
+    sections
+}: Readonly<{ sections: readonly AdvancedWorkspaceSection[]; }>) {
     return (
         <nav
             aria-label="Advanced legacy tools"
             className={styles.catalog}
             data-advanced-catalog
         >
-            {sections.map(section => (
+            {sections.map((section) => (
                 <section
                     aria-labelledby={`advanced-${section.id}-heading`}
                     className={styles.category}
@@ -24,7 +24,7 @@ export function AdvancedSurfaceSections({
                         <p>{section.description}</p>
                     </header>
                     <ul className={styles.surfaceList}>
-                        {section.links.map(link => (
+                        {section.links.map((link) => (
                             <li key={link.id}>
                                 <a
                                     className={styles.surfaceLink}

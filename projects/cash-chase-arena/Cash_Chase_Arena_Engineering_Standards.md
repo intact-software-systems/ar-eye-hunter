@@ -183,15 +183,15 @@ The common public shape is:
 
 ```ts
 export type CashChaseOperationError = Readonly<{
-  code: `CCA-${string}`;
-  retryable: boolean;
-  summary: string;
-  diagnostic?: Readonly<Record<string, string | number | boolean>>;
+    code: `CCA-${string}`;
+    retryable: boolean;
+    summary: string;
+    diagnostic?: Readonly<Record<string, string | number | boolean>>;
 }>;
 
 export type CashChaseOperationResult<T> =
-  | Readonly<{ status: "ok"; value: T }>
-  | Readonly<{ status: "error"; error: CashChaseOperationError }>;
+    | Readonly<{ status: 'ok'; value: T; }>
+    | Readonly<{ status: 'error'; error: CashChaseOperationError; }>;
 ```
 
 Each domain narrows the code union; arbitrary runtime strings are not a substitute

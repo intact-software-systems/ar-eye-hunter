@@ -7,7 +7,7 @@
 export function rendezvousScore(
     localSessionId: string,
     peerSessionId: string,
-    groupKey = '',
+    groupKey = ''
 ): string {
     return `${hashString(`${groupKey}:${localSessionId}:${peerSessionId}`)}`.padStart(10, '0');
 }

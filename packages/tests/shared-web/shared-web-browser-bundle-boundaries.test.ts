@@ -22,7 +22,7 @@ const esbuildBin = path.join(
     repoRoot,
     'node_modules',
     '.bin',
-    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild',
+    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
 );
 
 const budgetedEntries: readonly BundleBoundary[] = [
@@ -30,38 +30,38 @@ const budgetedEntries: readonly BundleBoundary[] = [
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 160,
+        brotliBudgetKiB: 160
     },
     {
         label: 'browser/rallar-core.ts',
         entry: 'packages/shared-web/browser/rallar-core.ts',
         output: 'rallar-browser-core.boundary.min.js',
-        brotliBudgetKiB: 100,
+        brotliBudgetKiB: 100
     },
     {
         label: 'browser/rallar-realtime.ts',
         entry: 'packages/shared-web/browser/rallar-realtime.ts',
         output: 'rallar-browser-realtime.boundary.min.js',
-        brotliBudgetKiB: 100,
+        brotliBudgetKiB: 100
     },
     {
         label: 'browser/rallar-data.ts',
         entry: 'packages/shared-web/browser/rallar-data.ts',
         output: 'rallar-browser-data.boundary.min.js',
-        brotliBudgetKiB: 20,
+        brotliBudgetKiB: 20
     },
     {
         label: 'browser/rallar-crdt.ts',
         entry: 'packages/shared-web/browser/rallar-crdt.ts',
         output: 'rallar-browser-crdt.boundary.min.js',
-        brotliBudgetKiB: 30,
+        brotliBudgetKiB: 30
     },
     {
         label: 'browser/rallar-media-calls.ts',
         entry: 'packages/shared-web/browser/rallar-media-calls.ts',
         output: 'rallar-browser-media-calls.boundary.min.js',
-        brotliBudgetKiB: 10,
-    },
+        brotliBudgetKiB: 10
+    }
 ];
 
 describe('shared-web browser bundle boundaries', () => {
@@ -69,8 +69,8 @@ describe('shared-web browser bundle boundaries', () => {
         const manifest = JSON.parse(
             readFileSync(
                 path.join(repoRoot, 'packages/shared-web/package.json'),
-                'utf8',
-            ),
+                'utf8'
+            )
         ) as {
             dependencies?: Readonly<Record<string, string>>;
             devDependencies?: Readonly<Record<string, string>>;
@@ -80,7 +80,7 @@ describe('shared-web browser bundle boundaries', () => {
         expect(manifest.dependencies ?? {}).not.toHaveProperty('graphology');
         expect(manifest.devDependencies ?? {}).not.toHaveProperty('graphology');
         expect(manifest.scripts?.['check:browser-bundles']).toBe(
-            'node scripts/measure-browser-bundles.mjs --check',
+            'node scripts/measure-browser-bundles.mjs --check'
         );
     });
 
@@ -94,7 +94,7 @@ describe('shared-web browser bundle boundaries', () => {
                 .toContainEqual(expect.stringContaining('node_modules/graphology'));
             expect(inputs, `${result.label} should not include Temporal polyfill`).not
                 .toContainEqual(
-                    expect.stringContaining('node_modules/@js-temporal/polyfill'),
+                    expect.stringContaining('node_modules/@js-temporal/polyfill')
                 );
             expect(inputs, `${result.label} should not include full rallar composer`).not
                 .toContain('packages/shared-web/browser/rallar.ts');
@@ -107,7 +107,7 @@ describe('shared-web browser bundle boundaries', () => {
 
             expect(
                 result.brotliKiB,
-                `${entry.label} Brotli size`,
+                `${entry.label} Brotli size`
             ).toBeLessThan(entry.brotliBudgetKiB);
         }
     });
@@ -117,20 +117,20 @@ describe('shared-web browser bundle boundaries', () => {
             label: 'room group-state translation',
             entry: 'packages/shared-web/browser/rooms/room-group-state-translation.ts',
             output: 'room-group-state-translation.boundary.min.js',
-            brotliBudgetKiB: 1,
+            brotliBudgetKiB: 1
         });
         const contracts = bundleForBoundary({
             label: 'room contracts',
             entry: 'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
             output: 'rallar-room-contracts.boundary.min.js',
-            brotliBudgetKiB: 1,
+            brotliBudgetKiB: 1
         });
 
         expect(Object.keys(translation.metafile.inputs)).not.toContain(
-            'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
+            'packages/shared-web/browser/rooms/rallar-room-contracts.ts'
         );
         expect(Object.keys(contracts.metafile.inputs)).not.toContain(
-            'packages/shared-web/browser/rooms/room-group-state-translation.ts',
+            'packages/shared-web/browser/rooms/room-group-state-translation.ts'
         );
     });
 });
@@ -155,24 +155,24 @@ function bundleForBoundary(entry: BundleBoundary): Readonly<{
             '--target=es2022',
             '--tsconfig=packages/shared-web/tsconfig.json',
             `--outfile=${outputPath}`,
-            `--metafile=${metafilePath}`,
+            `--metafile=${metafilePath}`
         ],
         {
             cwd: repoRoot,
-            stdio: ['ignore', 'ignore', 'pipe'],
-        },
+            stdio: ['ignore', 'ignore', 'pipe']
+        }
     );
 
     const bytes = readFileSync(outputPath);
     const brotliBytes = brotliCompressSync(bytes, {
         params: {
-            [constants.BROTLI_PARAM_QUALITY]: 11,
-        },
+            [constants.BROTLI_PARAM_QUALITY]: 11
+        }
     }).length;
 
     return {
         label: entry.label,
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile,
+        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
     };
 }

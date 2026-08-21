@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ExactIdentifier } from './ExactIdentifier.tsx';
-import { RetentionWindowedList } from './RetentionWindowedList.tsx';
 import styles from './RetentionPanel.module.css';
+import { RetentionWindowedList } from './RetentionWindowedList.tsx';
 
 export type RetentionDisclosureController = Readonly<{
     openKey: string | undefined;
@@ -12,28 +12,32 @@ export function RetentionTotalIdDisclosure({
     controller,
     ids,
     label,
-    revision,
+    revision
 }: Readonly<{
     controller: RetentionDisclosureController;
     ids: readonly string[];
     label: string;
     revision: object;
 }>) {
-    return <RetentionDisclosure
-        className={styles.totalDisclosure}
-        contextKey={`retention-total:${label}`}
-        controller={controller}
-        disclosureKey={`retention-total:${label}`}
-        emptyLabel="None."
-        itemKey={(id, index) => JSON.stringify([id, index])}
-        itemLabel="IDs"
-        items={ids}
-        label={label}
-        renderItem={id => <li data-retention-total-id-row>
-            <ExactIdentifier value={id} />
-        </li>}
-        revision={revision}
-    />;
+    return (
+        <RetentionDisclosure
+            className={styles.totalDisclosure}
+            contextKey={`retention-total:${label}`}
+            controller={controller}
+            disclosureKey={`retention-total:${label}`}
+            emptyLabel="None."
+            itemKey={(id, index) => JSON.stringify([id, index])}
+            itemLabel="IDs"
+            items={ids}
+            label={label}
+            renderItem={(id) => (
+                <li data-retention-total-id-row>
+                    <ExactIdentifier value={id} />
+                </li>
+            )}
+            revision={revision}
+        />
+    );
 }
 
 export function RetentionDisclosure<Item>({
@@ -47,7 +51,7 @@ export function RetentionDisclosure<Item>({
     items,
     label,
     renderItem,
-    revision,
+    revision
 }: Readonly<{
     className: string;
     contextKey: string;
@@ -62,21 +66,31 @@ export function RetentionDisclosure<Item>({
     revision: object;
 }>) {
     const open = controller.openKey === disclosureKey;
-    return <details className={className} open={open}>
-        <summary onClick={event => {
-            event.preventDefault();
-            controller.toggle(disclosureKey);
-        }}>{label} ({items.length})</summary>
-        {open ? items.length > 0 ? (
-            <RetentionWindowedList
-                contextKey={contextKey}
-                itemKey={itemKey}
-                itemLabel={itemLabel}
-                items={items}
-                label={label}
-                renderItem={renderItem}
-                revision={revision}
-            />
-        ) : <p>{emptyLabel}</p> : null}
-    </details>;
+    return (
+        <details className={className} open={open}>
+            <summary
+                onClick={(event) => {
+                    event.preventDefault();
+                    controller.toggle(disclosureKey);
+                }}
+            >
+                {label} ({items.length})
+            </summary>
+            {open
+                ? items.length > 0
+                    ? (
+                        <RetentionWindowedList
+                            contextKey={contextKey}
+                            itemKey={itemKey}
+                            itemLabel={itemLabel}
+                            items={items}
+                            label={label}
+                            renderItem={renderItem}
+                            revision={revision}
+                        />
+                    )
+                    : <p>{emptyLabel}</p>
+                : null}
+        </details>
+    );
 }

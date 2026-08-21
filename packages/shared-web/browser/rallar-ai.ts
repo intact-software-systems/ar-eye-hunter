@@ -3,33 +3,23 @@ import {
     createRallarAiDiagnosticEvent,
     emitRallarAiDiagnostic,
     providerCanRunOnTarget,
+    RallarAiError,
     type RallarAiDiagnosticEventKind,
     type RallarAiDiagnosticsSink,
-    RallarAiError,
     type RallarAiGenerationPolicy,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult,
+    type RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
-import type {
-    RallarFacade,
-    RallarMessageSendResult,
-    RallarRealtimeSendResult,
-} from './rallar.ts';
-import type {
-    RallarDataDurability,
-    RallarDataScope,
-} from './rallar-data.ts';
+import type { RallarDataDurability, RallarDataScope } from './rallar-data.ts';
+import type { RallarFacade, RallarMessageSendResult, RallarRealtimeSendResult } from './rallar.ts';
 
 export type RallarBrowserAiTransport =
     | 'realtime'
     | 'messages.rtc'
     | 'messages.ws';
 
-export type RallarBrowserAiRallar = Pick<
-    RallarFacade,
-    'data' | 'messages' | 'realtime'
->;
+export type RallarBrowserAiRallar = Pick<RallarFacade, 'data' | 'messages' | 'realtime'>;
 
 export type CreateRallarBrowserAiOptions = Readonly<{
     rallar: RallarBrowserAiRallar;
@@ -37,7 +27,7 @@ export type CreateRallarBrowserAiOptions = Readonly<{
     policy?: RallarAiGenerationPolicy;
     diagnostics?: RallarAiDiagnosticsSink;
     readCurrentStateRevision?: (
-        request: RallarAiJsonRequest,
+        request: RallarAiJsonRequest
     ) => string | undefined;
 }>;
 
@@ -67,19 +57,19 @@ export type RallarBrowserAiPersistInput<TValue = unknown> = Readonly<{
 
 export type RallarBrowserAiFacade = Readonly<{
     generateJson<TValue = unknown, TContext = unknown>(
-        request: RallarAiJsonRequest<TContext>,
+        request: RallarAiJsonRequest<TContext>
     ): Promise<RallarAiJsonResult<TValue>>;
     broadcastJson<TValue = unknown>(
-        input: RallarBrowserAiBroadcastInput<TValue>,
+        input: RallarBrowserAiBroadcastInput<TValue>
     ): Promise<RallarBrowserAiBroadcastResult>;
     persistJson<TValue = unknown>(
-        input: RallarBrowserAiPersistInput<TValue>,
+        input: RallarBrowserAiPersistInput<TValue>
     ): Promise<void>;
 }>;
 
 const DEFAULT_BROWSER_AI_POLICY: RallarAiGenerationPolicy = {
     mode: 'browser-only',
-    staleResultMode: 'reject',
+    staleResultMode: 'reject'
 };
 
 const DEFAULT_AI_RESULT_TOPIC_ID = 'room.ai';
@@ -88,13 +78,13 @@ const DEFAULT_AI_RESULT_LANE_ID = 'rallar-ai';
 const DEFAULT_AI_RESULT_STORE_NAME = 'rallar-ai-results';
 
 export function createRallarBrowserAi(
-    options: CreateRallarBrowserAiOptions,
+    options: CreateRallarBrowserAiOptions
 ): RallarBrowserAiFacade {
     const policy = options.policy ?? DEFAULT_BROWSER_AI_POLICY;
 
     return {
         generateJson: async <TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> => {
             assertBrowserPolicy(policy, options.provider);
             await emitRallarAiDiagnostic(
@@ -105,8 +95,8 @@ export function createRallarBrowserAi(
                     modelId: options.provider.modelId,
                     schemaId: request.schemaId,
                     schemaVersion: request.schemaVersion,
-                    source: options.provider.source,
-                }),
+                    source: options.provider.source
+                })
             );
 
             const startedAtEpochMs = Date.now();
@@ -118,8 +108,8 @@ export function createRallarBrowserAi(
                     modelId: options.provider.modelId,
                     schemaId: request.schemaId,
                     schemaVersion: request.schemaVersion,
-                    source: options.provider.source,
-                }),
+                    source: options.provider.source
+                })
             );
 
             let result: RallarAiJsonResult<TValue>;
@@ -127,9 +117,10 @@ export function createRallarBrowserAi(
                 result = await generateWithTimeout<TValue, TContext>(
                     options.provider,
                     request,
-                    policy.timeoutMs ?? request.timeoutMs,
+                    policy.timeoutMs ?? request.timeoutMs
                 );
-            } catch (error) {
+            }
+            catch (error) {
                 await emitGenerationFailureDiagnostic(
                     options.diagnostics,
                     error,
@@ -140,8 +131,8 @@ export function createRallarBrowserAi(
                         schemaId: request.schemaId,
                         schemaVersion: request.schemaVersion,
                         source: options.provider.source,
-                        elapsedMs: Date.now() - startedAtEpochMs,
-                    },
+                        elapsedMs: Date.now() - startedAtEpochMs
+                    }
                 );
                 throw error;
             }
@@ -159,14 +150,14 @@ export function createRallarBrowserAi(
                     schemaHash: result.schemaHash,
                     source: result.source,
                     validationOk: result.validation.ok,
-                    elapsedMs: Date.now() - startedAtEpochMs,
-                }),
+                    elapsedMs: Date.now() - startedAtEpochMs
+                })
             );
 
             return result;
         },
         broadcastJson: async <TValue = unknown>(
-            input: RallarBrowserAiBroadcastInput<TValue>,
+            input: RallarBrowserAiBroadcastInput<TValue>
         ): Promise<RallarBrowserAiBroadcastResult> => {
             const transport = input.transport ?? 'realtime';
             await emitRallarAiDiagnostic(
@@ -180,15 +171,15 @@ export function createRallarBrowserAi(
                     schemaVersion: input.result.schemaVersion,
                     schemaHash: input.result.schemaHash,
                     source: input.result.source,
-                    validationOk: input.result.validation.ok,
-                }),
+                    validationOk: input.result.validation.ok
+                })
             );
 
             try {
                 const broadcastResult = await broadcastWithTransport(
                     options.rallar,
                     input,
-                    transport,
+                    transport
                 );
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
@@ -201,11 +192,12 @@ export function createRallarBrowserAi(
                         schemaVersion: input.result.schemaVersion,
                         schemaHash: input.result.schemaHash,
                         source: input.result.source,
-                        validationOk: input.result.validation.ok,
-                    }),
+                        validationOk: input.result.validation.ok
+                    })
                 );
                 return broadcastResult;
-            } catch (error) {
+            }
+            catch (error) {
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
                     createRallarAiDiagnosticEvent('envelope-broadcast-failed', {
@@ -220,14 +212,14 @@ export function createRallarBrowserAi(
                         errorCode: error instanceof RallarAiError
                             ? error.code
                             : 'provider-failed',
-                        message: error instanceof Error ? error.message : String(error),
-                    }),
+                        message: error instanceof Error ? error.message : String(error)
+                    })
                 );
                 throw error;
             }
         },
         persistJson: async <TValue = unknown>(
-            input: RallarBrowserAiPersistInput<TValue>,
+            input: RallarBrowserAiPersistInput<TValue>
         ): Promise<void> => {
             await emitRallarAiDiagnostic(
                 options.diagnostics,
@@ -240,18 +232,19 @@ export function createRallarBrowserAi(
                     schemaVersion: input.result.schemaVersion,
                     schemaHash: input.result.schemaHash,
                     source: input.result.source,
-                    validationOk: input.result.validation.ok,
-                }),
+                    validationOk: input.result.validation.ok
+                })
             );
 
             try {
-                const store = await options.rallar.data.open<
-                    RallarAiJsonResult<TValue>
-                >(input.storeName ?? DEFAULT_AI_RESULT_STORE_NAME, {
-                    scope: input.scope ?? 'session',
-                    durability: input.durability ?? 'write-behind',
-                    schemaVersion: 1,
-                });
+                const store = await options.rallar.data.open<RallarAiJsonResult<TValue>>(
+                    input.storeName ?? DEFAULT_AI_RESULT_STORE_NAME,
+                    {
+                        scope: input.scope ?? 'session',
+                        durability: input.durability ?? 'write-behind',
+                        schemaVersion: 1
+                    }
+                );
                 await store.set(input.key ?? input.result.generationId, input.result);
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
@@ -264,10 +257,11 @@ export function createRallarBrowserAi(
                         schemaVersion: input.result.schemaVersion,
                         schemaHash: input.result.schemaHash,
                         source: input.result.source,
-                        validationOk: input.result.validation.ok,
-                    }),
+                        validationOk: input.result.validation.ok
+                    })
                 );
-            } catch (error) {
+            }
+            catch (error) {
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
                     createRallarAiDiagnosticEvent('envelope-persistence-failed', {
@@ -280,18 +274,18 @@ export function createRallarBrowserAi(
                         source: input.result.source,
                         validationOk: input.result.validation.ok,
                         errorCode: 'provider-failed',
-                        message: error instanceof Error ? error.message : String(error),
-                    }),
+                        message: error instanceof Error ? error.message : String(error)
+                    })
                 );
                 throw error;
             }
-        },
+        }
     };
 }
 
 function assertBrowserPolicy(
     policy: RallarAiGenerationPolicy,
-    provider: RallarAiJsonProvider,
+    provider: RallarAiJsonProvider
 ): void {
     if (policy.mode === 'disabled') {
         throw new RallarAiError('disabled', 'RallarAI browser generation is disabled.');
@@ -299,20 +293,20 @@ function assertBrowserPolicy(
     if (policy.mode === 'server-only') {
         throw new RallarAiError(
             'provider-target-mismatch',
-            'RallarAI browser facade cannot run server-only generation.',
+            'RallarAI browser facade cannot run server-only generation.'
         );
     }
     if (!providerCanRunOnTarget(provider.capabilities, 'browser')) {
         throw new RallarAiError(
             'provider-target-mismatch',
-            `RallarAI browser facade cannot run provider ${provider.providerId} because it targets ${provider.capabilities.target}.`,
+            `RallarAI browser facade cannot run provider ${provider.providerId} because it targets ${provider.capabilities.target}.`
         );
     }
 }
 
 function assertFreshResult(
     options: CreateRallarBrowserAiOptions,
-    request: RallarAiJsonRequest,
+    request: RallarAiJsonRequest
 ): void {
     if ((options.policy?.staleResultMode ?? 'reject') !== 'reject') {
         return;
@@ -327,8 +321,8 @@ function assertFreshResult(
             'RallarAI browser generation result is stale.',
             {
                 baseStateRevision: request.baseStateRevision,
-                currentStateRevision: current,
-            },
+                currentStateRevision: current
+            }
         );
     }
 }
@@ -336,7 +330,7 @@ function assertFreshResult(
 async function generateWithTimeout<TValue, TContext>(
     provider: RallarAiJsonProvider,
     request: RallarAiJsonRequest<TContext>,
-    timeoutMs?: number,
+    timeoutMs?: number
 ): Promise<RallarAiJsonResult<TValue>> {
     if (timeoutMs === undefined) {
         return await provider.generateJson<TValue, TContext>(request);
@@ -346,24 +340,28 @@ async function generateWithTimeout<TValue, TContext>(
     const abortFromRequest = () => controller.abort(request.signal?.reason);
     request.signal?.addEventListener('abort', abortFromRequest, { once: true });
     const timeout = setTimeout(() => {
-        controller.abort(new RallarAiError(
-            'provider-timeout',
-            `RallarAI browser generation timed out after ${timeoutMs}ms.`,
-        ));
+        controller.abort(
+            new RallarAiError(
+                'provider-timeout',
+                `RallarAI browser generation timed out after ${timeoutMs}ms.`
+            )
+        );
     }, timeoutMs);
 
     try {
         return await provider.generateJson<TValue, TContext>({
             ...request,
             signal: controller.signal,
-            timeoutMs,
+            timeoutMs
         });
-    } catch (error) {
+    }
+    catch (error) {
         if (controller.signal.reason instanceof RallarAiError) {
             throw controller.signal.reason;
         }
         throw error;
-    } finally {
+    }
+    finally {
         clearTimeout(timeout);
         request.signal?.removeEventListener('abort', abortFromRequest);
     }
@@ -372,10 +370,7 @@ async function generateWithTimeout<TValue, TContext>(
 async function emitGenerationFailureDiagnostic(
     sink: RallarAiDiagnosticsSink | undefined,
     error: unknown,
-    input: Omit<
-        Parameters<typeof createRallarAiDiagnosticEvent>[1],
-        'errorCode' | 'message'
-    >,
+    input: Omit<Parameters<typeof createRallarAiDiagnosticEvent>[1], 'errorCode' | 'message'>
 ): Promise<void> {
     const aiError = error instanceof RallarAiError ? error : undefined;
     await emitRallarAiDiagnostic(
@@ -384,13 +379,13 @@ async function emitGenerationFailureDiagnostic(
             ...input,
             validationOk: false,
             errorCode: aiError?.code ?? 'provider-failed',
-            message: error instanceof Error ? error.message : String(error),
-        }),
+            message: error instanceof Error ? error.message : String(error)
+        })
     );
 }
 
 function toGenerationFailureKind(
-    error: RallarAiError | undefined,
+    error: RallarAiError | undefined
 ): RallarAiDiagnosticEventKind {
     if (error?.code === 'provider-timeout') {
         return 'provider-timed-out';
@@ -407,7 +402,7 @@ function toGenerationFailureKind(
 async function broadcastWithTransport<TValue>(
     rallar: RallarBrowserAiRallar,
     input: RallarBrowserAiBroadcastInput<TValue>,
-    transport: RallarBrowserAiTransport,
+    transport: RallarBrowserAiTransport
 ): Promise<RallarBrowserAiBroadcastResult> {
     if (transport === 'realtime') {
         return {
@@ -416,8 +411,8 @@ async function broadcastWithTransport<TValue>(
                 data: input.result,
                 laneId: input.laneId ?? DEFAULT_AI_RESULT_LANE_ID,
                 roomId: input.roomId,
-                roomRef: input.roomRef,
-            }),
+                roomRef: input.roomRef
+            })
         };
     }
 
@@ -427,13 +422,13 @@ async function broadcastWithTransport<TValue>(
         payload: input.result,
         scope: 'room' as const,
         roomId: input.roomId,
-        roomRef: input.roomRef,
+        roomRef: input.roomRef
     };
 
     return {
         transport,
         message: transport === 'messages.ws'
             ? await rallar.messages.ws.send(messageInput)
-            : await rallar.messages.rtc.send(messageInput),
+            : await rallar.messages.rtc.send(messageInput)
     };
 }

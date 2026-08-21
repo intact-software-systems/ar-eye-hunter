@@ -1,8 +1,7 @@
-import type { DistributedRunPerformanceAnalysis } from
-    '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { DistributedRunPerformanceAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 
 export function hasTunePerformanceEvidence(
-    performance: DistributedRunPerformanceAnalysis | undefined,
+    performance: DistributedRunPerformanceAnalysis | undefined
 ): boolean {
     return Boolean(
         performance && (

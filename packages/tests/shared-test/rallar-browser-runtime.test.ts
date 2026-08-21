@@ -1,9 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-    RallarCrdtSyncOptions,
-    RallarCrdtSyncResult,
-} from '@shared/crdt/crdt-types.ts';
 import type { BlackBoxRallarCloseDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
+import type { RallarCrdtSyncOptions, RallarCrdtSyncResult } from '@shared/crdt/crdt-types.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const facade = vi.hoisted(() => {
     const session = {
@@ -11,7 +8,7 @@ const facade = vi.hoisted(() => {
         accessToken: 'access-token-1',
         username: 'alice',
         sessionId: 'session-1',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
     const roomRefresh = vi.fn();
     return {
@@ -27,7 +24,7 @@ const facade = vi.hoisted(() => {
                 restore: vi.fn(),
                 login: vi.fn(),
                 registerAndLogin: vi.fn(),
-                logout: vi.fn(),
+                logout: vi.fn()
             },
             connect: vi.fn(),
             rooms: {
@@ -35,48 +32,48 @@ const facade = vi.hoisted(() => {
                 leave: vi.fn(),
                 refresh: vi.fn(),
                 session: vi.fn(() => ({
-                    refresh: roomRefresh,
-                })),
+                    refresh: roomRefresh
+                }))
             },
             realtime: {
                 onJson: vi.fn(),
                 health: vi.fn(),
-                sendJson: vi.fn(),
+                sendJson: vi.fn()
             },
             rtc: {
                 status: vi.fn(),
-                diagnostics: vi.fn(),
+                diagnostics: vi.fn()
             },
             messages: {
                 rtc: {
                     onMessage: vi.fn(),
-                    send: vi.fn(),
+                    send: vi.fn()
                 },
                 ws: {
                     onMessage: vi.fn(),
-                    send: vi.fn(),
-                },
+                    send: vi.fn()
+                }
             },
             crdt: {
-                open: vi.fn(),
+                open: vi.fn()
             },
             director: {
                 appoint: vi.fn(),
                 resign: vi.fn(),
                 status: vi.fn(),
-                createRelay: vi.fn(),
+                createRelay: vi.fn()
             },
             disconnect: vi.fn(),
             status: vi.fn(),
             isConnected: vi.fn(),
-            session: vi.fn(),
-        },
+            session: vi.fn()
+        }
     };
 });
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
     createRallarFacade: vi.fn(() => facade.rallar),
-    rallar: facade.rallar,
+    rallar: facade.rallar
 }));
 
 type Runtime = Readonly<{
@@ -99,10 +96,12 @@ type Runtime = Readonly<{
     }): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
     sendWs(input: unknown): Promise<unknown>;
-    refreshRoom(options: Readonly<{
-        signal?: AbortSignal;
-        timeoutMs: number;
-    }>): Promise<void>;
+    refreshRoom(
+        options: Readonly<{
+            signal?: AbortSignal;
+            timeoutMs: number;
+        }>
+    ): Promise<void>;
     director: {
         appoint(input: unknown): Promise<unknown>;
         resign(input: unknown): Promise<unknown>;
@@ -128,11 +127,13 @@ type Runtime = Readonly<{
     health(input?: unknown): Promise<unknown>;
 }>;
 
-type TestWindow = Readonly<{
-    __blackBoxRallar?: Runtime;
-}> & {
-    __blackBoxRallarEmit?: (event: unknown) => void;
-};
+type TestWindow =
+    & Readonly<{
+        __blackBoxRallar?: Runtime;
+    }>
+    & {
+        __blackBoxRallarEmit?: (event: unknown) => void;
+    };
 
 const events: unknown[] = [];
 
@@ -149,7 +150,7 @@ function resetFacade(): void {
     facade.rallar.rooms.leave.mockResolvedValue({});
     facade.rallar.rooms.refresh.mockResolvedValue({});
     facade.rallar.rooms.session.mockReturnValue({
-        refresh: facade.roomRefresh,
+        refresh: facade.roomRefresh
     });
     facade.roomRefresh.mockResolvedValue({});
     facade.rallar.realtime.onJson.mockReturnValue(facade.unsubscribeRealtime);
@@ -163,7 +164,7 @@ function resetFacade(): void {
         activePeerIds: [],
         peerIdsWithNoReconnectableLanes: [],
         readyPeerIds: [],
-        peers: [],
+        peers: []
     });
     facade.rallar.rtc.diagnostics.mockResolvedValue({
         sessionId: 'session-1',
@@ -182,7 +183,7 @@ function resetFacade(): void {
                 makingOffer: false,
                 ignoreOffer: false,
                 iceCandidateQueueSize: 0,
-                remoteStreamIds: [],
+                remoteStreamIds: []
             },
             connectionDiagnostics: {
                 connectCallCount: 1,
@@ -219,12 +220,12 @@ function resetFacade(): void {
                 inboundSignalingErrorCount: 0,
                 pendingIceCandidateQueueLength: 0,
                 reconnectAttemptsInFlight: 0,
-                hasReconnectTimer: false,
+                hasReconnectTimer: false
             },
             lanes: [],
             usesRelay: false,
-            statsAvailable: false,
-        }],
+            statsAvailable: false
+        }]
     });
     facade.rallar.realtime.sendJson.mockResolvedValue([]);
     facade.rallar.messages.rtc.send.mockResolvedValue({});
@@ -243,9 +244,9 @@ function resetFacade(): void {
 async function loadRuntime(): Promise<Runtime> {
     vi.resetModules();
     const target: TestWindow = {
-        __blackBoxRallarEmit: event => {
+        __blackBoxRallarEmit: (event) => {
             events.push(event);
-        },
+        }
     };
     vi.stubGlobal('window', target);
     await import('../../shared-test/black-box-runner/browser/rallar-browser-runtime.ts');
@@ -257,32 +258,32 @@ async function loadRuntime(): Promise<Runtime> {
 }
 
 function topics(): readonly string[] {
-    return events.map(event =>
-        String((event as { topic?: unknown }).topic ?? '')
-    );
+    return events.map((event) => String((event as { topic?: unknown; }).topic ?? ''));
 }
 
 function createFakeCrdtDocument(refId: string) {
     let value: unknown = {
-        title: 'initial',
+        title: 'initial'
     };
     const update = (updateId: string, nextValue: unknown) => {
         value = nextValue;
         return {
-            updateId,
+            updateId
         };
     };
 
     return {
         ref: {
             documentId: refId,
-            documentType: 'checklist',
+            documentType: 'checklist'
         },
         read: vi.fn(() => value),
         subscribe: vi.fn(() => vi.fn()),
-        applyLocal: vi.fn(async batch => update('update-apply-1', {
-            applied: batch,
-        })),
+        applyLocal: vi.fn(async (batch) =>
+            update('update-apply-1', {
+                applied: batch
+            })
+        ),
         sequenceInsert: vi.fn(),
         sequenceMove: vi.fn(),
         sequenceDelete: vi.fn(),
@@ -292,12 +293,16 @@ function createFakeCrdtDocument(refId: string) {
         numberMin: vi.fn(),
         numberMax: vi.fn(),
         operationGroupUpdateIds: vi.fn(() => []),
-        undoOperationGroup: vi.fn(async input => update('update-undo-1', {
-            undone: input,
-        })),
-        redoOperationGroup: vi.fn(async input => update('update-redo-1', {
-            redone: input,
-        })),
+        undoOperationGroup: vi.fn(async (input) =>
+            update('update-undo-1', {
+                undone: input
+            })
+        ),
+        redoOperationGroup: vi.fn(async (input) =>
+            update('update-redo-1', {
+                redone: input
+            })
+        ),
         pendingUpdates: vi.fn(() => []),
         failedPendingUpdates: vi.fn(() => []),
         dependencyBlockedUpdates: vi.fn(() => []),
@@ -309,7 +314,7 @@ function createFakeCrdtDocument(refId: string) {
             sentUpdateCount: 0,
             receivedUpdateCount: 0,
             pendingUpdateCount: 0,
-            dependencyBlockedUpdateCount: 0,
+            dependencyBlockedUpdateCount: 0
         })),
         close: vi.fn(async (): Promise<void> => undefined),
         destroy: vi.fn(async (): Promise<void> => undefined),
@@ -318,8 +323,8 @@ function createFakeCrdtDocument(refId: string) {
             pendingUpdateCount: 0,
             failedPendingUpdateCount: 0,
             dependencyBlockedUpdateCount: 0,
-            transportStrategy: 'local-only',
-        })),
+            transportStrategy: 'local-only'
+        }))
     };
 }
 
@@ -342,8 +347,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
 
         expect(diagnostics).toEqual({
@@ -352,12 +357,12 @@ describe('browser Rallar black-box runtime', () => {
             actor: 'alice',
             clientId: 'client-1',
             sessionId: 'session-1',
-            username: 'alice',
+            username: 'alice'
         });
         expect(JSON.stringify(diagnostics)).not.toContain('access-token-1');
         expect(JSON.stringify(diagnostics)).not.toContain('secret');
         expect(facade.rallar.configure).toHaveBeenCalledWith({
-            apiBaseUrl: 'https://api.example.test',
+            apiBaseUrl: 'https://api.example.test'
         });
         expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
         expect(facade.rallar.setDefaults).not.toHaveBeenCalled();
@@ -371,7 +376,7 @@ describe('browser Rallar black-box runtime', () => {
             'rallar.browser.authenticate_started',
             'rallar.browser.auth.register_started',
             'rallar.browser.auth.register_completed',
-            'rallar.browser.authenticate_completed',
+            'rallar.browser.authenticate_completed'
         ]));
         expect(topics()).not.toContain('rallar.browser.connect_started');
     });
@@ -381,7 +386,7 @@ describe('browser Rallar black-box runtime', () => {
         const rallarConfig = {
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
-            password: 'secret',
+            password: 'secret'
         };
         await runtime.connect({
             connection: 'aliceRtc',
@@ -389,17 +394,17 @@ describe('browser Rallar black-box runtime', () => {
             roomId: 'room-1',
             rallar: {
                 ...rallarConfig,
-                leaveRoomOnClose: true,
-            },
+                leaveRoomOnClose: true
+            }
         });
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
 
         await expect(runtime.authenticate({
             connection: 'aliceHttp',
             actor: 'alice',
-            rallar: rallarConfig,
+            rallar: rallarConfig
         })).rejects.toThrow(
-            'Fresh Rallar authentication requires closing the connected black-box runtime first.',
+            'Fresh Rallar authentication requires closing the connected black-box runtime first.'
         );
 
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
@@ -409,13 +414,13 @@ describe('browser Rallar black-box runtime', () => {
         expect(facade.rallar.rooms.leave).toHaveBeenCalledWith({
             roomId: 'room-1',
             clearCurrent: true,
-            timeoutMs: undefined,
+            timeoutMs: undefined
         });
         expect(closeDiagnostics).toMatchObject({
             status: 'closed',
             connection: 'aliceRtc',
             roomId: 'room-1',
-            leftRoom: true,
+            leftRoom: true
         });
         expect(facade.unsubscribeRealtime).toHaveBeenCalledTimes(1);
     });
@@ -434,23 +439,23 @@ describe('browser Rallar black-box runtime', () => {
                 password: 'secret',
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                timeoutMs: 1_234,
-            },
+                timeoutMs: 1_234
+            }
         });
 
         await runtime.refreshRoom({
             signal: controller.signal,
-            timeoutMs: 321,
+            timeoutMs: 321
         });
 
         expect(facade.rallar.rooms.session).toHaveBeenCalledWith({
             applicationId: 'app-a',
             workspaceId: 'workspace-a',
-            groupId: 'room-1',
+            groupId: 'room-1'
         });
         expect(facade.roomRefresh).toHaveBeenCalledWith({
             signal: controller.signal,
-            timeoutMs: 321,
+            timeoutMs: 321
         });
         expect(facade.rallar.rooms.refresh).not.toHaveBeenCalled();
     });
@@ -465,17 +470,17 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         await expect(runtime.refreshRoom({ timeoutMs: 321 })).rejects.toMatchObject({
             name: 'RallarValidationError',
             issues: [
                 {
                     path: '$.roomRef',
-                    code: 'room-ref-required',
-                },
-            ],
+                    code: 'room-ref-required'
+                }
+            ]
         });
 
         expect(facade.rallar.rooms.session).not.toHaveBeenCalled();
@@ -486,7 +491,7 @@ describe('browser Rallar black-box runtime', () => {
     it('deduplicates auth bootstrap and reuses its restored session for full connect', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveRegistration = resolve;
             })
         );
@@ -498,8 +503,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed' as const,
-            },
+                register: 'if-needed' as const
+            }
         };
 
         const firstAuthentication = runtime.authenticate(config);
@@ -513,7 +518,7 @@ describe('browser Rallar black-box runtime', () => {
         await runtime.connect({
             ...config,
             connection: 'aliceRtc',
-            roomId: 'room-1',
+            roomId: 'room-1'
         });
 
         expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
@@ -527,15 +532,15 @@ describe('browser Rallar black-box runtime', () => {
         const authentication = {
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
-            password: 'secret',
+            password: 'secret'
         };
         await runtime.authenticate({
             connection: 'aliceHttp',
             actor: 'alice',
             rallar: {
                 ...authentication,
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         facade.rallar.auth.restore.mockReturnValue(facade.session);
 
@@ -545,8 +550,8 @@ describe('browser Rallar black-box runtime', () => {
             roomId: 'room-1',
             rallar: {
                 ...authentication,
-                logoutOnClose: false,
-            },
+                logoutOnClose: false
+            }
         });
         const diagnostics = await runtime.close();
 
@@ -557,13 +562,13 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'aliceRtc',
             roomId: 'room-1',
             logout: true,
-            disconnected: false,
+            disconnected: false
         });
     });
 
     it('shares an in-flight authentication bootstrap with connect', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
-        const registration = new Promise<typeof facade.session>(resolve => {
+        const registration = new Promise<typeof facade.session>((resolve) => {
             resolveRegistration = resolve;
         });
         facade.rallar.auth.registerAndLogin.mockReturnValue(registration);
@@ -575,8 +580,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
         const connection = runtime.connect({
             connection: 'aliceRtc',
@@ -586,8 +591,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
 
         expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
@@ -601,7 +606,7 @@ describe('browser Rallar black-box runtime', () => {
     it('preserves each caller context while deduplicating same-identity auth bootstrap', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveRegistration = resolve;
             })
         );
@@ -615,8 +620,8 @@ describe('browser Rallar black-box runtime', () => {
                 username: 'alice',
                 password: 'secret',
                 register: 'if-needed',
-                logoutOnClose: false,
-            },
+                logoutOnClose: false
+            }
         });
         const secondAuthentication = runtime.authenticate({
             connection: 'secondHttp',
@@ -628,21 +633,21 @@ describe('browser Rallar black-box runtime', () => {
                 register: 'if-needed',
                 applicationId: 'app-2',
                 workspaceId: 'workspace-2',
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
 
         resolveRegistration(facade.session);
         await expect(firstAuthentication).resolves.toMatchObject({
             connection: 'firstHttp',
-            actor: 'first-actor',
+            actor: 'first-actor'
         });
         await expect(secondAuthentication).resolves.toMatchObject({
             connection: 'secondHttp',
             actor: 'second-actor',
             applicationId: 'app-2',
-            workspaceId: 'workspace-2',
+            workspaceId: 'workspace-2'
         });
 
         const closeDiagnostics = await runtime.close();
@@ -650,14 +655,14 @@ describe('browser Rallar black-box runtime', () => {
         expect(closeDiagnostics).toMatchObject({
             connection: 'secondHttp',
             actor: 'second-actor',
-            logout: true,
+            logout: true
         });
     });
 
     it('preserves logout cleanup when a later shared-auth caller disables it', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveRegistration = resolve;
             })
         );
@@ -666,7 +671,7 @@ describe('browser Rallar black-box runtime', () => {
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
             password: 'secret',
-            register: 'if-needed' as const,
+            register: 'if-needed' as const
         };
 
         const firstAuthentication = runtime.authenticate({
@@ -674,16 +679,16 @@ describe('browser Rallar black-box runtime', () => {
             actor: 'first-actor',
             rallar: {
                 ...sharedIdentity,
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const secondAuthentication = runtime.authenticate({
             connection: 'secondHttp',
             actor: 'second-actor',
             rallar: {
                 ...sharedIdentity,
-                logoutOnClose: false,
-            },
+                logoutOnClose: false
+            }
         });
 
         resolveRegistration(facade.session);
@@ -696,14 +701,14 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'secondHttp',
             actor: 'second-actor',
             logout: true,
-            disconnected: false,
+            disconnected: false
         });
     });
 
     it('records provenance before a queued restore-only identity can authenticate', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveRegistration = resolve;
             })
         );
@@ -715,18 +720,18 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
         const bobAuthentication = runtime.authenticate({
             connection: 'bobRestore',
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
-                username: 'bob',
-            },
+                username: 'bob'
+            }
         });
         const bobRejection = expect(bobAuthentication).rejects.toThrow(
-            'Rallar credentials are required when the authentication identity changes.',
+            'Rallar credentials are required when the authentication identity changes.'
         );
         facade.rallar.auth.restore.mockReturnValue(facade.session);
 
@@ -734,18 +739,18 @@ describe('browser Rallar black-box runtime', () => {
 
         await expect(aliceAuthentication).resolves.toMatchObject({
             status: 'authenticated',
-            username: 'alice',
+            username: 'alice'
         });
         await bobRejection;
         expect(facade.rallar.configure).not.toHaveBeenCalledWith({
-            apiBaseUrl: 'https://other-api.example.test',
+            apiBaseUrl: 'https://other-api.example.test'
         });
     });
 
     it('does not restore stale cleanup state when a queued identity login fails', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveRegistration = resolve;
             })
         );
@@ -760,8 +765,8 @@ describe('browser Rallar black-box runtime', () => {
                 username: 'alice',
                 password: 'secret',
                 register: 'if-needed',
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const bobAuthentication = runtime.authenticate({
             connection: 'bobHttp',
@@ -770,18 +775,18 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://other-api.example.test',
                 username: 'bob',
                 password: 'wrong',
-                register: false,
-            },
+                register: false
+            }
         });
         const bobRejection = expect(bobAuthentication).rejects.toThrow(
-            'bad credentials',
+            'bad credentials'
         );
 
         resolveRegistration(facade.session);
 
         await expect(aliceAuthentication).resolves.toMatchObject({
             status: 'authenticated',
-            username: 'alice',
+            username: 'alice'
         });
         await bobRejection;
 
@@ -791,7 +796,7 @@ describe('browser Rallar black-box runtime', () => {
         expect(closeDiagnostics).toMatchObject({
             connection: undefined,
             logout: false,
-            disconnected: true,
+            disconnected: true
         });
     });
 
@@ -800,13 +805,13 @@ describe('browser Rallar black-box runtime', () => {
             mismatch: 'API base URL',
             apiBaseUrl: 'https://other-api.example.test',
             username: 'alice',
-            restoredSession: facade.session,
+            restoredSession: facade.session
         },
         {
             mismatch: 'username',
             apiBaseUrl: 'https://api.example.test',
             username: 'bob',
-            restoredSession: facade.session,
+            restoredSession: facade.session
         },
         {
             mismatch: 'restored session',
@@ -814,13 +819,13 @@ describe('browser Rallar black-box runtime', () => {
             username: 'alice',
             restoredSession: {
                 ...facade.session,
-                sessionId: 'session-2',
-            },
-        },
+                sessionId: 'session-2'
+            }
+        }
     ])('does not reuse auth bootstrap after a $mismatch mismatch', async ({
         apiBaseUrl,
         username,
-        restoredSession,
+        restoredSession
     }) => {
         const runtime = await loadRuntime();
         await runtime.authenticate({
@@ -829,8 +834,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test/',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
         facade.rallar.auth.restore.mockReturnValue(restoredSession);
 
@@ -840,8 +845,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl,
                 username,
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
 
         expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(2);
@@ -852,30 +857,30 @@ describe('browser Rallar black-box runtime', () => {
             operation: 'authenticate',
             mismatch: 'API base URL',
             apiBaseUrl: 'https://other-api.example.test',
-            username: 'alice',
+            username: 'alice'
         },
         {
             operation: 'authenticate',
             mismatch: 'username',
             apiBaseUrl: 'https://api.example.test',
-            username: 'bob',
+            username: 'bob'
         },
         {
             operation: 'connect',
             mismatch: 'API base URL',
             apiBaseUrl: 'https://other-api.example.test',
-            username: 'alice',
+            username: 'alice'
         },
         {
             operation: 'connect',
             mismatch: 'username',
             apiBaseUrl: 'https://api.example.test',
-            username: 'bob',
-        },
+            username: 'bob'
+        }
     ])('requires fresh credentials for $operation after a bootstrap $mismatch mismatch', async ({
         operation,
         apiBaseUrl,
-        username,
+        username
     }) => {
         const runtime = await loadRuntime();
         await runtime.authenticate({
@@ -884,8 +889,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
         facade.rallar.auth.restore.mockReturnValue(facade.session);
 
@@ -893,15 +898,15 @@ describe('browser Rallar black-box runtime', () => {
             connection: operation,
             rallar: {
                 apiBaseUrl,
-                username,
-            },
+                username
+            }
         };
         const result = operation === 'authenticate'
             ? runtime.authenticate(config)
             : runtime.connect(config);
 
         await expect(result).rejects.toThrow(
-            'Rallar credentials are required when the authentication identity changes.',
+            'Rallar credentials are required when the authentication identity changes.'
         );
         expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
         expect(facade.rallar.auth.login).not.toHaveBeenCalled();
@@ -916,8 +921,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                register: 'if-needed',
-            },
+                register: 'if-needed'
+            }
         });
         facade.rallar.auth.restore.mockReturnValue(facade.session);
         facade.rallar.auth.login.mockRejectedValueOnce(new Error('bad credentials'));
@@ -927,18 +932,18 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
                 username: 'bob',
-                password: 'wrong',
-            },
+                password: 'wrong'
+            }
         })).rejects.toThrow('bad credentials');
 
         await expect(runtime.authenticate({
             connection: 'bobRestore',
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
-                username: 'bob',
-            },
+                username: 'bob'
+            }
         })).rejects.toThrow(
-            'Rallar credentials are required when the authentication identity changes.',
+            'Rallar credentials are required when the authentication identity changes.'
         );
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
     });
@@ -952,14 +957,14 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const bobSession = {
             ...facade.session,
             clientId: 'client-2',
             sessionId: 'session-2',
-            username: 'bob',
+            username: 'bob'
         };
         facade.rallar.auth.login.mockResolvedValue(bobSession);
         facade.rallar.connect.mockRejectedValueOnce(new Error('realtime unavailable'));
@@ -970,8 +975,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
                 username: 'bob',
-                password: 'other-secret',
-            },
+                password: 'other-secret'
+            }
         })).rejects.toThrow('realtime unavailable');
         const diagnostics = await runtime.close();
 
@@ -982,14 +987,14 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'bobRtc',
             actor: 'bob',
             logout: false,
-            disconnected: true,
+            disconnected: true
         });
     });
 
     it('waits for cancelled authentication and owns its logout cleanup', async () => {
         let resolveLogin!: (session: typeof facade.session) => void;
         facade.rallar.auth.login.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveLogin = resolve;
             })
         );
@@ -1001,11 +1006,11 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const rejectedAuthentication = expect(authentication).rejects.toThrow(
-            'Authentication was cancelled because the Rallar runtime closed.',
+            'Authentication was cancelled because the Rallar runtime closed.'
         );
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
         facade.rallar.auth.restore.mockReturnValue(facade.session);
@@ -1023,7 +1028,7 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'aliceHttp',
             actor: 'alice',
             logout: true,
-            disconnected: false,
+            disconnected: false
         });
         expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
         const secondCloseDiagnostics = await runtime.close();
@@ -1034,7 +1039,7 @@ describe('browser Rallar black-box runtime', () => {
     it('honors every caller cleanup policy when shared authentication completes after close', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveRegistration = resolve;
             })
         );
@@ -1043,27 +1048,27 @@ describe('browser Rallar black-box runtime', () => {
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
             password: 'secret',
-            register: 'if-needed' as const,
+            register: 'if-needed' as const
         };
         const firstAuthentication = runtime.authenticate({
             connection: 'firstHttp',
             rallar: {
                 ...sharedIdentity,
-                logoutOnClose: false,
-            },
+                logoutOnClose: false
+            }
         });
         const secondAuthentication = runtime.authenticate({
             connection: 'secondHttp',
             rallar: {
                 ...sharedIdentity,
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const firstRejection = expect(firstAuthentication).rejects.toThrow(
-            'Authentication was cancelled because the Rallar runtime closed.',
+            'Authentication was cancelled because the Rallar runtime closed.'
         );
         const secondRejection = expect(secondAuthentication).rejects.toThrow(
-            'Authentication was cancelled because the Rallar runtime closed.',
+            'Authentication was cancelled because the Rallar runtime closed.'
         );
         facade.rallar.auth.restore.mockReturnValue(facade.session);
 
@@ -1081,7 +1086,7 @@ describe('browser Rallar black-box runtime', () => {
         let firstLoginSignal: AbortSignal | undefined;
         facade.rallar.auth.login
             .mockImplementationOnce((_request, options) =>
-                new Promise(resolve => {
+                new Promise((resolve) => {
                     firstLoginSignal = options?.signal;
                     resolveFirstLogin = resolve;
                 })
@@ -1094,18 +1099,18 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         };
         const cancelledAuthentication = runtime.authenticate(config);
         const cancelledResult = expect(cancelledAuthentication).rejects.toThrow(
-            'Authentication was cancelled because the Rallar runtime closed.',
+            'Authentication was cancelled because the Rallar runtime closed.'
         );
         const closing = runtime.close();
         await Promise.resolve();
 
         await expect(runtime.authenticate(config)).rejects.toThrow(
-            'Authentication was cancelled because the Rallar runtime closed.',
+            'Authentication was cancelled because the Rallar runtime closed.'
         );
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
 
@@ -1116,7 +1121,7 @@ describe('browser Rallar black-box runtime', () => {
         const retry = runtime.authenticate(config);
         await expect(retry).resolves.toMatchObject({
             status: 'authenticated',
-            sessionId: 'session-1',
+            sessionId: 'session-1'
         });
         expect(firstLoginSignal?.aborted).toBe(true);
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(2);
@@ -1132,8 +1137,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const diagnostics = await runtime.close();
 
@@ -1144,7 +1149,7 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'aliceHttp',
             actor: 'alice',
             logout: true,
-            disconnected: false,
+            disconnected: false
         });
     });
 
@@ -1157,8 +1162,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         const diagnostics = await runtime.close();
 
@@ -1169,7 +1174,7 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'aliceHttp',
             actor: 'alice',
             logout: false,
-            disconnected: true,
+            disconnected: true
         });
     });
 
@@ -1180,8 +1185,8 @@ describe('browser Rallar black-box runtime', () => {
             connection: 'invalidHttp',
             rallar: {
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         })).rejects.toThrow('rallar.apiBaseUrl is required.');
         expect(topics()).toContain('rallar.browser.authenticate_failed');
 
@@ -1190,11 +1195,11 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         })).resolves.toMatchObject({
             status: 'authenticated',
-            sessionId: 'session-1',
+            sessionId: 'session-1'
         });
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
     });
@@ -1207,15 +1212,15 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         };
 
         await expect(runtime.authenticate(config)).rejects.toThrow('temporary auth failure');
         facade.rallar.auth.login.mockResolvedValue(facade.session);
         await expect(runtime.authenticate(config)).resolves.toMatchObject({
             status: 'authenticated',
-            sessionId: 'session-1',
+            sessionId: 'session-1'
         });
 
         expect(facade.rallar.auth.login).toHaveBeenCalledTimes(2);
@@ -1230,15 +1235,15 @@ describe('browser Rallar black-box runtime', () => {
             actor: 'alice',
             roomId: 'room-1',
             rallar: {
-                apiBaseUrl: 'https://api.example.test',
-            },
+                apiBaseUrl: 'https://api.example.test'
+            }
         })).rejects.toThrow('Rallar credentials are required');
 
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.auth.restore_started',
             'rallar.browser.auth.restore_failed',
             'rallar.browser.connect.phase_failed',
-            'rallar.browser.connect_failed',
+            'rallar.browser.connect_failed'
         ]));
     });
 
@@ -1253,14 +1258,14 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'wrong',
-            },
+                password: 'wrong'
+            }
         })).rejects.toThrow('bad credentials');
 
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.auth.login_started',
             'rallar.browser.auth.login_failed',
-            'rallar.browser.connect.phase_failed',
+            'rallar.browser.connect.phase_failed'
         ]));
     });
 
@@ -1276,8 +1281,8 @@ describe('browser Rallar black-box runtime', () => {
                 username: 'alice',
                 password: 'secret',
                 leaveRoomOnClose: true,
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         const closeResult = await runtime.close();
 
@@ -1285,7 +1290,7 @@ describe('browser Rallar black-box runtime', () => {
         expect(facade.rallar.rooms.leave).toHaveBeenCalledWith({
             roomId: 'room-1',
             clearCurrent: true,
-            timeoutMs: undefined,
+            timeoutMs: undefined
         });
         expect(facade.rallar.auth.logout).toHaveBeenCalledWith({ timeoutMs: undefined });
         expect(facade.rallar.disconnect).not.toHaveBeenCalled();
@@ -1296,14 +1301,14 @@ describe('browser Rallar black-box runtime', () => {
             leftRoom: true,
             logout: true,
             disconnected: false,
-            cleanupErrors: [],
+            cleanupErrors: []
         });
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.cleanup.started',
             'rallar.browser.cleanup.unsubscribe_completed',
             'rallar.browser.cleanup.room_leave_completed',
             'rallar.browser.cleanup.logout_completed',
-            'rallar.browser.closed',
+            'rallar.browser.closed'
         ]));
     });
 
@@ -1312,7 +1317,7 @@ describe('browser Rallar black-box runtime', () => {
         const roomRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
-            groupId: 'room-1',
+            groupId: 'room-1'
         };
 
         const connectResult = await runtime.connect({
@@ -1329,8 +1334,8 @@ describe('browser Rallar black-box runtime', () => {
                 roomRef,
                 transport: 'messages.rtc',
                 typeId: 'chat.message',
-                topicId: 'chat',
-            },
+                topicId: 'chat'
+            }
         });
 
         expect(facade.rallar.setDefaults).toHaveBeenCalledWith({
@@ -1338,33 +1343,33 @@ describe('browser Rallar black-box runtime', () => {
             workspaceId: 'workspace-a',
             room: {
                 roomId: 'room-1',
-                roomRef,
+                roomRef
             },
             realtime: {
-                laneId: 'realtime',
+                laneId: 'realtime'
             },
-            rtc: {},
+            rtc: {}
         });
         expect(facade.rallar.rooms.join).toHaveBeenCalledWith('room-1', {
             timeoutMs: undefined,
             scope: {
                 applicationId: 'app-1',
-                workspaceId: 'workspace-a',
-            },
+                workspaceId: 'workspace-a'
+            }
         });
         expect(connectResult).toMatchObject({
             scope: {
                 applicationId: 'app-1',
-                workspaceId: 'workspace-a',
+                workspaceId: 'workspace-a'
             },
-            roomRef,
+            roomRef
         });
 
         await runtime.send({
             payload: {
-                text: 'hello scoped room',
+                text: 'hello scoped room'
             },
-            minSnapshotVersion: 42,
+            minSnapshotVersion: 42
         });
 
         expect(facade.rallar.messages.rtc.send).toHaveBeenCalledWith(expect.objectContaining({
@@ -1372,8 +1377,8 @@ describe('browser Rallar black-box runtime', () => {
             roomRef,
             minSnapshotVersion: 42,
             payload: {
-                text: 'hello scoped room',
-            },
+                text: 'hello scoped room'
+            }
         }));
     });
 
@@ -1389,8 +1394,8 @@ describe('browser Rallar black-box runtime', () => {
                 username: 'alice',
                 password: 'secret',
                 transport: 'realtime',
-                laneId: 'control-lane',
-            },
+                laneId: 'control-lane'
+            }
         });
 
         const health = await runtime.health();
@@ -1412,14 +1417,14 @@ describe('browser Rallar black-box runtime', () => {
                 username: 'alice',
                 password: 'secret',
                 transport: 'realtime',
-                laneId: 'control-lane',
-            },
+                laneId: 'control-lane'
+            }
         });
 
         const health = await runtime.health({ includeRtcDiagnostics: true });
 
         expect(facade.rallar.rtc.diagnostics).toHaveBeenCalledWith({
-            laneIds: ['control-lane'],
+            laneIds: ['control-lane']
         });
         expect(health).toMatchObject({
             rtcDiagnostics: {
@@ -1429,10 +1434,10 @@ describe('browser Rallar black-box runtime', () => {
                     connectionDiagnostics: {
                         connectCallCount: 1,
                         outboundOfferCount: 1,
-                        inboundAnswerCount: 1,
-                    },
-                }],
-            },
+                        inboundAnswerCount: 1
+                    }
+                }]
+            }
         });
     });
 
@@ -1449,8 +1454,8 @@ describe('browser Rallar black-box runtime', () => {
             name: 'checklist',
             transport: 'local-only',
             initialValue: {
-                title: 'initial',
-            },
+                title: 'initial'
+            }
         });
         const apply = await runtime.crdt.apply({
             handle: 'doc',
@@ -1461,16 +1466,16 @@ describe('browser Rallar black-box runtime', () => {
                         kind: 'register.set',
                         path: ['title'],
                         value: 'changed',
-                        policy: 'lww',
-                    },
-                ],
-            },
+                        policy: 'lww'
+                    }
+                ]
+            }
         });
         const read = await runtime.crdt.read({ handle: 'doc' });
         const sync = await runtime.crdt.sync({
             handle: 'doc',
             transport: 'local-only',
-            reason: 'unit-test',
+            reason: 'unit-test'
         });
         const health = await runtime.crdt.health({ handle: 'doc' });
         const wait = await runtime.crdt.wait({
@@ -1484,15 +1489,15 @@ describe('browser Rallar black-box runtime', () => {
                     source: 'value',
                     path: 'applied.operations.0.kind',
                     operator: 'equals',
-                    expected: 'register.set',
+                    expected: 'register.set'
                 },
                 {
                     source: 'health',
                     path: 'pendingUpdateCount',
                     operator: 'equals',
-                    expected: 0,
-                },
-            ],
+                    expected: 0
+                }
+            ]
         });
         const undo = await runtime.crdt.undo({
             handle: 'doc',
@@ -1502,9 +1507,9 @@ describe('browser Rallar black-box runtime', () => {
                     kind: 'register.set',
                     path: ['title'],
                     value: 'initial',
-                    policy: 'lww',
-                },
-            ],
+                    policy: 'lww'
+                }
+            ]
         });
         const redo = await runtime.crdt.redo({
             handle: 'doc',
@@ -1514,26 +1519,29 @@ describe('browser Rallar black-box runtime', () => {
                     kind: 'register.set',
                     path: ['title'],
                     value: 'changed',
-                    policy: 'lww',
-                },
-            ],
+                    policy: 'lww'
+                }
+            ]
         });
         const close = await runtime.crdt.close({ handle: 'doc' });
 
         await runtime.crdt.open({
             handle: 'destroy-doc',
             name: 'checklist-destroy',
-            transport: 'local-only',
+            transport: 'local-only'
         });
         const destroy = await runtime.crdt.destroy({ handle: 'destroy-doc' });
         const runtimeHealth = await runtime.health();
 
-        expect(facade.rallar.crdt.open).toHaveBeenCalledWith('checklist', expect.objectContaining({
-            transport: 'local-only',
-            initialValue: {
-                title: 'initial',
-            },
-        }));
+        expect(facade.rallar.crdt.open).toHaveBeenCalledWith(
+            'checklist',
+            expect.objectContaining({
+                transport: 'local-only',
+                initialValue: {
+                    title: 'initial'
+                }
+            })
+        );
         expect(open).toMatchObject({ status: 'opened', handle: 'doc' });
         expect(apply).toMatchObject({ status: 'applied', updateId: 'update-apply-1' });
         expect(read).toMatchObject({ status: 'read', handle: 'doc' });
@@ -1548,8 +1556,8 @@ describe('browser Rallar black-box runtime', () => {
         expect(secondDocument.destroy).toHaveBeenCalledTimes(1);
         expect(runtimeHealth).toMatchObject({
             crdt: {
-                handles: [],
-            },
+                handles: []
+            }
         });
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.crdt.opened',
@@ -1562,7 +1570,7 @@ describe('browser Rallar black-box runtime', () => {
             'rallar.browser.crdt.undone',
             'rallar.browser.crdt.redone',
             'rallar.browser.crdt.closed',
-            'rallar.browser.crdt.destroyed',
+            'rallar.browser.crdt.destroyed'
         ]));
     });
 
@@ -1571,7 +1579,7 @@ describe('browser Rallar black-box runtime', () => {
         const roomRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
-            groupId: 'room-1',
+            groupId: 'room-1'
         };
         const directorStatus = {
             roomRef,
@@ -1590,27 +1598,27 @@ describe('browser Rallar black-box runtime', () => {
                 principalId: 'client-1',
                 epoch: 1,
                 appointedAtEpochMs: 1_000,
-                heartbeatTtlMs: 1_200,
-            },
+                heartbeatTtlMs: 1_200
+            }
         };
         let relayConfig: Record<string, any> | undefined;
         const relay = {
             status: vi.fn(() => directorStatus),
-            sendIntent: vi.fn(async intent => ({
+            sendIntent: vi.fn(async (intent) => ({
                 status: 'sent',
-                intent,
+                intent
             })),
-            sendOutput: vi.fn(async output => ({
+            sendOutput: vi.fn(async (output) => ({
                 status: 'sent',
-                output,
+                output
             })),
             sendHeartbeat: vi.fn(async () => ({ status: 'sent' })),
             sendSnapshot: vi.fn(async () => ({ status: 'sent' })),
-            requestSync: vi.fn(async payload => ({
+            requestSync: vi.fn(async (payload) => ({
                 status: 'sent',
-                payload,
+                payload
             })),
-            stop: vi.fn(),
+            stop: vi.fn()
         };
         facade.rallar.director.appoint.mockResolvedValue(directorStatus);
         facade.rallar.director.resign.mockResolvedValue({
@@ -1619,7 +1627,7 @@ describe('browser Rallar black-box runtime', () => {
             state: 'none',
             isDirector: false,
             isFresh: false,
-            appointment: undefined,
+            appointment: undefined
         });
         facade.rallar.director.status.mockReturnValue(directorStatus);
         facade.rallar.director.createRelay.mockImplementation((config) => {
@@ -1638,19 +1646,19 @@ describe('browser Rallar black-box runtime', () => {
                 password: 'secret',
                 applicationId: 'app-1',
                 workspaceId: 'workspace-a',
-                roomRef,
-            },
+                roomRef
+            }
         });
 
         const appoint = await runtime.director.appoint({
             roomId: 'room-1',
             roomRef,
-            heartbeatTtlMs: 1_200,
+            heartbeatTtlMs: 1_200
         });
         const status = await runtime.director.status({
             roomId: 'room-1',
             roomRef,
-            refresh: true,
+            refresh: true
         });
         const start = await runtime.director.relayStart({
             handle: 'relay-1',
@@ -1660,7 +1668,7 @@ describe('browser Rallar black-box runtime', () => {
             intentTypeId: 'app.test.director.intent',
             outputTypeId: 'app.test.director.output',
             heartbeatIntervalMs: 300,
-            snapshotIntervalMs: 500,
+            snapshotIntervalMs: 500
         });
         expect(relayConfig).toMatchObject({
             roomId: 'room-1',
@@ -1669,67 +1677,70 @@ describe('browser Rallar black-box runtime', () => {
             intentTypeId: 'app.test.director.intent',
             outputTypeId: 'app.test.director.output',
             heartbeatIntervalMs: 300,
-            snapshotIntervalMs: 500,
+            snapshotIntervalMs: 500
         });
 
         const output = await relayConfig?.onIntent({
             senderId: 'session-b',
             data: {
                 intentId: 'intent-b-1',
-                action: 'move',
+                action: 'move'
             },
             envelope: {
-                epoch: 1,
+                epoch: 1
             },
-            receivedAtEpochMs: 1_100,
+            receivedAtEpochMs: 1_100
         }, relay);
         await relayConfig?.onOutput({
             senderId: 'session-1',
             data: output,
             envelope: {
-                epoch: 1,
+                epoch: 1
             },
-            receivedAtEpochMs: 1_150,
+            receivedAtEpochMs: 1_150
         });
         await relayConfig?.onSnapshot({
             senderId: 'session-1',
             data: relayConfig?.readSnapshot(),
             envelope: {
-                epoch: 1,
+                epoch: 1
             },
-            receivedAtEpochMs: 1_200,
+            receivedAtEpochMs: 1_200
         });
         await relayConfig?.onSyncRequest({
             senderId: 'session-b',
             data: {
-                reason: 'unit-test',
+                reason: 'unit-test'
             },
             envelope: {
-                epoch: 1,
+                epoch: 1
             },
-            receivedAtEpochMs: 1_250,
+            receivedAtEpochMs: 1_250
         }, relay);
 
         const intent = await runtime.director.intent({
             handle: 'relay-1',
             intent: {
-                intentId: 'intent-c-1',
-            },
+                intentId: 'intent-c-1'
+            }
         });
         const sync = await runtime.director.syncRequest({
             handle: 'relay-1',
             payload: {
-                reason: 'late-join',
-            },
+                reason: 'late-join'
+            }
         });
         const stop = await runtime.director.relayStop({
-            handle: 'relay-1',
+            handle: 'relay-1'
         });
         const health = await runtime.health();
 
-        expect(facade.rallar.director.appoint).toHaveBeenCalledWith(roomRef, expect.objectContaining({
-            heartbeatTtlMs: 1_200,
-        }));
+        expect(facade.rallar.director.appoint).toHaveBeenCalledWith(
+            roomRef,
+            expect.objectContaining({
+                heartbeatTtlMs: 1_200
+            })
+        );
         expect(facade.rallar.rooms.refresh).toHaveBeenCalled();
         expect(appoint).toMatchObject({ status: 'appointed', role: 'director' });
         expect(status).toMatchObject({ status: 'status', state: 'fresh' });
@@ -1739,7 +1750,7 @@ describe('browser Rallar black-box runtime', () => {
             intentId: 'intent-b-1',
             senderId: 'session-b',
             directorSessionId: 'session-1',
-            epoch: 1,
+            epoch: 1
         });
         expect(intent).toMatchObject({ status: 'intent_sent', sendResult: { status: 'sent' } });
         expect(sync).toMatchObject({ status: 'sync_requested', sendResult: { status: 'sent' } });
@@ -1748,13 +1759,13 @@ describe('browser Rallar black-box runtime', () => {
             acceptedIntentCount: 1,
             outputCount: 2,
             snapshotCount: 1,
-            syncRequestCount: 1,
+            syncRequestCount: 1
         });
         expect(relay.stop).toHaveBeenCalledTimes(1);
         expect(health).toMatchObject({
             director: {
-                handles: [],
-            },
+                handles: []
+            }
         });
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.director.appointed',
@@ -1766,7 +1777,7 @@ describe('browser Rallar black-box runtime', () => {
             'rallar.browser.director.sync_request_received',
             'rallar.browser.director.intent_sent',
             'rallar.browser.director.sync_requested',
-            'rallar.browser.director.relay_stopped',
+            'rallar.browser.director.relay_stopped'
         ]));
     });
 
@@ -1777,7 +1788,7 @@ describe('browser Rallar black-box runtime', () => {
         await runtime.crdt.open({
             handle: 'doc',
             name: 'wait-timeout',
-            transport: 'local-only',
+            transport: 'local-only'
         });
 
         await expect(runtime.crdt.wait({
@@ -1789,14 +1800,14 @@ describe('browser Rallar black-box runtime', () => {
                     source: 'value',
                     path: 'title',
                     operator: 'equals',
-                    expected: 'never',
-                },
-            ],
+                    expected: 'never'
+                }
+            ]
         })).rejects.toThrow('Timed out waiting for CRDT conditions');
 
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.crdt.waiting',
-            'rallar.browser.crdt.wait_failed',
+            'rallar.browser.crdt.wait_failed'
         ]));
     });
 
@@ -1805,19 +1816,19 @@ describe('browser Rallar black-box runtime', () => {
         const roomRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
-            groupId: 'bb-group',
+            groupId: 'bb-group'
         };
         let wsHandler: ((message: Record<string, unknown>) => void) | undefined;
         facade.rallar.messages.ws.onMessage.mockImplementation((
             _selector: unknown,
-            handler: (message: Record<string, unknown>) => void,
+            handler: (message: Record<string, unknown>) => void
         ) => {
             wsHandler = handler;
             return facade.unsubscribeMessagesWs;
         });
         facade.rallar.messages.ws.send.mockResolvedValue({
             status: 'sent',
-            messageId: 'ws-message-1',
+            messageId: 'ws-message-1'
         });
 
         await runtime.connect({
@@ -1831,8 +1842,8 @@ describe('browser Rallar black-box runtime', () => {
                 password: 'secret',
                 applicationId: 'app-1',
                 workspaceId: 'workspace-a',
-                roomRef,
-            },
+                roomRef
+            }
         });
         const sendResult = await runtime.sendWs({
             applicationId: 'app-1',
@@ -1844,8 +1855,8 @@ describe('browser Rallar black-box runtime', () => {
             topicId: 'room.manual.message',
             contextId: 'bb-group',
             payload: {
-                text: 'hello over ws',
-            },
+                text: 'hello over ws'
+            }
         });
 
         expect(sendResult).toMatchObject({
@@ -1857,12 +1868,12 @@ describe('browser Rallar black-box runtime', () => {
             topicId: 'room.manual.message',
             contextId: 'bb-group',
             message: {
-                text: 'hello over ws',
-            },
+                text: 'hello over ws'
+            }
         });
         expect(facade.rallar.messages.ws.onMessage).toHaveBeenCalledWith({
             typeId: 'room.manual.message',
-            topicId: 'room.manual.message',
+            topicId: 'room.manual.message'
         }, expect.any(Function));
         expect(facade.rallar.messages.ws.send).toHaveBeenCalledWith(expect.objectContaining({
             roomId: 'bb-group',
@@ -1872,8 +1883,8 @@ describe('browser Rallar black-box runtime', () => {
             topicId: 'room.manual.message',
             contextId: 'bb-group',
             payload: {
-                text: 'hello over ws',
-            },
+                text: 'hello over ws'
+            }
         }));
 
         wsHandler?.({
@@ -1883,8 +1894,8 @@ describe('browser Rallar black-box runtime', () => {
             topicId: 'room.manual.message',
             contextId: 'bb-group',
             payload: {
-                text: 'received over ws',
-            },
+                text: 'received over ws'
+            }
         });
 
         expect(events).toEqual(expect.arrayContaining([
@@ -1894,7 +1905,7 @@ describe('browser Rallar black-box runtime', () => {
                 connection: 'aliceRtc',
                 roomId: 'bb-group',
                 typeId: 'room.manual.message',
-                topicId: 'room.manual.message',
+                topicId: 'room.manual.message'
             }),
             expect.objectContaining({
                 kind: 'message',
@@ -1906,9 +1917,9 @@ describe('browser Rallar black-box runtime', () => {
                 topicId: 'room.manual.message',
                 contextId: 'bb-group',
                 data: {
-                    text: 'received over ws',
-                },
-            }),
+                    text: 'received over ws'
+                }
+            })
         ]));
 
         await runtime.close();
@@ -1927,8 +1938,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
 
         console.warn('Unhandled WS message: room.unknown');
@@ -1941,8 +1952,8 @@ describe('browser Rallar black-box runtime', () => {
                 transport: 'ws',
                 severity: 'warning',
                 data: expect.objectContaining({
-                    message: 'Unhandled WS message: room.unknown',
-                }),
+                    message: 'Unhandled WS message: room.unknown'
+                })
             }),
             expect.objectContaining({
                 kind: 'diagnostic',
@@ -1950,9 +1961,9 @@ describe('browser Rallar black-box runtime', () => {
                 transport: 'realtime',
                 severity: 'warning',
                 data: expect.objectContaining({
-                    message: 'Received data channel for different data channel name: rtc-data-channel vs rtc-realtime',
-                }),
-            }),
+                    message: 'Received data channel for different data channel name: rtc-data-channel vs rtc-realtime'
+                })
+            })
         ]));
 
         await runtime.close();
@@ -1971,14 +1982,14 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         })).rejects.toThrow('forbidden room');
 
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.connect.phase_started',
             'rallar.browser.connect.phase_failed',
-            'rallar.browser.connect_failed',
+            'rallar.browser.connect_failed'
         ]));
     });
 
@@ -1993,15 +2004,15 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         await expect(runtime.send({
             roomId: 'room-1',
             peerIds: ['forbidden-session'],
             data: {
-                text: 'hello',
-            },
+                text: 'hello'
+            }
         })).rejects.toThrow('forbidden target');
 
         expect(topics()).toContain('rallar.browser.realtime.send_failed');
@@ -2018,8 +2029,8 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                expectedSessionId: 'expected-session',
-            },
+                expectedSessionId: 'expected-session'
+            }
         });
         await runtime.connect({
             connection: 'aliceRtc2',
@@ -2029,14 +2040,14 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                expectedSessionId: 'session-1',
-            },
+                expectedSessionId: 'session-1'
+            }
         });
 
         expect(topics()).toEqual(expect.arrayContaining([
             'rallar.browser.session.expected_mismatch',
             'rallar.browser.session.duplicate_detected',
-            'rallar.browser.cleanup.unsubscribe_completed',
+            'rallar.browser.cleanup.unsubscribe_completed'
         ]));
     });
 
@@ -2053,19 +2064,19 @@ describe('browser Rallar black-box runtime', () => {
         const runtimeModule = await import(
             '../../shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts'
         );
-        const factoryEvents: Array<{ atEpochMs?: number }> = [];
+        const factoryEvents: Array<{ atEpochMs?: number; }> = [];
         const targetWindow = {
-            __blackBoxRallarEmit: (event: { atEpochMs?: number }) => {
+            __blackBoxRallarEmit: (event: { atEpochMs?: number; }) => {
                 factoryEvents.push(event);
-            },
+            }
         } as unknown as Window;
         const runtime = runtimeModule.createBlackBoxRallarRuntime({
             facade: facade.rallar as never,
             targetWindow,
             clock: {
-                now: () => 12_345,
+                now: () => 12_345
             },
-            delay: vi.fn(async () => undefined),
+            delay: vi.fn(async () => undefined)
         });
         if (runtime.authenticate === undefined) {
             throw new Error('The injectable runtime did not expose authenticate.');
@@ -2077,13 +2088,13 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
 
         expect(targetWindow.__blackBoxRallar).toBeUndefined();
         expect(factoryEvents.length).toBeGreaterThan(0);
-        expect(factoryEvents.every(event => event.atEpochMs === 12_345)).toBe(true);
+        expect(factoryEvents.every((event) => event.atEpochMs === 12_345)).toBe(true);
     });
 
     it('rejects a connected identity change before mutating facade configuration', async () => {
@@ -2095,8 +2106,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
 
         await expect(runtime.authenticate({
@@ -2105,21 +2116,21 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
                 username: 'bob',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         })).rejects.toThrow(
-            'Fresh Rallar authentication requires closing the connected black-box runtime first.',
+            'Fresh Rallar authentication requires closing the connected black-box runtime first.'
         );
 
         expect(facade.rallar.configure).not.toHaveBeenCalledWith({
-            apiBaseUrl: 'https://other-api.example.test',
+            apiBaseUrl: 'https://other-api.example.test'
         });
     });
 
     it('does not allow an in-flight connect to commit after close starts', async () => {
         let resolveConnect!: () => void;
         facade.rallar.connect.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveConnect = resolve;
             })
         );
@@ -2131,8 +2142,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         await vi.waitFor(() => {
             expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
@@ -2144,11 +2155,11 @@ describe('browser Rallar black-box runtime', () => {
 
         resolveConnect();
         await expect(connecting).rejects.toThrow(
-            'Connection was cancelled because the Rallar runtime closed.',
+            'Connection was cancelled because the Rallar runtime closed.'
         );
         await closing;
         await expect(runtime.send({ data: 'after-close' })).rejects.toThrow(
-            'Black-box Rallar runtime is not connected.',
+            'Black-box Rallar runtime is not connected.'
         );
         expect(topics().lastIndexOf('rallar.browser.connect_completed')).toBeLessThan(0);
     });
@@ -2156,7 +2167,7 @@ describe('browser Rallar black-box runtime', () => {
     it('revalidates a queued connection target before mutating the facade', async () => {
         let resolveFirstConnect!: () => void;
         facade.rallar.connect.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveFirstConnect = resolve;
             })
         );
@@ -2168,8 +2179,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         await vi.waitFor(() => {
             expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
@@ -2182,21 +2193,21 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
                 username: 'bob',
-                password: 'other-secret',
-            },
+                password: 'other-secret'
+            }
         });
         const secondResult = expect(second).rejects.toThrow(
-            'Connected Rallar identity, scope, or room changes require close first.',
+            'Connected Rallar identity, scope, or room changes require close first.'
         );
         expect(facade.rallar.configure).not.toHaveBeenCalledWith({
-            apiBaseUrl: 'https://other-api.example.test',
+            apiBaseUrl: 'https://other-api.example.test'
         });
 
         resolveFirstConnect();
         await first;
         await secondResult;
         expect(facade.rallar.configure).not.toHaveBeenCalledWith({
-            apiBaseUrl: 'https://other-api.example.test',
+            apiBaseUrl: 'https://other-api.example.test'
         });
         expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
     });
@@ -2204,7 +2215,7 @@ describe('browser Rallar black-box runtime', () => {
     it('serializes concurrent connects that share a target but use different transports', async () => {
         let resolveFirstConnect!: () => void;
         facade.rallar.connect.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveFirstConnect = resolve;
             })
         );
@@ -2218,16 +2229,16 @@ describe('browser Rallar black-box runtime', () => {
                 username: 'alice',
                 password: 'secret',
                 typeId: 'chat.message',
-                topicId: 'chat',
-            },
+                topicId: 'chat'
+            }
         };
 
         const realtimeConnect = runtime.connect({
             ...baseConfig,
             rallar: {
                 ...baseConfig.rallar,
-                transport: 'realtime',
-            },
+                transport: 'realtime'
+            }
         });
         await vi.waitFor(() => {
             expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
@@ -2236,17 +2247,17 @@ describe('browser Rallar black-box runtime', () => {
             ...baseConfig,
             rallar: {
                 ...baseConfig.rallar,
-                transport: 'messages.rtc',
-            },
+                transport: 'messages.rtc'
+            }
         });
         expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
 
         resolveFirstConnect();
         await expect(realtimeConnect).resolves.toMatchObject({
-            transport: 'realtime',
+            transport: 'realtime'
         });
         await expect(messagesConnect).resolves.toMatchObject({
-            transport: 'messages.rtc',
+            transport: 'messages.rtc'
         });
 
         expect(facade.rallar.connect).toHaveBeenCalledTimes(2);
@@ -2258,7 +2269,7 @@ describe('browser Rallar black-box runtime', () => {
     it('serializes fresh authentication behind an in-flight connection', async () => {
         let resolveFirstConnect!: () => void;
         facade.rallar.connect.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveFirstConnect = resolve;
             })
         );
@@ -2270,8 +2281,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         await vi.waitFor(() => {
             expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
@@ -2283,32 +2294,32 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://other-api.example.test',
                 username: 'bob',
-                password: 'other-secret',
-            },
+                password: 'other-secret'
+            }
         });
         expect(facade.rallar.configure.mock.calls.some(
-            ([input]) => input.apiBaseUrl === 'https://other-api.example.test',
+            ([input]) => input.apiBaseUrl === 'https://other-api.example.test'
         )).toBe(false);
 
         resolveFirstConnect();
         await connecting;
         await expect(authenticating).rejects.toThrow(
-            'Fresh Rallar authentication requires closing the connected black-box runtime first.',
+            'Fresh Rallar authentication requires closing the connected black-box runtime first.'
         );
         expect(facade.rallar.configure.mock.calls.some(
-            ([input]) => input.apiBaseUrl === 'https://other-api.example.test',
+            ([input]) => input.apiBaseUrl === 'https://other-api.example.test'
         )).toBe(false);
     });
 
     it('revalidates queued live CRDT bootstrap before mutating the facade', async () => {
         let resolveFirstConnect!: () => void;
         facade.rallar.connect.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveFirstConnect = resolve;
             })
         );
         facade.rallar.crdt.open.mockResolvedValueOnce(
-            createFakeCrdtDocument('queued-live-doc'),
+            createFakeCrdtDocument('queued-live-doc')
         );
         const runtime = await loadRuntime();
         const connecting = runtime.connect({
@@ -2318,8 +2329,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         await vi.waitFor(() => {
             expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
@@ -2332,17 +2343,17 @@ describe('browser Rallar black-box runtime', () => {
             apiBaseUrl: 'https://other-api.example.test',
             roomId: 'room-2',
             username: 'bob',
-            password: 'other-secret',
+            password: 'other-secret'
         });
         const openingResult = expect(opening).rejects.toThrow(
-            'Connected Rallar identity, scope, or room changes require close first.',
+            'Connected Rallar identity, scope, or room changes require close first.'
         );
 
         resolveFirstConnect();
         await connecting;
         await openingResult;
         expect(facade.rallar.configure).not.toHaveBeenCalledWith({
-            apiBaseUrl: 'https://other-api.example.test',
+            apiBaseUrl: 'https://other-api.example.test'
         });
         expect(facade.rallar.crdt.open).not.toHaveBeenCalled();
     });
@@ -2357,13 +2368,13 @@ describe('browser Rallar black-box runtime', () => {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
                 password: 'secret',
-                leaveRoomOnClose: true,
-            },
+                leaveRoomOnClose: true
+            }
         });
 
         const [first, second] = await Promise.all([
             runtime.close(),
-            runtime.close(),
+            runtime.close()
         ]);
 
         expect(first).toEqual(second);
@@ -2375,7 +2386,7 @@ describe('browser Rallar black-box runtime', () => {
     it('reserves CRDT handles before awaiting document creation', async () => {
         let resolveOpen!: (document: ReturnType<typeof createFakeCrdtDocument>) => void;
         facade.rallar.crdt.open.mockImplementationOnce(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveOpen = resolve;
             })
         );
@@ -2383,7 +2394,7 @@ describe('browser Rallar black-box runtime', () => {
         const opening = runtime.crdt.open({
             handle: 'shared-doc',
             name: 'checklist',
-            transport: 'local-only',
+            transport: 'local-only'
         });
         await vi.waitFor(() => {
             expect(facade.rallar.crdt.open).toHaveBeenCalledTimes(1);
@@ -2392,7 +2403,7 @@ describe('browser Rallar black-box runtime', () => {
         await expect(runtime.crdt.open({
             handle: 'shared-doc',
             name: 'checklist',
-            transport: 'local-only',
+            transport: 'local-only'
         })).rejects.toThrow('CRDT document handle is already open: shared-doc');
         expect(facade.rallar.crdt.open).toHaveBeenCalledTimes(1);
 
@@ -2403,7 +2414,7 @@ describe('browser Rallar black-box runtime', () => {
     it('waits for a late CRDT open and disposes the document during close', async () => {
         let resolveOpen!: (document: ReturnType<typeof createFakeCrdtDocument>) => void;
         facade.rallar.crdt.open.mockImplementationOnce(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveOpen = resolve;
             })
         );
@@ -2412,10 +2423,10 @@ describe('browser Rallar black-box runtime', () => {
         const opening = runtime.crdt.open({
             handle: 'late-doc',
             name: 'checklist',
-            transport: 'local-only',
+            transport: 'local-only'
         });
         const openingResult = expect(opening).rejects.toThrow(
-            'CRDT document open was cancelled because the Rallar runtime closed.',
+            'CRDT document open was cancelled because the Rallar runtime closed.'
         );
         await vi.waitFor(() => {
             expect(facade.rallar.crdt.open).toHaveBeenCalledTimes(1);
@@ -2430,7 +2441,7 @@ describe('browser Rallar black-box runtime', () => {
         await closing;
         expect(document.close).toHaveBeenCalledTimes(1);
         await expect(runtime.crdt.read({ handle: 'late-doc' })).rejects.toThrow(
-            'CRDT document handle is not open: late-doc',
+            'CRDT document handle is not open: late-doc'
         );
     });
 
@@ -2443,7 +2454,7 @@ describe('browser Rallar black-box runtime', () => {
             await runtime.crdt.open({
                 handle: 'wait-during-close',
                 name: 'wait-during-close',
-                transport: 'local-only',
+                transport: 'local-only'
             });
             const waiting = runtime.crdt.wait({
                 handle: 'wait-during-close',
@@ -2453,12 +2464,12 @@ describe('browser Rallar black-box runtime', () => {
                     source: 'value',
                     path: 'title',
                     operator: 'equals',
-                    expected: 'never',
-                }],
+                    expected: 'never'
+                }]
             });
             const waitOutcome = waiting.then(
                 () => undefined,
-                error => error,
+                (error) => error
             );
             await vi.advanceTimersByTimeAsync(0);
             expect(topics()).toContain('rallar.browser.crdt.waiting');
@@ -2466,7 +2477,7 @@ describe('browser Rallar black-box runtime', () => {
             const closing = runtime.close();
             const closeOutcome = closing.then(
                 () => undefined,
-                error => error,
+                (error) => error
             );
             await vi.advanceTimersByTimeAsync(0);
             const disconnectCallsBeforeIntervalElapsed = facade.rallar.disconnect.mock.calls.length;
@@ -2478,11 +2489,12 @@ describe('browser Rallar black-box runtime', () => {
             expect(disconnectCallsBeforeIntervalElapsed).toBe(1);
             expect(waitError).toBeInstanceOf(Error);
             expect((waitError as Error).message).toBe(
-                'CRDT operation completed after the runtime closed.',
+                'CRDT operation completed after the runtime closed.'
             );
             expect(closeError).toBeUndefined();
             expect(document.close).toHaveBeenCalledTimes(1);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -2491,9 +2503,9 @@ describe('browser Rallar black-box runtime', () => {
         vi.useFakeTimers();
         try {
             const document = createFakeCrdtDocument('queued-wait-during-close');
-            let resolveApply!: (result: { updateId: string }) => void;
+            let resolveApply!: (result: { updateId: string; }) => void;
             document.applyLocal.mockImplementationOnce(() =>
-                new Promise(resolve => {
+                new Promise((resolve) => {
                     resolveApply = resolve;
                 })
             );
@@ -2502,7 +2514,7 @@ describe('browser Rallar black-box runtime', () => {
             await runtime.crdt.open({
                 handle: 'queued-wait-during-close',
                 name: 'queued-wait-during-close',
-                transport: 'local-only',
+                transport: 'local-only'
             });
             const applying = runtime.crdt.apply({
                 handle: 'queued-wait-during-close',
@@ -2512,13 +2524,13 @@ describe('browser Rallar black-box runtime', () => {
                         kind: 'register.set',
                         path: ['title'],
                         value: 'changed',
-                        policy: 'lww',
-                    }],
-                },
+                        policy: 'lww'
+                    }]
+                }
             });
             const applyOutcome = applying.then(
                 () => undefined,
-                error => error,
+                (error) => error
             );
             await vi.advanceTimersByTimeAsync(0);
             expect(document.applyLocal).toHaveBeenCalledTimes(1);
@@ -2531,17 +2543,17 @@ describe('browser Rallar black-box runtime', () => {
                     source: 'value',
                     path: 'title',
                     operator: 'equals',
-                    expected: 'never',
-                }],
+                    expected: 'never'
+                }]
             });
             const waitOutcome = waiting.then(
                 () => undefined,
-                error => error,
+                (error) => error
             );
             const closing = runtime.close();
             const closeOutcome = closing.then(
                 () => undefined,
-                error => error,
+                (error) => error
             );
 
             resolveApply({ updateId: 'late-apply' });
@@ -2557,11 +2569,12 @@ describe('browser Rallar black-box runtime', () => {
             expect(applyError).toBeInstanceOf(Error);
             expect(waitError).toBeInstanceOf(Error);
             expect((waitError as Error).message).toBe(
-                'CRDT operation completed after the runtime closed.',
+                'CRDT operation completed after the runtime closed.'
             );
             expect(closeError).toBeUndefined();
             expect(document.close).toHaveBeenCalledTimes(1);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -2570,7 +2583,7 @@ describe('browser Rallar black-box runtime', () => {
         const document = createFakeCrdtDocument('sync-wait-during-close');
         let resolveSync!: (result: RallarCrdtSyncResult) => void;
         document.sync.mockImplementationOnce(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveSync = resolve;
             })
         );
@@ -2579,7 +2592,7 @@ describe('browser Rallar black-box runtime', () => {
         await runtime.crdt.open({
             handle: 'sync-wait-during-close',
             name: 'sync-wait-during-close',
-            transport: 'local-only',
+            transport: 'local-only'
         });
         let waitSettled = false;
         const waiting = runtime.crdt.wait({
@@ -2591,15 +2604,15 @@ describe('browser Rallar black-box runtime', () => {
                 source: 'value',
                 path: 'title',
                 operator: 'equals',
-                expected: 'never',
-            }],
+                expected: 'never'
+            }]
         });
         const waitOutcome = waiting.then(
             () => undefined,
-            error => {
+            (error) => {
                 waitSettled = true;
                 return error;
-            },
+            }
         );
         await vi.waitFor(() => {
             expect(document.sync).toHaveBeenCalledTimes(1);
@@ -2618,7 +2631,7 @@ describe('browser Rallar black-box runtime', () => {
             sentUpdateCount: 0,
             receivedUpdateCount: 0,
             pendingUpdateCount: 0,
-            dependencyBlockedUpdateCount: 0,
+            dependencyBlockedUpdateCount: 0
         });
         const waitError = await waitOutcome;
         await closing;
@@ -2627,7 +2640,7 @@ describe('browser Rallar black-box runtime', () => {
         expect(documentCloseCallsBeforeSync).toBe(0);
         expect(waitError).toBeInstanceOf(Error);
         expect((waitError as Error).message).toBe(
-            'CRDT operation completed after the runtime closed.',
+            'CRDT operation completed after the runtime closed.'
         );
         expect(document.close).toHaveBeenCalledTimes(1);
         expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
@@ -2637,7 +2650,7 @@ describe('browser Rallar black-box runtime', () => {
         let resolveDocumentClose!: () => void;
         const document = createFakeCrdtDocument('doc-closing');
         document.close.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveDocumentClose = resolve;
             })
         );
@@ -2646,7 +2659,7 @@ describe('browser Rallar black-box runtime', () => {
         await runtime.crdt.open({
             handle: 'closing-doc',
             name: 'checklist',
-            transport: 'local-only',
+            transport: 'local-only'
         });
 
         const closingDocument = runtime.crdt.close({ handle: 'closing-doc' });
@@ -2657,7 +2670,7 @@ describe('browser Rallar black-box runtime', () => {
         resolveDocumentClose();
 
         await expect(closingDocument).rejects.toThrow(
-            'CRDT operation completed after the runtime closed.',
+            'CRDT operation completed after the runtime closed.'
         );
         await closingRuntime;
         expect(document.close).toHaveBeenCalledTimes(1);
@@ -2667,7 +2680,7 @@ describe('browser Rallar black-box runtime', () => {
         let resolveDocumentDestroy!: () => void;
         const document = createFakeCrdtDocument('doc-destroying');
         document.destroy.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveDocumentDestroy = resolve;
             })
         );
@@ -2676,7 +2689,7 @@ describe('browser Rallar black-box runtime', () => {
         await runtime.crdt.open({
             handle: 'destroying-doc',
             name: 'checklist',
-            transport: 'local-only',
+            transport: 'local-only'
         });
 
         const destroyingDocument = runtime.crdt.destroy({ handle: 'destroying-doc' });
@@ -2687,7 +2700,7 @@ describe('browser Rallar black-box runtime', () => {
         resolveDocumentDestroy();
 
         await expect(destroyingDocument).rejects.toThrow(
-            'CRDT operation completed after the runtime closed.',
+            'CRDT operation completed after the runtime closed.'
         );
         await closingRuntime;
         expect(document.destroy).toHaveBeenCalledTimes(1);
@@ -2705,8 +2718,8 @@ describe('browser Rallar black-box runtime', () => {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
 
         await expect(runtime.crdt.open({
@@ -2718,12 +2731,12 @@ describe('browser Rallar black-box runtime', () => {
             workspaceId: 'workspace-1',
             roomId: 'room-1',
             username: 'alice',
-            password: 'secret',
+            password: 'secret'
         })).rejects.toThrow(
-            'Connected Rallar identity, scope, or room changes require close first.',
+            'Connected Rallar identity, scope, or room changes require close first.'
         );
         expect(facade.rallar.configure).not.toHaveBeenCalledWith({
-            apiBaseUrl: 'https://other-api.example.test',
+            apiBaseUrl: 'https://other-api.example.test'
         });
         expect(facade.rallar.crdt.open).not.toHaveBeenCalled();
     });
@@ -2731,7 +2744,7 @@ describe('browser Rallar black-box runtime', () => {
     it('fences send completion after runtime close without serializing sends', async () => {
         let resolveSend!: (results: readonly unknown[]) => void;
         facade.rallar.realtime.sendJson.mockImplementationOnce(() =>
-            new Promise(resolve => {
+            new Promise((resolve) => {
                 resolveSend = resolve;
             })
         );
@@ -2743,12 +2756,12 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         const sending = runtime.send({ data: 'late-message' });
         const sendResult = expect(sending).rejects.toThrow(
-            'Rallar send completed after the runtime closed.',
+            'Rallar send completed after the runtime closed.'
         );
         await vi.waitFor(() => {
             expect(facade.rallar.realtime.sendJson).toHaveBeenCalledTimes(1);
@@ -2765,12 +2778,12 @@ describe('browser Rallar black-box runtime', () => {
     it('rejects new resource effects while runtime close is in progress', async () => {
         let resolveDisconnect!: () => void;
         facade.rallar.disconnect.mockImplementationOnce(() =>
-            new Promise<void>(resolve => {
+            new Promise<void>((resolve) => {
                 resolveDisconnect = resolve;
             })
         );
         facade.rallar.crdt.open.mockResolvedValueOnce(
-            createFakeCrdtDocument('doc-during-close'),
+            createFakeCrdtDocument('doc-during-close')
         );
         const runtime = await loadRuntime();
         await runtime.connect({
@@ -2780,8 +2793,8 @@ describe('browser Rallar black-box runtime', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         });
         facade.rallar.realtime.sendJson.mockClear();
         facade.rallar.crdt.open.mockClear();
@@ -2793,19 +2806,19 @@ describe('browser Rallar black-box runtime', () => {
         });
 
         await expect(runtime.send({ data: 'during-close' })).rejects.toThrow(
-            'Rallar send completed after the runtime closed.',
+            'Rallar send completed after the runtime closed.'
         );
         await expect(runtime.crdt.open({
             handle: 'during-close',
             name: 'during-close',
-            transport: 'local-only',
+            transport: 'local-only'
         })).rejects.toThrow(
-            'CRDT document open was cancelled because the Rallar runtime closed.',
+            'CRDT document open was cancelled because the Rallar runtime closed.'
         );
         await expect(runtime.director.appoint({
-            roomId: 'room-1',
+            roomId: 'room-1'
         })).rejects.toThrow(
-            'Director operation completed after the runtime closed.',
+            'Director operation completed after the runtime closed.'
         );
 
         expect(facade.rallar.realtime.sendJson).not.toHaveBeenCalled();

@@ -10,7 +10,7 @@ import {
     IDBRequest,
     IDBTransaction,
     IDBVersionChangeEvent,
-    indexedDB,
+    indexedDB
 } from 'fake-indexeddb';
 
 Object.assign(
@@ -27,6 +27,6 @@ Object.assign(
         IDBOpenDBRequest,
         IDBRequest,
         IDBTransaction,
-        IDBVersionChangeEvent,
-    },
+        IDBVersionChangeEvent
+    }
 );

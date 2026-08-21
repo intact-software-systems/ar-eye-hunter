@@ -1,17 +1,21 @@
-import { useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCurrentConfig,
     selectRallarBlackBoxFirstFailure,
-    selectRallarBlackBoxLatestStats,
+    selectRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
-import { type RallarBlackBoxBootstrapConfig, rallarBlackBoxProviderModeFromConfig, rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
-import { Metric } from '../shared/Metric.tsx';
+import {
+    rallarBlackBoxProviderModeFromConfig,
+    rallarBlackBoxRuntimeStore,
+    type RallarBlackBoxBootstrapConfig
+} from '../../runtime-store.ts';
 import { statusTone } from '../shared/command-presentation.ts';
+import { Metric } from '../shared/Metric.tsx';
 import type { CommandCenterGlobalValues } from './global-context-model.ts';
 import type { RallarBrowserStatusSummary } from './rallar-browser-status.ts';
 
@@ -26,7 +30,7 @@ export function Header({
     lastAction,
     authSession,
     authBusy,
-    onLogout,
+    onLogout
 }: {
     mode: AppModeId;
     state: RallarBlackBoxTestState;
@@ -48,26 +52,22 @@ export function Header({
     const providerMode = config
         ? rallarBlackBoxProviderModeFromConfig(config)
         : bootstrap.providerMode;
-    const rallarValue =
-        providerMode === 'simulated'
-            ? 'simulated'
-            : browserStatus.rallarConnected || stats?.rallar?.connected
-              ? 'connected'
-              : 'not connected';
-    const effectiveRoom =
-        globalValues.roomId ||
+    const rallarValue = providerMode === 'simulated'
+        ? 'simulated'
+        : browserStatus.rallarConnected || stats?.rallar?.connected
+        ? 'connected'
+        : 'not connected';
+    const effectiveRoom = globalValues.roomId ||
         config?.roomId ||
         bootstrap.roomId ||
         'not joined';
-    const effectiveUser =
-        authSession?.username ??
+    const effectiveUser = authSession?.username ??
         authSession?.clientId ??
         globalValues.clientId ??
         config?.actor ??
         bootstrap.actor ??
         'none';
-    const effectiveSession =
-        authSession?.sessionId ??
+    const effectiveSession = authSession?.sessionId ??
         globalValues.sessionId ??
         config?.sessionId ??
         bootstrap.sessionId ??
@@ -107,14 +107,12 @@ export function Header({
                 <Metric
                     label="Rallar"
                     value={rallarValue}
-                    tone={
-                        browserStatus.rallarConnected ||
-                        stats?.rallar?.connected
-                            ? 'good'
-                            : providerMode === 'simulated'
-                              ? 'warn'
-                              : 'muted'
-                    }
+                    tone={browserStatus.rallarConnected ||
+                            stats?.rallar?.connected
+                        ? 'good'
+                        : providerMode === 'simulated'
+                        ? 'warn'
+                        : 'muted'}
                 />
                 <Metric label="Room" value={effectiveRoom} />
                 <Metric
@@ -136,13 +134,9 @@ export function Header({
                 </span>
                 {mode === 'black-box-runner' && (
                     <button
-                    type="button"
-                    onClick={() =>
-                        void rallarBlackBoxRuntimeStore.runSample()
-                        }
-                        disabled={
-                            bootstrapping || providerMode === 'browser-rallar'
-                        }
+                        type="button"
+                        onClick={() => void rallarBlackBoxRuntimeStore.runSample()}
+                        disabled={bootstrapping || providerMode === 'browser-rallar'}
                     >
                         Replay Sample
                     </button>
@@ -154,7 +148,7 @@ export function Header({
                         onClick={onLogout}
                         disabled={authBusy}
                     >
-                    {authBusy ? 'Signing out' : 'Logout'}
+                        {authBusy ? 'Signing out' : 'Logout'}
                     </button>
                 )}
             </div>
@@ -186,9 +180,7 @@ export function Header({
                 />
                 <Metric
                     label="Environment"
-                    value={
-                        config?.environment ?? bootstrap.environment ?? 'local'
-                    }
+                    value={config?.environment ?? bootstrap.environment ?? 'local'}
                 />
                 <Metric label="User" value={effectiveUser} />
                 <Metric label="Session" value={effectiveSession} />

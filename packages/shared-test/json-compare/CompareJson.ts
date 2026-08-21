@@ -6,7 +6,7 @@ const OR = '|';
 
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
-export type JsonObject = { [key: string]: JsonValue | undefined };
+export type JsonObject = { [key: string]: JsonValue | undefined; };
 export type JsonArray = JsonValue[];
 
 export interface CompareConfig {
@@ -41,20 +41,20 @@ function toNotCompatible(
     expected: unknown,
     actual: unknown,
     message: string,
-    details: Record<string, unknown> = {},
+    details: Record<string, unknown> = {}
 ): NotCompatibleResult {
     return {
         isEqual: false,
         message,
         expected,
         actual,
-        ...details,
+        ...details
     };
 }
 
 function toCompatible(): CompatibleResult {
     return {
-        isEqual: true,
+        isEqual: true
     };
 }
 
@@ -110,7 +110,7 @@ function isValueEqual(expected: unknown, actual: unknown, compareExact = false):
         }
 
         if (typeof expected === 'string' && typeof actual === 'string' && expected.includes(OR)) {
-            return expected.split(OR).some(e => e === actual);
+            return expected.split(OR).some((e) => e === actual);
         }
     }
 
@@ -127,14 +127,14 @@ function isValueEqual(expected: unknown, actual: unknown, compareExact = false):
 
 function isIdenticalArrays(a: string[], b: string[]): ComparisonResult {
     for (const aKey of a) {
-        if (!b.some(bKey => bKey === aKey)) {
-            return toNotCompatible(a, b, ' Not exact equal keys in json object', {keyNotExpected: aKey});
+        if (!b.some((bKey) => bKey === aKey)) {
+            return toNotCompatible(a, b, ' Not exact equal keys in json object', { keyNotExpected: aKey });
         }
     }
 
     for (const bKey of b) {
-        if (!a.some(aKey => aKey === bKey)) {
-            return toNotCompatible(a, b, ' Not exact equal keys in json object', {keyNotExpected: bKey});
+        if (!a.some((aKey) => aKey === bKey)) {
+            return toNotCompatible(a, b, ' Not exact equal keys in json object', { keyNotExpected: bKey });
         }
     }
 
@@ -145,7 +145,7 @@ function isCompatibleObjects(
     expected: JsonValue | undefined,
     actual: JsonValue | undefined,
     config: CompareConfig,
-    currPath: string,
+    currPath: string
 ): ComparisonResult {
     if (Array.isArray(expected)) {
         return isCompatibleArrays(expected, actual, config, currPath);
@@ -191,7 +191,12 @@ function isCompatibleObjects(
                 return toNotCompatible(expected, actual, '!(' + actualValue + ') instanceof Object');
             }
 
-            const compatibleObjects = isCompatibleObjects(expectedValue, actualValue, config, expandPath(currPath, key));
+            const compatibleObjects = isCompatibleObjects(
+                expectedValue,
+                actualValue,
+                config,
+                expandPath(currPath, key)
+            );
             if (!compatibleObjects.isEqual) {
                 return compatibleObjects;
             }
@@ -214,7 +219,7 @@ function isCompatibleArrays(
     expected: JsonArray,
     actual: JsonValue | undefined,
     config: CompareConfig,
-    currPath: string,
+    currPath: string
 ): ComparisonResult {
     if (!Array.isArray(actual)) {
         return toNotCompatible(expected, actual, 'expected array was object');
@@ -235,7 +240,12 @@ function isCompatibleArrays(
             const actualValue = actualToCompare[j];
 
             if (Array.isArray(expectedValue)) {
-                const compatibilityMessage = isCompatibleArrays(expectedValue, actualValue, config, expandPath(currPath, 'n'));
+                const compatibilityMessage = isCompatibleArrays(
+                    expectedValue,
+                    actualValue,
+                    config,
+                    expandPath(currPath, 'n')
+                );
                 if (compatibilityMessage.isEqual) {
                     expectedFound.push(expectedValue);
                     actualToCompare[j] = undefined;
@@ -244,7 +254,12 @@ function isCompatibleArrays(
                 }
             }
             else {
-                const compatibilityMessage = isCompatibleObjects(expectedValue, actualValue, config, expandPath(currPath, 'n'));
+                const compatibilityMessage = isCompatibleObjects(
+                    expectedValue,
+                    actualValue,
+                    config,
+                    expandPath(currPath, 'n')
+                );
                 if (compatibilityMessage.isEqual) {
                     expectedFound.push(expectedValue);
                     actualToCompare[j] = undefined;
@@ -256,23 +271,23 @@ function isCompatibleArrays(
     }
 
     if (config.compareExact) {
-        const actualNotFound = actualToCompare.filter(a => a !== undefined);
+        const actualNotFound = actualToCompare.filter((a) => a !== undefined);
         if (actualNotFound.length > 0) {
             return toNotCompatible(expected, actual, 'Json structures not exact equals', {
-                expectedFound: expectedFound.filter(a => a !== undefined),
-                expectedNotFound: expectedNotFound.filter(a => a !== undefined),
-                actualNotFound,
+                expectedFound: expectedFound.filter((a) => a !== undefined),
+                expectedNotFound: expectedNotFound.filter((a) => a !== undefined),
+                actualNotFound
             });
         }
     }
 
     if (config.compareArraysComplete && !config.compareExact) {
-        const actualNotFound = actualToCompare.filter(a => a !== undefined);
+        const actualNotFound = actualToCompare.filter((a) => a !== undefined);
         if (actualNotFound.length > 0) {
             return toNotCompatible(expected, actual, 'Json array has unexpected elements', {
-                expectedFound: expectedFound.filter(a => a !== undefined),
-                expectedNotFound: expectedNotFound.filter(a => a !== undefined),
-                actualNotFound,
+                expectedFound: expectedFound.filter((a) => a !== undefined),
+                expectedNotFound: expectedNotFound.filter((a) => a !== undefined),
+                actualNotFound
             });
         }
     }
@@ -281,18 +296,18 @@ function isCompatibleArrays(
         return expectedFound.length === expected.length
             ? toCompatible()
             : toNotCompatible(expected, actual, 'Json structures not compatible', {
-                expectedFound: expectedFound.filter(a => a !== undefined),
-                expectedNotFound: expectedNotFound.filter(a => a !== undefined),
-                actualNotFound: actualToCompare.filter(a => a !== undefined),
+                expectedFound: expectedFound.filter((a) => a !== undefined),
+                expectedNotFound: expectedNotFound.filter((a) => a !== undefined),
+                actualNotFound: actualToCompare.filter((a) => a !== undefined)
             });
     }
 
     const foundExpected = expectedFound.length >= expected.length;
     if (!foundExpected) {
         return toNotCompatible(expected, actual, 'Did not find the expected in actual', {
-            expectedFound: expectedFound.filter(a => a !== undefined),
-            expectedNotFound: expectedNotFound.filter(a => a !== undefined),
-            actualNotFound: actualToCompare.filter(a => a !== undefined),
+            expectedFound: expectedFound.filter((a) => a !== undefined),
+            expectedNotFound: expectedNotFound.filter((a) => a !== undefined),
+            actualNotFound: actualToCompare.filter((a) => a !== undefined)
         });
     }
 
@@ -310,7 +325,7 @@ export const COMPARISON = {
     COMPATIBLE: 'compatible',
     COMPATIBLE_COMPLETE: 'compatible-complete',
     EXACT_STRUCTURE: 'exact-structure',
-    EXACT: 'exact',
+    EXACT: 'exact'
 } as const;
 
 export type Comparison = typeof COMPARISON[keyof typeof COMPARISON];
@@ -322,46 +337,46 @@ const COMPARE_FLAGS_BY_COMPARISON: Record<
     [COMPARISON.COMPATIBLE_STRUCTURE]: {
         compareValues: false,
         compareExact: false,
-        compareArraysComplete: false,
+        compareArraysComplete: false
     },
     [COMPARISON.COMPATIBLE]: {
         compareValues: true,
         compareExact: false,
-        compareArraysComplete: false,
+        compareArraysComplete: false
     },
     [COMPARISON.COMPATIBLE_COMPLETE]: {
         compareValues: true,
         compareExact: false,
-        compareArraysComplete: true,
+        compareArraysComplete: true
     },
     [COMPARISON.EXACT_STRUCTURE]: {
         compareValues: false,
         compareExact: true,
-        compareArraysComplete: false,
+        compareArraysComplete: false
     },
     [COMPARISON.EXACT]: {
         compareValues: true,
         compareExact: true,
-        compareArraysComplete: false,
-    },
+        compareArraysComplete: false
+    }
 };
 
 export function toConfig(
     comparison: Comparison | string,
     ignoreJsonKeys: string[] = [],
-    ignoreJsonPaths: string[] = [],
+    ignoreJsonPaths: string[] = []
 ): CompareConfig {
     const compareFlags = COMPARE_FLAGS_BY_COMPARISON[comparison.toLowerCase() as Comparison];
     if (compareFlags === undefined) {
         throw {
             error: 'Comparison unsupported: ' + comparison.toLowerCase(),
-            comparisons: COMPARISON,
+            comparisons: COMPARISON
         };
     }
 
     return {
         ...compareFlags,
         ignoreJsonKeys,
-        ignoreJsonPaths,
+        ignoreJsonPaths
     };
 }

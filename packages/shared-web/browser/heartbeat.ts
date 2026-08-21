@@ -1,18 +1,12 @@
-import { type AuthSession, ClientInfo } from '@shared/api/api-config.ts';
+import { refreshStateHeartbeat, type StateHeartbeatWorkflowValue } from '@shared-web/browser/api-workflows.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
+import { ClientInfo, type AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    DEFAULT_STATE_WORKSPACE_ID,
-    type StateScope,
-} from '@shared/api/state-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import {
-    refreshStateHeartbeat,
-    type StateHeartbeatWorkflowValue,
-} from '@shared-web/browser/api-workflows.ts';
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 
 const intervalMsecs = 20000;
 const retryIntervalMsecs = 5000;
@@ -34,7 +28,7 @@ let activeHeartbeat: HeartbeatHandle | undefined;
 
 export async function initHeartbeat(
     clientData: ClientInfo,
-    options: InitHeartbeatOptions = {},
+    options: InitHeartbeatOptions = {}
 ): Promise<HeartbeatHandle> {
     activeHeartbeat?.stop();
 
@@ -54,7 +48,7 @@ export async function initHeartbeat(
             if (activeHeartbeat === handle) {
                 activeHeartbeat = undefined;
             }
-        },
+        }
     };
 
     activeHeartbeat = handle;
@@ -72,7 +66,8 @@ export async function initHeartbeat(
         try {
             await refreshHeartbeat(clientData, generationId, options);
             schedule(intervalMsecs);
-        } catch (error) {
+        }
+        catch (error) {
             if (isUnauthorizedApiError(error)) {
                 handle.stop();
                 await options.onAuthInvalid?.(error);
@@ -82,7 +77,7 @@ export async function initHeartbeat(
             if (!stopped) {
                 console.warn(
                     `State heartbeat failed for client ${clientData.clientId} session ${clientData.sessionId}:`,
-                    error,
+                    error
                 );
                 schedule(retryIntervalMsecs);
             }
@@ -100,57 +95,53 @@ export function stopHeartbeat(handle: HeartbeatHandle | undefined = activeHeartb
 async function refreshHeartbeat(
     clientData: ClientInfo,
     generationId: string,
-    options: InitHeartbeatOptions,
+    options: InitHeartbeatOptions
 ): Promise<void> {
     const joinedGroups = groupStateSnapshotsRepository
         .getAllGroupStateSnapshots()
         .filter((snapshot) => isGroupSnapshotInScope(snapshot, options.scope))
-        .filter((snapshot) =>
-            snapshot.activeSessions.some((session) =>
-                session.sessionId === clientData.sessionId
-            )
-        );
+        .filter((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === clientData.sessionId));
 
     const refreshed = await refreshStateHeartbeat(clientData, joinedGroups, {
         generationId,
         authSession: options.authSession,
         scope: options.scope,
-        policies: options.policies,
+        policies: options.policies
     });
 
     clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
         refreshed.client.principal.principalId,
-        refreshed.client,
+        refreshed.client
     );
 
     groupStateSnapshotsRepository.setGroupStateSnapshots(refreshed.groups);
     for (const missingGroup of refreshed.missingGroups) {
         const removed = groupStateSnapshotsRepository.removeGroupStateSnapshotIfUnchanged(
             missingGroup.group,
-            missingGroup,
+            missingGroup
         );
         emitBrowserStateReadDiagnostic({
             name: 'rallar.browser.state-read',
             feature: 'group',
             operation: 'heartbeat',
             result: removed ? 'removed' : 'preserved',
-            durationMs: 0,
+            durationMs: 0
         });
     }
 
     await Promise.all([
         clientStateSnapshotsRepository.waitForClientStateSnapshotChangesIdle(),
-        groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle(),
+        groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle()
     ]);
 
     console.log(
-        `State heartbeat refreshed for client ${clientData.clientId} and ${joinedGroups.length} groups`,
+        `State heartbeat refreshed for client ${clientData.clientId} and ${joinedGroups.length} groups`
     );
 }
 
 function isGroupSnapshotInScope(
     snapshot: GroupSnapshot,
-    scope: StateScope | undefined,
+    scope: StateScope | undefined
 ): boolean {
     if (!scope) {
         return true;

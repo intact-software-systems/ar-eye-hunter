@@ -1,20 +1,17 @@
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
-import { handleArenaMatchInput } from './handlers/handle-arena-match-input.ts';
-import { handleArenaMatchIntent } from './handlers/handle-arena-match-intent.ts';
-import {
-    type ArenaRallarGameMatchHandle,
-    createArenaRallarGameMatch,
-} from '../../rallar-game-match-adapter.ts';
+import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type {
     ArenaEvent,
     ArenaSnapshot,
     GameRealtimeMessage,
     MatchStartIntent,
     PickupAccepted,
-    PlayerHitAccepted,
+    PlayerHitAccepted
 } from '../../types.ts';
+import { handleArenaMatchInput } from './handlers/handle-arena-match-input.ts';
+import { handleArenaMatchIntent } from './handlers/handle-arena-match-intent.ts';
 
 export interface ArenaMatchRuntimeInput {
     readonly acceptDirectorOutput: (message: GameRealtimeMessage) => void;
@@ -34,7 +31,7 @@ export interface ArenaMatchRuntimeInput {
 export function createArenaMatchRuntime(
     input: ArenaMatchRuntimeInput,
     generation: number,
-    roomId: string,
+    roomId: string
 ): ArenaRallarGameMatchHandle {
     const isCurrent = () => input.isCurrentNetworkGeneration(generation);
     return createArenaRallarGameMatch({
@@ -42,25 +39,33 @@ export function createArenaMatchRuntime(
         roomId,
         readSnapshot: () => input.arenaSnapshotRef.current,
         onPresence: (envelope) => {
-            if (isCurrent()) input.acceptMotionMessage(envelope.senderId, envelope.payload);
+            if (isCurrent()) {
+                input.acceptMotionMessage(envelope.senderId, envelope.payload);
+            }
         },
         onInput: (envelope) => handleArenaMatchInput(input, generation, envelope),
         onIntent: (envelope) => handleArenaMatchIntent(input, generation, envelope),
         onEvent: (envelope) => {
-            if (isCurrent()) input.acceptDirectorOutput(envelope.payload);
+            if (isCurrent()) {
+                input.acceptDirectorOutput(envelope.payload);
+            }
         },
         onSnapshot: (envelope) => {
-            if (!isCurrent()) return;
+            if (!isCurrent()) {
+                return;
+            }
             input.setArenaSnapshot(envelope.payload);
             input.setActiveEvent(envelope.payload.activeEvent);
             input.setRemoteEvents(envelope.payload.events);
         },
         onSyncRequest: async () => {
-            if (!isCurrent()) return;
+            if (!isCurrent()) {
+                return;
+            }
             const snapshot = input.arenaSnapshotRef.current;
             if (snapshot) {
                 await input.arenaMatchRef.current?.publishSnapshot(snapshot, { reliable: true });
             }
-        },
+        }
     });
 }

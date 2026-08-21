@@ -37,16 +37,16 @@ Only these evidence fields are asserted across the five recipes
 (`api-v1-admin-operations`, `api-v1-auth-session`, `api-v1-crdt-app-inbox`,
 `api-v1-state-write-convergence`, `api-v1-state-medium-scale-churn`):
 
-| Field | Recipes |
-| --- | --- |
-| `atomicCompletionFailures: 0` | all five |
-| `intermediateMutationIntentCount: 0` | all five |
-| `completedAppInboxStatus: "COMPLETED"` | admin-operations, crdt-app-inbox, medium-scale |
-| `completedAppInboxCount` / `failedAppInboxCount` | auth-session (1/1 single-use race) |
-| `overdueRecoveryFixture.recovered/notBeforeSatisfied/overdueAtClaim` | state-write-convergence |
-| `resourceOutbox.0` shape (ids, `status: "COMPLETED"`, `effectKind`) | state-write-convergence |
-| `naturalBoundedRetryObserved: true` | medium-scale |
-| fairness lane `selectedLane: "FAIRNESS"` (artifact post-processing) | state-write-convergence via `fairness-proof.json` |
+| Field                                                                | Recipes                                           |
+| -------------------------------------------------------------------- | ------------------------------------------------- |
+| `atomicCompletionFailures: 0`                                        | all five                                          |
+| `intermediateMutationIntentCount: 0`                                 | all five                                          |
+| `completedAppInboxStatus: "COMPLETED"`                               | admin-operations, crdt-app-inbox, medium-scale    |
+| `completedAppInboxCount` / `failedAppInboxCount`                     | auth-session (1/1 single-use race)                |
+| `overdueRecoveryFixture.recovered/notBeforeSatisfied/overdueAtClaim` | state-write-convergence                           |
+| `resourceOutbox.0` shape (ids, `status: "COMPLETED"`, `effectKind`)  | state-write-convergence                           |
+| `naturalBoundedRetryObserved: true`                                  | medium-scale                                      |
+| fairness lane `selectedLane: "FAIRNESS"` (artifact post-processing)  | state-write-convergence via `fairness-proof.json` |
 
 Everything else in the evidence DTO is diagnostic payload, not an assertion.
 The endpoint contract below is scoped to exactly this surface.
@@ -89,22 +89,22 @@ Response (`AdminSupportEvidenceResponse`, same envelope family as
     "matchedCount": 0,
     "completedCount": 0,
     "failedCount": 0,
-    "completedStatus": "COMPLETED",       // or "MIXED"
+    "completedStatus": "COMPLETED", // or "MIXED"
     "atomicCompletionFailureCount": 0,
     "intermediateMutationIntentCount": 0,
     "naturalBoundedRetryObserved": false,
-    "rows": [ /* redacted metadata rows, <= sampleLimit */ ]
+    "rows": [/* redacted metadata rows, <= sampleLimit */]
   },
-  "receipts": [ /* commandId, commandHash, outcome, outboxIds, identityKind */ ],
+  "receipts": [/* commandId, commandHash, outcome, outboxIds, identityKind */],
   "outbox": {
     "linkedCount": 0,
-    "effects": [ /* resourceId, topicId, typeId, status, effectKind, commandId */ ]
+    "effects": [/* resourceId, topicId, typeId, status, effectKind, commandId */]
   },
-  "overdueRecovery": {                     // present only when the fixture ran
+  "overdueRecovery": { // present only when the fixture ran
     "recovered": true,
     "notBeforeSatisfied": true,
     "overdueAtClaim": true,
-    "selectedLane": "FAIRNESS"             // requires Decision D1
+    "selectedLane": "FAIRNESS" // requires Decision D1
   }
 }
 ```
@@ -192,7 +192,7 @@ Unsafe or gated:
 
 Guardrails throughout: `minimumMatchedRows: 600` and every asserted field of
 the medium-scale gate survive unchanged; conversions are cutovers of the
-evidence *source*, never of the asserted *values*; `npm run
+evidence _source_, never of the asserted _values_; `npm run
 test:repo-governance` and the full black-box gates on every step.
 
 ## Non-goals

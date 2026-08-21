@@ -5,7 +5,7 @@ import {
     RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
     type RecipeConsoleFleetMapLayer,
     type RecipeConsoleUrlIssue,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleUrlState
 } from './url-state-contract.ts';
 
 export const OPTIONAL_STRING_FIELDS = [
@@ -20,14 +20,14 @@ export const OPTIONAL_STRING_FIELDS = [
     'historyProfile',
     'compareLeft',
     'compareRight',
-    'fleetRegion',
+    'fleetRegion'
 ] as const satisfies readonly (keyof RecipeConsoleUrlState)[];
 
 const SENSITIVE_KEYS = new Set(
     [
         ...RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
-        ...RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS,
-    ].map(key => key.toLowerCase()),
+        ...RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS
+    ].map((key) => key.toLowerCase())
 );
 
 export function toSearch(params: URLSearchParams): string {
@@ -48,7 +48,7 @@ function addIssue(
     field: string,
     code: RecipeConsoleUrlIssue['code'],
     message: string,
-    value?: string,
+    value?: string
 ): void {
     issues.push({ field, code, value, message });
 }
@@ -56,7 +56,7 @@ function addIssue(
 export function firstValue(
     params: URLSearchParams,
     field: string,
-    issues: RecipeConsoleUrlIssue[],
+    issues: RecipeConsoleUrlIssue[]
 ): string | undefined {
     const values = params.getAll(field);
     for (const duplicate of values.slice(1)) {
@@ -65,7 +65,7 @@ export function firstValue(
             field,
             'duplicate',
             `Ignored a duplicate ${field} value.`,
-            duplicate,
+            duplicate
         );
     }
     return values[0];
@@ -74,7 +74,7 @@ export function firstValue(
 export function requiredValue(
     params: URLSearchParams,
     field: string,
-    issues: RecipeConsoleUrlIssue[],
+    issues: RecipeConsoleUrlIssue[]
 ): string | undefined {
     const value = firstValue(params, field, issues);
     if (value === undefined) {
@@ -82,7 +82,7 @@ export function requiredValue(
             issues,
             field,
             'missing',
-            `${field} was missing and its Recipe Console default was used.`,
+            `${field} was missing and its Recipe Console default was used.`
         );
     }
     return value;
@@ -91,7 +91,7 @@ export function requiredValue(
 export function readString(
     params: URLSearchParams,
     field: string,
-    issues: RecipeConsoleUrlIssue[],
+    issues: RecipeConsoleUrlIssue[]
 ): string | undefined {
     const value = firstValue(params, field, issues);
     if (value === undefined) {
@@ -102,7 +102,7 @@ export function readString(
             issues,
             field,
             'invalid',
-            `${field} exceeds the ${RECIPE_CONSOLE_URL_STRING_MAX_BYTES}-byte URL limit.`,
+            `${field} exceeds the ${RECIPE_CONSOLE_URL_STRING_MAX_BYTES}-byte URL limit.`
         );
         return undefined;
     }
@@ -121,7 +121,7 @@ export function readEnum<const Value extends string>(
     params: URLSearchParams,
     field: string,
     allowed: readonly Value[],
-    issues: RecipeConsoleUrlIssue[],
+    issues: RecipeConsoleUrlIssue[]
 ): Value | undefined {
     const value = firstValue(params, field, issues);
     if (value === undefined) {
@@ -133,7 +133,7 @@ export function readEnum<const Value extends string>(
             field,
             'invalid',
             `${field} has an unsupported value.`,
-            value,
+            value
         );
         return undefined;
     }
@@ -143,7 +143,7 @@ export function readEnum<const Value extends string>(
 export function readEpoch(
     params: URLSearchParams,
     field: 'from' | 'to',
-    issues: RecipeConsoleUrlIssue[],
+    issues: RecipeConsoleUrlIssue[]
 ): number | undefined {
     const value = firstValue(params, field, issues);
     if (value === undefined) {
@@ -157,7 +157,7 @@ export function readEpoch(
             field,
             'invalid',
             `${field} must be a safe nonnegative integer epoch millisecond.`,
-            value,
+            value
         );
         return undefined;
     }
@@ -167,7 +167,7 @@ export function readEpoch(
             field,
             'normalized',
             `${field} was normalized to canonical integer form.`,
-            value,
+            value
         );
     }
     return parsed;
@@ -175,7 +175,7 @@ export function readEpoch(
 
 export function readFleetLayers(
     params: URLSearchParams,
-    issues: RecipeConsoleUrlIssue[],
+    issues: RecipeConsoleUrlIssue[]
 ): readonly RecipeConsoleFleetMapLayer[] | undefined {
     const value = firstValue(params, 'fleetMapLayers', issues);
     if (value === undefined) {
@@ -184,22 +184,26 @@ export function readFleetLayers(
     if (value === 'none') {
         return [];
     }
-    const requested = value.split(',').map(entry => entry.trim());
-    if (requested.some(entry => !(
-        RECIPE_CONSOLE_FLEET_MAP_LAYERS as readonly string[]
-    ).includes(entry))) {
+    const requested = value.split(',').map((entry) => entry.trim());
+    if (
+        requested.some((entry) =>
+            !(
+                RECIPE_CONSOLE_FLEET_MAP_LAYERS as readonly string[]
+            ).includes(entry)
+        )
+    ) {
         addIssue(
             issues,
             'fleetMapLayers',
             'invalid',
             'fleetMapLayers contains an unsupported layer.',
-            value,
+            value
         );
         return [];
     }
     const selected = new Set(requested);
     const normalized = RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter(
-        layer => selected.has(layer),
+        (layer) => selected.has(layer)
     );
     if (normalized.join(',') !== value) {
         addIssue(
@@ -207,7 +211,7 @@ export function readFleetLayers(
             'fleetMapLayers',
             'normalized',
             'fleetMapLayers was deduplicated and placed in canonical order.',
-            value,
+            value
         );
     }
     return normalized;
@@ -216,7 +220,7 @@ export function readFleetLayers(
 export function setOptionalString(
     params: URLSearchParams,
     field: typeof OPTIONAL_STRING_FIELDS[number] | 'legacySurface',
-    value: unknown,
+    value: unknown
 ): void {
     if (typeof value === 'string') {
         const normalized = value.trim();

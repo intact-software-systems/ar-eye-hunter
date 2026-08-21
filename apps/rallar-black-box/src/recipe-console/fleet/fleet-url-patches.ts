@@ -1,11 +1,8 @@
-import type {
-    ControlFleetFailureSignature,
-    ControlFleetRunReport,
-} from '@shared-test/rallar-bb-test/fleet-report.ts';
+import type { ControlFleetFailureSignature, ControlFleetRunReport } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import {
     RECIPE_CONSOLE_FLEET_MAP_LAYERS,
     type RecipeConsoleFleetMapLayer,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
 
 type FleetHandoffReport = Pick<
@@ -17,53 +14,54 @@ type FleetHandoffReport = Pick<
 >;
 
 export function fleetAffectedAgentPatch(
-    agentId: string,
+    agentId: string
 ): Partial<RecipeConsoleUrlState> {
     return { agentId };
 }
 
 export function fleetRegionSelectionPatch(
-    fleetRegion: string | undefined,
+    fleetRegion: string | undefined
 ): Partial<RecipeConsoleUrlState> {
     return { fleetRegion };
 }
 
 export function fleetReportSelectionPatch(
-    report: FleetHandoffReport,
+    report: FleetHandoffReport
 ): Partial<RecipeConsoleUrlState> {
     return {
         controlRunId: report.controlRunId,
-        distributedRunId: report.distributedRunId,
+        distributedRunId: report.distributedRunId
     };
 }
 
 export function fleetMapLayerTogglePatch(
     currentLayers: readonly RecipeConsoleFleetMapLayer[] | undefined,
     layer: RecipeConsoleFleetMapLayer,
-    enabled: boolean,
+    enabled: boolean
 ): Partial<RecipeConsoleUrlState> {
     const selected = new Set(
-        currentLayers ?? RECIPE_CONSOLE_FLEET_MAP_LAYERS,
+        currentLayers ?? RECIPE_CONSOLE_FLEET_MAP_LAYERS
     );
     if (enabled) {
         selected.add(layer);
-    } else {
+    }
+    else {
         selected.delete(layer);
     }
     const canonical = RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter(
-        candidate => selected.has(candidate),
+        (candidate) => selected.has(candidate)
     );
     return {
         fleetMapLayers: canonical.length ===
                 RECIPE_CONSOLE_FLEET_MAP_LAYERS.length
             ? undefined
-            : canonical,
+            : canonical
     };
 }
 
 export function fleetReportMonitorPatch(
     report: FleetHandoffReport,
-    agentId?: string,
+    agentId?: string
 ): Partial<RecipeConsoleUrlState> {
     return {
         view: 'monitor',
@@ -71,13 +69,13 @@ export function fleetReportMonitorPatch(
         distributedRunId: report.distributedRunId,
         agentId,
         recipeId: undefined,
-        commandId: undefined,
+        commandId: undefined
     };
 }
 
 export function fleetReportAnalyzePatch(
     report: FleetHandoffReport,
-    agentId?: string,
+    agentId?: string
 ): Partial<RecipeConsoleUrlState> {
     return {
         view: 'analyze',
@@ -85,16 +83,13 @@ export function fleetReportAnalyzePatch(
         distributedRunId: report.distributedRunId,
         agentId,
         recipeId: undefined,
-        commandId: undefined,
+        commandId: undefined
     };
 }
 
 export function fleetReportTuneHistoryPatch(
     report: FleetHandoffReport,
-    failure: Pick<
-        ControlFleetFailureSignature,
-        'signatureId' | 'category' | 'recipeId'
-    >,
+    failure: Pick<ControlFleetFailureSignature, 'signatureId' | 'category' | 'recipeId'>
 ): Partial<RecipeConsoleUrlState> {
     return {
         view: 'tune',
@@ -109,7 +104,7 @@ export function fleetReportTuneHistoryPatch(
         historyRecipeId: failure.recipeId ?? (
             report.recipeIds.length === 1 ? report.recipeIds[0] : undefined
         ),
-        failureCategory: undefined,
+        failureCategory: undefined
     };
 }
 

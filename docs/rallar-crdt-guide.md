@@ -74,28 +74,28 @@ Do not use CRDT documents for:
 
 ```ts
 const doc = await rallar.crdt.open('room-checklist', {
-  documentType: 'checklist',
-  documentId: room.group.groupId,
-  scope: {
-    kind: 'room',
-    roomRef: room.group,
-  },
-  transport: 'ws-then-rtc',
+    documentType: 'checklist',
+    documentId: room.group.groupId,
+    scope: {
+        kind: 'room',
+        roomRef: room.group
+    },
+    transport: 'ws-then-rtc'
 });
 
 await doc.applyLocal({
-  kind: 'batch',
-  operations: [
-    {
-      kind: 'orset.add',
-      path: ['items'],
-      elementId: crypto.randomUUID(),
-      value: {
-        text: 'Inspect north entrance',
-        done: false,
-      },
-    },
-  ],
+    kind: 'batch',
+    operations: [
+        {
+            kind: 'orset.add',
+            path: ['items'],
+            elementId: crypto.randomUUID(),
+            value: {
+                text: 'Inspect north entrance',
+                done: false
+            }
+        }
+    ]
 });
 ```
 

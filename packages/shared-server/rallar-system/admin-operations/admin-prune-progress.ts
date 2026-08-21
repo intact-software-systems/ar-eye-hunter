@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { ADMIN_PRUNE_EXPIRED_CATEGORIES } from '@shared/api/admin-operations-types.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '../services/app-inbox-queue-key.ts';
 import type { AdminPrunePageComputed } from './AdminPruneExpiredWork.ts';
@@ -43,16 +43,18 @@ export type AdminPruneCompletedResult = Readonly<{
     results: readonly AdminPruneCategoryResult[];
 }>;
 
-export function createAdminPruneAggregate(input: Readonly<{
-    jobId: string;
-    generatedAtEpochMs: number;
-    expireAtEpochMs: number;
-    serverId: string;
-    requestedBy: string;
-    requestedSessionId: string;
-    categories: readonly AdminPruneExpiredCategory[];
-    expiredRows: Readonly<Partial<Record<AdminPruneExpiredCategory, number>>>;
-}>): AdminPruneAggregate {
+export function createAdminPruneAggregate(
+    input: Readonly<{
+        jobId: string;
+        generatedAtEpochMs: number;
+        expireAtEpochMs: number;
+        serverId: string;
+        requestedBy: string;
+        requestedSessionId: string;
+        categories: readonly AdminPruneExpiredCategory[];
+        expiredRows: Readonly<Partial<Record<AdminPruneExpiredCategory, number>>>;
+    }>
+): AdminPruneAggregate {
     return {
         version: 1,
         revision: 0,
@@ -71,14 +73,14 @@ export function createAdminPruneAggregate(input: Readonly<{
             category,
             expiredRows: input.expiredRows[category] ?? 0,
             deletedRows: 0,
-            dryRun: false,
-        })),
+            dryRun: false
+        }))
     };
 }
 
 export function advanceAdminPruneAggregate(
     aggregate: AdminPruneAggregate,
-    page: Pick<AdminPrunePageComputed, 'jobId' | 'category' | 'deletedRows' | 'next'>,
+    page: Pick<AdminPrunePageComputed, 'jobId' | 'category' | 'deletedRows' | 'next'>
 ): AdminPruneAggregate {
     if (aggregate.status !== 'pending' || aggregate.jobId !== page.jobId) {
         throw new TypeError('Admin prune aggregate identity is invalid');
@@ -90,9 +92,11 @@ export function advanceAdminPruneAggregate(
     const completedCategories = page.next === null
         ? [...new Set([...aggregate.completedCategories, page.category])]
         : aggregate.completedCategories;
-    const results = aggregate.results.map((result) => result.category === page.category
-        ? { ...result, deletedRows: result.deletedRows + page.deletedRows }
-        : result);
+    const results = aggregate.results.map((result) =>
+        result.category === page.category
+            ? { ...result, deletedRows: result.deletedRows + page.deletedRows }
+            : result
+    );
     if (results.some((result) => result.deletedRows > result.expiredRows)) {
         throw new TypeError('Admin prune deleted rows exceed captured expired rows');
     }
@@ -102,16 +106,29 @@ export function advanceAdminPruneAggregate(
         status: completedCategories.length === results.length ? 'completed' : 'pending',
         changed: results.some((result) => result.deletedRows > 0),
         completedCategories,
-        results,
+        results
     };
 }
 
 export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
-    if (!isRecord(value)) throw new TypeError('Admin prune aggregate is invalid');
+    if (!isRecord(value)) {
+        throw new TypeError('Admin prune aggregate is invalid');
+    }
     requireExactKeys(value, [
-        'version', 'revision', 'jobId', 'generatedAtEpochMs', 'expireAtEpochMs',
-        'serverId', 'requestedBy', 'requestedSessionId', 'operation', 'status',
-        'changed', 'warnings', 'completedCategories', 'results',
+        'version',
+        'revision',
+        'jobId',
+        'generatedAtEpochMs',
+        'expireAtEpochMs',
+        'serverId',
+        'requestedBy',
+        'requestedSessionId',
+        'operation',
+        'status',
+        'changed',
+        'warnings',
+        'completedCategories',
+        'results'
     ]);
     if (value.version !== 1 || !isNonNegativeSafeInteger(value.revision)) {
         throw new TypeError('Admin prune aggregate is invalid');
@@ -120,7 +137,9 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
         isNonNegativeSafeInteger(value.generatedAtEpochMs) &&
         isNonNegativeSafeInteger(value.expireAtEpochMs) &&
         value.expireAtEpochMs <= value.generatedAtEpochMs
-    ) throw new TypeError('Admin prune aggregate expiry must follow generation');
+    ) {
+        throw new TypeError('Admin prune aggregate expiry must follow generation');
+    }
     if (Array.isArray(value.results) && value.results.length === 0) {
         throw new TypeError('Admin prune aggregate results must not be empty');
     }
@@ -134,20 +153,26 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
         typeof value.changed !== 'boolean' || !Array.isArray(value.warnings) || value.warnings.length !== 0 ||
         !Array.isArray(value.completedCategories) || !Array.isArray(value.results) ||
         value.results.length === 0
-    ) throw new TypeError('Admin prune aggregate fields are invalid');
+    ) {
+        throw new TypeError('Admin prune aggregate fields are invalid');
+    }
     const completed = value.completedCategories.map(readCategory);
     if (new Set(completed).size !== completed.length) {
         throw new TypeError('Admin prune aggregate has duplicate completed category');
     }
     const results = value.results.map((entry) => {
-        if (!isRecord(entry)) throw new TypeError('Admin prune aggregate result is invalid');
+        if (!isRecord(entry)) {
+            throw new TypeError('Admin prune aggregate result is invalid');
+        }
         requireExactKeys(entry, ['category', 'expiredRows', 'deletedRows', 'dryRun']);
         const category = readCategory(entry.category);
         if (
             !isNonNegativeSafeInteger(entry.expiredRows) ||
             !isNonNegativeSafeInteger(entry.deletedRows) ||
             entry.dryRun !== false
-        ) throw new TypeError('Admin prune aggregate result fields are invalid');
+        ) {
+            throw new TypeError('Admin prune aggregate result fields are invalid');
+        }
         if (entry.deletedRows > entry.expiredRows) {
             throw new TypeError('Admin prune aggregate deleted rows exceed expired rows');
         }
@@ -175,9 +200,11 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
 }
 
 export function toAdminPruneCompletedResult(
-    aggregate: AdminPruneAggregate,
+    aggregate: AdminPruneAggregate
 ): AdminPruneCompletedResult {
-    if (aggregate.status !== 'completed') throw new TypeError('Admin prune aggregate is incomplete');
+    if (aggregate.status !== 'completed') {
+        throw new TypeError('Admin prune aggregate is incomplete');
+    }
     return {
         generatedAtEpochMs: aggregate.generatedAtEpochMs,
         serverId: aggregate.serverId,
@@ -186,7 +213,7 @@ export function toAdminPruneCompletedResult(
         status: 'completed',
         changed: aggregate.changed,
         jobId: aggregate.jobId,
-        results: aggregate.results,
+        results: aggregate.results
     };
 }
 
@@ -194,7 +221,7 @@ export function toAdminPruneAggregateKey(jobId: string): Key {
     return toAppQueueKey({
         topicId: ADMIN_PRUNE_AGGREGATE_TOPIC,
         resourceId: jobId,
-        contextId: jobId,
+        contextId: jobId
     });
 }
 
@@ -210,9 +237,9 @@ export function toAdminPruneAggregateEntry(aggregate: AdminPruneAggregate): Reso
             date: createdTs.toPlainTime(),
             createdBy: toAppQueueCreatedBy(aggregate.serverId),
             createdTs,
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(aggregate.expireAtEpochMs),
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(aggregate.expireAtEpochMs)
         },
-        dequeueAudit: { attempts: 0 },
+        dequeueAudit: { attempts: 0 }
     };
 }
 

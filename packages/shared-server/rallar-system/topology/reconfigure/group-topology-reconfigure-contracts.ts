@@ -6,18 +6,19 @@ import type { ComputedRtcTopologyOutbox } from '../../services/rtc-topology-outb
 import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
 
 export interface GroupTopologyReconfigureCommand {
-  readonly groupRef: GroupRef;
-  readonly commandId: string;
-  readonly actorPrincipalId: string;
-  readonly capturedAtEpochMs: number;
-  readonly requestOptions: GroupTopologyConfigPatch;
-  readonly publish: boolean;
+    readonly groupRef: GroupRef;
+    readonly commandId: string;
+    readonly actorPrincipalId: string;
+    readonly capturedAtEpochMs: number;
+    readonly requestOptions: GroupTopologyConfigPatch;
+    readonly publish: boolean;
 }
 
 export interface GroupTopologyReconfigureRead {
-  readonly authority: GroupTopologyPlanningAuthority;
-  readonly authorityGuard: persistence.GroupStateAuthorityGuard;
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly authorityGuard: persistence.GroupStateAuthorityGuard;
 }
 
-export type GroupTopologyReconfigureComputed = ComputedRtcTopologyOutbox &
-  Readonly<{ authorityGuard: persistence.GroupStateAuthorityGuard }>;
+export type GroupTopologyReconfigureComputed =
+    & ComputedRtcTopologyOutbox
+    & Readonly<{ authorityGuard: persistence.GroupStateAuthorityGuard; }>;

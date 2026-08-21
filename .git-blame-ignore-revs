@@ -1,0 +1,13 @@
+# Revisions that changed formatting only. `git blame` skips them so authorship
+# points at the commit that last changed the code, not the one that reflowed it.
+#
+# Enable once per clone:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub applies this file automatically; local git needs the config above.
+# Add only whole-tree formatting commits here, one full 40-character SHA per
+# line, with a comment naming the change.
+
+# Repository-wide dprint reformat (Prettier and `deno fmt` retired).
+# Add the squashed commit SHA here once it lands on main.

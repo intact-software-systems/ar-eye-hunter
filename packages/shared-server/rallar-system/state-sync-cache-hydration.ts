@@ -20,25 +20,25 @@ export type StateSyncCacheHydrationResult = Readonly<{
 }>;
 
 export async function hydrateStateSyncSnapshotCaches(
-    input: StateSyncCacheHydrationInput,
+    input: StateSyncCacheHydrationInput
 ): Promise<StateSyncCacheHydrationResult> {
     const clients = [
         ...(input.clients ?? []),
         ...(input.scope && input.clientStateService
             ? await input.clientStateService.listSnapshots(input.scope)
-            : []),
+            : [])
     ];
     const groups = [
         ...(input.groups ?? []),
         ...(input.scope && input.groupStateService
             ? await input.groupStateService.listSnapshots(input.scope)
-            : []),
+            : [])
     ];
 
     for (const snapshot of clients) {
         clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
             snapshot.principal.principalId,
-            snapshot,
+            snapshot
         );
     }
 
@@ -48,11 +48,11 @@ export async function hydrateStateSyncSnapshotCaches(
 
     await Promise.all([
         clientStateSnapshotsRepository.waitForClientStateSnapshotChangesIdle(),
-        groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle(),
+        groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle()
     ]);
 
     return {
         clientSnapshotCount: clients.length,
-        groupSnapshotCount: groups.length,
+        groupSnapshotCount: groups.length
     };
 }

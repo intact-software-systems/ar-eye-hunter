@@ -1,28 +1,25 @@
 import { useMemo, useState } from 'react';
-import {
-    distributedRecipeStateTone,
-    type DistributedRunMonitor,
-} from '../../../distributed-recipes.ts';
+import { distributedRecipeStateTone, type DistributedRunMonitor } from '../../../distributed-recipes.ts';
 import { FilterSelect } from '../../shared/FilterSelect.tsx';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';
 import {
-    type DistributedRuntimeDiagnostic,
     distributedDiagnosticGroupValue,
     distributedDiagnosticSearchText,
+    type DistributedRuntimeDiagnostic
 } from './distributed-diagnostics.ts';
 import {
     distributedCompositeStatusTone,
     distributedDiagnosticTone,
-    distributedProgressTone,
+    distributedProgressTone
 } from './status-presentation.ts';
 
 function createMonitorRows<T>(
     namespace: string,
     items: readonly T[],
-    identity: (item: T) => readonly (string | number | undefined)[],
-): readonly Readonly<{ item: T; key: string }>[] {
+    identity: (item: T) => readonly (string | number | undefined)[]
+): readonly Readonly<{ item: T; key: string; }>[] {
     const occurrences = new Map<string, number>();
     return items.map((item) => {
         const identityParts = identity(item);
@@ -35,68 +32,68 @@ function createMonitorRows<T>(
                 'legacy-monitor-row-v1',
                 namespace,
                 ...identityParts,
-                occurrence,
-            ]),
+                occurrence
+            ])
         };
     });
 }
 
 export function DistributedRunMonitorPanel({
-    monitor,
+    monitor
 }: {
     monitor: DistributedRunMonitor | undefined;
 }) {
-    const [diagnosticTransportFilter, setDiagnosticTransportFilter] =
-        useState('');
-    const [diagnosticSeverityFilter, setDiagnosticSeverityFilter] =
-        useState('');
+    const [diagnosticTransportFilter, setDiagnosticTransportFilter] = useState('');
+    const [diagnosticSeverityFilter, setDiagnosticSeverityFilter] = useState('');
     const [diagnosticAgentFilter, setDiagnosticAgentFilter] = useState('');
     const [diagnosticGroupFilter, setDiagnosticGroupFilter] = useState('');
     const [diagnosticQuery, setDiagnosticQuery] = useState('');
-    const runtimeDiagnostics: readonly DistributedRuntimeDiagnostic[] =
-        monitor?.runtimeDiagnostics ?? [];
+    const runtimeDiagnostics: readonly DistributedRuntimeDiagnostic[] = monitor?.runtimeDiagnostics ?? [];
     const runtimeDiagnosticRows = useMemo(
-        () => createMonitorRows(
-            'diagnostic',
-            runtimeDiagnostics,
-            (row) => [row.agentId, row.eventId, row.atEpochMs],
-        ),
-        [runtimeDiagnostics],
+        () =>
+            createMonitorRows(
+                'diagnostic',
+                runtimeDiagnostics,
+                (row) => [row.agentId, row.eventId, row.atEpochMs]
+            ),
+        [runtimeDiagnostics]
     );
     const monitorEventRows = useMemo(
-        () => createMonitorRows(
-            'event',
-            monitor?.events ?? [],
-            (row) => [row.agentId, row.eventId, row.atEpochMs],
-        ),
-        [monitor?.events],
+        () =>
+            createMonitorRows(
+                'event',
+                monitor?.events ?? [],
+                (row) => [row.agentId, row.eventId, row.atEpochMs]
+            ),
+        [monitor?.events]
     );
     const monitorTimelineRows = useMemo(
-        () => createMonitorRows(
-            'timeline',
-            monitor?.timeline ?? [],
-            (row) => [row.agentId, row.id, row.atEpochMs],
-        ),
-        [monitor?.timeline],
+        () =>
+            createMonitorRows(
+                'timeline',
+                monitor?.timeline ?? [],
+                (row) => [row.agentId, row.id, row.atEpochMs]
+            ),
+        [monitor?.timeline]
     );
     const diagnosticTransports = useMemo(
         () => uniqueValues(runtimeDiagnostics.map((row) => row.transport)),
-        [runtimeDiagnostics],
+        [runtimeDiagnostics]
     );
     const diagnosticSeverities = useMemo(
         () => uniqueValues(runtimeDiagnostics.map((row) => row.severity)),
-        [runtimeDiagnostics],
+        [runtimeDiagnostics]
     );
     const diagnosticAgents = useMemo(
         () => uniqueValues(runtimeDiagnostics.map((row) => row.agentId)),
-        [runtimeDiagnostics],
+        [runtimeDiagnostics]
     );
     const diagnosticGroups = useMemo(
         () =>
             uniqueValues(
-                runtimeDiagnostics.map(distributedDiagnosticGroupValue),
+                runtimeDiagnostics.map(distributedDiagnosticGroupValue)
             ),
-        [runtimeDiagnostics],
+        [runtimeDiagnostics]
     );
     const filteredRuntimeDiagnostics = useMemo(
         () =>
@@ -104,30 +101,34 @@ export function DistributedRunMonitorPanel({
                 if (
                     diagnosticTransportFilter &&
                     row.transport !== diagnosticTransportFilter
-                )
+                ) {
                     return false;
+                }
                 if (
                     diagnosticSeverityFilter &&
                     row.severity !== diagnosticSeverityFilter
-                )
+                ) {
                     return false;
+                }
                 if (
                     diagnosticAgentFilter &&
                     row.agentId !== diagnosticAgentFilter
-                )
+                ) {
                     return false;
+                }
                 if (
                     diagnosticGroupFilter &&
                     distributedDiagnosticGroupValue(row) !==
                         diagnosticGroupFilter
-                )
+                ) {
                     return false;
+                }
                 const query = diagnosticQuery.trim().toLowerCase();
                 return (
                     !query ||
                     distributedDiagnosticSearchText(
                         row,
-                        monitor?.distributedRunId,
+                        monitor?.distributedRunId
                     ).includes(query)
                 );
             }),
@@ -138,8 +139,8 @@ export function DistributedRunMonitorPanel({
             diagnosticSeverityFilter,
             diagnosticTransportFilter,
             monitor?.distributedRunId,
-            runtimeDiagnosticRows,
-        ],
+            runtimeDiagnosticRows
+        ]
     );
 
     return (
@@ -171,11 +172,9 @@ export function DistributedRunMonitorPanel({
                         <Metric
                             label="Failed commands"
                             value={String(monitor.commandCounts.failed)}
-                            tone={
-                                monitor.commandCounts.failed > 0
-                                    ? 'bad'
-                                    : 'good'
-                            }
+                            tone={monitor.commandCounts.failed > 0
+                                ? 'bad'
+                                : 'good'}
                         />
                         <Metric
                             label="Results"
@@ -184,26 +183,22 @@ export function DistributedRunMonitorPanel({
                         <Metric
                             label="Composite"
                             value={`${monitor.compositeCounts.failed}/${monitor.compositeCounts.total}`}
-                            tone={
-                                monitor.compositeCounts.failed > 0
-                                    ? 'bad'
-                                    : monitor.compositeCounts.total > 0
-                                      ? 'good'
-                                      : 'muted'
-                            }
+                            tone={monitor.compositeCounts.failed > 0
+                                ? 'bad'
+                                : monitor.compositeCounts.total > 0
+                                ? 'good'
+                                : 'muted'}
                         />
                         <Metric
                             label="Diagnostics"
                             value={String(monitor.diagnosticCounts.total)}
-                            tone={
-                                monitor.diagnosticCounts.error > 0
-                                    ? 'bad'
-                                    : monitor.diagnosticCounts.warning > 0
-                                      ? 'warn'
-                                      : monitor.diagnosticCounts.total > 0
-                                        ? 'active'
-                                        : 'muted'
-                            }
+                            tone={monitor.diagnosticCounts.error > 0
+                                ? 'bad'
+                                : monitor.diagnosticCounts.warning > 0
+                                ? 'warn'
+                                : monitor.diagnosticCounts.total > 0
+                                ? 'active'
+                                : 'muted'}
                         />
                         <Metric
                             label="WS / RTC"
@@ -212,11 +207,9 @@ export function DistributedRunMonitorPanel({
                         <Metric
                             label="P50 latency"
                             value={formatDuration(monitor.latency.p50Ms)}
-                            tone={
-                                monitor.latency.p50Ms !== undefined
-                                    ? 'active'
-                                    : 'muted'
-                            }
+                            tone={monitor.latency.p50Ms !== undefined
+                                ? 'active'
+                                : 'muted'}
                         />
                         <Metric
                             label="P95 latency"
@@ -225,13 +218,11 @@ export function DistributedRunMonitorPanel({
                         <Metric
                             label="Artifact"
                             value={monitor.artifact.status}
-                            tone={
-                                monitor.artifact.status === 'valid'
-                                    ? 'good'
-                                    : monitor.artifact.status === 'not-loaded'
-                                      ? 'muted'
-                                      : 'bad'
-                            }
+                            tone={monitor.artifact.status === 'valid'
+                                ? 'good'
+                                : monitor.artifact.status === 'not-loaded'
+                                ? 'muted'
+                                : 'bad'}
                         />
                     </div>
                     <div className="distributed-monitor-grid">
@@ -291,9 +282,8 @@ export function DistributedRunMonitorPanel({
                                             run {row.execution}
                                         </span>
                                         <small>
-                                            {row.role ?? 'no role'} -{' '}
-                                            {row.completedCommandCount} commands
-                                            - {row.eventCount} events
+                                            {row.role ?? 'no role'} - {row.completedCommandCount} commands -{' '}
+                                            {row.eventCount} events
                                         </small>
                                     </div>
                                 ))}
@@ -322,10 +312,9 @@ export function DistributedRunMonitorPanel({
                                             {row.failedCount} failed
                                         </span>
                                         <small>
-                                            {row.profile ?? 'default'} -{' '}
-                                            {row.queuedCount} queued -{' '}
-                                            {row.runningCount} running -{' '}
-                                            {row.missingCount} missing
+                                            {row.profile ?? 'default'} - {row.queuedCount} queued - {row.runningCount}
+                                            {' '}
+                                            running - {row.missingCount} missing
                                         </small>
                                     </div>
                                 ))}
@@ -351,12 +340,9 @@ export function DistributedRunMonitorPanel({
                                             {row.status}
                                         </span>
                                         <small>
-                                            {row.commandId ?? 'no command'} -{' '}
-                                            {formatDuration(row.latencyMs)}
+                                            {row.commandId ?? 'no command'} - {formatDuration(row.latencyMs)}
                                         </small>
-                                        {row.error && (
-                                            <small>{row.error}</small>
-                                        )}
+                                        {row.error && <small>{row.error}</small>}
                                     </div>
                                 ))}
                                 {monitor.readiness.length === 0 && (
@@ -375,7 +361,9 @@ export function DistributedRunMonitorPanel({
                                 {monitor.compositeDrilldowns.map(
                                     (drilldown) => (
                                         <details
-                                            className={`distributed-composite-card ${drilldown.summary.failed > 0 ? 'failed' : 'passed'}`}
+                                            className={`distributed-composite-card ${
+                                                drilldown.summary.failed > 0 ? 'failed' : 'passed'
+                                            }`}
                                             key={drilldown.key}
                                             open={drilldown.summary.failed > 0}
                                         >
@@ -387,20 +375,16 @@ export function DistributedRunMonitorPanel({
                                                 <span
                                                     className={`pill ${drilldown.summary.failed > 0 ? 'bad' : 'good'}`}
                                                 >
-                                                    {drilldown.summary.failed}{' '}
-                                                    failed
+                                                    {drilldown.summary.failed} failed
                                                 </span>
                                                 <span className="pill muted">
-                                                    {drilldown.summary.total}{' '}
-                                                    results
+                                                    {drilldown.summary.total} results
                                                 </span>
                                                 <small>
-                                                    {drilldown.agentId} -{' '}
-                                                    {drilldown.role ??
+                                                    {drilldown.agentId} - {drilldown.role ??
                                                         drilldown.phase ??
                                                         drilldown.commandKind ??
-                                                        'command'}{' '}
-                                                    - {drilldown.artifactRef}
+                                                        'command'} - {drilldown.artifactRef}
                                                 </small>
                                             </summary>
                                             {drilldown.firstFailure && (
@@ -409,24 +393,16 @@ export function DistributedRunMonitorPanel({
                                                         First failure
                                                     </strong>
                                                     <span className="pill bad">
-                                                        {
-                                                            drilldown
-                                                                .firstFailure
-                                                                .kind
-                                                        }
+                                                        {drilldown
+                                                            .firstFailure
+                                                            .kind}
                                                     </span>
                                                     <small>
-                                                        {
-                                                            drilldown
-                                                                .firstFailure
-                                                                .commandId
-                                                        }{' '}
-                                                        -{' '}
-                                                        {
-                                                            drilldown
-                                                                .firstFailure
-                                                                .path
-                                                        }
+                                                        {drilldown
+                                                            .firstFailure
+                                                            .commandId} - {drilldown
+                                                            .firstFailure
+                                                            .path}
                                                     </small>
                                                     <small>
                                                         {drilldown.firstFailure
@@ -438,51 +414,46 @@ export function DistributedRunMonitorPanel({
                                                 </div>
                                             )}
                                             {drilldown.groupSummaries.length >
-                                                0 && (
+                                                    0 && (
                                                 <div className="distributed-composite-groups">
                                                     {drilldown.groupSummaries.map(
                                                         (group) => (
                                                             <div
-                                                                className={`distributed-composite-group ${distributedCompositeStatusTone(group.status)}`}
+                                                                className={`distributed-composite-group ${
+                                                                    distributedCompositeStatusTone(group.status)
+                                                                }`}
                                                                 key={`${group.parentCommandId}-${group.groupId}`}
                                                             >
                                                                 <strong>
-                                                                    {
-                                                                        group.groupId
-                                                                    }
+                                                                    {group.groupId}
                                                                 </strong>
                                                                 <span
-                                                                    className={`pill ${distributedCompositeStatusTone(group.status)}`}
+                                                                    className={`pill ${
+                                                                        distributedCompositeStatusTone(group.status)
+                                                                    }`}
                                                                 >
-                                                                    {
-                                                                        group.status
-                                                                    }
+                                                                    {group.status}
                                                                 </span>
                                                                 <small>
-                                                                    {
-                                                                        group.passed
-                                                                    }{' '}
-                                                                    passed -{' '}
-                                                                    {
-                                                                        group.failed
-                                                                    }{' '}
-                                                                    failed -{' '}
+                                                                    {group.passed} passed - {group.failed} failed -{' '}
                                                                     {formatDuration(
-                                                                        group.durationMs,
+                                                                        group.durationMs
                                                                     )}
                                                                 </small>
                                                             </div>
-                                                        ),
+                                                        )
                                                     )}
                                                 </div>
                                             )}
                                             <div className="distributed-composite-rows">
                                                 {drilldown.rows.map((row) => (
                                                     <div
-                                                        className={`distributed-composite-row ${distributedCompositeStatusTone(row.status)}`}
+                                                        className={`distributed-composite-row ${
+                                                            distributedCompositeStatusTone(row.status)
+                                                        }`}
                                                         key={row.path}
                                                         style={{
-                                                            paddingLeft: `${8 + Math.min(row.depth, 6) * 14}px`,
+                                                            paddingLeft: `${8 + Math.min(row.depth, 6) * 14}px`
                                                         }}
                                                     >
                                                         <strong>
@@ -490,7 +461,9 @@ export function DistributedRunMonitorPanel({
                                                                 row.commandId}
                                                         </strong>
                                                         <span
-                                                            className={`pill ${distributedCompositeStatusTone(row.status)}`}
+                                                            className={`pill ${
+                                                                distributedCompositeStatusTone(row.status)
+                                                            }`}
                                                         >
                                                             {row.status}
                                                         </span>
@@ -498,26 +471,19 @@ export function DistributedRunMonitorPanel({
                                                             {row.kind}
                                                         </span>
                                                         <small>
-                                                            {row.path} -{' '}
-                                                            {
-                                                                row.sourceRecipePath
-                                                            }{' '}
-                                                            -{' '}
-                                                            {formatDuration(
-                                                                row.durationMs,
+                                                            {row.path} - {row.sourceRecipePath} - {formatDuration(
+                                                                row.durationMs
                                                             )}
                                                         </small>
                                                         {row.iteration !==
-                                                            undefined && (
+                                                                undefined && (
                                                             <small>
-                                                                iteration{' '}
-                                                                {row.iteration}
+                                                                iteration {row.iteration}
                                                             </small>
                                                         )}
                                                         {row.groupId && (
                                                             <small>
-                                                                group{' '}
-                                                                {row.groupId}
+                                                                group {row.groupId}
                                                             </small>
                                                         )}
                                                         <small>
@@ -532,7 +498,7 @@ export function DistributedRunMonitorPanel({
                                                 ))}
                                             </div>
                                         </details>
-                                    ),
+                                    )
                                 )}
                                 {monitor.compositeDrilldowns.length === 0 && (
                                     <div className="empty-state">
@@ -574,9 +540,8 @@ export function DistributedRunMonitorPanel({
                                         value={diagnosticQuery}
                                         onChange={(event) =>
                                             setDiagnosticQuery(
-                                                event.target.value,
-                                            )
-                                        }
+                                                event.target.value
+                                            )}
                                         placeholder="run, command, selector, message"
                                     />
                                 </label>
@@ -587,7 +552,9 @@ export function DistributedRunMonitorPanel({
                                     .reverse()
                                     .map(({ item: diagnostic, key }) => (
                                         <div
-                                            className={`distributed-monitor-row diagnostic ${distributedDiagnosticTone(diagnostic.severity)}`}
+                                            className={`distributed-monitor-row diagnostic ${
+                                                distributedDiagnosticTone(diagnostic.severity)
+                                            }`}
                                             key={key}
                                         >
                                             <strong>
@@ -604,26 +571,22 @@ export function DistributedRunMonitorPanel({
                                             </span>
                                             <small>
                                                 {formatTime(
-                                                    diagnostic.atEpochMs,
-                                                )}{' '}
-                                                - {diagnostic.agentId} -{' '}
-                                                {diagnostic.commandId ??
+                                                    diagnostic.atEpochMs
+                                                )} - {diagnostic.agentId} - {diagnostic.commandId ??
                                                     'no command'}
                                             </small>
                                             <small>
                                                 {diagnostic.groupId ??
                                                     diagnostic.roomId ??
                                                     diagnostic.contextId ??
-                                                    'no group'}{' '}
-                                                - {diagnostic.diagnosticTypeId}
+                                                    'no group'} - {diagnostic.diagnosticTypeId}
                                             </small>
                                             <small>{diagnostic.summary}</small>
                                             {diagnostic.correlatedFailureKeys
-                                                .length > 0 && (
+                                                        .length > 0 && (
                                                 <small>
-                                                    Related failure:{' '}
-                                                    {diagnostic.correlatedFailureKeys.join(
-                                                        ', ',
+                                                    Related failure: {diagnostic.correlatedFailureKeys.join(
+                                                        ', '
                                                     )}
                                                 </small>
                                             )}
@@ -649,14 +612,13 @@ export function DistributedRunMonitorPanel({
                                             {event.agentId}
                                         </span>
                                         <small>
-                                            {formatTime(event.atEpochMs)} -{' '}
-                                            {event.topic ??
+                                            {formatTime(event.atEpochMs)} - {event.topic ??
                                                 event.commandId ??
                                                 'event'}
                                         </small>
                                         <small>{event.summary}</small>
                                         {event.payloadSummary !==
-                                            event.summary && (
+                                                event.summary && (
                                             <small>
                                                 {event.payloadSummary}
                                             </small>
@@ -683,16 +645,13 @@ export function DistributedRunMonitorPanel({
                                             {item.kind}
                                         </span>
                                         <small>
-                                            {formatTime(item.atEpochMs)} -{' '}
-                                            {item.agentId ??
+                                            {formatTime(item.atEpochMs)} - {item.agentId ??
                                                 item.recipeId ??
                                                 item.commandId ??
                                                 item.phase ??
                                                 '-'}
                                         </small>
-                                        {item.detail && (
-                                            <small>{item.detail}</small>
-                                        )}
+                                        {item.detail && <small>{item.detail}</small>}
                                     </div>
                                 ))}
                                 {monitor.timeline.length === 0 && (

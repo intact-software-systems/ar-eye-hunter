@@ -13,7 +13,7 @@ export class Either<L, R> {
     // In TS we represent "empty" as undefined.
     constructor(
         left?: L,
-        right?: R,
+        right?: R
     ) {
         this.left = left;
         this.right = right;
@@ -105,7 +105,7 @@ export class FoldComputedDto<K, L, R> {
 
     constructor(
         leftByKey: Map<K, L>,
-        rightByKey: Map<K, R>,
+        rightByKey: Map<K, R>
     ) {
         this.leftByKey = leftByKey;
         this.rightByKey = rightByKey;
@@ -118,7 +118,7 @@ export class FoldListComputedDto<K, L, R> {
 
     constructor(
         leftsByKey: Map<K, L[]>,
-        rightsByKey: Map<K, R[]>,
+        rightsByKey: Map<K, R[]>
     ) {
         this.leftsByKey = leftsByKey;
         this.rightsByKey = rightsByKey;
@@ -130,7 +130,9 @@ export class EitherCollectors {
         const out = new Map<K, L>();
         for (const [k, either] of eithers.entries()) {
             const left = either.foldLeft((e) => e);
-            if (left !== undefined) out.set(k, left);
+            if (left !== undefined) {
+                out.set(k, left);
+            }
         }
         return out;
     }
@@ -139,7 +141,9 @@ export class EitherCollectors {
         const out = new Map<K, R>();
         for (const [k, either] of eithers.entries()) {
             const right = either.foldRight((e) => e);
-            if (right !== undefined) out.set(k, right);
+            if (right !== undefined) {
+                out.set(k, right);
+            }
         }
         return out;
     }
@@ -149,8 +153,12 @@ export class EitherCollectors {
         const rightByKey = new Map<K, R>();
 
         for (const [k, either] of eitherByKey.entries()) {
-            if (either.left !== undefined) leftByKey.set(k, either.left);
-            if (either.right !== undefined) rightByKey.set(k, either.right);
+            if (either.left !== undefined) {
+                leftByKey.set(k, either.left);
+            }
+            if (either.right !== undefined) {
+                rightByKey.set(k, either.right);
+            }
         }
 
         return new FoldComputedDto(leftByKey, rightByKey);
@@ -163,9 +171,13 @@ export class EitherCollectors {
             const lefts: L[] = [];
             for (const e of list) {
                 const l = e.foldLeft((x) => x);
-                if (l !== undefined) lefts.push(l);
+                if (l !== undefined) {
+                    lefts.push(l);
+                }
             }
-            if (lefts.length > 0) out.set(k, lefts);
+            if (lefts.length > 0) {
+                out.set(k, lefts);
+            }
         }
 
         return out;
@@ -178,9 +190,13 @@ export class EitherCollectors {
             const rights: R[] = [];
             for (const e of list) {
                 const r = e.foldRight((x) => x);
-                if (r !== undefined) rights.push(r);
+                if (r !== undefined) {
+                    rights.push(r);
+                }
             }
-            if (rights.length > 0) out.set(k, rights);
+            if (rights.length > 0) {
+                out.set(k, rights);
+            }
         }
 
         return out;
@@ -203,12 +219,16 @@ export class EitherCollectors {
                     (r) => {
                         rights.push(r);
                         return 0;
-                    },
+                    }
                 );
             }
 
-            if (lefts.length > 0) leftsByKey.set(k, lefts);
-            if (rights.length > 0) rightsByKey.set(k, rights);
+            if (lefts.length > 0) {
+                leftsByKey.set(k, lefts);
+            }
+            if (rights.length > 0) {
+                rightsByKey.set(k, rights);
+            }
         }
 
         return new FoldListComputedDto(leftsByKey, rightsByKey);
@@ -218,7 +238,9 @@ export class EitherCollectors {
         const out: L[] = [];
         for (const either of eithers) {
             const l = either.foldLeft((x) => x);
-            if (l !== undefined) out.push(l);
+            if (l !== undefined) {
+                out.push(l);
+            }
         }
         return out;
     }
@@ -227,7 +249,9 @@ export class EitherCollectors {
         const out: R[] = [];
         for (const either of eithers) {
             const r = either.foldRight((x) => x);
-            if (r !== undefined) out.push(r);
+            if (r !== undefined) {
+                out.push(r);
+            }
         }
         return out;
     }
@@ -241,13 +265,13 @@ export class Computers {
     static toMapFoldToOneComputer<K, V, L, R>(
         eithers: Map<K, Either<L, R>>,
         foldLeft: (k: K, l: L) => V,
-        foldRight: (k: K, r: R) => V,
+        foldRight: (k: K, r: R) => V
     ): Map<K, V> {
         const out = new Map<K, V>();
         for (const [k, either] of eithers.entries()) {
             const v = either.fold(
                 (l) => foldLeft(k, l),
-                (r) => foldRight(k, r),
+                (r) => foldRight(k, r)
             );
             out.set(k, v);
         }
@@ -257,13 +281,13 @@ export class Computers {
     static toMapFoldComputer<K, T, U, L, R>(
         eithers: Map<K, Either<L, R>>,
         foldLeft: (k: K, l: L) => Either<T, U>,
-        foldRight: (k: K, r: R) => Either<T, U>,
+        foldRight: (k: K, r: R) => Either<T, U>
     ): Map<K, Either<T, U>> {
         const out = new Map<K, Either<T, U>>();
         for (const [k, either] of eithers.entries()) {
             const v = either.fold(
                 (l) => foldLeft(k, l),
-                (r) => foldRight(k, r),
+                (r) => foldRight(k, r)
             );
             out.set(k, v);
         }
@@ -273,7 +297,7 @@ export class Computers {
     static toMapBothComputer<K, T, U, L, R>(
         eithers: Map<K, Either<L, R>>,
         foldLeft: (k: K, l: L) => T,
-        foldRight: (k: K, r: R) => U,
+        foldRight: (k: K, r: R) => U
     ): Map<K, Either<T, U>> {
         const out = new Map<K, Either<T, U>>();
         for (const [k, either] of eithers.entries()) {
@@ -281,8 +305,8 @@ export class Computers {
                 k,
                 either.mapBoth(
                     (l) => foldLeft(k, l),
-                    (r) => foldRight(k, r),
-                ),
+                    (r) => foldRight(k, r)
+                )
             );
         }
         return out;
@@ -291,7 +315,7 @@ export class Computers {
     static toMapListBothComputer<K, T, U, L, R>(
         eithers: Map<K, Array<Either<L, R>>>,
         foldLeft: (k: K, l: L) => T,
-        foldRight: (k: K, r: R) => U,
+        foldRight: (k: K, r: R) => U
     ): Map<K, Array<Either<T, U>>> {
         const out = new Map<K, Array<Either<T, U>>>();
 
@@ -299,8 +323,8 @@ export class Computers {
             const mapped: Array<Either<T, U>> = list.map((lrEither) =>
                 lrEither.mapBoth(
                     (l) => foldLeft(k, l),
-                    (r) => foldRight(k, r),
-                ),
+                    (r) => foldRight(k, r)
+                )
             );
             out.set(k, mapped);
         }
@@ -321,7 +345,8 @@ export class Try {
     static compute<R>(supplier: () => R): Either<Error, R> {
         try {
             return Either.ofRight<Error, R>(supplier());
-        } catch (e) {
+        }
+        catch (e) {
             return Either.ofLeft<Error, R>(asError(e));
         }
     }
@@ -329,7 +354,8 @@ export class Try {
     static computeEntry<K, R>(key: K, supplier: () => R): readonly [K, Either<Error, R>] {
         try {
             return [key, Either.ofRight<Error, R>(supplier())] as const;
-        } catch (e) {
+        }
+        catch (e) {
             return [key, Either.ofLeft<Error, R>(asError(e))] as const;
         }
     }

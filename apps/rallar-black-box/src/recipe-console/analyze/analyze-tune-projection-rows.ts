@@ -1,12 +1,8 @@
 import type {
     DistributedRunTuningInventoryLimitation,
-    DistributedRunTuningKnob,
+    DistributedRunTuningKnob
 } from '@shared-test/rallar-bb-test/mod.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
-import type {
-    AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerRequest,
-} from './analyze-worker-contract.ts';
 import {
     boundedClone,
     boundedText,
@@ -14,11 +10,12 @@ import {
     MAX_METADATA_BYTES,
     MAX_SUMMARY_BYTES,
     MAX_TUNE_ROWS,
-    projectOpaqueIdentifier,
+    projectOpaqueIdentifier
 } from './analyze-projection-bounds.ts';
+import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
 
 export function projectTuningKnob(
-    knob: DistributedRunTuningKnob,
+    knob: DistributedRunTuningKnob
 ): DistributedRunTuningKnob {
     return {
         name: knob.name,
@@ -40,12 +37,12 @@ export function projectTuningKnob(
             ? { commandId: projectOpaqueIdentifier(knob.commandId) }
             : {}),
         ...(knob.commandKind ? { commandKind: knob.commandKind } : {}),
-        ...(knob.reason ? { reason: boundedText(knob.reason, MAX_SUMMARY_BYTES) } : {}),
+        ...(knob.reason ? { reason: boundedText(knob.reason, MAX_SUMMARY_BYTES) } : {})
     };
 }
 
 export function projectTuningLimitation(
-    limitation: DistributedRunTuningInventoryLimitation,
+    limitation: DistributedRunTuningInventoryLimitation
 ): DistributedRunTuningInventoryLimitation {
     return {
         code: limitation.code,
@@ -55,25 +52,25 @@ export function projectTuningLimitation(
             : {}),
         ...(limitation.recipeId
             ? { recipeId: projectOpaqueIdentifier(limitation.recipeId) }
-            : {}),
+            : {})
     };
 }
 
 export function projectTuneRollup(value: unknown): unknown {
     return boundedClone(value, {
         arrayLimit: MAX_TUNE_ROWS,
-        textLimit: MAX_SUMMARY_BYTES,
+        textLimit: MAX_SUMMARY_BYTES
     });
 }
 
 export function receivedMessageDeltas(
-    model: AnalyzeArtifactModel,
+    model: AnalyzeArtifactModel
 ): AnalyzeTuneArtifactFacade['receivedMessageDeltas'] {
     const latestByAgent = new Map<string, number>();
     for (const row of model.snapshots.controlRun.stats) {
         const receivedMessages = finiteNumberAtPath(
             row.payload,
-            ['counters', 'messages'],
+            ['counters', 'messages']
         );
         if (receivedMessages !== undefined) {
             latestByAgent.set(row.agentId, receivedMessages);
@@ -100,32 +97,35 @@ export function receivedMessageDeltas(
                 agentId: projectOpaqueIdentifier(agentId),
                 receivedMessages,
                 ...(expectedMessages !== undefined ? { expectedMessages } : {}),
-                ...(delta !== undefined && Number.isFinite(delta) ? { delta } : {}),
+                ...(delta !== undefined && Number.isFinite(delta) ? { delta } : {})
             };
         });
     return {
         entries,
         total: latestByAgent.size,
-        omitted: Math.max(0, latestByAgent.size - entries.length),
+        omitted: Math.max(0, latestByAgent.size - entries.length)
     };
 }
 
 export function tuneArtifactRole(
     distributedRunId: string,
-    selection: Pick<
-        Extract<AnalyzeWorkerRequest, { type: 'tune' }>,
-        'focusRunId' | 'compareLeft' | 'compareRight'
-    >,
+    selection: Pick<Extract<AnalyzeWorkerRequest, { type: 'tune'; }>, 'focusRunId' | 'compareLeft' | 'compareRight'>
 ): AnalyzeTuneArtifactFacade['selection']['artifactRole'] {
-    if (selection.focusRunId === distributedRunId) return 'focus';
-    if (selection.compareLeft === distributedRunId) return 'compare-left';
-    if (selection.compareRight === distributedRunId) return 'compare-right';
+    if (selection.focusRunId === distributedRunId) {
+        return 'focus';
+    }
+    if (selection.compareLeft === distributedRunId) {
+        return 'compare-left';
+    }
+    if (selection.compareRight === distributedRunId) {
+        return 'compare-right';
+    }
     return 'unrelated';
 }
 
 function finiteNumberAtPath(
     value: unknown,
-    path: readonly string[],
+    path: readonly string[]
 ): number | undefined {
     let current = value;
     for (const key of path) {

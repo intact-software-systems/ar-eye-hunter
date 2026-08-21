@@ -7,13 +7,13 @@ import {
     moveCrdtEditorCardBatch,
     removeCrdtEditorTagBatch,
     renameCrdtEditorColumnBatch,
-    updateCrdtEditorCardStatusBatch,
+    updateCrdtEditorCardStatusBatch
 } from '../../../crdt-editor.ts';
 import type { CrdtEditorControllerModel } from './use-crdt-editor-controller.ts';
 
 export function CrdtEditorBoardView({
-    model,
-}: Readonly<{ model: CrdtEditorControllerModel }>) {
+    model
+}: Readonly<{ model: CrdtEditorControllerModel; }>) {
     const {
         newColumnTitle,
         setNewColumnTitle,
@@ -33,7 +33,7 @@ export function CrdtEditorBoardView({
         columns,
         selectedColumn,
         selectedCard,
-        applyBatch,
+        applyBatch
     } = model;
     return (
         <section className="crdt-editor-workbench">
@@ -42,9 +42,7 @@ export function CrdtEditorBoardView({
                     Column
                     <select
                         value={selectedColumnId}
-                        onChange={(event) =>
-                            setSelectedColumnId(event.target.value)
-                        }
+                        onChange={(event) => setSelectedColumnId(event.target.value)}
                     >
                         {columns.map((column) => (
                             <option key={column.id} value={column.id}>
@@ -57,16 +55,14 @@ export function CrdtEditorBoardView({
                     Card
                     <select
                         value={selectedCardId}
-                        onChange={(event) =>
-                            setSelectedCardId(event.target.value)
-                        }
+                        onChange={(event) => setSelectedCardId(event.target.value)}
                     >
                         {columns.flatMap((column) =>
                             column.cards.map((card) => (
                                 <option key={card.id} value={card.id}>
                                     {card.title}
                                 </option>
-                            )),
+                            ))
                         )}
                     </select>
                 </label>
@@ -74,18 +70,14 @@ export function CrdtEditorBoardView({
                     New column
                     <input
                         value={newColumnTitle}
-                        onChange={(event) =>
-                            setNewColumnTitle(event.target.value)
-                        }
+                        onChange={(event) => setNewColumnTitle(event.target.value)}
                     />
                 </label>
                 <label>
                     New card
                     <input
                         value={newCardTitle}
-                        onChange={(event) =>
-                            setNewCardTitle(event.target.value)
-                        }
+                        onChange={(event) => setNewCardTitle(event.target.value)}
                     />
                 </label>
                 <label>
@@ -116,9 +108,8 @@ export function CrdtEditorBoardView({
                                 columnId,
                                 title: newColumnTitle,
                                 positionId: `${columnId}@${Date.now()}`,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('add-column'),
-                            }),
+                                operationGroupId: crdtEditorOperationGroupId('add-column')
+                            })
                         );
                     }}
                 >
@@ -133,11 +124,9 @@ export function CrdtEditorBoardView({
                             renameCrdtEditorColumnBatch({
                                 columnId: selectedColumnId,
                                 title: newColumnTitle,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('rename-column'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('rename-column')
+                            })
+                        )}
                 >
                     Rename Column
                 </button>
@@ -154,9 +143,8 @@ export function CrdtEditorBoardView({
                                 cardId,
                                 title: newCardTitle,
                                 positionId: `${cardId}@${Date.now()}`,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('add-card'),
-                            }),
+                                operationGroupId: crdtEditorOperationGroupId('add-card')
+                            })
                         );
                     }}
                 >
@@ -172,11 +160,9 @@ export function CrdtEditorBoardView({
                                 columnId: selectedColumnId,
                                 cardId: selectedCardId,
                                 positionId: `${selectedCardId}@${Date.now()}`,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('move-card'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('move-card')
+                            })
+                        )}
                 >
                     Move Card
                 </button>
@@ -189,11 +175,9 @@ export function CrdtEditorBoardView({
                             updateCrdtEditorCardStatusBatch({
                                 cardId: selectedCardId,
                                 status: cardStatus,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('card-status'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('card-status')
+                            })
+                        )}
                 >
                     Set Status
                 </button>
@@ -206,11 +190,9 @@ export function CrdtEditorBoardView({
                             deleteCrdtEditorCardBatch({
                                 columnId: selectedColumnId,
                                 cardId: selectedCardId,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('delete-card'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('delete-card')
+                            })
+                        )}
                 >
                     Delete Card
                 </button>
@@ -224,9 +206,8 @@ export function CrdtEditorBoardView({
                             addCrdtEditorTagBatch({
                                 tagId,
                                 label: tagLabel,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('add-tag'),
-                            }),
+                                operationGroupId: crdtEditorOperationGroupId('add-tag')
+                            })
                         );
                     }}
                 >
@@ -241,9 +222,8 @@ export function CrdtEditorBoardView({
                             'remove-tag',
                             removeCrdtEditorTagBatch({
                                 tagId,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('remove-tag'),
-                            }),
+                                operationGroupId: crdtEditorOperationGroupId('remove-tag')
+                            })
                         );
                     }}
                 >
@@ -258,11 +238,9 @@ export function CrdtEditorBoardView({
                             <button
                                 key={card.id}
                                 type="button"
-                                className={
-                                    selectedCardId === card.id
-                                        ? 'crdt-card selected'
-                                        : 'crdt-card'
-                                }
+                                className={selectedCardId === card.id
+                                    ? 'crdt-card selected'
+                                    : 'crdt-card'}
                                 onClick={() => {
                                     setSelectedColumnId(column.id);
                                     setSelectedCardId(card.id);
@@ -272,9 +250,7 @@ export function CrdtEditorBoardView({
                                 <span>{card.status}</span>
                             </button>
                         ))}
-                        {column.cards.length === 0 && (
-                            <span className="muted">No cards</span>
-                        )}
+                        {column.cards.length === 0 && <span className="muted">No cards</span>}
                     </section>
                 ))}
             </div>

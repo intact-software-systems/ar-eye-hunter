@@ -1,9 +1,9 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
-import type { CommandQueueRow } from '../runner-contracts.ts';
 import { ReportPanel } from '../advanced/ReportPanel.tsx';
+import type { CommandQueueRow } from '../runner-contracts.ts';
 import { BootstrapPanel } from './BootstrapPanel.tsx';
 import { CommandQueuePanel } from './CommandQueuePanel.tsx';
 import { ConfigurationPanel } from './ConfigurationPanel.tsx';
@@ -21,7 +21,7 @@ export function LocalWorkbenchSection({
     lastError,
     queueRows,
     selectedCommandId,
-    onSelectCommand,
+    onSelectCommand
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;

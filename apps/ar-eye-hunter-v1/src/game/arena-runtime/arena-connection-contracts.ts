@@ -1,18 +1,17 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
+import type { WebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import type {
     RallarDirectorStatus,
     RallarRealtimeLaneHealth,
     RallarRoomSummary,
     RallarRtcDiagnostics,
     RallarRtcStatus,
-    RallarWsStatus,
+    RallarWsStatus
 } from '@shared-web/browser/rallar.ts';
-import type {
-    WebSocketTicketBackoffState,
-} from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 
+import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaMatchDurationMs,
@@ -26,9 +25,8 @@ import type {
     RemotePlayer,
     RemoteShot,
     RtcLaneStatus,
-    ShotAccepted,
+    ShotAccepted
 } from '../types.ts';
-import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 
 export type ArenaConnectionState = 'signed-out' | 'connecting' | 'connected' | 'error';
 export type ArenaAiStatus =
@@ -120,7 +118,7 @@ export type ArenaConnection = Readonly<{
     sendPose(pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>): void;
     sendShot(
         shot: Omit<PlayerShot, 'sessionId' | 'username' | 'color'>,
-        accepted: ShotAccepted,
+        accepted: ShotAccepted
     ): void;
     sendPlayerHit(intent: PlayerHitIntent): void;
     sendPickupIntent(intent: PickupIntent): void;

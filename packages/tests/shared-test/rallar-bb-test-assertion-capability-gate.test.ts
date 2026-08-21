@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-    collectDistributedAssertionFeatures,
-    parseControlAgentCapabilities,
-    toControlAgentCapabilities,
-    validateAgentAssertionCapability,
-} from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
-import {
     resolveDistributedRunTargets,
     type RallarBlackBoxControlAgentCandidate,
     type RallarBlackBoxControlAgentCapabilities,
-    type RallarBlackBoxDistributedRunManifest,
+    type RallarBlackBoxDistributedRunManifest
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    collectDistributedAssertionFeatures,
+    parseControlAgentCapabilities,
+    toControlAgentCapabilities,
+    validateAgentAssertionCapability
+} from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
 
 const NEW_FEATURE_RECIPE: RallarBlackBoxTestRecipe = {
@@ -22,7 +22,7 @@ const NEW_FEATURE_RECIPE: RallarBlackBoxTestRecipe = {
             commandId: 'gate-absence',
             absent: true,
             timeoutMs: 1_000,
-            match: { kind: 'message', topic: 'room.gate.forbidden' },
+            match: { kind: 'message', topic: 'room.gate.forbidden' }
         },
         {
             kind: 'loop',
@@ -35,11 +35,11 @@ const NEW_FEATURE_RECIPE: RallarBlackBoxTestRecipe = {
                     commandId: 'gate-extended-assert',
                     source: 'state.commandHistory.length',
                     operator: 'gt',
-                    expected: 0,
-                },
-            ],
-        },
-    ],
+                    expected: 0
+                }
+            ]
+        }
+    ]
 };
 
 const BASELINE_RECIPE: RallarBlackBoxTestRecipe = {
@@ -52,9 +52,9 @@ const BASELINE_RECIPE: RallarBlackBoxTestRecipe = {
             commandId: 'gate-baseline-assert',
             source: 'state.commandHistory.length',
             operator: 'gte',
-            expected: 0,
-        },
-    ],
+            expected: 0
+        }
+    ]
 };
 
 function manifestWith(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxDistributedRunManifest {
@@ -63,25 +63,25 @@ function manifestWith(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxDistribut
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'gate-room',
+            groupId: 'gate-room'
         },
         recipes: [
             {
                 recipeId: recipe.recipeId,
                 required: true,
-                recipe,
-            },
+                recipe
+            }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1,
+            expectedParticipantCount: 1
         },
-        startMode: 'manual',
+        startMode: 'manual'
     };
 }
 
 function agentWith(
-    capabilities: RallarBlackBoxControlAgentCapabilities,
+    capabilities: RallarBlackBoxControlAgentCapabilities
 ): RallarBlackBoxControlAgentCandidate {
     return {
         agentId: 'gate-agent',
@@ -94,8 +94,8 @@ function agentWith(
             workspaceId: 'default',
             groupId: 'gate-room',
             capabilities,
-            updatedAtEpochMs: 1_000,
-        },
+            updatedAtEpochMs: 1_000
+        }
     };
 }
 
@@ -105,13 +105,13 @@ describe('rallar-bb-test assertion capability gate', () => {
         expect(features).toEqual({
             absence: true,
             untilLoop: true,
-            operators: ['gt'],
+            operators: ['gt']
         });
 
         expect(collectDistributedAssertionFeatures([BASELINE_RECIPE])).toEqual({
             absence: false,
             untilLoop: false,
-            operators: [],
+            operators: []
         });
     });
 
@@ -119,14 +119,14 @@ describe('rallar-bb-test assertion capability gate', () => {
         const resolution = resolveDistributedRunTargets({
             manifest: manifestWith(NEW_FEATURE_RECIPE),
             agents: [agentWith({ crdt: { supported: true } })],
-            nowEpochMs: 1_500,
+            nowEpochMs: 1_500
         });
 
         expect(resolution.targetAgentIds).toEqual([]);
         expect(resolution.blockers).toHaveLength(1);
         expect(resolution.blockers[0]).toMatchObject({
             agentId: 'gate-agent',
-            status: 'missing-assertion-capability',
+            status: 'missing-assertion-capability'
         });
         expect(resolution.blockers[0].reason).toContain('absence waits');
         expect(resolution.blockers[0].reason).toContain('until loops');
@@ -139,13 +139,13 @@ describe('rallar-bb-test assertion capability gate', () => {
         const complete = agentWith(toControlAgentCapabilities({
             config: undefined,
             providerMode: 'browser-rallar',
-            apiBaseUrl: 'http://localhost:8080',
+            apiBaseUrl: 'http://localhost:8080'
         }));
 
         const gated = resolveDistributedRunTargets({
             manifest: manifestWith(NEW_FEATURE_RECIPE),
             agents: [complete],
-            nowEpochMs: 1_500,
+            nowEpochMs: 1_500
         });
         expect(gated.targetAgentIds).toEqual(['gate-agent']);
         expect(gated.blockers).toEqual([]);
@@ -153,7 +153,7 @@ describe('rallar-bb-test assertion capability gate', () => {
         const baseline = resolveDistributedRunTargets({
             manifest: manifestWith(BASELINE_RECIPE),
             agents: [agentWith({ crdt: { supported: true } })],
-            nowEpochMs: 1_500,
+            nowEpochMs: 1_500
         });
         expect(baseline.targetAgentIds).toEqual(['gate-agent']);
         expect(baseline.blockers).toEqual([]);
@@ -163,27 +163,27 @@ describe('rallar-bb-test assertion capability gate', () => {
         const advertised = toControlAgentCapabilities({
             config: undefined,
             providerMode: 'browser-rallar',
-            apiBaseUrl: 'http://localhost:8080',
+            apiBaseUrl: 'http://localhost:8080'
         });
         expect(advertised.assertions).toMatchObject({
             absence: true,
-            untilLoop: true,
+            untilLoop: true
         });
         expect(advertised.assertions?.operators).toContain('matchesShapeComplete');
 
         const parsed = parseControlAgentCapabilities(
-            JSON.parse(JSON.stringify(advertised)),
+            JSON.parse(JSON.stringify(advertised))
         );
         expect(parsed?.assertions).toEqual(advertised.assertions);
         expect(parsed?.crdt?.supported).toBe(true);
 
         const legacyParsed = parseControlAgentCapabilities({
-            crdt: { supported: true },
+            crdt: { supported: true }
         });
         expect(legacyParsed?.assertions).toBeUndefined();
         expect(validateAgentAssertionCapability(
             collectDistributedAssertionFeatures([NEW_FEATURE_RECIPE]),
-            legacyParsed,
+            legacyParsed
         )).toContain('does not advertise required assertion capabilities');
     });
 });

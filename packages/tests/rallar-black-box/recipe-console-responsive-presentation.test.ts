@@ -3,12 +3,14 @@ import { resolveRecipeConsolePresentation } from '../../../apps/rallar-black-box
 import { createViewportSubscriptionStore } from '../../../apps/rallar-black-box/src/recipe-console/shell/use-responsive-presentation.ts';
 
 describe('Recipe Console responsive presentation', () => {
-    it.each([
-        [1440, 900, { navigation: 'rail', inspector: 'rail', commandBarHeight: 52 }],
-        [900, 900, { navigation: 'compact-rail', inspector: 'overlay', commandBarHeight: 52 }],
-        [430, 932, { navigation: 'bottom', inspector: 'sheet', commandBarHeight: 52 }],
-        [932, 430, { navigation: 'compact-rail', inspector: 'overlay', commandBarHeight: 48 }],
-    ] as const)('maps %d × %d to the approved shell mode', (width, height, expected) => {
+    it.each(
+        [
+            [1440, 900, { navigation: 'rail', inspector: 'rail', commandBarHeight: 52 }],
+            [900, 900, { navigation: 'compact-rail', inspector: 'overlay', commandBarHeight: 52 }],
+            [430, 932, { navigation: 'bottom', inspector: 'sheet', commandBarHeight: 52 }],
+            [932, 430, { navigation: 'compact-rail', inspector: 'overlay', commandBarHeight: 48 }]
+        ] as const
+    )('maps %d × %d to the approved shell mode', (width, height, expected) => {
         expect(resolveRecipeConsolePresentation(width, height)).toEqual(expected);
     });
 
@@ -21,7 +23,7 @@ describe('Recipe Console responsive presentation', () => {
             addResizeListener: vi.fn((listener: () => void) => resizeListeners.add(listener)),
             removeResizeListener: vi.fn((listener: () => void) => resizeListeners.delete(listener)),
             addOrientationListener: vi.fn((listener: () => void) => mediaListeners.add(listener)),
-            removeOrientationListener: vi.fn((listener: () => void) => mediaListeners.delete(listener)),
+            removeOrientationListener: vi.fn((listener: () => void) => mediaListeners.delete(listener))
         };
         const store = createViewportSubscriptionStore(port);
         const first = vi.fn();
@@ -32,7 +34,7 @@ describe('Recipe Console responsive presentation', () => {
         expect(port.addResizeListener).toHaveBeenCalledTimes(1);
         expect(port.addOrientationListener).toHaveBeenCalledTimes(1);
         expect(store.snapshot()).toBe('900:900');
-        resizeListeners.forEach(listener => listener());
+        resizeListeners.forEach((listener) => listener());
         expect(first).toHaveBeenCalledTimes(1);
         expect(second).toHaveBeenCalledTimes(1);
 

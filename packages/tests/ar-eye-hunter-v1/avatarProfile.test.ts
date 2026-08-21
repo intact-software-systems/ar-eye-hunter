@@ -4,7 +4,7 @@ import {
     createAvatarProfileMockProvider,
     createAvatarProfileRequest,
     createDeterministicAvatarProfile,
-    validateAvatarProfile,
+    validateAvatarProfile
 } from '../../../apps/ar-eye-hunter-v1/src/game/avatarProfile.ts';
 
 describe('AR Eye Hunter avatar profiles', () => {
@@ -27,23 +27,23 @@ describe('AR Eye Hunter avatar profiles', () => {
 
         expect(validateAvatarProfile(valid, 'session-a')).toEqual({
             ok: true,
-            profile: valid,
+            profile: valid
         });
 
         expect(validateAvatarProfile({
             ...valid,
-            healthBonus: 50,
+            healthBonus: 50
         }, 'session-a')).toEqual({
             ok: false,
-            reason: 'unexpected-field:healthBonus',
+            reason: 'unexpected-field:healthBonus'
         });
 
         expect(validateAvatarProfile({
             ...valid,
-            glowPalette: 'radioactive-ultraviolet',
+            glowPalette: 'radioactive-ultraviolet'
         }, 'session-a')).toEqual({
             ok: false,
-            reason: 'invalid-glowPalette',
+            reason: 'invalid-glowPalette'
         });
     });
 
@@ -60,7 +60,7 @@ describe('AR Eye Hunter avatar profiles', () => {
             glowPalette: 'danger-acid',
             trailStyle: 'scanline',
             decal: 'bug-bounty',
-            humourTag: 'morale still pending',
+            humourTag: 'morale still pending'
         } as const;
 
         const validation = validateAvatarProfile(legacy, 'session-legacy');
@@ -79,7 +79,7 @@ describe('AR Eye Hunter avatar profiles', () => {
             sessionId: 'session-ai',
             username: 'Alice',
             roomId: 'room-1',
-            revision: 7,
+            revision: 7
         });
         const result = await createAvatarProfileMockProvider().generateJson(request);
         const validation = validateAvatarProfile(result.value, 'session-ai');

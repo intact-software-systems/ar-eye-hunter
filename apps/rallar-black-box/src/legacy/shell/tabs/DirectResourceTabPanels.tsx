@@ -5,14 +5,14 @@ import type {
     LegacyShellAuth,
     LegacyShellGlobalContext,
     LegacyShellNavigation,
-    LegacyShellRuntime,
+    LegacyShellRuntime
 } from '../legacy-shell-contracts.ts';
 
 export function DirectResourceTabPanels({
     runtime,
     auth,
     navigation,
-    globalContext,
+    globalContext
 }: Readonly<{
     runtime: LegacyShellRuntime;
     auth: LegacyShellAuth;

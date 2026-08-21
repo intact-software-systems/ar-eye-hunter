@@ -4,7 +4,7 @@ export class PartitionRange {
         inputFrom: number,
         inputTo: number,
         maxRangeSize: number,
-        partitioner: (from: number, to: number, value: V) => V,
+        partitioner: (from: number, to: number, value: V) => V
     ): V[] {
         if (inputFrom > inputTo) {
             throw new Error(`From cannot be larger than to: ${inputFrom} > ${inputTo}`);

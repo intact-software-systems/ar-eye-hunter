@@ -22,7 +22,7 @@ export const DEFAULT_VIVALDI_CONFIG: VivaldiConfig = {
     maxNodeErr: 1.0,
     minNodeErr: 0.0,
     useL1: false,
-    useLInf: false,
+    useLInf: false
 };
 
 export interface VivaldiNodeInput {
@@ -53,7 +53,7 @@ export class Coordinates {
         this.#assertSameDimension(other);
         return new Coordinates(
             this.#values.map((value, index) => value + other.#values[index]),
-            this.#cfg,
+            this.#cfg
         );
     }
 
@@ -61,12 +61,12 @@ export class Coordinates {
         this.#assertSameDimension(other);
         return new Coordinates(
             this.#values.map((value, index) => value - other.#values[index]),
-            this.#cfg,
+            this.#cfg
         );
     }
 
     multiply(scale: number): Coordinates {
-        return new Coordinates(this.#values.map(value => value * scale), this.#cfg);
+        return new Coordinates(this.#values.map((value) => value * scale), this.#cfg);
     }
 
     norm(): number {
@@ -102,7 +102,7 @@ export class Coordinates {
 
     computeDirectionality(
         remote: Coordinates,
-        random: VivaldiRandom = Math.random,
+        random: VivaldiRandom = Math.random
     ): Coordinates {
         const difference = this.subtract(remote);
         const norm = difference.norm();
@@ -128,7 +128,7 @@ export class Coordinates {
 
         const candidate = new Coordinates(
             this.#values.map(() => random() * 2 - 1),
-            this.#cfg,
+            this.#cfg
         );
         const norm = candidate.norm();
         if (norm > 0) {
@@ -143,7 +143,7 @@ export class Coordinates {
     #assertSameDimension(other: Coordinates): void {
         if (this.#values.length !== other.#values.length) {
             throw new Error(
-                `Coordinate dimension mismatch: ${this.#values.length} !== ${other.#values.length}`,
+                `Coordinate dimension mismatch: ${this.#values.length} !== ${other.#values.length}`
             );
         }
     }
@@ -193,8 +193,7 @@ export class VivaldiNode {
         const weight = this.#myError / denominator;
         const diffErr = remote.rttMs - predictedRtt;
         const sampleError = Math.abs(diffErr) / remote.rttMs;
-        const nextErr =
-            sampleError * this.#cfg.ce * weight +
+        const nextErr = sampleError * this.#cfg.ce * weight +
             this.#myError * (1 - this.#cfg.ce * weight);
         const delta = this.#cfg.cc * weight;
 
@@ -209,7 +208,7 @@ export class VivaldiNode {
         this.#coords = nextCoords;
         this.#myError = Math.min(
             this.#cfg.maxNodeErr,
-            Math.max(this.#cfg.minNodeErr, nextErr),
+            Math.max(this.#cfg.minNodeErr, nextErr)
         );
     }
 
@@ -218,7 +217,7 @@ export class VivaldiNode {
             id,
             coords: this.#coords.values,
             err: this.#myError,
-            rttMs,
+            rttMs
         };
     }
 }
@@ -226,7 +225,7 @@ export class VivaldiNode {
 export function predictedRttMs(
     source: VivaldiNodeData,
     target: VivaldiNodeData,
-    cfg?: Partial<VivaldiConfig>,
+    cfg?: Partial<VivaldiConfig>
 ): number {
     return computePredictedRttMs(source, target, { ...DEFAULT_VIVALDI_CONFIG, ...cfg });
 }
@@ -240,7 +239,7 @@ export function predictedRttMs(
 export function computePredictedRttMs(
     source: VivaldiNodeData,
     target: VivaldiNodeData,
-    cfg: VivaldiConfig,
+    cfg: VivaldiConfig
 ): number {
     const sourceCoords = source.coords;
     const targetCoords = target.coords;

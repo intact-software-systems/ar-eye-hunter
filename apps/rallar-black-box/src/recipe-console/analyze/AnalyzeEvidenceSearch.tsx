@@ -1,26 +1,26 @@
-import { useState, type FormEvent } from 'react';
 import type { DistributedArtifactEvidenceEntry } from '@shared-test/rallar-bb-test/mod.ts';
+import { useState, type FormEvent } from 'react';
 import {
     RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES,
     RECIPE_CONSOLE_RUN_STATUSES,
     RECIPE_CONSOLE_TRANSPORTS,
     RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
-import type { AnalyzeWorkspaceController } from './use-analyze-workspace.ts';
 import {
     ANALYZE_SEARCH_ERROR_ID,
     readAnalyzeSearchForm,
-    type AnalyzeSearchFormError,
+    type AnalyzeSearchFormError
 } from './analyze-search-form-boundary.ts';
 import { AnalyzeEvidenceFilterSelect } from './AnalyzeEvidenceFilterSelect.tsx';
 import { AnalyzeEvidenceResults } from './AnalyzeEvidenceResults.tsx';
 import styles from './AnalyzeSearch.module.css';
+import type { AnalyzeWorkspaceController } from './use-analyze-workspace.ts';
 
 export function AnalyzeEvidenceSearch({
     controller,
     urlState,
-    onInspect,
+    onInspect
 }: Readonly<{
     controller: AnalyzeWorkspaceController;
     urlState: RecipeConsoleUrlState;
@@ -34,7 +34,7 @@ export function AnalyzeEvidenceSearch({
         urlState.agentId,
         urlState.recipeId,
         urlState.commandId,
-        formRevision,
+        formRevision
     ].join('\u0000');
 
     function submitSearch(event: FormEvent<HTMLFormElement>): void {
@@ -50,14 +50,14 @@ export function AnalyzeEvidenceSearch({
 
     function clearSearch(): void {
         setSearchError(undefined);
-        setFormRevision(revision => revision + 1);
+        setFormRevision((revision) => revision + 1);
         controller.clearFilters();
     }
 
     function activate(
         entry: DistributedArtifactEvidenceEntry,
         trigger: HTMLButtonElement,
-        rangeFallback: HTMLElement | null,
+        rangeFallback: HTMLElement | null
     ): void {
         controller.selectEvidence(entry.id);
         const agentId = entry.agentId ??
@@ -65,16 +65,18 @@ export function AnalyzeEvidenceSearch({
         const patch = compact({
             agentId,
             recipeId: entry.recipeId,
-            commandId: entry.commandId,
+            commandId: entry.commandId
         });
         const invalidatesCurrentQuery = Object.entries(patch).some(
-            ([key, value]) => urlState[key as keyof RecipeConsoleUrlState] !== value,
+            ([key, value]) => urlState[key as keyof RecipeConsoleUrlState] !== value
         );
-        if (Object.keys(patch).length > 0) controller.updateFilters(patch);
+        if (Object.keys(patch).length > 0) {
+            controller.updateFilters(patch);
+        }
         onInspect?.(
             invalidatesCurrentQuery && rangeFallback
                 ? rangeFallback
-                : trigger,
+                : trigger
         );
     }
 
@@ -95,10 +97,10 @@ export function AnalyzeEvidenceSearch({
                     {result
                         ? `${result.totalMatches} matches`
                         : controller.evidenceWindowPending
-                            ? 'Search pending'
-                            : controller.evidenceWindowError
-                                ? 'Search unavailable'
-                                : 'Search not started'}
+                        ? 'Search pending'
+                        : controller.evidenceWindowError
+                        ? 'Search unavailable'
+                        : 'Search not started'}
                 </span>
             </header>
 
@@ -144,39 +146,44 @@ export function AnalyzeEvidenceSearch({
                 <button type="submit">Apply search</button>
             </form>
 
-            {searchError ? (
-                <p
-                    className={styles.searchError}
-                    data-analyze-search-error
-                    id={ANALYZE_SEARCH_ERROR_ID}
-                    role="alert"
-                >
-                    {searchError.message}
-                </p>
-            ) : null}
+            {searchError
+                ? (
+                    <p
+                        className={styles.searchError}
+                        data-analyze-search-error
+                        id={ANALYZE_SEARCH_ERROR_ID}
+                        role="alert"
+                    >
+                        {searchError.message}
+                    </p>
+                )
+                : null}
 
             <div className={styles.filterBar} aria-label="Evidence filters">
                 <AnalyzeEvidenceFilterSelect
                     label="Status"
-                    onChange={status => controller.updateFilters({
-                        status: status as RecipeConsoleUrlState['status'],
-                    })}
+                    onChange={(status) =>
+                        controller.updateFilters({
+                            status: status as RecipeConsoleUrlState['status']
+                        })}
                     options={RECIPE_CONSOLE_RUN_STATUSES}
                     value={urlState.status}
                 />
                 <AnalyzeEvidenceFilterSelect
                     label="Severity"
-                    onChange={diagnosticSeverity => controller.updateFilters({
-                        diagnosticSeverity: diagnosticSeverity as RecipeConsoleUrlState['diagnosticSeverity'],
-                    })}
+                    onChange={(diagnosticSeverity) =>
+                        controller.updateFilters({
+                            diagnosticSeverity: diagnosticSeverity as RecipeConsoleUrlState['diagnosticSeverity']
+                        })}
                     options={RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES}
                     value={urlState.diagnosticSeverity}
                 />
                 <AnalyzeEvidenceFilterSelect
                     label="Transport"
-                    onChange={transport => controller.updateFilters({
-                        transport: transport as RecipeConsoleUrlState['transport'],
-                    })}
+                    onChange={(transport) =>
+                        controller.updateFilters({
+                            transport: transport as RecipeConsoleUrlState['transport']
+                        })}
                     options={RECIPE_CONSOLE_TRANSPORTS}
                     value={urlState.transport}
                 />
@@ -187,9 +194,10 @@ export function AnalyzeEvidenceSearch({
                 <label>
                     <span>From</span>
                     <input
-                        onChange={event => controller.updateFilters({
-                            from: dateTimeEpoch(event.currentTarget.value),
-                        }, true)}
+                        onChange={(event) =>
+                            controller.updateFilters({
+                                from: dateTimeEpoch(event.currentTarget.value)
+                            }, true)}
                         type="datetime-local"
                         value={dateTimeValue(urlState.from)}
                     />
@@ -197,9 +205,10 @@ export function AnalyzeEvidenceSearch({
                 <label>
                     <span>To</span>
                     <input
-                        onChange={event => controller.updateFilters({
-                            to: dateTimeEpoch(event.currentTarget.value),
-                        }, true)}
+                        onChange={(event) =>
+                            controller.updateFilters({
+                                to: dateTimeEpoch(event.currentTarget.value)
+                            }, true)}
                         type="datetime-local"
                         value={dateTimeValue(urlState.to)}
                     />
@@ -212,16 +221,20 @@ export function AnalyzeEvidenceSearch({
 }
 
 function dateTimeValue(epochMs: number | undefined): string {
-    if (epochMs === undefined) return '';
+    if (epochMs === undefined) {
+        return '';
+    }
     const date = new Date(epochMs);
-    if (Number.isNaN(date.getTime())) return '';
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
     const local = new Date(epochMs - date.getTimezoneOffset() * 60_000);
     return local.toISOString().slice(0, 16);
 }
 
 function searchErrorProps(
     error: AnalyzeSearchFormError | undefined,
-    field: AnalyzeSearchFormError['field'],
+    field: AnalyzeSearchFormError['field']
 ) {
     return error?.field === field
         ? { 'aria-describedby': ANALYZE_SEARCH_ERROR_ID, 'aria-invalid': true }
@@ -229,15 +242,17 @@ function searchErrorProps(
 }
 
 function dateTimeEpoch(value: string): number | undefined {
-    if (!value) return undefined;
+    if (!value) {
+        return undefined;
+    }
     const parsed = new Date(value).getTime();
     return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function compact(
-    patch: Partial<RecipeConsoleUrlState>,
+    patch: Partial<RecipeConsoleUrlState>
 ): Partial<RecipeConsoleUrlState> {
     return Object.fromEntries(
-        Object.entries(patch).filter(([, entry]) => entry !== undefined),
+        Object.entries(patch).filter(([, entry]) => entry !== undefined)
     );
 }

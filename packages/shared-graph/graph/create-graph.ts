@@ -1,8 +1,8 @@
-import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { EdgeProp, GraphProp, VertexProp, VertexState, VertexType } from '../graph-props.ts';
-import { UndirectedGraph } from 'graphology';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
+import { UndirectedGraph } from 'graphology';
+import { EdgeProp, GraphProp, VertexProp, VertexState, VertexType } from '../graph-props.ts';
 
 export function toMeasuredGraph(prop: GraphProp) {
     return toGraph(
@@ -15,12 +15,14 @@ export function toGraph(
     rttById: LatestRepository<string, RttMeasurementInfo>,
     prop: GraphProp
 ): UndirectedGraph<VertexProp, EdgeProp, GraphProp> {
-
-    const graph: UndirectedGraph<VertexProp, EdgeProp, GraphProp> = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
+    const graph: UndirectedGraph<VertexProp, EdgeProp, GraphProp> = new UndirectedGraph<
+        VertexProp,
+        EdgeProp,
+        GraphProp
+    >();
     graph.replaceAttributes(prop);
 
     for (const rttValue of rttById.values()) {
-
         const rtt = rttValue.read();
         if (rtt === undefined) {
             continue;

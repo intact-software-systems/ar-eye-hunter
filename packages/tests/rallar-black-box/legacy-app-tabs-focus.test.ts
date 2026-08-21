@@ -2,12 +2,10 @@
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { AppTabId } from
-    '../../../apps/rallar-black-box/src/app-tabs.ts';
-import { AppTabs } from
-    '../../../apps/rallar-black-box/src/legacy/shell/AppTabs.tsx';
+import type { AppTabId } from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { AppTabs } from '../../../apps/rallar-black-box/src/legacy/shell/AppTabs.tsx';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const RUNNER_TABS = [
     'recipes',
@@ -15,10 +13,10 @@ const RUNNER_TABS = [
     'fleet',
     'builder',
     'event-stream',
-    'advanced',
+    'advanced'
 ] as const satisfies readonly AppTabId[];
 
-function AppTabsHarness({ initialTab = 'fleet' }: { initialTab?: AppTabId }) {
+function AppTabsHarness({ initialTab = 'fleet' }: { initialTab?: AppTabId; }) {
     const [activeTab, setActiveTab] = useState<AppTabId>(initialTab);
 
     return createElement(
@@ -27,7 +25,7 @@ function AppTabsHarness({ initialTab = 'fleet' }: { initialTab?: AppTabId }) {
         createElement(AppTabs, {
             activeMode: 'black-box-runner',
             activeTab,
-            onSelect: setActiveTab,
+            onSelect: setActiveTab
         }),
         createElement(
             'section',
@@ -35,17 +33,19 @@ function AppTabsHarness({ initialTab = 'fleet' }: { initialTab?: AppTabId }) {
                 key: activeTab,
                 id: `panel-${activeTab}`,
                 role: 'tabpanel',
-                'aria-labelledby': `tab-${activeTab}`,
+                'aria-labelledby': `tab-${activeTab}`
             },
-            activeTab === 'recipes' ? createElement(
-                'button',
-                {
-                    type: 'button',
-                    onClick: () => setActiveTab('advanced'),
-                },
-                'Open Advanced',
-            ) : `${activeTab} panel`,
-        ),
+            activeTab === 'recipes'
+                ? createElement(
+                    'button',
+                    {
+                        type: 'button',
+                        onClick: () => setActiveTab('advanced')
+                    },
+                    'Open Advanced'
+                )
+                : `${activeTab} panel`
+        )
     );
 }
 
@@ -58,37 +58,39 @@ function RetainedDirectTabsHarness() {
         createElement(AppTabs, {
             activeMode: 'rallar',
             activeTab,
-            onSelect: setActiveTab,
+            onSelect: setActiveTab
         }),
         createElement(
             'section',
             {
                 hidden: activeTab !== 'quick-test',
                 id: 'panel-quick-test',
-                role: 'tabpanel',
+                role: 'tabpanel'
             },
             createElement(
                 'button',
                 { type: 'button', onClick: () => setActiveTab('auth') },
-                'Open Auth',
-            ),
+                'Open Auth'
+            )
         ),
         createElement(
             'section',
             {
                 hidden: activeTab !== 'auth',
                 id: 'panel-auth',
-                role: 'tabpanel',
+                role: 'tabpanel'
             },
-            'Auth panel',
-        ),
+            'Auth panel'
+        )
     );
 }
 
 function tab(container: HTMLElement, name: string): HTMLButtonElement {
     const match = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-        .find(element => element.textContent === name);
-    if (!match) throw new Error(`Missing ${name} tab`);
+        .find((element) => element.textContent === name);
+    if (!match) {
+        throw new Error(`Missing ${name} tab`);
+    }
     return match;
 }
 
@@ -107,21 +109,27 @@ describe('legacy AppTabs focus', () => {
         container.remove();
     });
 
-    it.each([
-        ['ArrowRight', 'Builder'],
-        ['ArrowLeft', 'Runs'],
-        ['Home', 'Recipes'],
-        ['End', 'Advanced'],
-    ] as const)('%s selects and focuses the roving tab target', async (key, targetLabel) => {
+    it.each(
+        [
+            ['ArrowRight', 'Builder'],
+            ['ArrowLeft', 'Runs'],
+            ['Home', 'Recipes'],
+            ['End', 'Advanced']
+        ] as const
+    )('%s selects and focuses the roving tab target', async (key, targetLabel) => {
         await act(async () => root.render(createElement(AppTabsHarness)));
         const source = tab(container, 'Fleet');
         source.focus();
 
-        await act(async () => source.dispatchEvent(new KeyboardEvent('keydown', {
-            bubbles: true,
-            cancelable: true,
-            key,
-        })));
+        await act(async () =>
+            source.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    bubbles: true,
+                    cancelable: true,
+                    key
+                })
+            )
+        );
 
         const target = tab(container, targetLabel);
         expect(target.getAttribute('aria-selected')).toBe('true');
@@ -131,20 +139,29 @@ describe('legacy AppTabs focus', () => {
         expect(controlledPanel).toBeTruthy();
         expect(document.getElementById(controlledPanel ?? '')).toBeTruthy();
         for (const id of RUNNER_TABS) {
-            expect(tab(container, id === 'event-stream'
-                ? 'Event Stream'
-                : id[0].toUpperCase() + id.slice(1)).tabIndex)
+            expect(
+                tab(
+                    container,
+                    id === 'event-stream'
+                        ? 'Event Stream'
+                        : id[0].toUpperCase() + id.slice(1)
+                ).tabIndex
+            )
                 .toBe(target.id === `tab-${id}` ? 0 : -1);
         }
     });
 
     it('returns focus to the selected tab when a panel launch control unmounts', async () => {
-        await act(async () => root.render(createElement(AppTabsHarness, {
-            initialTab: 'recipes',
-        })));
+        await act(async () =>
+            root.render(createElement(AppTabsHarness, {
+                initialTab: 'recipes'
+            }))
+        );
         const launch = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(element => element.textContent === 'Open Advanced');
-        if (!launch) throw new Error('Missing panel launch control');
+            .find((element) => element.textContent === 'Open Advanced');
+        if (!launch) {
+            throw new Error('Missing panel launch control');
+        }
         launch.focus();
 
         await act(async () => launch.click());
@@ -156,12 +173,16 @@ describe('legacy AppTabs focus', () => {
     });
 
     it('returns focus when a retained panel launch control becomes hidden', async () => {
-        await act(async () => root.render(createElement(
-            RetainedDirectTabsHarness,
-        )));
+        await act(async () =>
+            root.render(createElement(
+                RetainedDirectTabsHarness
+            ))
+        );
         const launch = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(element => element.textContent === 'Open Auth');
-        if (!launch) throw new Error('Missing retained panel launch control');
+            .find((element) => element.textContent === 'Open Auth');
+        if (!launch) {
+            throw new Error('Missing retained panel launch control');
+        }
         launch.focus();
 
         await act(async () => launch.click());

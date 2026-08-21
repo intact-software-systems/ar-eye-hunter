@@ -1,7 +1,7 @@
+import { load as loadYaml } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { load as loadYaml } from 'js-yaml';
 
 const repoRoot = process.cwd();
 
@@ -27,14 +27,14 @@ describe('Rallar group documentation compatibility', () => {
             '`joinMode`',
             '`inviteToken`',
             '`joinCode`',
-            '`RallarRoomSwitchPartialFailureError`',
+            '`RallarRoomSwitchPartialFailureError`'
         ]);
 
         expectAll(quickstart, [
             'Invite-Only Room',
             'Code-Protected Room',
             'Room Switch Recovery',
-            'RallarRoomSwitchPartialFailureError',
+            'RallarRoomSwitchPartialFailureError'
         ]);
     });
 
@@ -55,7 +55,7 @@ describe('Rallar group documentation compatibility', () => {
             '`member-banned`',
             '`forbidden-role`',
             '`last-owner`',
-            '`RALLAR_STATE_STRICT_READ_AUTH`',
+            '`RALLAR_STATE_STRICT_READ_AUTH`'
         ]);
 
         expect(environmentVariables).toContain('`RALLAR_STATE_STRICT_READ_AUTH`');
@@ -64,25 +64,25 @@ describe('Rallar group documentation compatibility', () => {
     it('keeps the OpenAPI spec in step with server-side group workflows', () => {
         expectAll(openApi, [
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/' +
-                'requests/{requestId}:',
+            'requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
-                'accept/requests/{requestId}:',
+            'accept/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/' +
-                'rotate/requests/{requestId}:',
+            'rotate/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
-                '{principalId}/requests/{requestId}:',
+            '{principalId}/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/' +
-                '{principalId}/revoke/requests/{requestId}:',
+            '{principalId}/revoke/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-                '{principalId}/remove/requests/{requestId}:',
+            '{principalId}/remove/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-                '{principalId}/ban/requests/{requestId}:',
+            '{principalId}/ban/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-                '{principalId}/unban/requests/{requestId}:',
+            '{principalId}/unban/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/' +
-                '{principalId}/role/requests/{requestId}:',
+            '{principalId}/role/requests/{requestId}:',
             '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/' +
-                'transfer/requests/{requestId}:',
+            'transfer/requests/{requestId}:',
             'JoinGroupRequest',
             'AcceptGroupInviteRequest',
             'RotateGroupJoinCodeRequest',
@@ -102,90 +102,170 @@ describe('Rallar group documentation compatibility', () => {
             'generationId',
             'generationVersion',
             'causalRevision',
-            'stateRevision',
+            'stateRevision'
         ]);
     });
 
     it('requires the hardened authoritative event, snapshot, and topology fields', () => {
         expectSchemaRequired('AuditStamp', [
-            'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
+            'atEpochMs',
+            'actor',
+            'reason',
+            'traceId',
+            'requestId'
         ]);
         expectSchemaRequired('ClientEvent', [
-            'applicationId', 'workspaceId', 'principalId', 'eventId',
-            'eventType', 'snapshotVersion', 'clientInstanceId', 'sessionId',
-            'occurredAtEpochMs', 'actor', 'reason', 'traceId', 'requestId',
-            'payload',
+            'applicationId',
+            'workspaceId',
+            'principalId',
+            'eventId',
+            'eventType',
+            'snapshotVersion',
+            'clientInstanceId',
+            'sessionId',
+            'occurredAtEpochMs',
+            'actor',
+            'reason',
+            'traceId',
+            'requestId',
+            'payload'
         ]);
         expectSchemaRequired('GroupEvent', [
-            'applicationId', 'workspaceId', 'groupId', 'eventId', 'eventType',
-            'snapshotVersion', 'causalRevision', 'occurredAtEpochMs', 'actor',
-            'reason', 'traceId', 'requestId', 'payload',
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'eventId',
+            'eventType',
+            'snapshotVersion',
+            'causalRevision',
+            'occurredAtEpochMs',
+            'actor',
+            'reason',
+            'traceId',
+            'requestId',
+            'payload'
         ]);
         expectSchemaRequired('ClientSnapshot', [
-            'stateRevision', 'principal', 'instances', 'activeSessions',
-            'isOnline', 'activeSessionCount', 'lastSeenAtEpochMs',
+            'stateRevision',
+            'principal',
+            'instances',
+            'activeSessions',
+            'isOnline',
+            'activeSessionCount',
+            'lastSeenAtEpochMs'
         ]);
         expectSchemaRequired('GroupSnapshot', [
-            'stateRevision', 'causalRevision', 'group', 'members',
-            'activeSessions', 'memberCount', 'onlineMemberCount',
+            'stateRevision',
+            'causalRevision',
+            'group',
+            'members',
+            'activeSessions',
+            'memberCount',
+            'onlineMemberCount'
         ]);
         expectSchemaRequired('GroupMember', [
-            'applicationId', 'workspaceId', 'groupId', 'principalId', 'role',
-            'status', 'joined', 'updated', 'left', 'removed', 'banned',
-            'invitedByPrincipalId', 'invitationExpiresAtEpochMs',
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'principalId',
+            'role',
+            'status',
+            'joined',
+            'updated',
+            'left',
+            'removed',
+            'banned',
+            'invitedByPrincipalId',
+            'invitationExpiresAtEpochMs'
         ]);
         expectSchemaRequired('RallarOverlayTopologySnapshot', [
-            'sourceGroupStateCausalRevision', 'state', 'overlayId', 'groupRef',
-            'name', 'topology', 'activeSessionIds', 'nextHopsBySessionId',
-            'degreeLimit', 'version', 'createdByClientId', 'createdAtEpochMs',
-            'updatedAtEpochMs',
+            'sourceGroupStateCausalRevision',
+            'state',
+            'overlayId',
+            'groupRef',
+            'name',
+            'topology',
+            'activeSessionIds',
+            'nextHopsBySessionId',
+            'degreeLimit',
+            'version',
+            'createdByClientId',
+            'createdAtEpochMs',
+            'updatedAtEpochMs'
         ]);
         expectSchemaRequired('GroupTopologyConfigView', [
-            'serverDefaults', 'durable', 'temporary', 'requestOptions',
-            'effective',
+            'serverDefaults',
+            'durable',
+            'temporary',
+            'requestOptions',
+            'effective'
         ]);
         expectSchemaRequired('GroupTopologyConfigAcceptedCausalRevision', [
-            'stateRevision', 'snapshotVersion', 'metadataVersion',
-            'rosterVersion', 'presenceVersion', 'causalRevision',
+            'stateRevision',
+            'snapshotVersion',
+            'metadataVersion',
+            'rosterVersion',
+            'presenceVersion',
+            'causalRevision'
         ]);
         expectSchemaRequired('GroupTopologyConfigMutationReceipt', [
-            'commandId', 'requestId', 'commandHash', 'operation', 'outcome',
-            'attemptCount', 'groupRef', 'target', 'acceptedVersion',
-            'acceptedStorageRevision', 'acceptedCreatedAtEpochMs',
-            'acceptedUpdatedAtEpochMs', 'acceptedExpiresAtEpochMs',
-            'acceptedConfig', 'acceptedCausalRevision', 'eventId', 'outboxId',
-            'outboxIds',
+            'commandId',
+            'requestId',
+            'commandHash',
+            'operation',
+            'outcome',
+            'attemptCount',
+            'groupRef',
+            'target',
+            'acceptedVersion',
+            'acceptedStorageRevision',
+            'acceptedCreatedAtEpochMs',
+            'acceptedUpdatedAtEpochMs',
+            'acceptedExpiresAtEpochMs',
+            'acceptedConfig',
+            'acceptedCausalRevision',
+            'eventId',
+            'outboxId',
+            'outboxIds'
         ]);
         expectSchemaRequired('QueuedGroupTopologyReconfigureResponse', [
-            'status', 'groupRef', 'requestId', 'outboxId',
+            'status',
+            'groupRef',
+            'requestId',
+            'outboxId'
         ]);
         expect(
             schema('GroupTopologyConfigAcceptedCausalRevision')
-                .properties?.causalRevision?.$ref,
+                .properties?.causalRevision?.$ref
         ).toBe('#/components/schemas/GroupStateCausalRevision');
         expect(
             schema('QueuedGroupTopologyReconfigureResponse').properties?.status
-                ?.enum,
+                ?.enum
         ).toEqual(['queued']);
         expect(
             schema('GroupTopologyConfigMutationReceipt').properties?.eventId
-                ?.type,
+                ?.type
         ).toBe('null');
 
-        for (const [schemaName, propertyNames] of Object.entries({
-            AuditStamp: ['reason', 'traceId', 'requestId'],
-            ClientEvent: [
-                'clientInstanceId', 'sessionId', 'reason', 'traceId',
-                'requestId',
-            ],
-            GroupEvent: ['reason', 'traceId', 'requestId'],
-            ClientSnapshot: ['lastSeenAtEpochMs'],
-            GroupTopologyConfigView: ['durable', 'temporary', 'requestOptions'],
-        })) {
+        for (
+            const [schemaName, propertyNames] of Object.entries({
+                AuditStamp: ['reason', 'traceId', 'requestId'],
+                ClientEvent: [
+                    'clientInstanceId',
+                    'sessionId',
+                    'reason',
+                    'traceId',
+                    'requestId'
+                ],
+                GroupEvent: ['reason', 'traceId', 'requestId'],
+                ClientSnapshot: ['lastSeenAtEpochMs'],
+                GroupTopologyConfigView: ['durable', 'temporary', 'requestOptions']
+            })
+        ) {
             for (const propertyName of propertyNames) {
                 expect(
                     schema(schemaName).properties?.[propertyName]?.nullable,
-                    `${schemaName}.${propertyName} must be required nullable`,
+                    `${schemaName}.${propertyName} must be required nullable`
                 ).toBe(true);
             }
         }
@@ -194,30 +274,26 @@ describe('Rallar group documentation compatibility', () => {
         expect(schema('MutationActor').oneOf).toHaveLength(3);
         expect(schema('GroupMember').properties?.joined?.nullable).toBe(true);
         const memberVariants = schema('GroupMember').oneOf ?? [];
-        const invited = memberVariants.find((variant) =>
-            variant.properties?.status?.enum?.includes('invited')
-        );
-        const active = memberVariants.find((variant) =>
-            variant.properties?.status?.enum?.includes('active')
-        );
+        const invited = memberVariants.find((variant) => variant.properties?.status?.enum?.includes('invited'));
+        const active = memberVariants.find((variant) => variant.properties?.status?.enum?.includes('active'));
         expect(invited?.properties?.joined?.enum).toEqual([null]);
         expect(invited?.properties?.joined?.nullable).toBe(true);
         expect(active?.properties?.joined?.$ref)
             .toBe('#/components/schemas/AuditStamp');
         for (const status of ['left', 'removed', 'banned']) {
-            const terminal = memberVariants.find((variant) =>
-                variant.properties?.status?.enum?.includes(status)
-            );
+            const terminal = memberVariants.find((variant) => variant.properties?.status?.enum?.includes(status));
             expect(terminal?.properties?.joined?.nullable).toBe(true);
         }
-        for (const schemaName of [
-            'ClientPrincipal',
-            'ClientInstance',
-            'ClientSession',
-            'Group',
-            'GroupMember',
-            'GroupPresenceSession',
-        ]) {
+        for (
+            const schemaName of [
+                'ClientPrincipal',
+                'ClientInstance',
+                'ClientSession',
+                'Group',
+                'GroupMember',
+                'GroupPresenceSession'
+            ]
+        ) {
             expect(schema(schemaName).discriminator?.propertyName).toBe('status');
             expect(schema(schemaName).oneOf?.length).toBeGreaterThan(1);
         }
@@ -246,15 +322,16 @@ describe('Rallar group documentation compatibility', () => {
         expectAuditProperties('ClientInstance', 'retired', ['revoked']);
 
         expectNullProperties('ClientSession', 'active', [
-            'disconnectedAtEpochMs', 'disconnectReason',
+            'disconnectedAtEpochMs',
+            'disconnectReason'
         ]);
         expectTypedProperties('ClientSession', 'disconnected', {
             disconnectedAtEpochMs: 'integer',
-            disconnectReason: 'string',
+            disconnectReason: 'string'
         });
         expectTypedProperties('ClientSession', 'expired', {
             disconnectedAtEpochMs: 'integer',
-            disconnectReason: 'string',
+            disconnectReason: 'string'
         });
 
         expectNullProperties('Group', 'active', ['archived', 'deleted']);
@@ -264,30 +341,36 @@ describe('Rallar group documentation compatibility', () => {
         expectNullableAuditProperties('Group', 'deleted', ['archived']);
 
         expectNullProperties('GroupMember', 'invited', [
-            'joined', 'left', 'removed', 'banned',
+            'joined',
+            'left',
+            'removed',
+            'banned'
         ]);
         expectAuditProperties('GroupMember', 'active', ['joined']);
         expectNullProperties('GroupMember', 'active', ['left', 'removed', 'banned']);
-        for (const [status, auditProperty] of [
-            ['left', 'left'],
-            ['removed', 'removed'],
-            ['banned', 'banned'],
-        ] as const) {
+        for (
+            const [status, auditProperty] of [
+                ['left', 'left'],
+                ['removed', 'removed'],
+                ['banned', 'banned']
+            ] as const
+        ) {
             expectAuditProperties('GroupMember', status, [auditProperty]);
             expectNullableAuditProperties('GroupMember', status, ['joined']);
             expectNullProperties(
                 'GroupMember',
                 status,
-                ['left', 'removed', 'banned'].filter((key) => key !== auditProperty),
+                ['left', 'removed', 'banned'].filter((key) => key !== auditProperty)
             );
         }
 
         expectNullProperties('GroupPresenceSession', 'active', [
-            'disconnectedAtEpochMs', 'disconnectReason',
+            'disconnectedAtEpochMs',
+            'disconnectReason'
         ]);
         expectTypedProperties('GroupPresenceSession', 'disconnected', {
             disconnectedAtEpochMs: 'integer',
-            disconnectReason: 'string',
+            disconnectReason: 'string'
         });
     });
 });
@@ -301,7 +384,7 @@ type OpenApiSchema = Readonly<{
     enum?: readonly unknown[];
     allOf?: readonly OpenApiSchema[];
     oneOf?: readonly OpenApiSchema[];
-    discriminator?: Readonly<{ propertyName?: string }>;
+    discriminator?: Readonly<{ propertyName?: string; }>;
 }>;
 
 type OpenApiDocument = Readonly<{
@@ -312,7 +395,9 @@ type OpenApiDocument = Readonly<{
 
 function schema(name: string): OpenApiSchema {
     const value = openApiDocument.components.schemas[name];
-    if (!value) throw new Error(`Missing OpenAPI schema ${name}`);
+    if (!value) {
+        throw new Error(`Missing OpenAPI schema ${name}`);
+    }
     return value;
 }
 
@@ -320,11 +405,11 @@ function parseOpenApiDocument(value: unknown): OpenApiDocument {
     const document = requireRecord(value, 'OpenAPI document');
     const components = requireRecord(
         document.components,
-        'OpenAPI components',
+        'OpenAPI components'
     );
     const schemaValues = requireRecord(
         components.schemas,
-        'OpenAPI component schemas',
+        'OpenAPI component schemas'
     );
     const schemas: Record<string, OpenApiSchema> = {};
     for (const [name, schemaValue] of Object.entries(schemaValues)) {
@@ -339,7 +424,7 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
     if (source.properties !== undefined) {
         const propertyValues = requireRecord(
             source.properties,
-            `OpenAPI schema ${label} properties`,
+            `OpenAPI schema ${label} properties`
         );
         for (const [name, propertyValue] of Object.entries(propertyValues)) {
             properties[name] = parseOpenApiSchema(propertyValue, `${label}.${name}`);
@@ -349,7 +434,7 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
         ? undefined
         : requireRecord(
             source.discriminator,
-            `OpenAPI schema ${label} discriminator`,
+            `OpenAPI schema ${label} discriminator`
         );
     const propertyName = discriminator?.propertyName;
     if (propertyName !== undefined && typeof propertyName !== 'string') {
@@ -370,27 +455,23 @@ function parseOpenApiSchema(value: unknown, label: string): OpenApiSchema {
             ? {}
             : {
                 allOf: requireArray(source.allOf, `${label}.allOf`)
-                    .map((item, index) =>
-                        parseOpenApiSchema(item, `${label}.allOf[${index}]`)
-                    ),
+                    .map((item, index) => parseOpenApiSchema(item, `${label}.allOf[${index}]`))
             }),
         ...(source.oneOf === undefined
             ? {}
             : {
                 oneOf: requireArray(source.oneOf, `${label}.oneOf`)
-                    .map((item, index) =>
-                        parseOpenApiSchema(item, `${label}.oneOf[${index}]`)
-                    ),
+                    .map((item, index) => parseOpenApiSchema(item, `${label}.oneOf[${index}]`))
             }),
         ...(propertyName === undefined
             ? {}
-            : { discriminator: { propertyName } }),
+            : { discriminator: { propertyName } })
     };
 }
 
 function requireRecord(
     value: unknown,
-    label: string,
+    label: string
 ): Record<string, unknown> {
     if (!isUnknownRecord(value)) {
         throw new TypeError(`${label} must be an object`);
@@ -403,7 +484,9 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function requireArray(value: unknown, label: string): readonly unknown[] {
-    if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
+    if (!Array.isArray(value)) {
+        throw new TypeError(`${label} must be an array`);
+    }
     return value;
 }
 
@@ -420,17 +503,17 @@ function expectSchemaRequired(name: string, expected: readonly string[]): void {
 }
 
 function statusVariant(schemaName: string, status: string): OpenApiSchema {
-    const variant = schema(schemaName).oneOf?.find((candidate) =>
-        candidate.properties?.status?.enum?.includes(status)
-    );
-    if (!variant) throw new Error(`Missing ${schemaName} ${status} lifecycle variant`);
+    const variant = schema(schemaName).oneOf?.find((candidate) => candidate.properties?.status?.enum?.includes(status));
+    if (!variant) {
+        throw new Error(`Missing ${schemaName} ${status} lifecycle variant`);
+    }
     return variant;
 }
 
 function expectNullProperties(
     schemaName: string,
     status: string,
-    propertyNames: readonly string[],
+    propertyNames: readonly string[]
 ): void {
     const variant = statusVariant(schemaName, status);
     for (const propertyName of propertyNames) {
@@ -442,7 +525,7 @@ function expectNullProperties(
 function expectAuditProperties(
     schemaName: string,
     status: string,
-    propertyNames: readonly string[],
+    propertyNames: readonly string[]
 ): void {
     const variant = statusVariant(schemaName, status);
     for (const propertyName of propertyNames) {
@@ -455,7 +538,7 @@ function expectAuditProperties(
 function expectNullableAuditProperties(
     schemaName: string,
     status: string,
-    propertyNames: readonly string[],
+    propertyNames: readonly string[]
 ): void {
     const variant = statusVariant(schemaName, status);
     for (const propertyName of propertyNames) {
@@ -468,7 +551,7 @@ function expectNullableAuditProperties(
 function expectTypedProperties(
     schemaName: string,
     status: string,
-    properties: Readonly<Record<string, string>>,
+    properties: Readonly<Record<string, string>>
 ): void {
     const variant = statusVariant(schemaName, status);
     for (const [propertyName, type] of Object.entries(properties)) {

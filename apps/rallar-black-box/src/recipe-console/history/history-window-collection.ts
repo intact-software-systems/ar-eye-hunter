@@ -1,16 +1,14 @@
-import { filterDistributedRuns } from
-    '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { filterDistributedRuns } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
     RecipeConsoleControlDistributedRunsSource,
-    RecipeConsoleControlQueryProvenance,
+    RecipeConsoleControlQueryProvenance
 } from '../control/control-api.ts';
-import type { ControlQuerySnapshot, ControlQueryStatus } from
-    '../control/control-query.ts';
+import type { ControlQuerySnapshot, ControlQueryStatus } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type RecipeConsoleHistoryProvenance = Readonly<{
@@ -28,7 +26,7 @@ export type IndexedDistributedRun = Readonly<{
 
 export type RecipeConsoleHistoryCollection = Readonly<{
     provenance: RecipeConsoleHistoryProvenance;
-    counts: Readonly<{ available: number; total: number }>;
+    counts: Readonly<{ available: number; total: number; }>;
     fingerprint: string;
     work: Readonly<{
         controlRunVisits: number;
@@ -41,39 +39,39 @@ export type RecipeConsoleHistoryCollection = Readonly<{
 
 export type RecipeConsoleHistoryInput = Readonly<{
     urlState: RecipeConsoleUrlState;
-    query: ControlQuerySnapshot<
-        ControlServerSnapshot,
-        RecipeConsoleControlQueryProvenance
-    >;
+    query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>;
 }>;
 
 export function createRecipeConsoleHistoryCollection(
-    input: RecipeConsoleHistoryInput,
+    input: RecipeConsoleHistoryInput
 ): RecipeConsoleHistoryCollection {
     const distributedRuns = input.query.snapshot?.distributedRuns ?? [];
     const controlRuns = input.query.snapshot?.runs ?? [];
     const distributedIdCounts = new Map<string, number>();
     const sourceOrdinals = new Map<ControlDistributedRunSnapshot, number[]>();
-    for (let sourceOrdinal = 0; sourceOrdinal < distributedRuns.length;
-        sourceOrdinal += 1) {
+    for (let sourceOrdinal = 0; sourceOrdinal < distributedRuns.length; sourceOrdinal += 1) {
         const run = distributedRuns[sourceOrdinal]!;
         distributedIdCounts.set(
             run.distributedRunId,
-            (distributedIdCounts.get(run.distributedRunId) ?? 0) + 1,
+            (distributedIdCounts.get(run.distributedRunId) ?? 0) + 1
         );
         const ordinals = sourceOrdinals.get(run);
-        if (ordinals) ordinals.push(sourceOrdinal);
-        else sourceOrdinals.set(run, [sourceOrdinal]);
+        if (ordinals) {
+            ordinals.push(sourceOrdinal);
+        }
+        else {
+            sourceOrdinals.set(run, [sourceOrdinal]);
+        }
     }
     const controlsById = groupControls(controlRuns);
     const occurrenceByRun = new Map<ControlDistributedRunSnapshot, number>();
     const entries = historyRuns(distributedRuns, input.urlState)
-        .map(run => {
+        .map((run) => {
             const occurrence = occurrenceByRun.get(run) ?? 0;
             occurrenceByRun.set(run, occurrence + 1);
             return {
                 run,
-                sourceOrdinal: sourceOrdinals.get(run)?.[occurrence] ?? 0,
+                sourceOrdinal: sourceOrdinals.get(run)?.[occurrence] ?? 0
             };
         });
     const source = input.query.provenance?.distributedRunsSource ?? 'unavailable';
@@ -83,23 +81,21 @@ export function createRecipeConsoleHistoryCollection(
         fingerprint: historyWindowFingerprint(source, input.urlState),
         work: {
             controlRunVisits: controlRuns.length,
-            distributedRunVisits: distributedRuns.length,
+            distributedRunVisits: distributedRuns.length
         },
         entries,
         controlsById,
-        distributedIdCounts,
+        distributedIdCounts
     };
 }
 
 function historyRuns(
     runs: readonly ControlDistributedRunSnapshot[],
-    state: RecipeConsoleUrlState,
+    state: RecipeConsoleUrlState
 ): readonly ControlDistributedRunSnapshot[] {
     return hasCommittedHistoryFilter(state)
         ? filterDistributedRuns(runs, historyFilter(state))
-        : [...runs].sort((left, right) =>
-            right.updatedAtEpochMs - left.updatedAtEpochMs
-        );
+        : [...runs].sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
 }
 
 function hasCommittedHistoryFilter(state: RecipeConsoleUrlState): boolean {
@@ -109,8 +105,8 @@ function hasCommittedHistoryFilter(state: RecipeConsoleUrlState): boolean {
         state.historyRecipeId,
         state.historyProfile,
         state.status,
-        state.failureCategory,
-    ].some(value => value?.trim()) ||
+        state.failureCategory
+    ].some((value) => value?.trim()) ||
         state.from !== undefined || state.to !== undefined;
 }
 
@@ -123,13 +119,13 @@ function historyFilter(state: RecipeConsoleUrlState) {
         status: state.status,
         failureCategory: state.failureCategory,
         fromEpochMs: state.from,
-        toEpochMs: state.to,
+        toEpochMs: state.to
     };
 }
 
 function historyWindowFingerprint(
     source: RecipeConsoleControlDistributedRunsSource,
-    state: RecipeConsoleUrlState,
+    state: RecipeConsoleUrlState
 ): string {
     return JSON.stringify([
         'history-window-v1',
@@ -141,7 +137,7 @@ function historyWindowFingerprint(
         normalizedFingerprintText(state.status),
         normalizedFingerprintText(state.failureCategory),
         state.from ?? null,
-        state.to ?? null,
+        state.to ?? null
     ]);
 }
 
@@ -151,7 +147,7 @@ function normalizedFingerprintText(value: string | undefined): string | null {
 }
 
 function historyProvenance(
-    query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>,
+    query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>
 ): RecipeConsoleHistoryProvenance {
     const source = query.provenance?.distributedRunsSource ?? 'unavailable';
     const hasEvidence = source !== 'unavailable' &&
@@ -167,18 +163,22 @@ function historyProvenance(
         completeness: !hasEvidence
             ? 'unavailable'
             : query.completeness ?? 'partial',
-        receivedAtEpochMs: query.receivedAtEpochMs,
+        receivedAtEpochMs: query.receivedAtEpochMs
     };
 }
 
 function groupControls(
-    runs: readonly ControlRunSnapshot[],
+    runs: readonly ControlRunSnapshot[]
 ): ReadonlyMap<string, readonly ControlRunSnapshot[]> {
     const groups = new Map<string, ControlRunSnapshot[]>();
     for (const run of runs) {
         const group = groups.get(run.runId);
-        if (group) group.push(run);
-        else groups.set(run.runId, [run]);
+        if (group) {
+            group.push(run);
+        }
+        else {
+            groups.set(run.runId, [run]);
+        }
     }
     return groups;
 }

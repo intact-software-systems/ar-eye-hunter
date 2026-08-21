@@ -6,17 +6,17 @@ export type DistributedRunArtifactDownload = Readonly<{
 
 export function createDistributedRunArtifactDownload(
     value: unknown,
-    distributedRunId: string,
+    distributedRunId: string
 ): DistributedRunArtifactDownload {
     return {
         filename: createDistributedRunArtifactFilename(distributedRunId),
         content: `${JSON.stringify(value, null, 2)}\n`,
-        mediaType: 'application/json',
+        mediaType: 'application/json'
     };
 }
 
 export function createDistributedRunArtifactFilename(
-    distributedRunId: string,
+    distributedRunId: string
 ): string {
     return `${safeFilenameSegment(distributedRunId)}-artifact.json`;
 }
@@ -37,7 +37,7 @@ function safeFilenameSegment(value: string): string {
 }
 
 function replaceLoneSurrogates(value: string): string {
-    return Array.from(value, character => {
+    return Array.from(value, (character) => {
         const codePoint = character.codePointAt(0) ?? 0;
         return codePoint >= 0xd800 && codePoint <= 0xdfff
             ? '-'
@@ -47,16 +47,18 @@ function replaceLoneSurrogates(value: string): string {
 
 export function downloadDistributedRunArtifact(
     value: unknown,
-    distributedRunId: string,
+    distributedRunId: string
 ): void {
     const download = createDistributedRunArtifactDownload(
         value,
-        distributedRunId,
+        distributedRunId
     );
-    const url = URL.createObjectURL(new Blob(
-        [download.content],
-        { type: download.mediaType },
-    ));
+    const url = URL.createObjectURL(
+        new Blob(
+            [download.content],
+            { type: download.mediaType }
+        )
+    );
     const link = document.createElement('a');
     link.href = url;
     link.download = download.filename;

@@ -1,14 +1,11 @@
 import { optionalNumber } from '../../shared/finite-number.ts';
-import {
-    recordArray,
-    recordValue as optionalRecord,
-} from '../../shared/record-value.ts';
+import { recordArray, recordValue as optionalRecord } from '../../shared/record-value.ts';
 import type {
     ClientSortId,
     ClientStateRow,
     GroupSortId,
     RoomStateRow,
-    StateEventRow,
+    StateEventRow
 } from './rooms-clients-contracts.ts';
 
 function numberOrZero(value: unknown): number {
@@ -20,17 +17,17 @@ function auditAtEpochMs(value: unknown): number | undefined {
 }
 
 function maxNumber(
-    values: readonly (number | undefined)[],
+    values: readonly (number | undefined)[]
 ): number | undefined {
     const numbers = values.filter(
-        (value): value is number => value !== undefined,
+        (value): value is number => value !== undefined
     );
     return numbers.length > 0 ? Math.max(...numbers) : undefined;
 }
 
 function compareNumberDesc(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): number {
     return (
         (right ?? Number.NEGATIVE_INFINITY) - (left ?? Number.NEGATIVE_INFINITY)
@@ -40,7 +37,7 @@ function compareNumberDesc(
 function compareText(left: string, right: string): number {
     return left.localeCompare(right, undefined, {
         sensitivity: 'base',
-        numeric: true,
+        numeric: true
     });
 }
 
@@ -63,8 +60,8 @@ export function rowsFromGroupSnapshots(value: unknown): readonly RoomStateRow[] 
         const activeAtEpochMs = maxNumber(
             activeSessions.flatMap((session) => [
                 optionalNumber(session.lastHeartbeatAtEpochMs),
-                optionalNumber(session.connectedAtEpochMs),
-            ]),
+                optionalNumber(session.connectedAtEpochMs)
+            ])
         );
         const mutatedAtEpochMs = maxNumber([
             updatedAtEpochMs,
@@ -75,26 +72,24 @@ export function rowsFromGroupSnapshots(value: unknown): readonly RoomStateRow[] 
                 auditAtEpochMs(member.joined),
                 auditAtEpochMs(member.left),
                 auditAtEpochMs(member.removed),
-                auditAtEpochMs(member.banned),
-            ]),
+                auditAtEpochMs(member.banned)
+            ])
         ]);
         return {
             rowId: `${groupId}-${index}`,
             groupId,
             displayName: stringOrDash(
-                group.displayName ?? group.slug ?? groupId,
+                group.displayName ?? group.slug ?? groupId
             ),
             status: stringOrDash(group.status),
             members: numberOrZero(snapshot.memberCount),
             online: numberOrZero(snapshot.onlineMemberCount),
-            sessions: activeSessions.map((session) =>
-                stringOrDash(session.sessionId),
-            ),
+            sessions: activeSessions.map((session) => stringOrDash(session.sessionId)),
             createdAtEpochMs,
             updatedAtEpochMs,
             activeAtEpochMs,
             mutatedAtEpochMs,
-            snapshotVersion: optionalNumber(group.snapshotVersion),
+            snapshotVersion: optionalNumber(group.snapshotVersion)
         };
     });
 }
@@ -105,7 +100,7 @@ export function rowsFromClientSnapshots(value: unknown): readonly ClientStateRow
         const instances = recordArray(snapshot.instances);
         const activeSessions = recordArray(snapshot.activeSessions);
         const principalId = stringOrDash(
-            principal.principalId ?? snapshot.principalId,
+            principal.principalId ?? snapshot.principalId
         );
         const createdAtEpochMs = auditAtEpochMs(principal.created);
         const updatedAtEpochMs = auditAtEpochMs(principal.updated);
@@ -115,8 +110,8 @@ export function rowsFromClientSnapshots(value: unknown): readonly ClientStateRow
             ...activeSessions.flatMap((session) => [
                 optionalNumber(session.lastHeartbeatAtEpochMs),
                 optionalNumber(session.connectedAtEpochMs),
-                optionalNumber(session.authenticatedAtEpochMs),
-            ]),
+                optionalNumber(session.authenticatedAtEpochMs)
+            ])
         ]);
         const mutatedAtEpochMs = maxNumber([
             updatedAtEpochMs,
@@ -125,32 +120,30 @@ export function rowsFromClientSnapshots(value: unknown): readonly ClientStateRow
             ...instances.flatMap((instance) => [
                 auditAtEpochMs(instance.updated),
                 auditAtEpochMs(instance.registered),
-                auditAtEpochMs(instance.revoked),
-            ]),
+                auditAtEpochMs(instance.revoked)
+            ])
         ]);
         return {
             rowId: `${principalId}-${index}`,
             principalId,
             username: stringOrDash(
-                principal.username ?? principal.displayName ?? principalId,
+                principal.username ?? principal.displayName ?? principalId
             ),
             status: stringOrDash(principal.status),
             online: snapshot.isOnline === true ? 'online' : 'offline',
-            sessions: activeSessions.map((session) =>
-                stringOrDash(session.sessionId),
-            ),
+            sessions: activeSessions.map((session) => stringOrDash(session.sessionId)),
             createdAtEpochMs,
             updatedAtEpochMs,
             activeAtEpochMs,
             mutatedAtEpochMs,
-            snapshotVersion: optionalNumber(principal.snapshotVersion),
+            snapshotVersion: optionalNumber(principal.snapshotVersion)
         };
     });
 }
 
 export function sortGroupRows(
     rows: readonly RoomStateRow[],
-    sortId: GroupSortId,
+    sortId: GroupSortId
 ): readonly RoomStateRow[] {
     return [...rows].sort((left, right) => {
         switch (sortId) {
@@ -158,47 +151,47 @@ export function sortGroupRows(
                 return firstComparison(
                     compareNumberDesc(
                         left.activeAtEpochMs,
-                        right.activeAtEpochMs,
+                        right.activeAtEpochMs
                     ),
                     right.online - left.online,
                     right.members - left.members,
-                    compareText(left.displayName, right.displayName),
+                    compareText(left.displayName, right.displayName)
                 );
             case 'mutated-desc':
                 return firstComparison(
                     compareNumberDesc(
                         left.mutatedAtEpochMs,
-                        right.mutatedAtEpochMs,
+                        right.mutatedAtEpochMs
                     ),
-                    compareText(left.displayName, right.displayName),
+                    compareText(left.displayName, right.displayName)
                 );
             case 'created-desc':
                 return firstComparison(
                     compareNumberDesc(
                         left.createdAtEpochMs,
-                        right.createdAtEpochMs,
+                        right.createdAtEpochMs
                     ),
-                    compareText(left.displayName, right.displayName),
+                    compareText(left.displayName, right.displayName)
                 );
             case 'online-desc':
                 return firstComparison(
                     right.online - left.online,
                     compareNumberDesc(
                         left.activeAtEpochMs,
-                        right.activeAtEpochMs,
+                        right.activeAtEpochMs
                     ),
-                    compareText(left.displayName, right.displayName),
+                    compareText(left.displayName, right.displayName)
                 );
             case 'members-desc':
                 return firstComparison(
                     right.members - left.members,
                     right.online - left.online,
-                    compareText(left.displayName, right.displayName),
+                    compareText(left.displayName, right.displayName)
                 );
             case 'status-asc':
                 return firstComparison(
                     compareText(left.status, right.status),
-                    compareText(left.displayName, right.displayName),
+                    compareText(left.displayName, right.displayName)
                 );
             case 'name-asc':
                 return compareText(left.displayName, right.displayName);
@@ -208,7 +201,7 @@ export function sortGroupRows(
 
 export function sortClientRows(
     rows: readonly ClientStateRow[],
-    sortId: ClientSortId,
+    sortId: ClientSortId
 ): readonly ClientStateRow[] {
     return [...rows].sort((left, right) => {
         switch (sortId) {
@@ -218,45 +211,45 @@ export function sortClientRows(
                         Number(left.online === 'online'),
                     compareNumberDesc(
                         left.activeAtEpochMs,
-                        right.activeAtEpochMs,
+                        right.activeAtEpochMs
                     ),
-                    compareText(left.username, right.username),
+                    compareText(left.username, right.username)
                 );
             case 'active-desc':
                 return firstComparison(
                     compareNumberDesc(
                         left.activeAtEpochMs,
-                        right.activeAtEpochMs,
+                        right.activeAtEpochMs
                     ),
-                    compareText(left.username, right.username),
+                    compareText(left.username, right.username)
                 );
             case 'mutated-desc':
                 return firstComparison(
                     compareNumberDesc(
                         left.mutatedAtEpochMs,
-                        right.mutatedAtEpochMs,
+                        right.mutatedAtEpochMs
                     ),
-                    compareText(left.username, right.username),
+                    compareText(left.username, right.username)
                 );
             case 'created-desc':
                 return firstComparison(
                     compareNumberDesc(
                         left.createdAtEpochMs,
-                        right.createdAtEpochMs,
+                        right.createdAtEpochMs
                     ),
-                    compareText(left.username, right.username),
+                    compareText(left.username, right.username)
                 );
             case 'sessions-desc':
                 return firstComparison(
                     right.sessions.length - left.sessions.length,
                     Number(right.online === 'online') -
                         Number(left.online === 'online'),
-                    compareText(left.username, right.username),
+                    compareText(left.username, right.username)
                 );
             case 'status-asc':
                 return firstComparison(
                     compareText(left.status, right.status),
-                    compareText(left.username, right.username),
+                    compareText(left.username, right.username)
                 );
             case 'name-asc':
                 return compareText(left.username, right.username);
@@ -273,20 +266,19 @@ export function rowsFromStateEvents(value: unknown): readonly StateEventRow[] {
             (item): item is Record<string, unknown> =>
                 Boolean(item) &&
                 typeof item === 'object' &&
-                !Array.isArray(item),
+                !Array.isArray(item)
         )
         .map((event, index) => ({
             rowId: stringOrDash(
-                event.eventId ?? `${event.eventType ?? 'event'}-${index}`,
+                event.eventId ?? `${event.eventType ?? 'event'}-${index}`
             ),
             eventType: stringOrDash(event.eventType),
             subject: stringOrDash(
-                event.groupId ?? event.principalId ?? event.sessionId,
+                event.groupId ?? event.principalId ?? event.sessionId
             ),
             snapshotVersion: String(event.snapshotVersion ?? '-'),
-            atEpochMs:
-                typeof event.occurredAtEpochMs === 'number'
-                    ? event.occurredAtEpochMs
-                    : undefined,
+            atEpochMs: typeof event.occurredAtEpochMs === 'number'
+                ? event.occurredAtEpochMs
+                : undefined
         }));
 }

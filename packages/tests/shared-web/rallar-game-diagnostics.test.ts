@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { deriveRallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import type { RallarGameMatchStatus } from '@shared-web/game/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Rallar Game diagnostics', () => {
     it('aggregates match, election, readiness, capability, and RTC status', () => {
@@ -18,7 +18,7 @@ describe('Rallar Game diagnostics', () => {
             recovery: { status: 'idle' },
             started: true,
             stopped: false,
-            updatedAtEpochMs: 1_000,
+            updatedAtEpochMs: 1_000
         };
 
         expect(
@@ -30,17 +30,17 @@ describe('Rallar Game diagnostics', () => {
                         peerId: 'peer-b',
                         score: 10,
                         eligible: true,
-                        reason: 'fresh-capability',
+                        reason: 'fresh-capability'
                     },
                     backup: {
                         peerId: 'peer-a',
                         score: 9,
                         eligible: true,
-                        reason: 'fresh-capability',
+                        reason: 'fresh-capability'
                     },
                     candidates: [],
                     nowEpochMs: 2_000,
-                    capabilityTtlMs: 10_000,
+                    capabilityTtlMs: 10_000
                 },
                 peerReadiness: {
                     status: 'partial',
@@ -51,7 +51,7 @@ describe('Rallar Game diagnostics', () => {
                     missingPeerIds: [],
                     extraPeerIds: [],
                     observedCount: 1,
-                    lanes: [],
+                    lanes: []
                 },
                 rtcStatus: {
                     sessionId: 'peer-a',
@@ -60,19 +60,19 @@ describe('Rallar Game diagnostics', () => {
                     activePeerIds: ['peer-b'],
                     peerIdsWithNoReconnectableLanes: [],
                     readyPeerIds: ['peer-b'],
-                    peers: [],
+                    peers: []
                 },
                 capabilities: [
                     { peerId: 'peer-a', reportedAtEpochMs: 1_000 },
-                    { peerId: 'peer-b', reportedAtEpochMs: 1_000 },
+                    { peerId: 'peer-b', reportedAtEpochMs: 1_000 }
                 ],
                 realtimeHealth: [
                     {
                         peerId: 'peer-b',
-                        laneId: 'game-input',
-                    },
-                ],
-            }),
+                        laneId: 'game-input'
+                    }
+                ]
+            })
         ).toMatchObject({
             generatedAtEpochMs: 2_000,
             phase: 'active',
@@ -88,7 +88,7 @@ describe('Rallar Game diagnostics', () => {
             notReadyPeerIds: ['peer-c'],
             capabilityCount: 2,
             rtcPeerCount: 2,
-            issues: ['partial-lane-readiness'],
+            issues: ['partial-lane-readiness']
         });
     });
 
@@ -104,18 +104,18 @@ describe('Rallar Game diagnostics', () => {
                 recovery: {
                     status: 'recovering',
                     reason: 'No fresh director.',
-                    sinceEpochMs: 1_000,
+                    sinceEpochMs: 1_000
                 },
                 started: true,
                 stopped: false,
-                updatedAtEpochMs: 1_000,
+                updatedAtEpochMs: 1_000
             },
             nowEpochMs: 2_000,
             election: {
                 candidates: [],
                 nowEpochMs: 2_000,
-                capabilityTtlMs: 10_000,
-            },
+                capabilityTtlMs: 10_000
+            }
         });
 
         expect(diagnostics.issues).toEqual([
@@ -123,7 +123,7 @@ describe('Rallar Game diagnostics', () => {
             'no-electable-host',
             'no-local-peer',
             'no-room',
-            'recovering',
+            'recovering'
         ]);
     });
 
@@ -141,7 +141,7 @@ describe('Rallar Game diagnostics', () => {
                 recovery: { status: 'idle' },
                 started: true,
                 stopped: false,
-                updatedAtEpochMs: 1_000,
+                updatedAtEpochMs: 1_000
             },
             appointment: {
                 allowed: false,
@@ -151,16 +151,16 @@ describe('Rallar Game diagnostics', () => {
                 localPrincipalId: 'principal-a',
                 localRole: 'member',
                 localMemberStatus: 'active',
-                reason: 'Only active room owners/admins can appoint the browser director.',
+                reason: 'Only active room owners/admins can appoint the browser director.'
             },
             lastAppointment: {
                 status: 'not-authorized',
                 election: {
                     candidates: [],
                     nowEpochMs: 1_000,
-                    capabilityTtlMs: 10_000,
+                    capabilityTtlMs: 10_000
                 },
-                reason: 'Only active room owners/admins can appoint the browser director.',
+                reason: 'Only active room owners/admins can appoint the browser director.'
             },
             wsStatus: {
                 connectState: 'connecting',
@@ -170,20 +170,20 @@ describe('Rallar Game diagnostics', () => {
                 reconnectEnabled: true,
                 reconnectAttempts: 1,
                 maxReconnectAttempts: 5,
-                reconnectExhausted: false,
-            },
+                reconnectExhausted: false
+            }
         });
 
         expect(diagnostics.appointment).toMatchObject({
             status: 'not-authorized',
             localRole: 'member',
-            lastResultStatus: 'not-authorized',
+            lastResultStatus: 'not-authorized'
         });
         expect(diagnostics.wsStatus?.readyState).toBe('closed');
         expect(diagnostics.issues).toEqual([
             'director-not-authorized',
             'no-director',
-            'ws-not-open',
+            'ws-not-open'
         ]);
     });
 });

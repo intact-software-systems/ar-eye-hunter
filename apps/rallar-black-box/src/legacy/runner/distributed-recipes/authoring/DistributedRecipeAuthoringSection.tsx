@@ -1,26 +1,26 @@
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     DistributedRecipeCatalogItem,
     DistributedRecipeRolePattern,
-    DistributedRecipeTargetPolicyMode,
+    DistributedRecipeTargetPolicyMode
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
 import {
     distributedRecipeSchemaContextText,
     redactDistributedRecipePromptVariables,
     renderDistributedRecipePromptTemplate,
     renderDistributedRecipeValidationFeedback,
-    type DistributedRecipePromptTemplateId,
+    type DistributedRecipePromptTemplateId
 } from '../../../../distributed-recipe-authoring-prompts.ts';
 import { validateSchemaAuthoringText } from '../../../../schema-authoring.ts';
-import type { CommandCenterGlobalValues } from '../../../shell/global-context-model.ts';
 import { json } from '../../../shared/json-presentation.ts';
-import { DistributedRecipeAuthoringPanel } from './DistributedRecipeAuthoringPanel.tsx';
+import type { CommandCenterGlobalValues } from '../../../shell/global-context-model.ts';
 import {
     distributedAuthoringDraftPreflights,
     distributedPromptFeedbackFromValidation,
-    type DistributedAuthoringDraftTarget,
+    type DistributedAuthoringDraftTarget
 } from './distributed-recipe-authoring.ts';
+import { DistributedRecipeAuthoringPanel } from './DistributedRecipeAuthoringPanel.tsx';
 
 type DistributedRecipeAuthoringSectionProps = Readonly<{
     manifest?: RallarBlackBoxDistributedRunManifest;
@@ -41,7 +41,7 @@ type DistributedRecipeAuthoringSectionProps = Readonly<{
 }>;
 
 export function DistributedRecipeAuthoringSection(
-    props: DistributedRecipeAuthoringSectionProps,
+    props: DistributedRecipeAuthoringSectionProps
 ) {
     const {
         manifest,
@@ -58,49 +58,49 @@ export function DistributedRecipeAuthoringSection(
         startMode,
         selectedAgentIds,
         selectedRecipes,
-        onLastAction,
+        onLastAction
     } = props;
-    const [authoringTemplateId, setAuthoringTemplateId] =
-        useState<DistributedRecipePromptTemplateId>('live-group-ack');
-    const [authoringDraftTarget, setAuthoringDraftTarget] =
-        useState<DistributedAuthoringDraftTarget>('distributed-run-manifest');
+    const [authoringTemplateId, setAuthoringTemplateId] = useState<DistributedRecipePromptTemplateId>('live-group-ack');
+    const [authoringDraftTarget, setAuthoringDraftTarget] = useState<DistributedAuthoringDraftTarget>(
+        'distributed-run-manifest'
+    );
     const [authoringDraftText, setAuthoringDraftText] = useState('');
     const authoringSchemaContextText = useMemo(
         () => distributedRecipeSchemaContextText(),
-        [],
+        []
     );
     const authoringDraftValidation = useMemo(
         () =>
             authoringDraftText.trim().length > 0
                 ? validateSchemaAuthoringText(
-                      authoringDraftTarget,
-                      authoringDraftText,
-                  )
+                    authoringDraftTarget,
+                    authoringDraftText
+                )
                 : undefined,
-        [authoringDraftTarget, authoringDraftText],
+        [authoringDraftTarget, authoringDraftText]
     );
     const authoringDraftPreflights = useMemo(
         () => distributedAuthoringDraftPreflights(authoringDraftValidation),
-        [authoringDraftValidation],
+        [authoringDraftValidation]
     );
     const authoringValidationFeedback = useMemo(
         () =>
             authoringDraftValidation
                 ? distributedPromptFeedbackFromValidation(
-                      authoringDraftValidation,
-                      authoringDraftPreflights,
-                  )
+                    authoringDraftValidation,
+                    authoringDraftPreflights
+                )
                 : undefined,
-        [authoringDraftPreflights, authoringDraftValidation],
+        [authoringDraftPreflights, authoringDraftValidation]
     );
     const authoringValidationFeedbackText = useMemo(
         () =>
             authoringValidationFeedback
                 ? renderDistributedRecipeValidationFeedback(
-                      authoringValidationFeedback,
-                  )
+                    authoringValidationFeedback
+                )
                 : 'Paste generated JSON to get schema validation and distributed recipe preflight feedback.',
-        [authoringValidationFeedback],
+        [authoringValidationFeedback]
     );
     const authoringPromptVariables = useMemo(
         () => ({
@@ -126,9 +126,9 @@ export function DistributedRecipeAuthoringSection(
                 recipeId: item.recipe.recipeId,
                 title: item.title,
                 live: item.live,
-                profiles: item.profiles,
+                profiles: item.profiles
             })),
-            controlToken: token,
+            controlToken: token
         }),
         [
             ackTimeoutMs,
@@ -148,29 +148,29 @@ export function DistributedRecipeAuthoringSection(
             selectedRunId,
             startMode,
             targetPolicyMode,
-            token,
-        ],
+            token
+        ]
     );
     const redactedAuthoringPromptVariables = useMemo(
         () => redactDistributedRecipePromptVariables(authoringPromptVariables),
-        [authoringPromptVariables],
+        [authoringPromptVariables]
     );
     const authoringPromptText = useMemo(
         () =>
             renderDistributedRecipePromptTemplate(authoringTemplateId, {
                 variables: authoringPromptVariables,
-                validationFeedback: authoringValidationFeedback,
+                validationFeedback: authoringValidationFeedback
             }),
         [
             authoringPromptVariables,
             authoringTemplateId,
-            authoringValidationFeedback,
-        ],
+            authoringValidationFeedback
+        ]
     );
 
     const copyAuthoringText = async (
         text: string,
-        label: string,
+        label: string
     ): Promise<void> => {
         if (!navigator.clipboard) {
             onLastAction('Clipboard is unavailable in this browser context.');
@@ -207,21 +207,18 @@ export function DistributedRecipeAuthoringSection(
             onCopyPrompt={() =>
                 void copyAuthoringText(
                     authoringPromptText,
-                    'Copied distributed recipe prompt.',
-                )
-            }
+                    'Copied distributed recipe prompt.'
+                )}
             onCopySchemaContext={() =>
                 void copyAuthoringText(
                     authoringSchemaContextText,
-                    'Copied distributed recipe schema context.',
-                )
-            }
+                    'Copied distributed recipe schema context.'
+                )}
             onCopyValidationFeedback={() =>
                 void copyAuthoringText(
                     authoringValidationFeedbackText,
-                    'Copied distributed recipe validation feedback.',
-                )
-            }
+                    'Copied distributed recipe validation feedback.'
+                )}
             onUseManifestPreview={useManifestPreviewForAuthoring}
         />
     );

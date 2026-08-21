@@ -1,25 +1,26 @@
+import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DistributedArtifactEvidenceWindowQuery } from
-    '@shared-test/rallar-bb-test/mod.ts';
-import type { RecipeConsoleControlConnection } from
-    '../control/ControlConnectionProvider.tsx';
-import { analyzeOperationOwnsCurrentBoundary } from
-    './analyze-operation-boundary.ts';
-import { createAnalyzeInterruptedError } from './analyze-workspace-policy.ts';
-import {
-    clearAnalyzeWorkspaceArtifact, selectAnalyzeWorkspaceEvidence,
-    createInitialAnalyzeWorkspaceState, type AnalyzeWorkspaceOperationAuthority,
-} from './analyze-workspace-state.ts';
-import type {
-    AnalyzeArtifactProjection, AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade, AnalyzeWorkerTelemetry,
-} from './analyze-worker-contract.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+import { analyzeOperationOwnsCurrentBoundary } from './analyze-operation-boundary.ts';
 import type { AnalyzeWorkerClient } from './analyze-worker-client.ts';
-import { useAnalyzeEvidenceRequests } from './use-analyze-evidence-requests.ts';
+import type {
+    AnalyzeArtifactProjection,
+    AnalyzeEvidenceWindowProjection,
+    AnalyzeTuneArtifactFacade,
+    AnalyzeWorkerTelemetry
+} from './analyze-worker-contract.ts';
 import {
     createAnalyzeWorkerWorkspaceCallbacks,
-    type AnalyzePendingIdentityPatch,
+    type AnalyzePendingIdentityPatch
 } from './analyze-worker-workspace-callbacks.ts';
+import { createAnalyzeInterruptedError } from './analyze-workspace-policy.ts';
+import {
+    clearAnalyzeWorkspaceArtifact,
+    createInitialAnalyzeWorkspaceState,
+    selectAnalyzeWorkspaceEvidence,
+    type AnalyzeWorkspaceOperationAuthority
+} from './analyze-workspace-state.ts';
+import { useAnalyzeEvidenceRequests } from './use-analyze-evidence-requests.ts';
 
 export type AnalyzePendingOperation = Readonly<{
     controller: AbortController;
@@ -33,19 +34,19 @@ export type AnalyzeControlBoundary = Readonly<{
     execution?: RecipeConsoleControlConnection['execution'];
     baseUrl: string;
 }>;
-export type AnalyzeMutableRef<Value> = { current: Value };
-export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
-    pendingRef: AnalyzeMutableRef<AnalyzePendingOperation | undefined>;
-    boundaryRef: AnalyzeMutableRef<AnalyzeControlBoundary>;
-    navigateIdentity(identity: AnalyzeArtifactProjection['identity']): void;
-}>) {
+export type AnalyzeMutableRef<Value> = { current: Value; };
+export function useAnalyzeWorkerWorkspaceAdapter(
+    input: Readonly<{
+        pendingRef: AnalyzeMutableRef<AnalyzePendingOperation | undefined>;
+        boundaryRef: AnalyzeMutableRef<AnalyzeControlBoundary>;
+        navigateIdentity(identity: AnalyzeArtifactProjection['identity']): void;
+    }>
+) {
     const [state, setState] = useState(
-        createInitialAnalyzeWorkspaceState<AnalyzeArtifactProjection>,
+        createInitialAnalyzeWorkspaceState<AnalyzeArtifactProjection>
     );
     const evidence = useAnalyzeEvidenceRequests();
-    const [selectedEvidence, setSelectedEvidence] = useState<
-        AnalyzeEvidenceWindowProjection['entries'][number]
-    >();
+    const [selectedEvidence, setSelectedEvidence] = useState<AnalyzeEvidenceWindowProjection['entries'][number]>();
     const [tuneFacade, setTuneFacade] = useState<AnalyzeTuneArtifactFacade>();
     const [telemetry, setTelemetry] = useState<AnalyzeWorkerTelemetry>();
     const [workerUnavailable, setWorkerUnavailable] = useState<string>();
@@ -54,17 +55,17 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
     const clientPromiseRef = useRef<Promise<AnalyzeWorkerClient> | undefined>(undefined);
     const lifetimeRef = useRef(0);
     const validationErrorRef = useRef<Error | undefined>(undefined);
-    const pendingIdentityPatchRef = useRef<
-        AnalyzePendingIdentityPatch | undefined
-    >(undefined);
+    const pendingIdentityPatchRef = useRef<AnalyzePendingIdentityPatch | undefined>(undefined);
     const navigateIdentityRef = useRef(input.navigateIdentity);
     navigateIdentityRef.current = input.navigateIdentity;
     const ensureClient = useCallback(async (): Promise<AnalyzeWorkerClient> => {
-        if (clientRef.current) return clientRef.current;
+        if (clientRef.current) {
+            return clientRef.current;
+        }
         const lifetime = lifetimeRef.current;
         clientPromiseRef.current ??= Promise.all([
             import('./analyze-worker-client.ts'),
-            import('./analyze-worker-factory.ts'),
+            import('./analyze-worker-factory.ts')
         ]).then(([clientModule, factoryModule]) => {
             const client = clientModule.createAnalyzeWorkerClient({
                 createWorker: factoryModule.createAnalyzeWorkerFactory(),
@@ -75,24 +76,28 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
                         return false;
                     }
                     const boundary = input.boundaryRef.current;
-                    if (!analyzeOperationOwnsCurrentBoundary({
-                        authority: pending.authority,
-                        operationExecution: pending.controlExecution,
-                        currentContextKey: boundary.currentContextKey(),
-                        currentExecution: boundary.execution,
-                    })) {
+                    if (
+                        !analyzeOperationOwnsCurrentBoundary({
+                            authority: pending.authority,
+                            operationExecution: pending.controlExecution,
+                            currentContextKey: boundary.currentContextKey(),
+                            currentExecution: boundary.execution
+                        })
+                    ) {
                         validationErrorRef.current = createAnalyzeInterruptedError(
-                            'Analyze control source changed before artifact promotion.',
+                            'Analyze control source changed before artifact promotion.'
                         );
                         return false;
                     }
-                    if (pending.authority.action !== 'load-control') return true;
+                    if (pending.authority.action !== 'load-control') {
+                        return true;
+                    }
                     if (response.controlIdentityValidated === true) {
                         validationErrorRef.current = undefined;
                         return true;
                     }
                     validationErrorRef.current = new Error(
-                        'Artifact identity was not validated against the active control source.',
+                        'Artifact identity was not validated against the active control source.'
                     );
                     return false;
                 },
@@ -106,8 +111,8 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
                     setTuneFacade,
                     setTelemetry,
                     setWorkerUnavailable,
-                    setPendingPaintGeneration,
-                }),
+                    setPendingPaintGeneration
+                })
             });
             if (lifetime !== lifetimeRef.current) {
                 client.dispose();
@@ -115,7 +120,7 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
             }
             clientRef.current = client;
             return client;
-        }).catch(error => {
+        }).catch((error) => {
             if (lifetime === lifetimeRef.current) {
                 clientPromiseRef.current = undefined;
             }
@@ -138,7 +143,9 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
             !patch || !state.artifact ||
             patch.generation !== state.operationGeneration ||
             patch.identity.distributedRunId !== state.artifact.identity.distributedRunId
-        ) return;
+        ) {
+            return;
+        }
         pendingIdentityPatchRef.current = undefined;
         navigateIdentityRef.current(patch.identity);
     }, [state.artifact, state.operationGeneration]);
@@ -157,26 +164,26 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
         setState(clearAnalyzeWorkspaceArtifact);
     }, [evidence.clear, input.pendingRef]);
     const selectEvidence = useCallback((id: string | undefined) => {
-        setState(previous => selectAnalyzeWorkspaceEvidence(previous, id));
-        setSelectedEvidence(evidence.window?.entries.find(row => row.id === id));
+        setState((previous) => selectAnalyzeWorkspaceEvidence(previous, id));
+        setSelectedEvidence(evidence.window?.entries.find((row) => row.id === id));
         clientRef.current?.select(id);
     }, [evidence.window]);
     const searchEvidence = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,
-        fingerprint: string,
+        fingerprint: string
     ) => evidence.begin({
         fingerprint,
         kind: 'search',
-        send: () => clientRef.current?.search(query),
+        send: () => clientRef.current?.search(query)
     }), [evidence.begin]);
     const requestEvidenceWindow = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,
         cursor: string,
-        fingerprint: string,
+        fingerprint: string
     ) => evidence.begin({
         fingerprint,
         kind: 'window',
-        send: () => clientRef.current?.window({ query, cursor }),
+        send: () => clientRef.current?.window({ query, cursor })
     }), [evidence.begin]);
     return {
         state,
@@ -197,6 +204,6 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
         selectEvidence,
         searchEvidence,
         requestEvidenceWindow,
-        currentExport: () => clientRef.current?.currentExport(),
+        currentExport: () => clientRef.current?.currentExport()
     } as const;
 }

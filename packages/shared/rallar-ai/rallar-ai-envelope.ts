@@ -1,13 +1,10 @@
+import { hashRallarAiPrompt, hashRallarAiSchema } from './rallar-ai-hashing.ts';
 import {
     RALLAR_AI_PROTOCOL_VERSION,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult,
+    type RallarAiJsonResult
 } from './rallar-ai-types.ts';
-import {
-    hashRallarAiPrompt,
-    hashRallarAiSchema,
-} from './rallar-ai-hashing.ts';
 import { validateRallarAiJsonSchemaValue } from './rallar-ai-validation.ts';
 
 export type CreateRallarAiJsonResultInput<TValue = unknown> = Readonly<{
@@ -23,7 +20,7 @@ export type CreateRallarAiJsonResultInput<TValue = unknown> = Readonly<{
 }>;
 
 export function createRallarAiJsonResult<TValue = unknown>(
-    input: CreateRallarAiJsonResultInput<TValue>,
+    input: CreateRallarAiJsonResultInput<TValue>
 ): RallarAiJsonResult<TValue> {
     const createdAtEpochMs = input.createdAtEpochMs ?? Date.now();
     const completedAtEpochMs = input.completedAtEpochMs ?? createdAtEpochMs;
@@ -46,15 +43,15 @@ export function createRallarAiJsonResult<TValue = unknown>(
         rawText: input.rawText,
         validation: validateRallarAiJsonSchemaValue(
             input.request.schema,
-            input.value,
+            input.value
         ),
         timing: input.startedAtEpochMs === undefined
             ? undefined
             : {
                 startedAtEpochMs: input.startedAtEpochMs,
-                completedAtEpochMs,
+                completedAtEpochMs
             },
-        lifecycle: 'draft',
+        lifecycle: 'draft'
     };
 }
 

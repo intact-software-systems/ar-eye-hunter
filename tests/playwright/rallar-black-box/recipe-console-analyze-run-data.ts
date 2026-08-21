@@ -1,6 +1,6 @@
 import type {
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
@@ -13,20 +13,17 @@ export const ANALYZE_FAILURE_MESSAGE = 'TURN relay allocation failed for receive
 export const ANALYZE_DIAGNOSTIC_MESSAGE = 'Relay allocation missing in eu-north.';
 export const ANALYZE_RESULT_FAILURE_CODE = 'RALLAR_BLACK_BOX_COMMAND_FAILED';
 export const ANALYZE_RESULT_FAILURE_NAME = 'RALLAR_BLACK_BOX_TIMEOUT';
-export const ANALYZE_RESULT_FAILURE_MESSAGE =
-    'Rallar black-box command timeout reached.';
+export const ANALYZE_RESULT_FAILURE_MESSAGE = 'Rallar black-box command timeout reached.';
 export const ANALYZE_RESULT_FAILURE_STACK = [
     `${ANALYZE_RESULT_FAILURE_NAME}: ${ANALYZE_RESULT_FAILURE_MESSAGE}`,
     ' at _t (https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:50131)',
-    ' at https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:62093',
+    ' at https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:62093'
 ].join('\n');
 export const ANALYZE_BASE_EPOCH_MS = 2_100_000_000_000;
 export const ANALYZE_GENERATED_AT_EPOCH_MS = 2_100_000_001_000;
-export const ANALYZE_ROUTE =
-    '/?provider=simulated&v=1&experience=recipe-console&view=analyze' +
+export const ANALYZE_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=analyze' +
     '&applicationId=rallar-server&workspaceId=default&roomId=analyze-ci';
-export const ANALYZE_CONTROL_ROUTE =
-    `${ANALYZE_ROUTE}&controlRunId=${ANALYZE_CONTROL_RUN_ID}` +
+export const ANALYZE_CONTROL_ROUTE = `${ANALYZE_ROUTE}&controlRunId=${ANALYZE_CONTROL_RUN_ID}` +
     `&distributedRunId=${ANALYZE_DISTRIBUTED_RUN_ID}`;
 
 export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
@@ -38,7 +35,7 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'analyze-ci',
+            groupId: 'analyze-ci'
         },
         recipes: [{
             recipeId: ANALYZE_RECIPE_ID,
@@ -46,22 +43,22 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
                 schemaVersion: 1,
                 recipeId: ANALYZE_RECIPE_ID,
                 name: 'Analyze RTC relay',
-                commands: [{ kind: 'health', commandId: ANALYZE_COMMAND_ID }],
+                commands: [{ kind: 'health', commandId: ANALYZE_COMMAND_ID }]
             },
-            required: true,
+            required: true
         }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: [ANALYZE_AGENT_ID],
-            expectedParticipantCount: 1,
+            expectedParticipantCount: 1
         },
         roleAssignments: [{
             agentId: ANALYZE_AGENT_ID,
             role: 'receiver',
             recipeIds: [ANALYZE_RECIPE_ID],
-            required: true,
+            required: true
         }],
-        startMode: 'manual',
+        startMode: 'manual'
     };
 }
 
@@ -83,7 +80,7 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
             commandId: ANALYZE_COMMAND_ID,
             recipeId: ANALYZE_RECIPE_ID,
             role: 'receiver',
-            queuedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 280,
+            queuedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 280
         }],
         rollup: {
             state: 'failed',
@@ -98,7 +95,7 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
-                blockingFailures: 1,
+                blockingFailures: 1
             },
             failures: [{
                 kind: 'command',
@@ -109,11 +106,11 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
                 commandId: ANALYZE_COMMAND_ID,
                 error: {
                     code: 'RTC_NO_RELAY',
-                    message: ANALYZE_FAILURE_MESSAGE,
+                    message: ANALYZE_FAILURE_MESSAGE
                 },
-                atEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500,
-            }],
-        },
+                atEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500
+            }]
+        }
     };
 }
 
@@ -136,20 +133,20 @@ export function createAnalyzeControlRun(): ControlRunSnapshot {
                 workspaceId: 'default',
                 groupId: 'analyze-ci',
                 region: 'eu-north',
-                providerMode: 'browser-rallar',
+                providerMode: 'browser-rallar'
             },
             connectionSequence: 3,
             reconnectCount: 2,
             receivedResultCount: 1,
             receivedEventCount: 3,
             completedCommandIds: [ANALYZE_COMMAND_ID],
-            resumeCompletedCommandIds: [],
+            resumeCompletedCommandIds: []
         }],
         commands: [],
         results: [],
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }

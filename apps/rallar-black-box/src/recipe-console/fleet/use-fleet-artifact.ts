@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { RecipeConsoleControlFleetCapability } from
-    '../control/control-api.ts';
-import type { RecipeConsoleControlFleetApi } from
-    '../control/control-fleet-api.ts';
+import type { RecipeConsoleControlFleetCapability } from '../control/control-api.ts';
+import type { RecipeConsoleControlFleetApi } from '../control/control-fleet-api.ts';
 import { downloadFleetArtifactEnvelope } from './fleet-artifact-download.ts';
-import {
-    deriveFleetArtifactModel,
-    type FleetArtifactModel,
-} from './fleet-artifact-model.ts';
+import { deriveFleetArtifactModel, type FleetArtifactModel } from './fleet-artifact-model.ts';
 
 type FleetArtifactState =
-    | Readonly<{ status: 'idle' }>
+    | Readonly<{ status: 'idle'; }>
     | Readonly<{
         status: 'loading' | 'ready' | 'error';
         reportId: string;
@@ -24,10 +19,12 @@ type LoadedFleetApi = Readonly<{
     api: RecipeConsoleControlFleetApi;
 }>;
 
-export function useFleetArtifact(input: Readonly<{
-    capability?: RecipeConsoleControlFleetCapability;
-    selectedReportId?: string;
-}>) {
+export function useFleetArtifact(
+    input: Readonly<{
+        capability?: RecipeConsoleControlFleetCapability;
+        selectedReportId?: string;
+    }>
+) {
     const [state, setState] = useState<FleetArtifactState>({ status: 'idle' });
     const loadedRef = useRef<LoadedFleetApi | undefined>(undefined);
     const requestRef = useRef<AbortController | undefined>(undefined);
@@ -50,7 +47,9 @@ export function useFleetArtifact(input: Readonly<{
     }, []);
 
     const load = useCallback(async () => {
-        if (!input.capability || !input.selectedReportId) return;
+        if (!input.capability || !input.selectedReportId) {
+            return;
+        }
         const capability = input.capability;
         const reportId = input.selectedReportId;
         const currentModel = state.status !== 'idle' &&
@@ -66,39 +65,49 @@ export function useFleetArtifact(input: Readonly<{
             status: 'loading',
             capabilityGeneration: capability.generation,
             reportId,
-            ...(currentModel ? { model: currentModel } : {}),
+            ...(currentModel ? { model: currentModel } : {})
         });
         try {
             const api = loadedRef.current?.generation === capability.generation
                 ? loadedRef.current.api
                 : await capability.load();
-            if (controller.signal.aborted || generation !== generationRef.current) return;
+            if (controller.signal.aborted || generation !== generationRef.current) {
+                return;
+            }
             loadedRef.current = {
                 generation: capability.generation,
-                api,
+                api
             };
             const bundle = await api.selectReportBundle({
                 distributedRunId: reportId,
-                signal: controller.signal,
+                signal: controller.signal
             });
-            if (controller.signal.aborted || generation !== generationRef.current) return;
+            if (controller.signal.aborted || generation !== generationRef.current) {
+                return;
+            }
             setState({
                 status: 'ready',
                 capabilityGeneration: capability.generation,
                 reportId,
-                model: deriveFleetArtifactModel(bundle),
+                model: deriveFleetArtifactModel(bundle)
             });
-        } catch (error) {
-            if (controller.signal.aborted || generation !== generationRef.current) return;
+        }
+        catch (error) {
+            if (controller.signal.aborted || generation !== generationRef.current) {
+                return;
+            }
             setState({
                 status: 'error',
                 capabilityGeneration: capability.generation,
                 reportId,
                 ...(currentModel ? { model: currentModel } : {}),
-                message: error instanceof Error ? error.message : String(error),
+                message: error instanceof Error ? error.message : String(error)
             });
-        } finally {
-            if (requestRef.current === controller) requestRef.current = undefined;
+        }
+        finally {
+            if (requestRef.current === controller) {
+                requestRef.current = undefined;
+            }
         }
     }, [input.capability, input.selectedReportId, state]);
     const stateMatchesSelection = state.status !== 'idle' &&

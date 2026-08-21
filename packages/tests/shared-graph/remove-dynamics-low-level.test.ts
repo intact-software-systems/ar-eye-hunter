@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
-import { removeBasic, rvLeaf, rvODTwo, rvUnusedSP, } from '@shared-graph/remove/remove-dynamics-basic.ts';
-import { rvMCEdge, rvSearchMCEdge, } from '@shared-graph/remove/remove-dynamics-mc.ts';
-import { rvMDEdge, rvSearchMDEdge, } from '@shared-graph/remove/remove-dynamics-md.ts';
+import { removeBasic, rvLeaf, rvODTwo, rvUnusedSP } from '@shared-graph/remove/remove-dynamics-basic.ts';
+import { rvMCEdge, rvSearchMCEdge } from '@shared-graph/remove/remove-dynamics-mc.ts';
+import { rvMDEdge, rvSearchMDEdge } from '@shared-graph/remove/remove-dynamics-md.ts';
+import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph low-level remove dynamics', () => {
@@ -10,9 +10,9 @@ describe('shared-graph low-level remove dynamics', () => {
         const leafGlobal = createGraph(
             [
                 ['a', VertexState.MEMBER, 4],
-                ['x', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
             ],
-            [['a', 'x', 1]],
+            [['a', 'x', 1]]
         );
         const leafCtx = createRemoveCtx(leafGlobal, leafGlobal, 'x');
 
@@ -25,13 +25,13 @@ describe('shared-graph low-level remove dynamics', () => {
             [
                 ['a', VertexState.MEMBER, 4],
                 ['b', VertexState.MEMBER, 4],
-                ['x', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'x', 1],
                 ['b', 'x', 1],
-                ['a', 'b', 7],
-            ],
+                ['a', 'b', 7]
+            ]
         );
         const degreeTwoCtx = createRemoveCtx(degreeTwoGlobal, degreeTwoGlobal, 'x');
 
@@ -44,12 +44,12 @@ describe('shared-graph low-level remove dynamics', () => {
             [
                 ['member-a', VertexState.MEMBER, 4],
                 ['steiner-1', VertexState.STEINER, 8],
-                ['steiner-2', VertexState.STEINER, 8],
+                ['steiner-2', VertexState.STEINER, 8]
             ],
             [
                 ['member-a', 'steiner-1', 1],
-                ['steiner-1', 'steiner-2', 1],
-            ],
+                ['steiner-1', 'steiner-2', 1]
+            ]
         );
         const pruned = rvUnusedSP(createRemoveCtx(steinerGraph, steinerGraph, 'steiner-2'));
         expect(pruned.graph.nodes()).toEqual(['member-a']);
@@ -61,7 +61,7 @@ describe('shared-graph low-level remove dynamics', () => {
                 ['a', VertexState.MEMBER, 3],
                 ['b', VertexState.MEMBER, 3],
                 ['c', VertexState.MEMBER, 3],
-                ['x', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'x', 1],
@@ -69,21 +69,21 @@ describe('shared-graph low-level remove dynamics', () => {
                 ['c', 'x', 1],
                 ['a', 'b', 1],
                 ['a', 'c', 5],
-                ['b', 'c', 1],
-            ],
+                ['b', 'c', 1]
+            ]
         );
         const groupGraph = createGraph(
             [
                 ['a', VertexState.MEMBER, 3],
                 ['b', VertexState.MEMBER, 3],
                 ['c', VertexState.MEMBER, 3],
-                ['x', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'x', 1],
                 ['b', 'x', 1],
-                ['c', 'x', 1],
-            ],
+                ['c', 'x', 1]
+            ]
         );
         const ctx = createRemoveCtx(globalGraph, groupGraph, 'x');
 
@@ -112,28 +112,28 @@ describe('shared-graph low-level remove dynamics', () => {
                 ['a', VertexState.MEMBER, 1],
                 ['b', VertexState.MEMBER, 1],
                 ['c', VertexState.MEMBER, 1],
-                ['x', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'x', 1],
                 ['b', 'x', 1],
                 ['c', 'x', 1],
                 ['a', 'b', 1],
-                ['b', 'c', 1],
-            ],
+                ['b', 'c', 1]
+            ]
         );
         const groupGraph = createGraph(
             [
                 ['a', VertexState.MEMBER, 1],
                 ['b', VertexState.MEMBER, 1],
                 ['c', VertexState.MEMBER, 1],
-                ['x', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'x', 1],
                 ['b', 'x', 1],
-                ['c', 'x', 1],
-            ],
+                ['c', 'x', 1]
+            ]
         );
         const ctx = createRemoveCtx(globalGraph, groupGraph, 'x');
 
@@ -145,13 +145,13 @@ describe('shared-graph low-level remove dynamics', () => {
 function createRemoveCtx(
     globalGraph: ReturnType<typeof createGraph>,
     groupGraph: ReturnType<typeof createGraph>,
-    actionVertexId: string,
+    actionVertexId: string
 ) {
     return {
         globalGraph,
         groupGraph,
         actionVertexId,
         treeAlgo: 'REMOVE_MINIMUM_COST_EDGE' as const,
-        steinerCandidates: new Set<string>(),
+        steinerCandidates: new Set<string>()
     };
 }

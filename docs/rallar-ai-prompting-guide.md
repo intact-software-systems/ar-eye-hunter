@@ -65,12 +65,12 @@ Expected API use:
 
 ```ts
 await rallar.setup({
-  apiBaseUrl,
-  applicationId,
-  workspaceId,
-  start: {
-    refreshPeople: true,
-  },
+    apiBaseUrl,
+    applicationId,
+    workspaceId,
+    start: {
+        refreshPeople: true
+    }
 });
 ```
 
@@ -138,16 +138,16 @@ Expected API use:
 
 ```ts
 rallar.messages.ws.onMessage(
-  { topicId: 'room.chat', typeId: 'chat.message.v1' },
-  (message) => handleChat(message.payload),
+    { topicId: 'room.chat', typeId: 'chat.message.v1' },
+    (message) => handleChat(message.payload)
 );
 
 await rallar.messages.ws.send({
-  topicId: 'room.chat',
-  typeId: 'chat.message.v1',
-  payload: { text },
-  scope: 'room',
-  roomRef,
+    topicId: 'room.chat',
+    typeId: 'chat.message.v1',
+    payload: { text },
+    scope: 'room',
+    roomRef
 });
 ```
 
@@ -197,10 +197,10 @@ Expected API use:
 
 ```ts
 const drafts = await rallar.data.open<Draft>('drafts', {
-  scope: 'principal',
-  durability: 'write-behind',
-  hydrate: 'lazy',
-  sync: true,
+    scope: 'principal',
+    durability: 'write-behind',
+    hydrate: 'lazy',
+    sync: true
 });
 ```
 

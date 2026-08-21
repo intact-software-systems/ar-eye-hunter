@@ -1,40 +1,33 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AuthSession } from '../../shared/api/api-config.ts';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type {
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState,
-} from '../../shared-test/rallar-bb-test/types.ts';
-import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
-import {
-    deriveQueue,
-    findSelectedResult,
-} from '../../../apps/rallar-black-box/src/legacy/runner/shell/runner-shell-model.ts';
+import type { LegacyDiagnosticContext } from '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
+import { deriveQueue, findSelectedResult } from '../../../apps/rallar-black-box/src/legacy/runner/shell/runner-shell-model.ts';
 import {
     bootstrapPatchFromGlobalValues,
     commandCenterGlobalValuesFromState,
     reconcileDiagnosticGlobalScope,
-    sameCommandCenterGlobalValues,
+    sameCommandCenterGlobalValues
 } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
-import type { LegacyDiagnosticContext } from
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
+import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const ticketMocks = vi.hoisted(() => ({
-    consumeAgentSessionTicketAt: vi.fn(),
+    consumeAgentSessionTicketAt: vi.fn()
 }));
 
 vi.mock('@shared-web/browser/auth/agent-session-ticket-http-api.ts', () => ({
-    consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt,
+    consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt
 }));
 
 import {
     consumeBootstrapAgentSessionTicket,
-    scrubAgentSessionTicketFromUrl,
+    scrubAgentSessionTicketFromUrl
 } from '../../../apps/rallar-black-box/src/legacy/shell/auth/agent-session-ticket.ts';
 
 function result(
     commandId: string,
-    ok: boolean,
+    ok: boolean
 ): RallarBlackBoxTestResult {
     return {
         commandId,
@@ -43,12 +36,12 @@ function result(
         ok,
         startedAtEpochMs: 10,
         endedAtEpochMs: 20,
-        durationMs: 10,
+        durationMs: 10
     };
 }
 
 function state(
-    overrides: Partial<RallarBlackBoxTestState> = {},
+    overrides: Partial<RallarBlackBoxTestState> = {}
 ): RallarBlackBoxTestState {
     return {
         status: 'idle',
@@ -56,7 +49,7 @@ function state(
         events: [],
         failures: [],
         resultCache: {},
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -74,7 +67,7 @@ describe('legacy runner shell models', () => {
             commandId: 'running',
             label: 'Active wait',
             timeoutMs: 250,
-            match: { kind: 'diagnostic' },
+            match: { kind: 'diagnostic' }
         } as const;
 
         expect(deriveQueue(state({
@@ -84,40 +77,40 @@ describe('legacy runner shell models', () => {
                     { kind: 'health', label: 'Pending health' },
                     running,
                     { kind: 'health', commandId: 'completed' },
-                    { kind: 'health', commandId: 'failed' },
-                ],
+                    { kind: 'health', commandId: 'failed' }
+                ]
             },
             activeCommand: running,
-            resultCache: { completed, failed },
+            resultCache: { completed, failed }
         }))).toEqual([
             {
                 id: 'health-1',
                 kind: 'health',
                 label: 'Pending health',
                 timeoutMs: undefined,
-                status: 'pending',
+                status: 'pending'
             },
             {
                 id: 'running',
                 kind: 'wait',
                 label: 'Active wait',
                 timeoutMs: 250,
-                status: 'running',
+                status: 'running'
             },
             {
                 id: 'completed',
                 kind: 'health',
                 label: 'health',
                 timeoutMs: undefined,
-                status: 'completed',
+                status: 'completed'
             },
             {
                 id: 'failed',
                 kind: 'health',
                 label: 'health',
                 timeoutMs: undefined,
-                status: 'failed',
-            },
+                status: 'failed'
+            }
         ]);
     });
 
@@ -137,7 +130,7 @@ describe('legacy global-context model', () => {
     const bootstrap = resolveRallarBlackBoxBootstrapConfig(
         '?apiBaseUrl=https%3A%2F%2Fbootstrap.example.test&actor=bootstrap-actor&sessionId=bootstrap-session&roomId=bootstrap-room',
         {},
-        '',
+        ''
     );
 
     it('derives values using auth, config, bootstrap, and manual-default precedence', () => {
@@ -146,25 +139,29 @@ describe('legacy global-context model', () => {
             accessToken: 'access-token',
             username: 'auth-user',
             sessionId: 'auth-session',
-            expiresAtEpochMs: 9_999,
+            expiresAtEpochMs: 9_999
         };
 
-        expect(commandCenterGlobalValuesFromState(state({
-            currentConfig: {
-                apiBaseUrl: 'https://config.example.test',
-                actor: 'config-actor',
-                sessionId: 'config-session',
-                roomId: 'config-room',
-                defaults: { applicationId: 'config-app' },
-                rallar: { workspaceId: 'rallar-workspace' },
-            },
-        }), bootstrap, authSession)).toEqual({
+        expect(commandCenterGlobalValuesFromState(
+            state({
+                currentConfig: {
+                    apiBaseUrl: 'https://config.example.test',
+                    actor: 'config-actor',
+                    sessionId: 'config-session',
+                    roomId: 'config-room',
+                    defaults: { applicationId: 'config-app' },
+                    rallar: { workspaceId: 'rallar-workspace' }
+                }
+            }),
+            bootstrap,
+            authSession
+        )).toEqual({
             apiBaseUrl: 'https://config.example.test',
             applicationId: 'config-app',
             workspaceId: 'rallar-workspace',
             clientId: 'auth-client',
             sessionId: 'auth-session',
-            roomId: 'config-room',
+            roomId: 'config-room'
         });
 
         expect(commandCenterGlobalValuesFromState(state(), bootstrap)).toEqual({
@@ -173,7 +170,7 @@ describe('legacy global-context model', () => {
             workspaceId: DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
             clientId: bootstrap.actor,
             sessionId: bootstrap.sessionId,
-            roomId: bootstrap.roomId,
+            roomId: bootstrap.roomId
         });
     });
 
@@ -183,28 +180,28 @@ describe('legacy global-context model', () => {
             accessToken: 'access-token',
             username: 'auth-user',
             sessionId: 'auth-session',
-            expiresAtEpochMs: 9_999,
+            expiresAtEpochMs: 9_999
         };
         const diagnosticContext: LegacyDiagnosticContext = {
             version: 1,
             contextApplicationId: 'context-application',
             contextWorkspaceId: 'context-workspace',
             contextGroupId: 'context-group',
-            agentId: 'diagnostic-agent-not-client',
+            agentId: 'diagnostic-agent-not-client'
         };
 
         expect(commandCenterGlobalValuesFromState(
             state(),
             bootstrap,
             authSession,
-            diagnosticContext,
+            diagnosticContext
         )).toEqual({
             apiBaseUrl: bootstrap.apiBaseUrl,
             applicationId: 'context-application',
             workspaceId: 'context-workspace',
             roomId: 'context-group',
             clientId: 'auth-client',
-            sessionId: 'auth-session',
+            sessionId: 'auth-session'
         });
     });
 
@@ -215,7 +212,7 @@ describe('legacy global-context model', () => {
             workspaceId: 'old-context-workspace',
             roomId: 'old-context-group',
             clientId: 'edited-client',
-            sessionId: 'edited-session',
+            sessionId: 'edited-session'
         };
         const nextDefaults = {
             apiBaseUrl: 'https://default.example.test',
@@ -223,7 +220,7 @@ describe('legacy global-context model', () => {
             workspaceId: 'new-context-workspace',
             roomId: 'new-context-group',
             clientId: 'default-client',
-            sessionId: 'default-session',
+            sessionId: 'default-session'
         };
 
         expect(reconcileDiagnosticGlobalScope(current, nextDefaults, true))
@@ -231,7 +228,7 @@ describe('legacy global-context model', () => {
                 ...current,
                 applicationId: 'new-context-app',
                 workspaceId: 'new-context-workspace',
-                roomId: 'new-context-group',
+                roomId: 'new-context-group'
             });
         expect(reconcileDiagnosticGlobalScope(current, nextDefaults, false))
             .toBe(current);
@@ -244,7 +241,7 @@ describe('legacy global-context model', () => {
             workspaceId: 'workspace-a',
             clientId: 'client-a',
             sessionId: 'session-a',
-            roomId: 'room-a',
+            roomId: 'room-a'
         };
 
         expect(sameCommandCenterGlobalValues(values, { ...values })).toBe(true);
@@ -252,16 +249,16 @@ describe('legacy global-context model', () => {
             expect(
                 sameCommandCenterGlobalValues(values, {
                     ...values,
-                    [key]: `${values[key]}-changed`,
+                    [key]: `${values[key]}-changed`
                 }),
-                key,
+                key
             ).toBe(false);
         }
         expect(bootstrapPatchFromGlobalValues(values)).toEqual({
             apiBaseUrl: values.apiBaseUrl,
             actor: values.clientId,
             sessionId: values.sessionId,
-            roomId: values.roomId,
+            roomId: values.roomId
         });
     });
 });
@@ -272,9 +269,9 @@ describe('legacy agent-session ticket service', () => {
         vi.stubGlobal('window', {
             location: {
                 hash: '#view=runner&agentSessionTicket=one-time-secret&run=42',
-                href: 'https://runner.example.test/path?mode=control#view=runner&agentSessionTicket=one-time-secret&run=42',
+                href: 'https://runner.example.test/path?mode=control#view=runner&agentSessionTicket=one-time-secret&run=42'
             },
-            history: { replaceState },
+            history: { replaceState }
         });
         vi.stubGlobal('document', { title: 'Rallar Black Box' });
 
@@ -284,7 +281,7 @@ describe('legacy agent-session ticket service', () => {
         expect(replaceState).toHaveBeenCalledWith(
             null,
             'Rallar Black Box',
-            'https://runner.example.test/path?mode=control#view=runner&run=42',
+            'https://runner.example.test/path?mode=control#view=runner&run=42'
         );
     });
 
@@ -294,7 +291,7 @@ describe('legacy agent-session ticket service', () => {
             accessToken: 'agent-access-token',
             username: 'agent-user',
             sessionId: 'agent-session',
-            expiresAtEpochMs: 9_999,
+            expiresAtEpochMs: 9_999
         };
         let resolveFirst!: (value: AuthSession) => void;
         const firstConsume = new Promise<AuthSession>((resolve) => {
@@ -306,11 +303,11 @@ describe('legacy agent-session ticket service', () => {
 
         const first = consumeBootstrapAgentSessionTicket(
             'ticket-a',
-            'https://api-a.example.test/',
+            'https://api-a.example.test/'
         );
         const duplicate = consumeBootstrapAgentSessionTicket(
             'ticket-a',
-            'https://api-a.example.test',
+            'https://api-a.example.test'
         );
 
         expect(duplicate).toBe(first);
@@ -318,7 +315,7 @@ describe('legacy agent-session ticket service', () => {
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledWith(
             'https://api-a.example.test',
             { ticket: 'ticket-a' },
-            { requestId: expect.any(String) },
+            { requestId: expect.any(String) }
         );
 
         resolveFirst(session);
@@ -326,14 +323,14 @@ describe('legacy agent-session ticket service', () => {
 
         await consumeBootstrapAgentSessionTicket(
             'ticket-a',
-            'https://api-c.example.test',
+            'https://api-c.example.test'
         );
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledTimes(2);
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenNthCalledWith(
             2,
             'https://api-c.example.test',
             { ticket: 'ticket-a' },
-            { requestId: expect.any(String) },
+            { requestId: expect.any(String) }
         );
     });
 
@@ -343,7 +340,7 @@ describe('legacy agent-session ticket service', () => {
             accessToken: 'retry-access-token',
             username: 'retry-user',
             sessionId: 'retry-session',
-            expiresAtEpochMs: 9_999,
+            expiresAtEpochMs: 9_999
         };
         ticketMocks.consumeAgentSessionTicketAt
             .mockRejectedValueOnce(new Error('ticket temporarily unavailable'))
@@ -351,16 +348,16 @@ describe('legacy agent-session ticket service', () => {
 
         await expect(consumeBootstrapAgentSessionTicket(
             'ticket-retry',
-            'https://api.example.test',
+            'https://api.example.test'
         )).rejects.toThrow('ticket temporarily unavailable');
         await expect(consumeBootstrapAgentSessionTicket(
             'ticket-retry',
-            'https://api.example.test',
+            'https://api.example.test'
         )).resolves.toEqual(session);
 
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledTimes(2);
         const requestIds = ticketMocks.consumeAgentSessionTicketAt.mock.calls.map(
-            (call) => call[2].requestId,
+            (call) => call[2].requestId
         );
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);

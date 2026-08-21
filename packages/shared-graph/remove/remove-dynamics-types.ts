@@ -36,4 +36,3 @@ export type RemoveResult = {
     graph: WeightedGraph;
     changed: boolean;
 };
-

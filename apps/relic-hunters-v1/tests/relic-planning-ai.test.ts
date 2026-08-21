@@ -1,15 +1,13 @@
-import { describe, expect, it } from 'vitest';
 import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createRelicGame,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicGameState,
-    type RelicPublicSnapshot,
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
-import { deriveRelicGameViewModel } from '../src/game/game-view-model.ts';
-import { deriveSceneObjective } from '../src/game/scene/objectives.ts';
+import { describe, expect, it } from 'vitest';
 import {
     addRelicPlanningAiProposal,
     buildRelicPlanningAiContext,
@@ -17,8 +15,10 @@ import {
     createRelicPlanningAiRequest,
     relicPlanningAiBaseStateRevision,
     relicPlanningAiDedupeKey,
-    validateRelicPlanningAiSuggestion,
+    validateRelicPlanningAiSuggestion
 } from '../src/game/ai/relic-planning-ai.ts';
+import { deriveRelicGameViewModel } from '../src/game/game-view-model.ts';
+import { deriveSceneObjective } from '../src/game/scene/objectives.ts';
 
 const NOW = 1_700_000_000_000;
 
@@ -33,7 +33,7 @@ describe('Relic planning browser AI', () => {
             'move',
             'search',
             'steal',
-            'escape',
+            'escape'
         ]);
         expect(context.moveTargets.some((target) => target.relicSignal)).toBe(false);
         expect(serialized).not.toContain('Golden Idol');
@@ -50,14 +50,14 @@ describe('Relic planning browser AI', () => {
                 player.playerId === 'alice-session'
                     ? { ...player, health: 1 }
                     : player
-            ),
+            )
         };
         const context = contextFor(snapshot);
 
         expect(context.objective).toContain('Find relics');
         expect(context.warnings.map((warning) => warning.kind)).toEqual([
             'low-health',
-            'round-limit',
+            'round-limit'
         ]);
         expect(context.recentEvents.length).toBeGreaterThan(0);
     });
@@ -69,17 +69,17 @@ describe('Relic planning browser AI', () => {
         const revision = relicPlanningAiBaseStateRevision({
             snapshot,
             localPlayerId: 'alice-session',
-            draft,
+            draft
         });
         const dedupeKey = relicPlanningAiDedupeKey({
             snapshot,
             localPlayerId: 'alice-session',
-            baseStateRevision: revision,
+            baseStateRevision: revision
         });
         const request = createRelicPlanningAiRequest({
             context,
             baseStateRevision: revision,
-            dedupeKey,
+            dedupeKey
         });
 
         expect(request.baseStateRevision).toBe(revision);
@@ -93,19 +93,19 @@ describe('Relic planning browser AI', () => {
         const revision = relicPlanningAiBaseStateRevision({
             snapshot,
             localPlayerId: 'alice-session',
-            draft: { kind: 'search' },
+            draft: { kind: 'search' }
         });
         const provider = createRelicPlanningAiMockProvider();
         const result = await provider.generateJson(createRelicPlanningAiRequest({
             context,
             baseStateRevision: revision,
-            dedupeKey: 'dedupe-1',
+            dedupeKey: 'dedupe-1'
         }));
 
         expect(result.validation.ok).toBe(true);
         expect(result.value.action).toEqual({
             kind: 'move',
-            targetRoomId: 'hallway',
+            targetRoomId: 'hallway'
         });
         expect(validateRelicPlanningAiSuggestion(result.value, context).ok).toBe(true);
     });
@@ -118,7 +118,7 @@ describe('Relic planning browser AI', () => {
             action: { kind: 'move', targetRoomId: 'monster' },
             rationale: 'Monster is not adjacent from the entrance.',
             risks: [],
-            confidence: 'medium',
+            confidence: 'medium'
         }, context)).toMatchObject({ ok: false });
 
         expect(validateRelicPlanningAiSuggestion({
@@ -126,7 +126,7 @@ describe('Relic planning browser AI', () => {
             action: { kind: 'search' },
             rationale: 'Too much headline.',
             risks: [],
-            confidence: 'medium',
+            confidence: 'medium'
         }, context)).toMatchObject({ ok: false });
     });
 
@@ -136,15 +136,15 @@ describe('Relic planning browser AI', () => {
         const revision = relicPlanningAiBaseStateRevision({
             snapshot,
             localPlayerId: 'alice-session',
-            draft: { kind: 'search' },
+            draft: { kind: 'search' }
         });
         const result = transitionRallarAiResultLifecycle(
             await createRelicPlanningAiMockProvider().generateJson(createRelicPlanningAiRequest({
                 context,
                 baseStateRevision: revision,
-                dedupeKey: 'room-1:r1:alice',
+                dedupeKey: 'room-1:r1:alice'
             })),
-            'proposed',
+            'proposed'
         );
 
         const accepted = addRelicPlanningAiProposal({
@@ -156,7 +156,7 @@ describe('Relic planning browser AI', () => {
             messageRoomId: 'room-1',
             currentRoomId: 'room-1',
             currentBaseStateRevision: revision,
-            revisionMode: 'shared',
+            revisionMode: 'shared'
         });
         const duplicate = addRelicPlanningAiProposal({
             proposals: accepted,
@@ -167,7 +167,7 @@ describe('Relic planning browser AI', () => {
             messageRoomId: 'room-1',
             currentRoomId: 'room-1',
             currentBaseStateRevision: revision,
-            revisionMode: 'shared',
+            revisionMode: 'shared'
         });
         const wrongRoom = addRelicPlanningAiProposal({
             proposals: duplicate,
@@ -178,7 +178,7 @@ describe('Relic planning browser AI', () => {
             messageRoomId: 'room-2',
             currentRoomId: 'room-1',
             currentBaseStateRevision: revision,
-            revisionMode: 'shared',
+            revisionMode: 'shared'
         });
         const staleRevision = revision.replace('|planning|', '|review|');
         const stale = addRelicPlanningAiProposal({
@@ -190,7 +190,7 @@ describe('Relic planning browser AI', () => {
             messageRoomId: 'room-1',
             currentRoomId: 'room-1',
             currentBaseStateRevision: revision,
-            revisionMode: 'shared',
+            revisionMode: 'shared'
         });
         const expired = addRelicPlanningAiProposal({
             proposals: stale,
@@ -201,7 +201,7 @@ describe('Relic planning browser AI', () => {
             messageRoomId: 'room-1',
             currentRoomId: 'room-1',
             currentBaseStateRevision: revision,
-            revisionMode: 'shared',
+            revisionMode: 'shared'
         });
 
         expect(accepted).toHaveLength(1);
@@ -215,13 +215,13 @@ describe('Relic planning browser AI', () => {
 
 function contextFor(
     snapshot: RelicPublicSnapshot,
-    draft = { kind: 'search' as const },
+    draft = { kind: 'search' as const }
 ) {
     const viewModel = deriveRelicGameViewModel({
         snapshot,
         localPlayerId: 'alice-session',
         draft,
-        lang: 'en',
+        lang: 'en'
     });
     return buildRelicPlanningAiContext({
         snapshot,
@@ -231,8 +231,8 @@ function contextFor(
         viewModel,
         sceneObjective: deriveSceneObjective({
             snapshot,
-            localPlayerId: 'alice-session',
-        }),
+            localPlayerId: 'alice-session'
+        })
     });
 }
 
@@ -243,29 +243,29 @@ function planningSnapshot(): RelicPublicSnapshot {
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => NOW + 1,
+        now: () => NOW + 1
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Bob',
-        characterId: 'nyra-vale',
+        characterId: 'nyra-vale'
     }, {
         senderId: 'bob-session',
-        now: () => NOW + 2,
+        now: () => NOW + 2
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username: 'Alice',
+        username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => NOW + 3,
+        now: () => NOW + 3
     }).state;
     return toPublicRelicSnapshot(state);
 }

@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The factories below annotate their return type on purpose: without it the contextual type of a
 // `vi.mock` factory is a union, and TypeScript then accepts an export name the module does not
@@ -9,10 +9,8 @@ import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConne
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsModule =
-    typeof import('@shared/repository/client-state-snapshots-repository.ts');
-type GroupStateSnapshotsModule =
-    typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type ClientStateSnapshotsModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -31,14 +29,14 @@ const mocks = await vi.hoisted(async () => {
         readSession: vi.fn(() => ctx.session),
         clientRepositoryMissing: vi.fn((): never => {
             throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
+                'Repository not found: shared.repository.client-state-snapshots'
             );
         }),
         groupRepositoryMissing: vi.fn((): never => {
             throw new Error(
-                'Repository not found: shared.repository.group-state-snapshots',
+                'Repository not found: shared.repository.group-state-snapshots'
             );
-        }),
+        })
     };
 });
 
@@ -48,16 +46,16 @@ vi.mock(
         clearMiddleware: vi.fn(),
         getMiddleware: vi.fn(() => mocks.ctx),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(
@@ -66,16 +64,16 @@ vi.mock(
         clearSession: vi.fn(),
         isLoggedIn: vi.fn(() => true),
         readSession: mocks.readSession,
-        writeSession: vi.fn(),
-    }),
+        writeSession: vi.fn()
+    })
 );
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-    }),
+        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+    })
 );
 
 vi.mock(
@@ -83,8 +81,8 @@ vi.mock(
     (): Partial<GroupStateSnapshotsModule> => ({
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
         findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
-        getAllGroupStateSnapshots: mocks.groupRepositoryMissing,
-    }),
+        getAllGroupStateSnapshots: mocks.groupRepositoryMissing
+    })
 );
 
 describe('Rallar RTC diagnostics compatibility', () => {
@@ -92,12 +90,12 @@ describe('Rallar RTC diagnostics compatibility', () => {
         vi.clearAllMocks();
         mocks.clientRepositoryMissing.mockImplementation(() => {
             throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
+                'Repository not found: shared.repository.client-state-snapshots'
             );
         });
         mocks.groupRepositoryMissing.mockImplementation(() => {
             throw new Error(
-                'Repository not found: shared.repository.group-state-snapshots',
+                'Repository not found: shared.repository.group-state-snapshots'
             );
         });
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
@@ -120,7 +118,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
             reconnectEnabled: false,
             reconnectAttempts: 0,
             maxReconnectAttempts: 12,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
     });
 
@@ -137,7 +135,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
             activePeerIds: [],
             peerIdsWithNoReconnectableLanes: [],
             readyPeerIds: [],
-            peers: [],
+            peers: []
         });
         expect(facade.rtc.knownPeerIds()).toEqual([]);
         expect(facade.rtc.activePeerIds()).toEqual([]);
@@ -152,7 +150,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
             reconnectEnabled: false,
             reconnectAttempts: 0,
             maxReconnectAttempts: 0,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
     });
 
@@ -164,13 +162,13 @@ describe('Rallar RTC diagnostics compatibility', () => {
             peerId: 'peer-1',
             label: 'rtc-data-channel',
             state: 'Open',
-            readyState: 'open',
+            readyState: 'open'
         });
         const realtimeHealth = createChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-realtime',
             state: 'Open',
-            readyState: 'open',
+            readyState: 'open'
         });
         const peer = toRtcPeerTestDouble({
             peerId: 'peer-1',
@@ -179,7 +177,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 pc: {
                     connectionState: 'connected',
                     iceConnectionState: 'connected',
-                    signalingState: 'stable',
+                    signalingState: 'stable'
                 },
                 reconnectAttempts: 2,
                 reconnectTimer: undefined,
@@ -188,14 +186,14 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 ignoreOffer: false,
                 iceCandidateQueue: [{}],
                 localStream: {
-                    id: 'local-stream',
+                    id: 'local-stream'
                 },
-                remoteStreams: new Map([['remote-stream', {}]]),
+                remoteStreams: new Map([['remote-stream', {}]])
             },
             lanes: new Map([
                 ['reliable', vi.fn(() => reliableHealth)],
-                ['realtime', vi.fn(() => realtimeHealth)],
-            ]),
+                ['realtime', vi.fn(() => realtimeHealth)]
+            ])
         });
         vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
             .mockReturnValue(['peer-1']);
@@ -233,7 +231,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                     disconnectPending: false,
                     iceCandidateQueueSize: 1,
                     localStreamId: 'local-stream',
-                    remoteStreamIds: ['remote-stream'],
+                    remoteStreamIds: ['remote-stream']
                 },
                 lanes: [
                     {
@@ -241,16 +239,16 @@ describe('Rallar RTC diagnostics compatibility', () => {
                         laneId: 'reliable',
                         channel: reliableHealth,
                         isOpen: true,
-                        isReconnectable: false,
+                        isReconnectable: false
                     },
                     {
                         peerId: 'peer-1',
                         laneId: 'realtime',
                         channel: realtimeHealth,
                         isOpen: true,
-                        isReconnectable: false,
-                    },
-                ],
+                        isReconnectable: false
+                    }
+                ]
             });
         expect(facade.rtc.status({ laneId: 'realtime' })).toMatchObject({
             sessionId: 'session-1',
@@ -261,9 +259,9 @@ describe('Rallar RTC diagnostics compatibility', () => {
             readyPeerIds: ['peer-1'],
             peers: [
                 expect.objectContaining({
-                    peerId: 'peer-1',
-                }),
-            ],
+                    peerId: 'peer-1'
+                })
+            ]
         });
     });
 
@@ -275,7 +273,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
             peerId: 'peer-1',
             label: 'rtc-data-channel',
             state: 'Open',
-            readyState: 'open',
+            readyState: 'open'
         });
         const connectionDiagnostics = createPeerConnectionDiagnostics({
             connectCallCount: 2,
@@ -284,7 +282,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
             reconnectAttemptCount: 1,
             pendingIceCandidateQueueLength: 3,
             reconnectAttemptsInFlight: 1,
-            hasReconnectTimer: true,
+            hasReconnectTimer: true
         });
         const stats = new Map<string, Record<string, unknown>>([
             ['pair-1', {
@@ -298,7 +296,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 currentRoundTripTime: 0.042,
                 availableOutgoingBitrate: 123_456,
                 bytesSent: 100,
-                bytesReceived: 200,
+                bytesReceived: 200
             }],
             ['local-1', {
                 id: 'local-1',
@@ -309,7 +307,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 port: 1234,
                 relayProtocol: 'udp',
                 networkType: 'wifi',
-                url: 'turn:turn.example.test',
+                url: 'turn:turn.example.test'
             }],
             ['remote-1', {
                 id: 'remote-1',
@@ -317,8 +315,8 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 candidateType: 'srflx',
                 protocol: 'udp',
                 address: '203.0.113.10',
-                port: 4321,
-            }],
+                port: 4321
+            }]
         ]);
         const getStats = vi.fn(async () => stats);
         const readDiagnostics = vi.fn(() => connectionDiagnostics);
@@ -335,7 +333,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                     localDescription: { type: 'offer' },
                     remoteDescription: { type: 'answer' },
                     canTrickleIceCandidates: true,
-                    getStats,
+                    getStats
                 },
                 reconnectAttempts: 0,
                 reconnectTimer: undefined,
@@ -343,9 +341,9 @@ describe('Rallar RTC diagnostics compatibility', () => {
                 makingOffer: false,
                 ignoreOffer: false,
                 iceCandidateQueue: [],
-                remoteStreams: new Map(),
+                remoteStreams: new Map()
             },
-            lanes: new Map([['reliable', vi.fn(() => reliableHealth)]]),
+            lanes: new Map([['reliable', vi.fn(() => reliableHealth)]])
         });
         vi.mocked(mocks.webRtcConnectionService.knownPeerIds)
             .mockReturnValue(['peer-1']);
@@ -359,7 +357,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
         await facade.connect();
 
         const diagnostics = await facade.rtc.diagnostics({
-            laneIds: ['reliable'],
+            laneIds: ['reliable']
         });
 
         expect(getStats).toHaveBeenCalledOnce();
@@ -381,7 +379,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                         signalingState: 'stable',
                         hasLocalDescription: true,
                         hasRemoteDescription: true,
-                        canTrickleIceCandidates: true,
+                        canTrickleIceCandidates: true
                     },
                     connectionDiagnostics: {
                         connectCallCount: 2,
@@ -390,7 +388,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
                         reconnectAttemptCount: 1,
                         pendingIceCandidateQueueLength: 3,
                         reconnectAttemptsInFlight: 1,
-                        hasReconnectTimer: true,
+                        hasReconnectTimer: true
                     },
                     selectedCandidatePair: {
                         id: 'pair-1',
@@ -410,24 +408,24 @@ describe('Rallar RTC diagnostics compatibility', () => {
                             port: 1234,
                             relayProtocol: 'udp',
                             networkType: 'wifi',
-                            url: 'turn:turn.example.test',
+                            url: 'turn:turn.example.test'
                         },
                         remote: {
                             id: 'remote-1',
                             candidateType: 'srflx',
                             protocol: 'udp',
                             address: '203.0.113.10',
-                            port: 4321,
-                        },
+                            port: 4321
+                        }
                     },
                     lanes: [
                         {
                             laneId: 'reliable',
-                            channel: reliableHealth,
-                        },
-                    ],
-                },
-            ],
+                            channel: reliableHealth
+                        }
+                    ]
+                }
+            ]
         });
     });
 });
@@ -452,10 +450,7 @@ type RtcPeerConnectionTestDouble =
     }>;
 
 type RtcPeerStatusTestDouble =
-    & Omit<
-        Partial<RtcPeerConnectionStatus>,
-        'pc' | 'localStream' | 'remoteStreams'
-    >
+    & Omit<Partial<RtcPeerConnectionStatus>, 'pc' | 'localStream' | 'remoteStreams'>
     & Readonly<{
         pc?: RtcPeerConnectionTestDouble;
         localStream?: Pick<MediaStream, 'id'>;
@@ -479,14 +474,14 @@ function toRtcPeerTestDouble(input: RtcPeerTestDoubleInput): QRtcPeerDto {
         peerId: input.peerId,
         connection: {
             status: input.status,
-            readDiagnostics: input.readDiagnostics,
+            readDiagnostics: input.readDiagnostics
         },
         channels: new Map(
             Array.from(input.lanes, ([laneId, readHealth]) => [
                 laneId,
-                { readHealth },
-            ]),
-        ),
+                { readHealth }
+            ])
+        )
     } as unknown as QRtcPeerDto;
 }
 
@@ -496,7 +491,7 @@ function createChannelHealth(
         label: string;
         state: string;
         readyState: RTCDataChannelState;
-    }>,
+    }>
 ): RtcDataChannelHealth {
     return {
         peerId: input.peerId,
@@ -515,7 +510,7 @@ function createChannelHealth(
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
             overflow: 'drop-new' as const,
-            maxQueueItems: 32,
+            maxQueueItems: 32
         },
         counters: {
             sent: 0,
@@ -528,13 +523,13 @@ function createChannelHealth(
             droppedStale: 0,
             receivedRaw: 0,
             receivedString: 0,
-            receivedBinary: 0,
-        },
+            receivedBinary: 0
+        }
     };
 }
 
 function createPeerConnectionDiagnostics(
-    overrides: Partial<QRtcPeerConnectionDiagnostics> = {},
+    overrides: Partial<QRtcPeerConnectionDiagnostics> = {}
 ): QRtcPeerConnectionDiagnostics {
     return {
         connectCallCount: 0,
@@ -572,6 +567,6 @@ function createPeerConnectionDiagnostics(
         pendingIceCandidateQueueLength: 0,
         reconnectAttemptsInFlight: 0,
         hasReconnectTimer: false,
-        ...overrides,
+        ...overrides
     };
 }

@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AsyncCommand } from '@shared/cache/AsyncCommand.ts';
 import {
     CircuitBreakerOpenError,
@@ -6,9 +5,10 @@ import {
     CommandCancelledError,
     CommandTimedOutError,
     NullValueError,
-    RateLimitExceededError,
+    RateLimitExceededError
 } from '@shared/cache/Command.ts';
 import { PullPushCommand } from '@shared/cache/PullPushCommand.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('Command', () => {
     afterEach(() => {
@@ -34,12 +34,11 @@ describe('Command', () => {
                 circuitBreaker: circuitBreaker as never,
                 hooks: {
                     onSubscribe: () => events.push('subscribe'),
-                    onAttemptError: (_error, attempt) =>
-                        events.push(`attempt:${attempt}`),
+                    onAttemptError: (_error, attempt) => events.push(`attempt:${attempt}`),
                     onSuccess: (value) => events.push(`success:${value}`),
-                    onComplete: () => events.push('complete'),
-                },
-            },
+                    onComplete: () => events.push('complete')
+                }
+            }
         );
 
         await expect(command.run()).resolves.toBe('ok');
@@ -50,7 +49,7 @@ describe('Command', () => {
             'attempt:1',
             'attempt:2',
             'success:ok',
-            'complete',
+            'complete'
         ]);
         expect(circuitBreaker.success).toHaveBeenCalledOnce();
         expect(circuitBreaker.failure).not.toHaveBeenCalled();
@@ -70,9 +69,9 @@ describe('Command', () => {
                 fallback: (error) => `fallback:${(error as Error).message}`,
                 hooks: {
                     onFallback: (value) => events.push(`fallback:${value}`),
-                    onComplete: () => events.push('complete'),
-                },
-            },
+                    onComplete: () => events.push('complete')
+                }
+            }
         );
 
         await expect(command.run()).resolves.toBe('fallback:boom');
@@ -92,8 +91,8 @@ describe('Command', () => {
             },
             {
                 maxAttempts: 3,
-                shouldRetry,
-            },
+                shouldRetry
+            }
         );
 
         await expect(command.run()).rejects.toThrow('non-retryable');
@@ -108,9 +107,9 @@ describe('Command', () => {
                     throw new Error('boom');
                 },
                 {
-                    fallback: () => undefined as never,
-                },
-            ).run(),
+                    fallback: () => undefined as never
+                }
+            ).run()
         ).rejects.toBeInstanceOf(NullValueError);
 
         await expect(
@@ -120,9 +119,9 @@ describe('Command', () => {
                 },
                 {
                     errorOnNull: false,
-                    fallback: () => undefined,
-                },
-            ).run(),
+                    fallback: () => undefined
+                }
+            ).run()
         ).resolves.toBeUndefined();
     });
 
@@ -136,9 +135,9 @@ describe('Command', () => {
                         setTimeout(() => resolve('late'), 50);
                     }),
                 {
-                    timeoutMs: 10,
-                },
-            ).run(),
+                    timeoutMs: 10
+                }
+            ).run()
         ).rejects.toThrow('Command timed out after 10 ms');
 
         await vi.advanceTimersByTimeAsync(10);
@@ -157,14 +156,14 @@ describe('Command', () => {
                     return new Promise<string>((_resolve, reject) => {
                         attemptSignal?.addEventListener(
                             'abort',
-                            () => reject(attemptSignal.reason),
+                            () => reject(attemptSignal.reason)
                         );
                     });
                 },
                 {
-                    timeoutMs: 10,
-                },
-            ).run(),
+                    timeoutMs: 10
+                }
+            ).run()
         ).rejects.toBeInstanceOf(CommandTimedOutError);
 
         await vi.advanceTimersByTimeAsync(10);
@@ -181,7 +180,7 @@ describe('Command', () => {
             return new Promise<string>((_resolve, reject) => {
                 attemptSignal?.addEventListener(
                     'abort',
-                    () => reject(attemptSignal.reason),
+                    () => reject(attemptSignal.reason)
                 );
             });
         });
@@ -204,13 +203,13 @@ describe('Command', () => {
                 return new Promise<string>((_resolve, reject) => {
                     attemptSignal?.addEventListener(
                         'abort',
-                        () => reject(attemptSignal.reason),
+                        () => reject(attemptSignal.reason)
                     );
                 });
             },
             {
-                signal: controller.signal,
-            },
+                signal: controller.signal
+            }
         );
 
         const run = command.run();
@@ -225,7 +224,7 @@ describe('Command', () => {
     it('reports exhaustion only once when retries fail without fallback', async () => {
         const circuitBreaker = createCircuitBreakerStub();
         const hooks = {
-            onError: vi.fn(),
+            onError: vi.fn()
         };
 
         const command = new Command(
@@ -235,8 +234,8 @@ describe('Command', () => {
             {
                 maxAttempts: 2,
                 circuitBreaker: circuitBreaker as never,
-                hooks,
-            },
+                hooks
+            }
         );
 
         await expect(command.run()).rejects.toThrow('nope');
@@ -251,21 +250,21 @@ describe('Command', () => {
         await expect(cancelled.run()).rejects.toBeInstanceOf(CommandCancelledError);
 
         const circuitBlocked = new Command(() => 'never', {
-            circuitBreaker: createCircuitBreakerStub(false) as never,
+            circuitBreaker: createCircuitBreakerStub(false) as never
         });
         await expect(circuitBlocked.run()).rejects.toBeInstanceOf(
-            CircuitBreakerOpenError,
+            CircuitBreakerOpenError
         );
 
         const rateBlocked = new Command(() => 'never', {
-            rateLimiter: createRateLimiterStub(false) as never,
+            rateLimiter: createRateLimiterStub(false) as never
         });
         await expect(rateBlocked.run()).rejects.toBeInstanceOf(
-            RateLimitExceededError,
+            RateLimitExceededError
         );
 
         const nullBlocked = new Command(() => undefined, {
-            errorOnNull: true,
+            errorOnNull: true
         });
         await expect(nullBlocked.run()).rejects.toBeInstanceOf(NullValueError);
     });
@@ -274,8 +273,8 @@ describe('Command', () => {
         const command = new Command<void>(
             () => undefined,
             {
-                errorOnNull: false,
-            },
+                errorOnNull: false
+            }
         );
 
         await expect(command.run()).resolves.toBeUndefined();
@@ -303,18 +302,16 @@ describe('PullPushCommand', () => {
                 hooks: {
                     onSubscribe: () => events.push('subscribe'),
                     onPullSuccess: (peerId) => events.push(`pulled:${peerId}`),
-                    onPushSuccess: (result, peerId) =>
-                        events.push(`pushed:${peerId}:${result}`),
-                    onSuccess: (result) =>
-                        events.push(`success:${result.pushed}`),
-                    onComplete: () => events.push('complete'),
-                },
-            },
+                    onPushSuccess: (result, peerId) => events.push(`pushed:${peerId}:${result}`),
+                    onSuccess: (result) => events.push(`success:${result.pushed}`),
+                    onComplete: () => events.push('complete')
+                }
+            }
         );
 
         await expect(command.run()).resolves.toEqual({
             pulled: 'peer-1',
-            pushed: 'connected:peer-1',
+            pushed: 'connected:peer-1'
         });
         expect(events).toEqual([
             'subscribe',
@@ -323,7 +320,7 @@ describe('PullPushCommand', () => {
             'push:peer-1',
             'pushed:peer-1:connected:peer-1',
             'success:connected:peer-1',
-            'complete',
+            'complete'
         ]);
     });
 
@@ -333,14 +330,14 @@ describe('PullPushCommand', () => {
         const cleanup = vi.fn();
         const command = new PullPushCommand(
             () => ({
-                peerId: 'peer-1',
+                peerId: 'peer-1'
             }),
             (_peer, signal) => {
                 pushSignal = signal;
                 return new Promise<void>((_resolve, reject) => {
                     signal?.addEventListener(
                         'abort',
-                        () => reject(signal.reason),
+                        () => reject(signal.reason)
                     );
                 });
             },
@@ -349,13 +346,13 @@ describe('PullPushCommand', () => {
                 hooks: {
                     onError: (error, peer) => {
                         cleanup(peer?.peerId, error);
-                    },
-                },
-            },
+                    }
+                }
+            }
         );
 
         const expectation = expect(command.run()).rejects.toBeInstanceOf(
-            CommandTimedOutError,
+            CommandTimedOutError
         );
 
         await vi.advanceTimersByTimeAsync(10);
@@ -365,7 +362,7 @@ describe('PullPushCommand', () => {
         expect(pushSignal?.reason).toBeInstanceOf(CommandTimedOutError);
         expect(cleanup).toHaveBeenCalledWith(
             'peer-1',
-            expect.any(CommandTimedOutError),
+            expect.any(CommandTimedOutError)
         );
     });
 
@@ -380,7 +377,7 @@ describe('PullPushCommand', () => {
                 const peerId = `peer-${count}`;
                 attempts.push(`pull:${peerId}`);
                 return {
-                    peerId,
+                    peerId
                 };
             },
             (peer) => {
@@ -396,24 +393,24 @@ describe('PullPushCommand', () => {
                 hooks: {
                     onAttemptError: (error, _attempt, peer) => {
                         attemptErrors.push(
-                            `${peer?.peerId}:${(error as Error).message}`,
+                            `${peer?.peerId}:${(error as Error).message}`
                         );
-                    },
-                },
-            },
+                    }
+                }
+            }
         );
 
         await expect(command.run()).resolves.toEqual({
             pulled: {
-                peerId: 'peer-2',
+                peerId: 'peer-2'
             },
-            pushed: 'connected',
+            pushed: 'connected'
         });
         expect(attempts).toEqual([
             'pull:peer-1',
             'push:peer-1',
             'pull:peer-2',
-            'push:peer-2',
+            'push:peer-2'
         ]);
         expect(attemptErrors).toEqual(['peer-1:first push failed']);
     });
@@ -427,9 +424,9 @@ describe('PullPushCommand', () => {
                 pull,
                 push,
                 {
-                    circuitBreaker: createCircuitBreakerStub(false) as never,
-                },
-            ).run(),
+                    circuitBreaker: createCircuitBreakerStub(false) as never
+                }
+            ).run()
         ).rejects.toBeInstanceOf(CircuitBreakerOpenError);
 
         await expect(
@@ -437,9 +434,9 @@ describe('PullPushCommand', () => {
                 pull,
                 push,
                 {
-                    rateLimiter: createRateLimiterStub(false) as never,
-                },
-            ).run(),
+                    rateLimiter: createRateLimiterStub(false) as never
+                }
+            ).run()
         ).rejects.toBeInstanceOf(RateLimitExceededError);
 
         expect(pull).not.toHaveBeenCalled();
@@ -447,36 +444,36 @@ describe('PullPushCommand', () => {
     });
 
     it('uses fallback with the last pulled value when push fails', async () => {
-        const fallback = vi.fn((_error: unknown, peer: { peerId: string } | undefined) => ({
+        const fallback = vi.fn((_error: unknown, peer: { peerId: string; } | undefined) => ({
             pulled: peer ?? {
-                peerId: 'missing',
+                peerId: 'missing'
             },
-            pushed: `fallback:${peer?.peerId ?? 'missing'}`,
+            pushed: `fallback:${peer?.peerId ?? 'missing'}`
         }));
 
         await expect(
             new PullPushCommand(
                 () => ({
-                    peerId: 'peer-1',
+                    peerId: 'peer-1'
                 }),
                 () => {
                     throw new Error('push failed');
                 },
                 {
-                    fallback,
-                },
-            ).run(),
+                    fallback
+                }
+            ).run()
         ).resolves.toEqual({
             pulled: {
-                peerId: 'peer-1',
+                peerId: 'peer-1'
             },
-            pushed: 'fallback:peer-1',
+            pushed: 'fallback:peer-1'
         });
         expect(fallback).toHaveBeenCalledWith(
             expect.any(Error),
             {
-                peerId: 'peer-1',
-            },
+                peerId: 'peer-1'
+            }
         );
     });
 
@@ -486,9 +483,9 @@ describe('PullPushCommand', () => {
                 () => 'peer-1',
                 () => undefined,
                 {
-                    errorOnNullPush: true,
-                },
-            ).run(),
+                    errorOnNullPush: true
+                }
+            ).run()
         ).rejects.toThrow('Push returned null or undefined');
     });
 });
@@ -501,9 +498,9 @@ describe('AsyncCommand', () => {
 
     it('fires timeout for an incomplete watched resource', async () => {
         vi.useFakeTimers();
-        const command = new AsyncCommand<string, { state: string }>();
+        const command = new AsyncCommand<string, { state: string; }>();
         const resource = {
-            state: 'connecting',
+            state: 'connecting'
         };
         const timeouts: string[] = [];
 
@@ -515,8 +512,8 @@ describe('AsyncCommand', () => {
                 isComplete: (value) => value.state === 'open',
                 onTimeout: (_value, event) => {
                     timeouts.push(`${event.key}:${event.timeoutMs}:${event.reason}`);
-                },
-            }),
+                }
+            })
         ).toBe(true);
         expect(command.has('peer-1')).toBe(true);
 
@@ -531,9 +528,9 @@ describe('AsyncCommand', () => {
 
     it('cancels pending timeout when a resource completes', async () => {
         vi.useFakeTimers();
-        const command = new AsyncCommand<string, { state: string }>();
+        const command = new AsyncCommand<string, { state: string; }>();
         const resource = {
-            state: 'connecting',
+            state: 'connecting'
         };
         const onTimeout = vi.fn();
 
@@ -542,7 +539,7 @@ describe('AsyncCommand', () => {
             resource,
             timeoutMs: 25,
             isComplete: (value) => value.state === 'open',
-            onTimeout,
+            onTimeout
         });
 
         resource.state = 'open';
@@ -556,14 +553,14 @@ describe('AsyncCommand', () => {
 
     it('replaces an existing watch for the same key', async () => {
         vi.useFakeTimers();
-        const command = new AsyncCommand<string, { id: string; state: string }>();
+        const command = new AsyncCommand<string, { id: string; state: string; }>();
         const first = {
             id: 'first',
-            state: 'connecting',
+            state: 'connecting'
         };
         const second = {
             id: 'second',
-            state: 'connecting',
+            state: 'connecting'
         };
         const timeouts: string[] = [];
 
@@ -574,7 +571,7 @@ describe('AsyncCommand', () => {
             isComplete: (value) => value.state === 'open',
             onTimeout: (value) => {
                 timeouts.push(value.id);
-            },
+            }
         });
         command.watch({
             key: 'peer-1',
@@ -583,7 +580,7 @@ describe('AsyncCommand', () => {
             isComplete: (value) => value.state === 'open',
             onTimeout: (value) => {
                 timeouts.push(value.id);
-            },
+            }
         });
 
         await vi.advanceTimersByTimeAsync(20);
@@ -593,20 +590,20 @@ describe('AsyncCommand', () => {
 
     it('routes timeout handler failures to the watch error hook', async () => {
         vi.useFakeTimers();
-        const command = new AsyncCommand<string, { state: string }>();
+        const command = new AsyncCommand<string, { state: string; }>();
         const onError = vi.fn();
 
         command.watch({
             key: 'peer-1',
             resource: {
-                state: 'connecting',
+                state: 'connecting'
             },
             timeoutMs: 10,
             isComplete: (value) => value.state === 'open',
             onTimeout: () => {
                 throw new Error('timeout cleanup failed');
             },
-            onError,
+            onError
         });
 
         await vi.advanceTimersByTimeAsync(10);
@@ -614,12 +611,12 @@ describe('AsyncCommand', () => {
         expect(onError).toHaveBeenCalledWith(
             expect.any(Error),
             {
-                state: 'connecting',
+                state: 'connecting'
             },
             expect.objectContaining({
                 key: 'peer-1',
-                timeoutMs: 10,
-            }),
+                timeoutMs: 10
+            })
         );
     });
 });
@@ -628,12 +625,12 @@ function createCircuitBreakerStub(allow = true) {
     return {
         allow: vi.fn(() => allow),
         success: vi.fn(),
-        failure: vi.fn(),
+        failure: vi.fn()
     };
 }
 
 function createRateLimiterStub(allow = true) {
     return {
-        allow: vi.fn(() => allow),
+        allow: vi.fn(() => allow)
     };
 }

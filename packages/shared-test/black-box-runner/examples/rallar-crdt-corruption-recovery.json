@@ -1,98 +1,98 @@
 {
-    "variables": {
-        "applicationId": "rallar-test",
-        "workspaceId": "main",
-        "groupId": "room-1",
-        "documentType": "checklist",
-        "documentKey": "crdt:v1:rallar-test:main:room:checklist:room-1:example",
-        "updateId": "update-1"
-    },
-    "steps": [
-        {
-            "name": "assertCorruptLocalSnapshotIsQuarantined",
-            "type": "assert",
-            "actual": {
-                "documentKey": "{documentKey}",
-                "artifactStore": "crdt:snapshots",
-                "corruptLocalArtifactCount": 1,
-                "replayed": false,
-                "recovery": "ignore-corrupt-snapshot-and-keep-document-readable"
-            },
-            "expect": {
-                "body": {
-                    "documentKey": "{documentKey}",
-                    "artifactStore": "crdt:snapshots",
-                    "corruptLocalArtifactCount": 1,
-                    "replayed": false,
-                    "recovery": "ignore-corrupt-snapshot-and-keep-document-readable"
-                }
-            }
-        },
-        {
-            "name": "assertCorruptPendingUpdateIsQuarantined",
-            "type": "assert",
-            "actual": {
-                "artifactStore": "crdt:pending-updates",
-                "pendingUpdateCount": 0,
-                "corruptLocalArtifactCount": 2,
-                "failedPendingClearedSilently": false
-            },
-            "expect": {
-                "body": {
-                    "artifactStore": "crdt:pending-updates",
-                    "pendingUpdateCount": 0,
-                    "corruptLocalArtifactCount": 2,
-                    "failedPendingClearedSilently": false
-                }
-            }
-        },
-        {
-            "name": "assertDebugBundleIntegrityInputs",
-            "type": "assert",
-            "actual": {
-                "bundleFormat": "rallar.crdt.debug-bundle.v1",
-                "documentKey": "{documentKey}",
-                "updateHashes": {
-                    "{updateId}": "canonical-update-hash"
-                },
-                "sequenceGaps": [],
-                "redaction": {
-                    "payloadsRedacted": false
-                }
-            },
-            "expect": {
-                "body": {
-                    "bundleFormat": "rallar.crdt.debug-bundle.v1",
-                    "documentKey": "{documentKey}",
-                    "updateHashes": {
-                        "{updateId}": "canonical-update-hash"
-                    },
-                    "sequenceGaps": [],
-                    "redaction": {
-                        "payloadsRedacted": false
-                    }
-                }
-            }
-        },
-        {
-            "name": "assertBackupRestorePreservesAppendSequence",
-            "type": "assert",
-            "actual": {
-                "backupFormat": "rallar.crdt.backup-bundle.v1",
-                "firstAppendSequence": 1,
-                "lastAppendSequence": 1,
-                "restoredUpdateCount": 1,
-                "restoredDocumentKey": "{documentKey}"
-            },
-            "expect": {
-                "body": {
-                    "backupFormat": "rallar.crdt.backup-bundle.v1",
-                    "firstAppendSequence": 1,
-                    "lastAppendSequence": 1,
-                    "restoredUpdateCount": 1,
-                    "restoredDocumentKey": "{documentKey}"
-                }
-            }
+  "variables": {
+    "applicationId": "rallar-test",
+    "workspaceId": "main",
+    "groupId": "room-1",
+    "documentType": "checklist",
+    "documentKey": "crdt:v1:rallar-test:main:room:checklist:room-1:example",
+    "updateId": "update-1"
+  },
+  "steps": [
+    {
+      "name": "assertCorruptLocalSnapshotIsQuarantined",
+      "type": "assert",
+      "actual": {
+        "documentKey": "{documentKey}",
+        "artifactStore": "crdt:snapshots",
+        "corruptLocalArtifactCount": 1,
+        "replayed": false,
+        "recovery": "ignore-corrupt-snapshot-and-keep-document-readable"
+      },
+      "expect": {
+        "body": {
+          "documentKey": "{documentKey}",
+          "artifactStore": "crdt:snapshots",
+          "corruptLocalArtifactCount": 1,
+          "replayed": false,
+          "recovery": "ignore-corrupt-snapshot-and-keep-document-readable"
         }
-    ]
+      }
+    },
+    {
+      "name": "assertCorruptPendingUpdateIsQuarantined",
+      "type": "assert",
+      "actual": {
+        "artifactStore": "crdt:pending-updates",
+        "pendingUpdateCount": 0,
+        "corruptLocalArtifactCount": 2,
+        "failedPendingClearedSilently": false
+      },
+      "expect": {
+        "body": {
+          "artifactStore": "crdt:pending-updates",
+          "pendingUpdateCount": 0,
+          "corruptLocalArtifactCount": 2,
+          "failedPendingClearedSilently": false
+        }
+      }
+    },
+    {
+      "name": "assertDebugBundleIntegrityInputs",
+      "type": "assert",
+      "actual": {
+        "bundleFormat": "rallar.crdt.debug-bundle.v1",
+        "documentKey": "{documentKey}",
+        "updateHashes": {
+          "{updateId}": "canonical-update-hash"
+        },
+        "sequenceGaps": [],
+        "redaction": {
+          "payloadsRedacted": false
+        }
+      },
+      "expect": {
+        "body": {
+          "bundleFormat": "rallar.crdt.debug-bundle.v1",
+          "documentKey": "{documentKey}",
+          "updateHashes": {
+            "{updateId}": "canonical-update-hash"
+          },
+          "sequenceGaps": [],
+          "redaction": {
+            "payloadsRedacted": false
+          }
+        }
+      }
+    },
+    {
+      "name": "assertBackupRestorePreservesAppendSequence",
+      "type": "assert",
+      "actual": {
+        "backupFormat": "rallar.crdt.backup-bundle.v1",
+        "firstAppendSequence": 1,
+        "lastAppendSequence": 1,
+        "restoredUpdateCount": 1,
+        "restoredDocumentKey": "{documentKey}"
+      },
+      "expect": {
+        "body": {
+          "backupFormat": "rallar.crdt.backup-bundle.v1",
+          "firstAppendSequence": 1,
+          "lastAppendSequence": 1,
+          "restoredUpdateCount": 1,
+          "restoredDocumentKey": "{documentKey}"
+        }
+      }
+    }
+  ]
 }

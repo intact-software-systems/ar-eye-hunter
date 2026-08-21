@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    recipeFixtureText,
+    recipeFixtureText
 } from '../../../recipe-fixtures.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
@@ -15,7 +15,7 @@ export function WorkbenchPanel({
     busy,
     runState,
     loadedFixtureId,
-    lastError,
+    lastError
 }: {
     busy: boolean;
     runState: string;
@@ -23,31 +23,30 @@ export function WorkbenchPanel({
     lastError?: string;
 }) {
     const [fixtureId, setFixtureId] = useState(
-        loadedFixtureId ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId,
+        loadedFixtureId ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId
     );
-    const [recipeText, setRecipeText] = useState(() =>
-        recipeFixtureText(fixtureId),
-    );
+    const [recipeText, setRecipeText] = useState(() => recipeFixtureText(fixtureId));
     const [commandText, setCommandText] = useState(() =>
-        JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2),
+        JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2)
     );
     const [localError, setLocalError] = useState<string | undefined>();
     const recipeValidation = useMemo(
         () => validateSchemaAuthoringText('recipe', recipeText),
-        [recipeText],
+        [recipeText]
     );
     const commandValidation = useMemo(
         () => validateSchemaAuthoringText('command', commandText),
-        [commandText],
+        [commandText]
     );
 
     const runAction = async (action: () => Promise<void>): Promise<void> => {
         setLocalError(undefined);
         try {
             await action();
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
@@ -58,10 +57,9 @@ export function WorkbenchPanel({
         setLocalError(undefined);
     };
 
-    const fixture =
-        RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(
-            (entry) => entry.fixtureId === fixtureId,
-        ) ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0];
+    const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(
+        (entry) => entry.fixtureId === fixtureId
+    ) ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0];
 
     return (
         <section className="panel workbench-panel">
@@ -80,9 +78,7 @@ export function WorkbenchPanel({
                         <span>Fixture</span>
                         <select
                             value={fixtureId}
-                            onChange={(event) =>
-                                selectFixture(event.target.value)
-                            }
+                            onChange={(event) => selectFixture(event.target.value)}
                             disabled={busy}
                         >
                             {RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((entry) => (
@@ -103,42 +99,29 @@ export function WorkbenchPanel({
                                 runAction(() =>
                                     rallarBlackBoxRuntimeStore.loadRecipeFromJson(
                                         recipeText,
-                                        fixtureId,
-                                    ),
-                                )
-                            }
+                                        fixtureId
+                                    )
+                                )}
                             disabled={busy || !recipeValidation.ok}
                         >
                             Load
                         </button>
                         <button
                             type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.runLoadedRecipe(),
-                                )
-                            }
+                            onClick={() => runAction(() => rallarBlackBoxRuntimeStore.runLoadedRecipe())}
                             disabled={busy}
                         >
                             Run
                         </button>
                         <button
                             type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.cancelRecipe(),
-                                )
-                            }
+                            onClick={() => runAction(() => rallarBlackBoxRuntimeStore.cancelRecipe())}
                         >
                             Cancel
                         </button>
                         <button
                             type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.resetWorkbench(),
-                                )
-                            }
+                            onClick={() => runAction(() => rallarBlackBoxRuntimeStore.resetWorkbench())}
                             disabled={busy}
                         >
                             Reset
@@ -160,9 +143,7 @@ export function WorkbenchPanel({
                         <span>Manual Command JSON</span>
                         <textarea
                             value={commandText}
-                            onChange={(event) =>
-                                setCommandText(event.target.value)
-                            }
+                            onChange={(event) => setCommandText(event.target.value)}
                             spellCheck={false}
                             disabled={busy}
                         />
@@ -170,19 +151,16 @@ export function WorkbenchPanel({
                     <SchemaAuthoringPanel validation={commandValidation} />
                     <CommandExamplePicker
                         onInsert={setCommandText}
-                        onCopy={(text) =>
-                            void navigator.clipboard?.writeText(text)
-                        }
+                        onCopy={(text) => void navigator.clipboard?.writeText(text)}
                     />
                     <button
                         type="button"
                         onClick={() =>
                             runAction(() =>
                                 rallarBlackBoxRuntimeStore.executeCommandFromJson(
-                                    commandText,
-                                ),
-                            )
-                        }
+                                    commandText
+                                )
+                            )}
                         disabled={busy || !commandValidation.ok}
                     >
                         Execute Command

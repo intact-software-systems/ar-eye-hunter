@@ -9,7 +9,7 @@ import type { TuneSourceModel } from './tune-source-model.ts';
  */
 export function tuneCandidateFingerprint(
     source: TuneSourceModel,
-    knobRevisionKey = tuneKnobRevisionKey(source),
+    knobRevisionKey = tuneKnobRevisionKey(source)
 ): string {
     const contextKey = JSON.stringify({
         identity: {
@@ -18,14 +18,14 @@ export function tuneCandidateFingerprint(
             quarantined: source.identity.quarantined,
             snapshotDistributedRunId: source.distributedRun?.distributedRunId,
             snapshotDistributedControlRunId: source.distributedRun?.controlRunId,
-            snapshotControlRunId: source.controlRun?.runId,
+            snapshotControlRunId: source.controlRun?.runId
         },
         support: {
             authority: source.provenance.source,
             detail: source.provenance.detail,
             retainedRelation: source.retained.relation,
-            retainedWorkspace: source.retained.support,
-        },
+            retainedWorkspace: source.retained.support
+        }
     });
     return `${contextKey}\u0000${knobRevisionKey}`;
 }
@@ -43,7 +43,7 @@ function tuneKnobRevisionKey(source: TuneSourceModel): string {
             knob.commandId,
             knob.recipeId,
             knob.reason,
-            knob.constraint,
+            knob.constraint
         ]);
         revisionKey += `${row.length}:${row}`;
     }

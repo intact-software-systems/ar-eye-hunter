@@ -1,26 +1,19 @@
-import { type FormEvent, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    authenticateRallarBlackBox,
-    authErrorMessage,
-    bootstrapPatchFromAuthSession,
-} from '../../auth-flow.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../runtime-store.ts';
+import { useState, type FormEvent } from 'react';
+import { authenticateRallarBlackBox, authErrorMessage, bootstrapPatchFromAuthSession } from '../../auth-flow.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../rallar/load-browser-rallar-facade.ts';
 
 export function LoginScreen({
     bootstrap,
-    onAuthenticated,
+    onAuthenticated
 }: {
     bootstrap: RallarBlackBoxBootstrapConfig;
     onAuthenticated(session: AuthSession): void;
 }) {
     const [apiBaseUrl, setApiBaseUrl] = useState(bootstrap.apiBaseUrl);
     const [username, setUsername] = useState(
-        bootstrap.rallarUsername ?? bootstrap.actor,
+        bootstrap.rallarUsername ?? bootstrap.actor
     );
     const [password, setPassword] = useState(bootstrap.rallarPassword ?? '');
     const [register, setRegister] = useState(Boolean(bootstrap.rallarRegister));
@@ -39,16 +32,18 @@ export function LoginScreen({
                     apiBaseUrl,
                     username,
                     password,
-                    register,
-                },
+                    register
+                }
             );
             rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-                bootstrapPatchFromAuthSession(session, apiBaseUrl),
+                bootstrapPatchFromAuthSession(session, apiBaseUrl)
             );
             onAuthenticated(session);
-        } catch (authError) {
+        }
+        catch (authError) {
             setError(authErrorMessage(authError));
-        } finally {
+        }
+        finally {
             setBusy(false);
         }
     };
@@ -71,9 +66,7 @@ export function LoginScreen({
                         <span>API Base URL</span>
                         <input
                             value={apiBaseUrl}
-                            onChange={(event) =>
-                                setApiBaseUrl(event.target.value)
-                            }
+                            onChange={(event) => setApiBaseUrl(event.target.value)}
                             disabled={busy}
                             required
                         />
@@ -82,9 +75,7 @@ export function LoginScreen({
                         <span>Username</span>
                         <input
                             value={username}
-                            onChange={(event) =>
-                                setUsername(event.target.value)
-                            }
+                            onChange={(event) => setUsername(event.target.value)}
                             disabled={busy}
                             autoCapitalize="none"
                             autoComplete="username"
@@ -98,9 +89,7 @@ export function LoginScreen({
                         <input
                             type="password"
                             value={password}
-                            onChange={(event) =>
-                                setPassword(event.target.value)
-                            }
+                            onChange={(event) => setPassword(event.target.value)}
                             disabled={busy}
                             autoComplete="current-password"
                             required
@@ -110,9 +99,7 @@ export function LoginScreen({
                         <input
                             type="checkbox"
                             checked={register}
-                            onChange={(event) =>
-                                setRegister(event.target.checked)
-                            }
+                            onChange={(event) => setRegister(event.target.checked)}
                             disabled={busy}
                         />
                         <span>Register before login</span>

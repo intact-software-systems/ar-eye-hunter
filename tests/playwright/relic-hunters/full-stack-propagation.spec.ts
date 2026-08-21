@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
     process.env.RELIC_HUNTERS_FULL_STACK === 'true';
@@ -49,13 +49,10 @@ type ComparableSnapshot = Readonly<{
 test.describe('full-stack Relic Hunters two-client propagation', () => {
     test.skip(
         !fullStackEnabled,
-        'Set RELIC_HUNTERS_FULL_STACK=1 and run apps/relic-hunters-v1/playwright.full-stack.config.ts against the paired Relic server.',
+        'Set RELIC_HUNTERS_FULL_STACK=1 and run apps/relic-hunters-v1/playwright.full-stack.config.ts against the paired Relic server.'
     );
 
-    test('two browsers converge through join, start, submit, reset, and reload recovery', async ({
-        browser,
-        request,
-    }) => {
+    test('two browsers converge through join, start, submit, reset, and reload recovery', async ({ browser, request }) => {
         test.setTimeout(180_000);
 
         const configResponse = await request.get('/api/config');
@@ -71,12 +68,12 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
             await registerHunter(pageA, {
                 username: `alice-${suffix}`,
                 displayName: 'Alice',
-                password: `alice-pass-${suffix}`,
+                password: `alice-pass-${suffix}`
             });
             await registerHunter(pageB, {
                 username: `bob-${suffix}`,
                 displayName: 'Bob',
-                password: `bob-pass-${suffix}`,
+                password: `bob-pass-${suffix}`
             });
 
             await pageA.getByRole('button', { name: 'New Room' }).click();
@@ -94,7 +91,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 phase: 'lobby',
                 round: 1,
                 playerCount: 1,
-                submittedCount: 0,
+                submittedCount: 0
             });
 
             await pageB.getByRole('button', { name: /Join as/ }).click();
@@ -102,7 +99,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 phase: 'lobby',
                 round: 1,
                 playerCount: 2,
-                submittedCount: 0,
+                submittedCount: 0
             });
 
             await expect(pageA.locator('.lobby-begin-btn')).toBeEnabled();
@@ -111,7 +108,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 phase: 'planning',
                 round: 1,
                 playerCount: 2,
-                submittedCount: 0,
+                submittedCount: 0
             });
 
             await pageA.getByRole('button', { name: 'Submit Plan' }).click();
@@ -119,7 +116,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 phase: 'planning',
                 round: 1,
                 playerCount: 2,
-                submittedCount: 1,
+                submittedCount: 1
             });
 
             await pageB.getByRole('button', { name: 'Submit Plan' }).click();
@@ -128,7 +125,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 round: 2,
                 playerCount: 2,
                 submittedCount: 0,
-                minEventCount: 3,
+                minEventCount: 3
             });
 
             await pageB.reload();
@@ -138,7 +135,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 round: 2,
                 playerCount: 2,
                 submittedCount: 0,
-                minEventCount: 3,
+                minEventCount: 3
             });
 
             await pageA.getByRole('button', { name: 'Reset' }).click();
@@ -146,7 +143,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 phase: 'lobby',
                 round: 1,
                 playerCount: 0,
-                submittedCount: 0,
+                submittedCount: 0
             });
 
             await pageA.getByRole('button', { name: /Join as/ }).click();
@@ -155,21 +152,22 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
                 phase: 'lobby',
                 round: 1,
                 playerCount: 2,
-                submittedCount: 0,
+                submittedCount: 0
             });
 
             const [runtimeA, runtimeB] = await Promise.all([
                 readRuntime(pageA),
-                readRuntime(pageB),
+                readRuntime(pageB)
             ]);
             expect(runtimeA?.diagnostics.lastSnapshotSource).toBeTruthy();
             expect(runtimeB?.diagnostics.lastSnapshotSource).toBeTruthy();
             expect(runtimeA?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
             expect(runtimeB?.diagnostics.lastIgnoredSnapshotReason).toBeUndefined();
-        } finally {
+        }
+        finally {
             await Promise.all([
                 contextA.close(),
-                contextB.close(),
+                contextB.close()
             ]);
         }
     });
@@ -181,7 +179,7 @@ async function registerHunter(
         username: string;
         displayName: string;
         password: string;
-    }>,
+    }>
 ): Promise<void> {
     await page.goto('/');
     await page.getByRole('button', { name: 'Register' }).click();
@@ -197,7 +195,7 @@ async function waitForRoomId(page: Page): Promise<string> {
         const runtime = await readRuntime(page);
         return runtime?.roomId;
     }, {
-        timeout: 30_000,
+        timeout: 30_000
     }).toBeTruthy();
 
     const runtime = await readRuntime(page);
@@ -217,7 +215,7 @@ async function expectConverged(
         playerCount: number;
         submittedCount: number;
         minEventCount?: number;
-    }>,
+    }>
 ): Promise<ComparableSnapshot> {
     let lastA: RuntimeHook | undefined;
     let lastB: RuntimeHook | undefined;
@@ -225,7 +223,7 @@ async function expectConverged(
     await expect.poll(async () => {
         [lastA, lastB] = await Promise.all([
             readRuntime(pageA),
-            readRuntime(pageB),
+            readRuntime(pageB)
         ]);
         if (!lastA?.snapshot || !lastB?.snapshot) {
             return undefined;
@@ -250,7 +248,7 @@ async function expectConverged(
 
         return left;
     }, {
-        timeout: 45_000,
+        timeout: 45_000
     }).toBeTruthy();
 
     if (!lastA?.snapshot || !lastB?.snapshot) {
@@ -264,19 +262,19 @@ async function expectConverged(
 
 async function waitForRuntime(
     page: Page,
-    predicate: (runtime: RuntimeHook) => boolean,
+    predicate: (runtime: RuntimeHook) => boolean
 ): Promise<void> {
     await expect.poll(async () => {
         const runtime = await readRuntime(page);
         return runtime ? predicate(runtime) : false;
     }, {
-        timeout: 30_000,
+        timeout: 30_000
     }).toBe(true);
 }
 
 async function readRuntime(page: Page): Promise<RuntimeHook | undefined> {
     return await page.evaluate(() =>
-        (window as unknown as { __relicHuntersRuntime?: RuntimeHook }).__relicHuntersRuntime
+        (window as unknown as { __relicHuntersRuntime?: RuntimeHook; }).__relicHuntersRuntime
     );
 }
 
@@ -289,6 +287,6 @@ function comparableSnapshot(snapshot: RuntimeSnapshot): ComparableSnapshot {
         playerIds: [...snapshot.playerIds],
         activePlayerCount: snapshot.activePlayerCount,
         submittedPlayerIds: [...snapshot.submittedPlayerIds],
-        eventIds: [...snapshot.eventIds],
+        eventIds: [...snapshot.eventIds]
     };
 }

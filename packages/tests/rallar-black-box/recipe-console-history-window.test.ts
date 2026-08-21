@@ -1,22 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { createRecipeConsoleControlScaleFixture } from
-    '../../../packages/shared-test/rallar-bb-test/recipe-console-control-scale-fixture.ts';
-import type { RecipeConsoleControlQueryProvenance } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
-import type { ControlQuerySnapshot } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
+import type { RecipeConsoleControlQueryProvenance } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
+import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import {
     createRecipeConsoleHistoryCollection,
     deriveRecipeConsoleHistoryWindow,
-    RECIPE_CONSOLE_HISTORY_WINDOW_SIZE,
+    RECIPE_CONSOLE_HISTORY_WINDOW_SIZE
 } from '../../../apps/rallar-black-box/src/recipe-console/history/history-model.ts';
-import type { ControlServerSnapshot } from
-    '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlServerSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { createRecipeConsoleControlScaleFixture } from '../../../packages/shared-test/rallar-bb-test/recipe-console-control-scale-fixture.ts';
 
 function query(
     snapshot: ControlServerSnapshot,
-    source: RecipeConsoleControlQueryProvenance['distributedRunsSource'] =
-        'root-snapshot',
+    source: RecipeConsoleControlQueryProvenance['distributedRunsSource'] = 'root-snapshot'
 ): ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance> {
     return {
         status: 'live',
@@ -26,10 +21,10 @@ function query(
         completeness: 'complete',
         provenance: {
             distributedRunsSource: source,
-            runEvidence: { detailedRunIds: [], indexOnlyRunIds: [] },
+            runEvidence: { detailedRunIds: [], indexOnlyRunIds: [] }
         },
         receivedAtEpochMs: 2_000_000_000_001,
-        isRefreshing: false,
+        isRefreshing: false
     };
 }
 
@@ -38,38 +33,37 @@ describe('Recipe Console History explicit window', () => {
         const fixture = createRecipeConsoleControlScaleFixture();
         const collection = createRecipeConsoleHistoryCollection({
             query: query(fixture.snapshot),
-            urlState: { v: 1, experience: 'recipe-console', view: 'tune' },
+            urlState: { v: 1, experience: 'recipe-console', view: 'tune' }
         });
 
         expect(RECIPE_CONSOLE_HISTORY_WINDOW_SIZE).toBe(80);
         expect(collection.counts).toEqual({ available: 5_000, total: 5_000 });
         expect(collection.work).toEqual({
             controlRunVisits: 5_000,
-            distributedRunVisits: 5_000,
+            distributedRunVisits: 5_000
         });
 
         const visitedIds: string[] = [];
         const visitedKeys: string[] = [];
-        for (let startIndex = 0; startIndex < collection.counts.total;
-            startIndex += RECIPE_CONSOLE_HISTORY_WINDOW_SIZE) {
+        for (let startIndex = 0; startIndex < collection.counts.total; startIndex += RECIPE_CONSOLE_HISTORY_WINDOW_SIZE) {
             const model = deriveRecipeConsoleHistoryWindow(collection, startIndex);
-            visitedIds.push(...model.rows.map(row => row.distributedRunId));
-            visitedKeys.push(...model.rows.map(row => row.key));
+            visitedIds.push(...model.rows.map((row) => row.distributedRunId));
+            visitedKeys.push(...model.rows.map((row) => row.key));
             expect(model.rows.length).toBeLessThanOrEqual(80);
             expect(model.work).toEqual({
                 projectedRows: model.rows.length,
                 labelProjections: model.rows.length,
                 catalogRunProjections: model.rows.length,
                 actionProjections: model.rows.length,
-                controlAgentVisits: model.rows.length,
+                controlAgentVisits: model.rows.length
             });
         }
 
         expect(visitedIds).toEqual(
-            fixture.snapshot.distributedRuns.map(run => run.distributedRunId),
+            fixture.snapshot.distributedRuns.map((run) => run.distributedRunId)
         );
         expect(visitedKeys).toEqual(
-            Array.from({ length: 5_000 }, (_, index) => `history-row:${index}`),
+            Array.from({ length: 5_000 }, (_, index) => `history-row:${index}`)
         );
         expect(new Set(visitedIds).size).toBe(5_000);
         expect(visitedIds.at(-1)).toBe(fixture.needles.distributedRunIds.last);
@@ -83,18 +77,18 @@ describe('Recipe Console History explicit window', () => {
             configurable: true,
             get: () => {
                 throw new Error('History touched an off-window manifest projection.');
-            },
+            }
         });
         Object.defineProperty(outsideControl, 'agents', {
             configurable: true,
             get: () => {
                 throw new Error('History touched an off-window agent projection.');
-            },
+            }
         });
 
         const collection = createRecipeConsoleHistoryCollection({
             query: query(fixture.snapshot),
-            urlState: { v: 1, experience: 'recipe-console', view: 'tune' },
+            urlState: { v: 1, experience: 'recipe-console', view: 'tune' }
         });
         const model = deriveRecipeConsoleHistoryWindow(collection, 80);
 
@@ -104,7 +98,7 @@ describe('Recipe Console History explicit window', () => {
             projectedRows: 80,
             labelProjections: 80,
             catalogRunProjections: 80,
-            controlAgentVisits: 80,
+            controlAgentVisits: 80
         });
     });
 
@@ -114,7 +108,7 @@ describe('Recipe Console History explicit window', () => {
         const outsideDuplicate = fixture.snapshot.distributedRuns[160]!;
         const visibleAmbiguous = fixture.snapshot.distributedRuns[81]!;
         const duplicateControl = structuredClone(
-            fixture.snapshot.runs[81]!,
+            fixture.snapshot.runs[81]!
         );
         const snapshot = {
             ...fixture.snapshot,
@@ -123,34 +117,30 @@ describe('Recipe Console History explicit window', () => {
                 index === 160
                     ? {
                         ...outsideDuplicate,
-                        distributedRunId: visibleDuplicate.distributedRunId,
+                        distributedRunId: visibleDuplicate.distributedRunId
                     }
                     : run
-            ),
+            )
         };
 
         const collection = createRecipeConsoleHistoryCollection({
             query: query(snapshot),
-            urlState: { v: 1, experience: 'recipe-console', view: 'tune' },
+            urlState: { v: 1, experience: 'recipe-console', view: 'tune' }
         });
         const model = deriveRecipeConsoleHistoryWindow(collection, 80);
 
-        expect(model.rows.find(row =>
-            row.distributedRunId === visibleDuplicate.distributedRunId
-        )).toMatchObject({
+        expect(model.rows.find((row) => row.distributedRunId === visibleDuplicate.distributedRunId)).toMatchObject({
             key: 'history-row:80',
             quarantined: true,
             quarantineCodes: ['ambiguous-run'],
-            actions: { eligible: false, reason: 'quarantined' },
+            actions: { eligible: false, reason: 'quarantined' }
         });
-        expect(model.rows.find(row =>
-            row.distributedRunId === visibleAmbiguous.distributedRunId
-        )).toMatchObject({
+        expect(model.rows.find((row) => row.distributedRunId === visibleAmbiguous.distributedRunId)).toMatchObject({
             key: 'history-row:81',
             pairStatus: 'ambiguous',
             controlStatus: 'ambiguous',
             quarantined: false,
-            actions: { eligible: false, reason: 'ambiguous-control' },
+            actions: { eligible: false, reason: 'ambiguous-control' }
         });
     });
 
@@ -164,8 +154,8 @@ describe('Recipe Console History explicit window', () => {
                 view: 'tune',
                 historyQuery: '  SCALE  ',
                 historyGroup: ' RECIPE-CONSOLE-SCALE ',
-                compareLeft: fixture.needles.distributedRunIds.first,
-            },
+                compareLeft: fixture.needles.distributedRunIds.first
+            }
         });
         const equivalent = createRecipeConsoleHistoryCollection({
             query: query(structuredClone(fixture.snapshot)),
@@ -175,8 +165,8 @@ describe('Recipe Console History explicit window', () => {
                 view: 'tune',
                 historyQuery: 'scale',
                 historyGroup: 'recipe-console-scale',
-                compareRight: fixture.needles.distributedRunIds.last,
-            },
+                compareRight: fixture.needles.distributedRunIds.last
+            }
         });
         const fallback = createRecipeConsoleHistoryCollection({
             query: query(fixture.snapshot, 'canonical-fallback'),
@@ -185,8 +175,8 @@ describe('Recipe Console History explicit window', () => {
                 experience: 'recipe-console',
                 view: 'tune',
                 historyQuery: 'scale',
-                historyGroup: 'recipe-console-scale',
-            },
+                historyGroup: 'recipe-console-scale'
+            }
         });
 
         expect(first.fingerprint).toBe(equivalent.fingerprint);
@@ -201,7 +191,7 @@ describe('Recipe Console History explicit window', () => {
             null,
             null,
             null,
-            null,
+            null
         ]);
     });
 });

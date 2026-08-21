@@ -1,5 +1,4 @@
-import { TreeGraph, VertexId, WeightedGraph, } from '../graph-props.ts';
-import { createEmptyTreeLike, mddlOTTC, relaxDegreeByOne } from '../tree/mddl-ottc.ts';
+import { TreeGraph, VertexId, WeightedGraph } from '../graph-props.ts';
 import {
     cloneGraph,
     diffGraphs,
@@ -8,11 +7,12 @@ import {
     pruneNonTerminalLeaves
 } from '../graph/graph-algs.ts';
 import { CoreSelectionAlgo, findWCNodes } from '../graph/steiner-core-algorithms.ts';
+import { createEmptyTreeLike, mddlOTTC, relaxDegreeByOne } from '../tree/mddl-ottc.ts';
 
 export function kMDDLOTTCTree(
     inputT: TreeGraph,
     k: number,
-    src: VertexId,
+    src: VertexId
 ): WeightedGraph {
     const newT = createEmptyTreeLike(inputT);
     const meshT = cloneGraph(inputT);
@@ -32,14 +32,18 @@ export function kMDDLOTTCTree(
 
     for (let i = 0; i < k; i++) {
         const treeNodes = new Set(meshT.nodes() as VertexId[]);
-        if (treeNodes.size === 0) break;
-        if (!treeNodes.has(src)) break;
+        if (treeNodes.size === 0) {
+            break;
+        }
+        if (!treeNodes.has(src)) {
+            break;
+        }
 
         const built = mddlOTTC(
             meshT,
             src,
             treeNodes,
-            relaxDegreeByOne,
+            relaxDegreeByOne
         );
 
         if (!built.success) {
@@ -54,18 +58,21 @@ export function kMDDLOTTCTree(
         diffGraphs(meshT, T);
 
         for (const v of newT.nodes() as VertexId[]) {
-            if (!meshT.hasNode(v)) continue;
+            if (!meshT.hasNode(v)) {
+                continue;
+            }
 
             const originalLimit = getDegreeConstraint(inputT, v);
             const usedDegree = newT.degree(v);
 
             if (usedDegree >= originalLimit) {
                 meshT.dropNode(v);
-            } else {
+            }
+            else {
                 const attrs = meshT.getNodeAttributes(v);
                 meshT.replaceNodeAttributes(v, {
                     ...attrs,
-                    degreeLimit: originalLimit - usedDegree,
+                    degreeLimit: originalLimit - usedDegree
                 });
             }
         }
@@ -77,8 +84,12 @@ export function kMDDLOTTCTree(
             remainingVertices.delete(used);
         }
 
-        if (meshT.edges().length <= 1) break;
-        if (remainingVertices.size === 0) break;
+        if (meshT.edges().length <= 1) {
+            break;
+        }
+        if (remainingVertices.size === 0) {
+            break;
+        }
 
         const centers = findWCNodes(
             meshT,
@@ -86,15 +97,21 @@ export function kMDDLOTTCTree(
             remainingVertices,
             usedSources,
             1,
-            CoreSelectionAlgo.CENTER_SELECTION,
+            CoreSelectionAlgo.CENTER_SELECTION
         );
 
-        if (centers.length === 0) break;
+        if (centers.length === 0) {
+            break;
+        }
 
         src = centers[0];
 
-        if (!meshT.hasNode(src)) break;
-        if (meshT.degree(src) <= 0) break;
+        if (!meshT.hasNode(src)) {
+            break;
+        }
+        if (meshT.degree(src) <= 0) {
+            break;
+        }
     }
 
     return newT;

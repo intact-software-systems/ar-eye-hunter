@@ -138,19 +138,19 @@ Start with the smallest topology slice that can be tested without changing the
 entire product API:
 
 1. [x] Add shared-graph create/rebuild APIs and validation helpers for
-   member-only, degree-limited tree and mesh graphs.
+       member-only, degree-limited tree and mesh graphs.
 2. [x] Fix `graphs-mesh-service.ts` reconfiguration so it evaluates and
-   reconfigures the updated group mesh, honors remove behavior, and reports
-   failure metadata.
+       reconfigures the updated group mesh, honors remove behavior, and reports
+       failure metadata.
 3. [x] Add the server-side Rallar topology service with star/tree/mesh size
-   selection and scoped per-group state.
+       selection and scoped per-group state.
 4. [x] Add compact `overlay.topology` snapshots and publish only changed
-   next-hop maps.
+       next-hop maps.
 5. [x] Update browser overlay application and `WebRtcGroupManager` so desired
-   RTC peers follow overlay next hops with star fallback.
+       RTC peers follow overlay next hops with star fallback.
 6. [x] Add integration coverage for group growth, group shrinkage,
-   RTT-triggered rebuild, RTT debounce/coalescing, app-inbox RTT recompute
-   ownership, and no full-mesh connection growth.
+       RTT-triggered rebuild, RTT debounce/coalescing, app-inbox RTT recompute
+       ownership, and no full-mesh connection growth.
 
 ## Remaining Follow-Up
 

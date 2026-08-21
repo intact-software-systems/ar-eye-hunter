@@ -1,8 +1,5 @@
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
-import {
-    AVATAR_ARRIVAL_SETTLE_MS,
-    AVATAR_MOVING_STEP_CYCLE_MS,
-} from './motionTuning.ts';
+import { AVATAR_ARRIVAL_SETTLE_MS, AVATAR_MOVING_STEP_CYCLE_MS } from './motionTuning.ts';
 
 export { AVATAR_ARRIVAL_SETTLE_MS };
 
@@ -29,7 +26,7 @@ export function deriveRelicAvatarPresentation({
     player,
     submittedPlayerIds,
     isMoving,
-    lastMovedAgoMs,
+    lastMovedAgoMs
 }: Readonly<{
     phase: RelicPublicSnapshot['phase'];
     player: Pick<RelicPublicSnapshot['players'][number], 'playerId' | 'escaped' | 'defeated'>;
@@ -67,7 +64,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 1,
                 baseScale: 1.08,
-                emissiveRole: 'idle',
+                emissiveRole: 'idle'
             };
         case 'moving':
             return {
@@ -76,7 +73,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 1,
                 baseScale: 1.12,
-                emissiveRole: 'action',
+                emissiveRole: 'action'
             };
         case 'arriving':
             return {
@@ -85,7 +82,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 1,
                 baseScale: 1.10,
-                emissiveRole: 'idle',
+                emissiveRole: 'idle'
             };
         case 'locked':
             return {
@@ -94,7 +91,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 1,
                 baseScale: 1.10,
-                emissiveRole: 'locked',
+                emissiveRole: 'locked'
             };
         case 'escaped':
             return {
@@ -103,7 +100,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 0.56,
                 baseScale: 0.92,
-                emissiveRole: 'escaped',
+                emissiveRole: 'escaped'
             };
         case 'defeated':
             return {
@@ -112,7 +109,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 0.48,
                 baseScale: 0.82,
-                emissiveRole: 'defeated',
+                emissiveRole: 'defeated'
             };
         case 'idle':
         default:
@@ -122,7 +119,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
                 labelVisible: true,
                 opacity: 1,
                 baseScale: 1.08,
-                emissiveRole: 'idle',
+                emissiveRole: 'idle'
             };
     }
 }
@@ -130,7 +127,7 @@ export function avatarPresentationForStatus(status: RelicAvatarStatus): RelicAva
 export function avatarPoseOffsets({
     presentation,
     nowMs,
-    lastMovedAgoMs,
+    lastMovedAgoMs
 }: Readonly<{
     presentation: RelicAvatarPresentation;
     nowMs: number;
@@ -148,7 +145,7 @@ export function avatarPoseOffsets({
                 yOffset: 0.055 + Math.abs(step) * 0.06,
                 pitch: -0.16,
                 roll: step * 0.105,
-                scaleY: 1.035,
+                scaleY: 1.035
             };
         }
         case 'arriving': {
@@ -158,7 +155,7 @@ export function avatarPoseOffsets({
                 yOffset: Math.sin(age / 54) * 0.035 * settle,
                 pitch: 0.02 * settle,
                 roll: Math.sin(age / 72) * 0.045 * settle,
-                scaleY: 1 + 0.035 * settle,
+                scaleY: 1 + 0.035 * settle
             };
         }
         case 'locked':
@@ -166,28 +163,28 @@ export function avatarPoseOffsets({
                 yOffset: 0.025 + Math.sin(nowMs / 1250) * 0.012,
                 pitch: 0,
                 roll: 0,
-                scaleY: 1.01,
+                scaleY: 1.01
             };
         case 'escaped':
             return {
                 yOffset: 0.16 + Math.sin(nowMs / 1450) * 0.018,
                 pitch: 0,
                 roll: 0,
-                scaleY: 0.96,
+                scaleY: 0.96
             };
         case 'defeated':
             return {
                 yOffset: -0.24,
                 pitch: 0.58,
                 roll: -0.36,
-                scaleY: 0.70,
+                scaleY: 0.70
             };
         case 'lobby':
             return {
                 yOffset: Math.sin(nowMs / 1500) * 0.018,
                 pitch: 0,
                 roll: Math.sin(nowMs / 1800) * 0.018,
-                scaleY: 1.01,
+                scaleY: 1.01
             };
         case 'idle':
         default:
@@ -195,7 +192,7 @@ export function avatarPoseOffsets({
                 yOffset: Math.sin(nowMs / 1650) * 0.014,
                 pitch: 0,
                 roll: Math.sin(nowMs / 2100) * 0.015,
-                scaleY: 1,
+                scaleY: 1
             };
     }
 }

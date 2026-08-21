@@ -1,11 +1,11 @@
-import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection, } from './QRtcPeerConnection.ts';
+import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection } from './QRtcPeerConnection.ts';
 
 export const MediaSessionState = {
     Idle: 'Idle',
     Connecting: 'Connecting',
     Open: 'Open',
     Closed: 'Closed',
-    Failed: 'Failed',
+    Failed: 'Failed'
 } as const;
 
 export type MediaSessionState = (typeof MediaSessionState)[keyof typeof MediaSessionState];
@@ -38,7 +38,7 @@ export class QRtcMediaChannel {
 
     constructor(
         peerConnection: QRtcPeerConnection,
-        input: RtcMediaChannelInputDto,
+        input: RtcMediaChannelInputDto
     ) {
         this.peerConnection = peerConnection;
         this.input = input;
@@ -50,7 +50,7 @@ export class QRtcMediaChannel {
             state: MediaSessionState.Idle,
             localAudioEnabled: true,
             localVideoEnabled: true,
-            remoteStreams: new Map<string, MediaStream>(),
+            remoteStreams: new Map<string, MediaStream>()
         };
     }
 
@@ -132,11 +132,12 @@ export class QRtcMediaChannel {
                 for (const cb of this.onRemoteStreamCallbacks.values()) {
                     try {
                         await cb(stream, event);
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('QRtcMediaChannel onRemoteStream callback failed', e);
                     }
                 }
-            },
+            }
         );
 
         this.peerConnection.onTrackDo(
@@ -145,11 +146,12 @@ export class QRtcMediaChannel {
                 for (const cb of this.onTrackCallbacks.values()) {
                     try {
                         await cb(event);
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('QRtcMediaChannel onTrack callback failed', e);
                     }
                 }
-            },
+            }
         );
     }
 
@@ -171,7 +173,7 @@ export class QRtcMediaChannel {
     async setParameters(
         stream: MediaStream,
         audioEnabled: boolean,
-        videoEnabled: boolean,
+        videoEnabled: boolean
     ) {
         await this.setLocalMediaStream(stream);
         this.setLocalAudioEnabled(audioEnabled);

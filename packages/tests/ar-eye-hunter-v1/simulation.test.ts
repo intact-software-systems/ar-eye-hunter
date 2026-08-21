@@ -1,54 +1,50 @@
-import { describe, expect, it } from 'vitest';
 import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
+import { describe, expect, it } from 'vitest';
 
-import {
-    FALLBACK_ARENA_LAYOUT,
-    blocksShot,
-    validateArenaLayoutSpec,
-} from '../../../apps/ar-eye-hunter-v1/src/game/arenaLayout.ts';
+import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '../../../apps/ar-eye-hunter-v1/src/game/arenaLayout.ts';
 import {
     applyArenaEvent,
     createInitialArenaState,
     createInitialCombatState,
     createInitialLoadoutState,
+    createInitialPlayerState,
     createInitialVitalsState,
     finishArenaMatchIfDue,
-    createInitialPlayerState,
+    resolveEyeAttackCue,
     resolvePickupIntent,
     resolvePlayerHitIntent,
     resolveShot,
-    resolveEyeAttackCue,
-    startArenaMatch,
     spawnWeaponPickup,
+    startArenaMatch,
     stepArenaDirectorState,
     stepLocalPlayer,
     toArenaSnapshot,
-    upsertPlayerPose,
+    upsertPlayerPose
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import type {
-    ArenaEvent,
-    ArenaLayoutProp,
-    ShotIntent,
-    Vec3Tuple,
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter simulation', () => {
     it('accelerates fast FPS movement and applies dash cooldowns', () => {
         const now = 1_000;
         const player = createInitialPlayerState(now);
 
-        const next = stepLocalPlayer(player, {
-            moveX: 0,
-            moveZ: 1,
-            sprint: true,
-            dash: true,
-            slide: false,
-            jump: false,
-            fire: false,
-            altFire: false,
-            overdrive: false,
-            pause: false,
-        }, 100, now);
+        const next = stepLocalPlayer(
+            player,
+            {
+                moveX: 0,
+                moveZ: 1,
+                sprint: true,
+                dash: true,
+                slide: false,
+                jump: false,
+                fire: false,
+                altFire: false,
+                overdrive: false,
+                pause: false
+            },
+            100,
+            now
+        );
 
         expect(next.position[2]).toBeGreaterThan(player.position[2]);
         expect(next.velocity[2]).toBeGreaterThan(10);
@@ -63,7 +59,7 @@ describe('AR Eye Hunter simulation', () => {
         const origin: Vec3Tuple = [
             target.position[0],
             target.position[1],
-            target.position[2] - 8,
+            target.position[2] - 8
         ];
         const shot: ShotIntent = {
             sessionId: 'alice',
@@ -72,7 +68,7 @@ describe('AR Eye Hunter simulation', () => {
             origin,
             direction: [0, 0, 1],
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         };
 
         const result = resolveShot(state, createInitialCombatState(), shot, now);
@@ -95,7 +91,7 @@ describe('AR Eye Hunter simulation', () => {
             origin: [0, 2, 0],
             direction: [0, 1, 0],
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         };
 
         const result = resolveShot(state, createInitialCombatState(), shot, now);
@@ -116,7 +112,7 @@ describe('AR Eye Hunter simulation', () => {
             startsAtEpochMs: now,
             expiresAtEpochMs: now + 8_000,
             revision: state.revision + 1,
-            source: 'ai',
+            source: 'ai'
         };
 
         const spawned = applyArenaEvent(state, spawn);
@@ -127,7 +123,7 @@ describe('AR Eye Hunter simulation', () => {
             startsAtEpochMs: now + 100,
             expiresAtEpochMs: now + 9_000,
             revision: spawned.revision + 1,
-            source: 'ai',
+            source: 'ai'
         };
         const mutated = applyArenaEvent(spawned, mutate);
 
@@ -142,21 +138,27 @@ describe('AR Eye Hunter simulation', () => {
         const player = {
             ...createInitialPlayerState(now),
             position: [59.5, 1.72, 59.5] as Vec3Tuple,
-            yaw: Math.PI / 4,
+            yaw: Math.PI / 4
         };
 
-        const next = stepLocalPlayer(player, {
-            moveX: 1,
-            moveZ: 1,
-            sprint: true,
-            dash: true,
-            slide: false,
-            jump: false,
-            fire: false,
-            altFire: false,
-            overdrive: false,
-            pause: false,
-        }, 500, now, 60);
+        const next = stepLocalPlayer(
+            player,
+            {
+                moveX: 1,
+                moveZ: 1,
+                sprint: true,
+                dash: true,
+                slide: false,
+                jump: false,
+                fire: false,
+                altFire: false,
+                overdrive: false,
+                pause: false
+            },
+            500,
+            now,
+            60
+        );
 
         expect(Math.abs(next.position[0])).toBeLessThanOrEqual(60);
         expect(Math.abs(next.position[2])).toBeLessThanOrEqual(60);
@@ -177,7 +179,7 @@ describe('AR Eye Hunter simulation', () => {
                 vitals: attackerVitals,
                 loadout: { ...createInitialLoadoutState(), weaponKind: 'rail-lance', tier: 3 },
                 seq: 1,
-                sentAtEpochMs: now,
+                sentAtEpochMs: now
             }, now),
             {
                 sessionId: 'target',
@@ -188,9 +190,9 @@ describe('AR Eye Hunter simulation', () => {
                 vitals: targetVitals,
                 loadout: createInitialLoadoutState(),
                 seq: 1,
-                sentAtEpochMs: now,
+                sentAtEpochMs: now
             },
-            now,
+            now
         );
 
         const first = resolvePlayerHitIntent(stateWithPlayers, {
@@ -202,11 +204,11 @@ describe('AR Eye Hunter simulation', () => {
                 direction: [0, 0, 1],
                 weaponKind: 'rail-lance',
                 seq: 1,
-                sentAtEpochMs: now,
+                sentAtEpochMs: now
             },
             targetSessionId: 'target',
             predictedImpact: [0, 1.72, 9],
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
         expect(first.accepted).toBe(true);
         if (!first.accepted) {
@@ -226,11 +228,11 @@ describe('AR Eye Hunter simulation', () => {
                 weaponKind: 'rail-lance',
                 overdrive: true,
                 seq: 2,
-                sentAtEpochMs: now + 200,
+                sentAtEpochMs: now + 200
             },
             targetSessionId: 'target',
             predictedImpact: [0, 1.72, 9],
-            sentAtEpochMs: now + 200,
+            sentAtEpochMs: now + 200
         }, now + 200);
 
         expect(second.accepted).toBe(true);
@@ -255,11 +257,11 @@ describe('AR Eye Hunter simulation', () => {
                     direction: [0, 0, 1],
                     weaponKind: 'rail-lance',
                     seq,
-                    sentAtEpochMs: now + seq * 200,
+                    sentAtEpochMs: now + seq * 200
                 },
                 targetSessionId: 'target',
                 predictedImpact: [0, 1.72, 9],
-                sentAtEpochMs: now + seq * 200,
+                sentAtEpochMs: now + seq * 200
             }, now + seq * 200);
             expect(next.accepted).toBe(true);
             if (!next.accepted) {
@@ -281,11 +283,11 @@ describe('AR Eye Hunter simulation', () => {
                 direction: [0, 0, 1],
                 weaponKind: 'rail-lance',
                 seq: 3,
-                sentAtEpochMs: now + 300,
+                sentAtEpochMs: now + 300
             },
             targetSessionId: 'target',
             predictedImpact: [0, 1.72, 9],
-            sentAtEpochMs: now + 300,
+            sentAtEpochMs: now + 300
         }, now + 300);
         expect(blockedWhileDead.accepted).toBe(false);
 
@@ -308,7 +310,7 @@ describe('AR Eye Hunter simulation', () => {
             vitals: createInitialVitalsState(),
             loadout: { ...createInitialLoadoutState(), weaponKind: 'rail-lance', tier: 3 },
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
 
         const accepted = resolvePickupIntent(withPlayer, {
@@ -316,7 +318,7 @@ describe('AR Eye Hunter simulation', () => {
             sessionId: 'picker',
             position: pickup.position,
             seq: 1,
-            sentAtEpochMs: now + 50,
+            sentAtEpochMs: now + 50
         }, now + 50);
 
         expect(accepted.accepted).toBe(true);
@@ -331,7 +333,7 @@ describe('AR Eye Hunter simulation', () => {
             sessionId: 'picker',
             position: pickup.position,
             seq: 2,
-            sentAtEpochMs: now + 60,
+            sentAtEpochMs: now + 60
         }, now + 60);
         expect(duplicate.accepted).toBe(false);
     });
@@ -347,25 +349,25 @@ describe('AR Eye Hunter simulation', () => {
                 grid: '#49ff86',
                 accent: '#00e5ff',
                 warning: '#ff3df2',
-                reward: '#ffe66d',
+                reward: '#ffe66d'
             },
             spawnPoints: [
                 [-45, 1.72, -45],
-                [45, 1.72, 45],
+                [45, 1.72, 45]
             ],
             pickupAnchors: [
                 { id: 'a', position: [0, 1, 0] },
                 { id: 'b', position: [10, 1, 0] },
-                { id: 'c', position: [-10, 1, 0] },
+                { id: 'c', position: [-10, 1, 0] }
             ],
             props: [{
                 id: 'cover',
                 kind: 'cover',
                 position: [0, 1, 4],
                 size: [4, 3, 2],
-                blocksShots: true,
+                blocksShots: true
             }],
-            signs: [],
+            signs: []
         });
 
         expect(validation.ok).toBe(true);
@@ -376,7 +378,7 @@ describe('AR Eye Hunter simulation', () => {
         const fallback = validateArenaLayoutSpec({
             halfSize: 40,
             spawnPoints: [[0, 1.72, 0]],
-            pickupAnchors: [],
+            pickupAnchors: []
         });
         expect(fallback.ok).toBe(false);
         expect(fallback.layout.id).toBe(FALLBACK_ARENA_LAYOUT.id);
@@ -393,7 +395,7 @@ describe('AR Eye Hunter simulation', () => {
             expiresAtEpochMs: now + 8_000,
             revision: state.revision + 1,
             source: 'ai',
-            headline: 'Mandatory fun crate inbound',
+            headline: 'Mandatory fun crate inbound'
         });
 
         expect(dropped.pickups).toHaveLength(1);
@@ -419,7 +421,7 @@ describe('AR Eye Hunter simulation', () => {
         const validation = validateRallarJsonPayload({
             protocol: 'ar-eye-hunter.v1',
             kind: 'director-arena-snapshot',
-            payload: snapshot,
+            payload: snapshot
         }, { path: '$.payload' });
 
         expect(validation.ok).toBe(true);
@@ -440,13 +442,13 @@ describe('AR Eye Hunter simulation', () => {
             position: [
                 hostile.position[0],
                 1.72,
-                hostile.position[2] + 18,
+                hostile.position[2] + 18
             ],
             rotation: [0, Math.PI, 0],
             vitals: createInitialVitalsState(),
             loadout: createInitialLoadoutState(),
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
 
         const active = stepArenaDirectorState({
@@ -454,7 +456,7 @@ describe('AR Eye Hunter simulation', () => {
             wave: {
                 ...withPlayer.wave,
                 phase: 'active',
-                nextPhaseAtEpochMs: now + 20_000,
+                nextPhaseAtEpochMs: now + 20_000
             },
             targets: withPlayer.targets.map((target) =>
                 target.id === hostile.id && target.threat
@@ -462,11 +464,11 @@ describe('AR Eye Hunter simulation', () => {
                         ...target,
                         threat: {
                             ...target.threat,
-                            nextAttackAtEpochMs: now,
-                        },
+                            nextAttackAtEpochMs: now
+                        }
                     }
                     : target
-            ),
+            )
         }, now);
 
         expect(active.attacks).toHaveLength(1);
@@ -497,7 +499,7 @@ describe('AR Eye Hunter simulation', () => {
             loadout: createInitialLoadoutState(),
             score: 40,
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
         state = upsertPlayerPose(state, {
             sessionId: 'beta',
@@ -509,14 +511,14 @@ describe('AR Eye Hunter simulation', () => {
             loadout: createInitialLoadoutState(),
             score: 20,
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
 
         const started = startArenaMatch(state, {
             matchId: 'match:test',
             directorSessionId: 'alpha',
             durationMs: 60_000,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
 
         expect(started.accepted).toBe(true);
@@ -537,7 +539,7 @@ describe('AR Eye Hunter simulation', () => {
                 loadout: createInitialLoadoutState(),
                 score: 100,
                 seq: 2,
-                sentAtEpochMs: now + 60_050,
+                sentAtEpochMs: now + 60_050
             }, now + 60_050),
             {
                 sessionId: 'beta',
@@ -549,9 +551,9 @@ describe('AR Eye Hunter simulation', () => {
                 loadout: createInitialLoadoutState(),
                 score: 80,
                 seq: 2,
-                sentAtEpochMs: now + 60_050,
+                sentAtEpochMs: now + 60_050
             },
-            now + 60_050,
+            now + 60_050
         );
         const finished = finishArenaMatchIfDue(progressed, now + 60_050);
 
@@ -561,7 +563,7 @@ describe('AR Eye Hunter simulation', () => {
             scoreDelta: 60,
             killsDelta: 4,
             deathsDelta: 0,
-            rank: 1,
+            rank: 1
         });
         expect(finished.activeEvent?.kind).toBe('match-ended');
     });
@@ -583,9 +585,9 @@ describe('AR Eye Hunter simulation', () => {
                     kind: 'cover',
                     position: [hostile.position[0], 1.5, hostile.position[2] + 8],
                     size: [8, 4, 1.5],
-                    blocksShots: true,
-                }] satisfies readonly ArenaLayoutProp[],
-            },
+                    blocksShots: true
+                }] satisfies readonly ArenaLayoutProp[]
+            }
         };
         const withPlayer = upsertPlayerPose(withCover, {
             sessionId: 'dodger',
@@ -596,7 +598,7 @@ describe('AR Eye Hunter simulation', () => {
             vitals: createInitialVitalsState(),
             loadout: createInitialLoadoutState(),
             seq: 1,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         }, now);
         const cue = {
             id: 'cue-cover-test',
@@ -610,13 +612,17 @@ describe('AR Eye Hunter simulation', () => {
             startsAtEpochMs: now,
             firesAtEpochMs: now + 900,
             expiresAtEpochMs: now + 1_200,
-            revision: withPlayer.revision + 1,
+            revision: withPlayer.revision + 1
         };
 
-        const fired = resolveEyeAttackCue({
-            ...withPlayer,
-            attacks: [cue],
-        }, cue, cue.firesAtEpochMs);
+        const fired = resolveEyeAttackCue(
+            {
+                ...withPlayer,
+                attacks: [cue]
+            },
+            cue,
+            cue.firesAtEpochMs
+        );
 
         expect(fired.accepted).toBe(true);
         if (!fired.accepted) {

@@ -1,42 +1,40 @@
 import {
     startExpiredEntryEviction,
     type ExpiredEntryEvictionHandle,
-    type ExpiredEntryEvictionOptions,
+    type ExpiredEntryEvictionOptions
 } from './ExpiredEntryEviction.ts';
 import {
     ObservableLatestValue,
     type ObservableLatestValueOptions,
-    type ValueEqualityChecker,
+    type ValueEqualityChecker
 } from './ObservableLatestValue.ts';
 import {
+    ObservableValueEventType,
     type ObservableKeyedValueErrorHandler,
     type ObservableKeyedValueEvent,
     type ObservableKeyedValueListener,
     type ObservableKeyedValues,
-    ObservableValueEventType,
     type PushKeyedValues,
     type ReadableKeyedValues,
     type Unsubscribe,
-    type UpdateIfNewerOptions,
+    type UpdateIfNewerOptions
 } from './RepositoryInterfaces.ts';
 
-export type ObservableLatestRepositoryOptions<K, V> = Readonly<ExpiredEntryEvictionOptions & {
-    ttlMs?: number;
-    isValid?: (value: V) => boolean;
-    equals?: ValueEqualityChecker<V>;
-    onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
-}>;
+export type ObservableLatestRepositoryOptions<K, V> = Readonly<
+    ExpiredEntryEvictionOptions & {
+        ttlMs?: number;
+        isValid?: (value: V) => boolean;
+        equals?: ValueEqualityChecker<V>;
+        onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
+    }
+>;
 
-export class ObservableLatestRepository<K, V>
-    implements PushKeyedValues<K, V>, ObservableKeyedValues<K, V> {
+export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, ObservableKeyedValues<K, V> {
     private readonly entries = new Map<K, ObservableLatestValue<V>>();
     private readonly defaultValueOptions: ObservableLatestValueOptions<V>;
     private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
     private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
-    private readonly listenersByType = new Map<
-        ObservableValueEventType,
-        Set<ObservableKeyedValueListener<K, V>>
-    >();
+    private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableKeyedValueListener<K, V>>>();
     private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
     private observerQueue: Promise<void> = Promise.resolve();
 
@@ -44,12 +42,12 @@ export class ObservableLatestRepository<K, V>
         this.defaultValueOptions = {
             ttlMs: options.ttlMs,
             isValid: options.isValid,
-            equals: options.equals,
+            equals: options.equals
         };
         this.onObserverError = options.onObserverError;
         this.expiredEntryEviction = startExpiredEntryEviction(
             options,
-            () => this.deleteExpired(),
+            () => this.deleteExpired()
         );
     }
 
@@ -177,7 +175,7 @@ export class ObservableLatestRepository<K, V>
 
     public updateOrCreate(
         key: K,
-        updater: (current: V | undefined) => V,
+        updater: (current: V | undefined) => V
     ): boolean {
         const entry = this.getOrCreate(key);
         entry.set(updater(entry.peek() ?? undefined));
@@ -187,7 +185,7 @@ export class ObservableLatestRepository<K, V>
     public updateIfNewer(
         key: K,
         next: V,
-        options: UpdateIfNewerOptions<V>,
+        options: UpdateIfNewerOptions<V>
     ): boolean {
         let isUpdated = false;
 
@@ -333,7 +331,7 @@ export class ObservableLatestRepository<K, V>
     public async whenIdle(): Promise<void> {
         while (true) {
             const valueQueues = [...this.entries.values()].map(
-                async (entry) => await entry.whenIdle(),
+                async (entry) => await entry.whenIdle()
             );
             await Promise.all(valueQueues);
 
@@ -359,7 +357,7 @@ export class ObservableLatestRepository<K, V>
             entry.onChangeDo((event) => {
                 this.emit({
                     ...event,
-                    key,
+                    key
                 });
             });
             this.entries.set(key, entry);
@@ -370,7 +368,7 @@ export class ObservableLatestRepository<K, V>
 
     private onTypeDo(
         type: ObservableValueEventType,
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         let listeners = this.listenersByType.get(type);
         if (!listeners) {
@@ -390,7 +388,7 @@ export class ObservableLatestRepository<K, V>
     private emit(event: ObservableKeyedValueEvent<K, V>): void {
         const listeners = [
             ...(this.listenersByType.get(event.type) ?? []),
-            ...this.changeListeners,
+            ...this.changeListeners
         ];
 
         if (listeners.length === 0) {
@@ -402,38 +400,40 @@ export class ObservableLatestRepository<K, V>
                 await Promise.all(
                     listeners.map(async (listener) => {
                         await this.notifyListener(listener, event);
-                    }),
+                    })
                 );
             },
             async () => {
                 await Promise.all(
                     listeners.map(async (listener) => {
                         await this.notifyListener(listener, event);
-                    }),
+                    })
                 );
-            },
+            }
         );
     }
 
     private async notifyListener(
         listener: ObservableKeyedValueListener<K, V>,
-        event: ObservableKeyedValueEvent<K, V>,
+        event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         try {
             await listener(event);
-        } catch (error) {
+        }
+        catch (error) {
             await this.handleObserverError(error, event);
         }
     }
 
     private async handleObserverError(
         error: unknown,
-        event: ObservableKeyedValueEvent<K, V>,
+        event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (this.onObserverError) {
             try {
                 await this.onObserverError(error, event);
-            } catch (handlerError) {
+            }
+            catch (handlerError) {
                 console.error('Error handling observable keyed value observer failure', handlerError);
             }
             return;
@@ -445,9 +445,13 @@ export class ObservableLatestRepository<K, V>
 
 function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
     let active = true;
-    return { unsubscribe: () => {
-        if (!active) return;
-        active = false;
-        unsubscribe();
-    } };
+    return {
+        unsubscribe: () => {
+            if (!active) {
+                return;
+            }
+            active = false;
+            unsubscribe();
+        }
+    };
 }

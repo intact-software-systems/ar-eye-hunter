@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
 import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestState,
-    RallarBlackBoxTestTransport,
+    RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useMemo, useState } from 'react';
 import { readEventFilters, writeEventFilters } from '../../../ui-persistence.ts';
-import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import { FilterSelect } from '../../shared/FilterSelect.tsx';
 import { formatTime } from '../../shared/time-format.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';
+import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import {
     DEFAULT_EVENT_FILTERS,
     EVENT_KIND_FILTERS,
@@ -18,29 +18,29 @@ import {
     eventMatchesFilters,
     eventPeerValue,
     eventSelectorValue,
-    type EventFilters,
+    type EventFilters
 } from './event-filters.ts';
 
-export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) {
+export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState; }) {
     const events = selectRallarBlackBoxEvents(state);
     const [eventLimit, setEventLimit] = useState(40);
     const [filters, setFilters] = useState<EventFilters>(() => {
         const stored = readEventFilters(
             browserUiStorage(),
-            DEFAULT_EVENT_FILTERS,
+            DEFAULT_EVENT_FILTERS
         );
         return {
             ...stored,
-            kind: eventFilterFromValue(stored.kind),
+            kind: eventFilterFromValue(stored.kind)
         };
     });
     const filtered = useMemo(
         () => events.filter((event) => eventMatchesFilters(event, filters)),
-        [events, filters],
+        [events, filters]
     );
     const visibleEvents = useMemo(
         () => filtered.slice(-eventLimit).reverse(),
-        [eventLimit, filtered],
+        [eventLimit, filtered]
     );
     const hiddenCount = Math.max(0, filtered.length - visibleEvents.length);
     const kindFilters = EVENT_KIND_FILTERS;
@@ -49,17 +49,16 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) 
     const actors = uniqueValues(events.map((event) => event.actor));
     const transports = uniqueValues(
         events.map(
-            (event) =>
-                event.transport as RallarBlackBoxTestTransport | undefined,
-        ),
+            (event) => event.transport as RallarBlackBoxTestTransport | undefined
+        )
     );
     const groups = uniqueValues(events.map(eventGroupValue));
     const peers = uniqueValues(events.map(eventPeerValue));
     const selectors = uniqueValues(events.map(eventSelectorValue));
     const severities = uniqueValues(
         events.map(
-            (event) => event.severity as RallarBlackBoxTestSeverity | undefined,
-        ),
+            (event) => event.severity as RallarBlackBoxTestSeverity | undefined
+        )
     );
 
     useEffect(() => {
@@ -84,9 +83,7 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) 
                         type="button"
                         key={kind}
                         className={filters.kind === kind ? 'selected' : ''}
-                        onClick={() =>
-                            setFilters((current) => ({ ...current, kind }))
-                        }
+                        onClick={() => setFilters((current) => ({ ...current, kind }))}
                     >
                         {kind}
                     </button>
@@ -97,65 +94,49 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) 
                     label="Command"
                     value={filters.commandId}
                     values={commandIds}
-                    onChange={(commandId) =>
-                        setFilters((current) => ({ ...current, commandId }))
-                    }
+                    onChange={(commandId) => setFilters((current) => ({ ...current, commandId }))}
                 />
                 <FilterSelect
                     label="Connection"
                     value={filters.connection}
                     values={connections}
-                    onChange={(connection) =>
-                        setFilters((current) => ({ ...current, connection }))
-                    }
+                    onChange={(connection) => setFilters((current) => ({ ...current, connection }))}
                 />
                 <FilterSelect
                     label="Actor"
                     value={filters.actor}
                     values={actors}
-                    onChange={(actor) =>
-                        setFilters((current) => ({ ...current, actor }))
-                    }
+                    onChange={(actor) => setFilters((current) => ({ ...current, actor }))}
                 />
                 <FilterSelect
                     label="Transport"
                     value={filters.transport}
                     values={transports}
-                    onChange={(transport) =>
-                        setFilters((current) => ({ ...current, transport }))
-                    }
+                    onChange={(transport) => setFilters((current) => ({ ...current, transport }))}
                 />
                 <FilterSelect
                     label="Group"
                     value={filters.group}
                     values={groups}
-                    onChange={(group) =>
-                        setFilters((current) => ({ ...current, group }))
-                    }
+                    onChange={(group) => setFilters((current) => ({ ...current, group }))}
                 />
                 <FilterSelect
                     label="Peer"
                     value={filters.peer}
                     values={peers}
-                    onChange={(peer) =>
-                        setFilters((current) => ({ ...current, peer }))
-                    }
+                    onChange={(peer) => setFilters((current) => ({ ...current, peer }))}
                 />
                 <FilterSelect
                     label="Selector"
                     value={filters.selector}
                     values={selectors}
-                    onChange={(selector) =>
-                        setFilters((current) => ({ ...current, selector }))
-                    }
+                    onChange={(selector) => setFilters((current) => ({ ...current, selector }))}
                 />
                 <FilterSelect
                     label="Severity"
                     value={filters.severity}
                     values={severities}
-                    onChange={(severity) =>
-                        setFilters((current) => ({ ...current, severity }))
-                    }
+                    onChange={(severity) => setFilters((current) => ({ ...current, severity }))}
                 />
                 <label className="field compact-field">
                     <span>Topic</span>
@@ -164,18 +145,15 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) 
                         onChange={(event) =>
                             setFilters((current) => ({
                                 ...current,
-                                topic: event.target.value,
-                            }))
-                        }
+                                topic: event.target.value
+                            }))}
                     />
                 </label>
                 <label className="field compact-field">
                     <span>Window</span>
                     <select
                         value={eventLimit}
-                        onChange={(event) =>
-                            setEventLimit(Number(event.target.value))
-                        }
+                        onChange={(event) => setEventLimit(Number(event.target.value))}
                     >
                         {[40, 100, 250, 500].map((limit) => (
                             <option key={limit} value={limit}>
@@ -187,9 +165,8 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) 
             </div>
             {hiddenCount > 0 && (
                 <div className="event-window-status" role="status">
-                    Showing the newest {visibleEvents.length} matching events.{' '}
-                    {hiddenCount} older matching events are hidden by the
-                    current window.
+                    Showing the newest {visibleEvents.length} matching events. {hiddenCount}{' '}
+                    older matching events are hidden by the current window.
                 </div>
             )}
             <div className="event-list">
@@ -197,7 +174,9 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState }) 
                     <article className="event-row" key={event.eventId}>
                         <div className="event-topline">
                             <span
-                                className={`pill ${event.severity === 'error' ? 'bad' : event.severity === 'warning' ? 'warn' : 'muted'}`}
+                                className={`pill ${
+                                    event.severity === 'error' ? 'bad' : event.severity === 'warning' ? 'warn' : 'muted'
+                                }`}
                             >
                                 {event.kind}
                             </span>

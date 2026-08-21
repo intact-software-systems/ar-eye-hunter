@@ -1,8 +1,6 @@
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 
-
-
 export type RallarRemoteStream = Readonly<{
     peerId: string;
     stream: MediaStream;
@@ -41,24 +39,24 @@ export type RallarMediaSourceAttachOptions = Readonly<{
 export type RallarMicrophoneSourceStartOptions =
     & RallarMediaSourceAttachOptions
     & Readonly<{
-    stream?: MediaStream;
-    audio?: boolean | MediaTrackConstraints;
-}>;
+        stream?: MediaStream;
+        audio?: boolean | MediaTrackConstraints;
+    }>;
 
 export type RallarCameraSourceStartOptions =
     & RallarMediaSourceAttachOptions
     & Readonly<{
-    stream?: MediaStream;
-    video?: boolean | MediaTrackConstraints;
-}>;
+        stream?: MediaStream;
+        video?: boolean | MediaTrackConstraints;
+    }>;
 
 export type RallarScreenSourceStartOptions =
     & RallarMediaSourceAttachOptions
     & Readonly<{
-    stream?: MediaStream;
-    video?: boolean | MediaTrackConstraints;
-    audio?: boolean | MediaTrackConstraints;
-}>;
+        stream?: MediaStream;
+        video?: boolean | MediaTrackConstraints;
+        audio?: boolean | MediaTrackConstraints;
+    }>;
 
 export type RallarMediaSourceController<TOptions> = Readonly<{
     start(options?: TOptions): Promise<RallarMediaSourceHandle>;
@@ -82,30 +80,24 @@ export type RallarMediaFacade = Readonly<{
     stopLocal(kind: 'audio' | 'video' | 'all'): Promise<void>;
     setPolicy(policy: QRtcMediaPolicy): Promise<void>;
     onRemoteStream(
-        handler: (remote: RallarRemoteStream) => void | Promise<void>,
+        handler: (remote: RallarRemoteStream) => void | Promise<void>
     ): RallarUnsubscribe;
 }>;
 
 export type CreateRallarMediaFacadeOptions = RallarMediaFacade;
 
 export function createRallarMediaFacade(
-    operations: CreateRallarMediaFacadeOptions,
+    operations: CreateRallarMediaFacadeOptions
 ): RallarMediaFacade {
     return {
         microphone: operations.microphone,
         camera: operations.camera,
         screen: operations.screen,
-        setLocalStream: async (stream): Promise<void> =>
-            await operations.setLocalStream(stream),
-        setAudioEnabled: async (enabled): Promise<void> =>
-            await operations.setAudioEnabled(enabled),
-        setVideoEnabled: async (enabled): Promise<void> =>
-            await operations.setVideoEnabled(enabled),
-        stopLocal: async (kind): Promise<void> =>
-            await operations.stopLocal(kind),
-        setPolicy: async (policy): Promise<void> =>
-            await operations.setPolicy(policy),
-        onRemoteStream: (handler): RallarUnsubscribe =>
-            operations.onRemoteStream(handler),
+        setLocalStream: async (stream): Promise<void> => await operations.setLocalStream(stream),
+        setAudioEnabled: async (enabled): Promise<void> => await operations.setAudioEnabled(enabled),
+        setVideoEnabled: async (enabled): Promise<void> => await operations.setVideoEnabled(enabled),
+        stopLocal: async (kind): Promise<void> => await operations.stopLocal(kind),
+        setPolicy: async (policy): Promise<void> => await operations.setPolicy(policy),
+        onRemoteStream: (handler): RallarUnsubscribe => operations.onRemoteStream(handler)
     };
 }

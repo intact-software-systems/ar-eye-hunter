@@ -2,7 +2,7 @@ import type { RallarGameAuthorityTypeIds } from './types.ts';
 
 export function resolveRallarGameAuthorityTypeIds(
     topicId: string,
-    overrides: Partial<RallarGameAuthorityTypeIds> = {},
+    overrides: Partial<RallarGameAuthorityTypeIds> = {}
 ): RallarGameAuthorityTypeIds {
     return {
         command: `${topicId}.command.v1`,
@@ -11,6 +11,6 @@ export function resolveRallarGameAuthorityTypeIds(
         snapshot: `${topicId}.snapshot.v1`,
         syncRequest: `${topicId}.sync-request.v1`,
         presence: `${topicId}.presence.v1`,
-        ...overrides,
+        ...overrides
     };
 }

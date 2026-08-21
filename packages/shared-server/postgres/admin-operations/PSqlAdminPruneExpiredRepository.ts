@@ -1,54 +1,67 @@
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    decodeAdminPruneAggregate,
+    toAdminPruneAggregateKey
+} from '../../rallar-system/admin-operations/admin-prune-progress.ts';
+import type {
+    AdminPruneCandidatePage,
+    AdminPruneExpiredRepository,
+    AdminPrunePageComputed,
+    AdminPrunePageWork
+} from '../../rallar-system/admin-operations/AdminPruneExpiredWork.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '../resource-inbox/ResourceInboxResultsRepository.ts';
-import type {
-    AdminPruneExpiredRepository,
-    AdminPruneCandidatePage,
-    AdminPrunePageComputed,
-    AdminPrunePageWork,
-} from '../../rallar-system/admin-operations/AdminPruneExpiredWork.ts';
-import { decodeAdminPruneAggregate, toAdminPruneAggregateKey } from '../../rallar-system/admin-operations/admin-prune-progress.ts';
 
-type RuntimeRow = Readonly<{ store_namespace: string; store_key: string }>;
-type ResourceRow = Readonly<{ ri_row_id: number | string }>;
-type ResultsRow = Readonly<{ ris_row_id: number | string }>;
-type AppDataRow = Readonly<{ store_name: string; data_key: string }>;
+type RuntimeRow = Readonly<{ store_namespace: string; store_key: string; }>;
+type ResourceRow = Readonly<{ ri_row_id: number | string; }>;
+type ResultsRow = Readonly<{ ris_row_id: number | string; }>;
+type AppDataRow = Readonly<{ store_name: string; data_key: string; }>;
 
 export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredRepository {
     private readonly sql: PSqlSql;
 
     constructor(
         sql: PSqlSql,
-        _serviceId: string,
+        _serviceId: string
     ) {
         this.sql = sql;
     }
 
     async readPage(input: Parameters<AdminPruneExpiredRepository['readPage']>[0]): Promise<AdminPruneCandidatePage> {
         switch (input.category) {
-            case 'runtime-state': return await readRuntimePage(this.sql, input);
-            case 'resource-inbox': return await readResourcePage(this.sql, input);
-            case 'resource-inbox-results': return await readResultsPage(this.sql, input);
-            case 'app-data': return await readAppDataPage(this.sql, input);
+            case 'runtime-state':
+                return await readRuntimePage(this.sql, input);
+            case 'resource-inbox':
+                return await readResourcePage(this.sql, input);
+            case 'resource-inbox-results':
+                return await readResultsPage(this.sql, input);
+            case 'app-data':
+                return await readAppDataPage(this.sql, input);
         }
     }
 
     async deletePage(
         transaction: PSqlTransactionSql,
         command: AdminPrunePageWork,
-        rowIds: readonly string[],
+        rowIds: readonly string[]
     ): Promise<number> {
-        if (rowIds.length === 0) return 0;
+        if (rowIds.length === 0) {
+            return 0;
+        }
         return await deletePageRows(transaction, command, rowIds);
     }
 
     async readAggregate(jobId: string) {
         const key = toAdminPruneAggregateKey(jobId);
         const current = await new ResourceInboxResultsRepository(this.sql).findAnyByKey(key);
-        if (!current) throw new Error('Admin prune aggregate was not found');
+        if (!current) {
+            throw new Error('Admin prune aggregate was not found');
+        }
         const aggregate = decodeAdminPruneAggregate(JSON.parse(current.resource));
-        if (aggregate.jobId !== jobId) throw new TypeError('Admin prune aggregate identity is corrupt');
+        if (aggregate.jobId !== jobId) {
+            throw new TypeError('Admin prune aggregate identity is corrupt');
+        }
         return { aggregate, resource: current.resource };
     }
 
@@ -58,11 +71,11 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
 
     async writeProgress(
         transaction: PSqlTransactionSql,
-        computed: AdminPrunePageComputed,
+        computed: AdminPrunePageComputed
     ): Promise<void> {
         const next = computed.aggregateSuccessor;
         const key = next.key;
-        const rows = await transaction<{ ris_row_id: number | string }[]>`
+        const rows = await transaction<{ ris_row_id: number | string; }[]>`
             update resource_inbox_results
             set ris_resource = ${next.resource}, ris_status = ${next.status},
                 expire_ts = ${next.audit.expiryTs.toString()}
@@ -74,7 +87,7 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
         `;
         if (rows.length !== 1) {
             throw Object.assign(new Error('Admin prune aggregate changed before commit'), {
-                code: 'admin-prune-progress-conflict',
+                code: 'admin-prune-progress-conflict'
             });
         }
     }
@@ -82,20 +95,20 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
     async finishReserved(
         transaction: PSqlTransactionSql,
         entry: ResourceEntry,
-        finishedAtEpochMs: number,
+        finishedAtEpochMs: number
     ): Promise<boolean> {
         return await new ResourceInboxRepository(transaction).finishReserved(
             entry.key,
             entry.dequeueAudit.attempts,
             EntityStatus.COMPLETED,
-            new Date(finishedAtEpochMs),
+            new Date(finishedAtEpochMs)
         );
     }
 }
 
 async function readRuntimePage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
+    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const [namespace, key] = decodeTuple(input.afterCursor, 2);
     const rows = await sql<RuntimeRow[]>`
@@ -111,7 +124,7 @@ async function readRuntimePage(
 
 async function readResourcePage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
+    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResourceRow[]>`
@@ -128,7 +141,7 @@ async function readResourcePage(
 
 async function readResultsPage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
+    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResultsRow[]>`
@@ -143,9 +156,11 @@ async function readResultsPage(
 
 async function readAppDataPage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0],
+    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
-    if (!input.appData) throw new TypeError('App-data prune requires namespace');
+    if (!input.appData) {
+        throw new TypeError('App-data prune requires namespace');
+    }
     const [storeName, dataKey] = decodeTuple(input.afterCursor, 2);
     const rows = input.appData.storeName === null
         ? await sql<AppDataRow[]>`
@@ -169,7 +184,7 @@ async function readAppDataPage(
 async function deletePageRows(
     sql: PSqlSql,
     command: AdminPrunePageWork,
-    rowIds: readonly string[],
+    rowIds: readonly string[]
 ): Promise<number> {
     switch (command.category) {
         case 'runtime-state': {
@@ -209,7 +224,9 @@ async function deletePageRows(
                 returning target.ris_row_id
             `).length;
         case 'app-data': {
-            if (!command.appData) throw new TypeError('App-data prune requires namespace');
+            if (!command.appData) {
+                throw new TypeError('App-data prune requires namespace');
+            }
             return (await sql<AppDataRow[]>`
                 with expired as (
                     select value::jsonb ->> 0 as store_name,
@@ -232,7 +249,9 @@ function page(rowIds: readonly string[], size: number): AdminPruneCandidatePage 
 }
 
 function decodeTuple(value: string | null, length: number): readonly string[] {
-    if (value === null) return Array.from({ length }, () => '');
+    if (value === null) {
+        return Array.from({ length }, () => '');
+    }
     const decoded: unknown = JSON.parse(value);
     if (!Array.isArray(decoded) || decoded.length !== length || decoded.some((part) => typeof part !== 'string')) {
         throw new TypeError('Admin prune cursor is invalid');
@@ -242,6 +261,8 @@ function decodeTuple(value: string | null, length: number): readonly string[] {
 
 function requireInteger(value: string): number {
     const integer = Number(value);
-    if (!Number.isSafeInteger(integer) || integer < 0) throw new TypeError('Admin prune row id is invalid');
+    if (!Number.isSafeInteger(integer) || integer < 0) {
+        throw new TypeError('Admin prune row id is invalid');
+    }
     return integer;
 }

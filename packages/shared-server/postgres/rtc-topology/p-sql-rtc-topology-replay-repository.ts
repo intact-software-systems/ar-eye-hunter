@@ -1,55 +1,53 @@
-import type { PSqlSql } from '../PostgresSqlClient.ts';
 import {
-  RtcTopologyDeliveryLeaseLostError,
+    RtcTopologyDeliveryLeaseLostError
 } from '../../rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
 import {
-  readRtcTopologyDeliverySafeInteger,
-  type RtcTopologyDeliveryBoundaryNumber,
-  RtcTopologyDeliveryCorruptionError,
-  validateRtcTopologyDeliveryStreamId,
+    readRtcTopologyDeliverySafeInteger,
+    RtcTopologyDeliveryCorruptionError,
+    validateRtcTopologyDeliveryStreamId,
+    type RtcTopologyDeliveryBoundaryNumber
 } from '../../rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
-import {
-  RTC_TOPOLOGY_REPLAY_PAGE_SIZE,
-} from '../../rallar-system/topology/replay/rtc-topology-replay-policy.ts';
 import type {
-  RtcTopologyReplayConsumerInput,
-  RtcTopologyReplayCursorCasInput,
-  RtcTopologyReplayCursorCasResult,
-  RtcTopologyReplayCursorRetirementInput,
-  RtcTopologyReplayCursorRetirementResult,
-  RtcTopologyReplayCursorSnapshot,
-  RtcTopologyReplayPageInput,
-  RtcTopologyReplayPageResult,
-  RtcTopologyReplayStreamRetirementInput,
-  RtcTopologyReplayStreamRetirementResult,
+    RtcTopologyReplayConsumerInput,
+    RtcTopologyReplayCursorCasInput,
+    RtcTopologyReplayCursorCasResult,
+    RtcTopologyReplayCursorRetirementInput,
+    RtcTopologyReplayCursorRetirementResult,
+    RtcTopologyReplayCursorSnapshot,
+    RtcTopologyReplayPageInput,
+    RtcTopologyReplayPageResult,
+    RtcTopologyReplayStreamRetirementInput,
+    RtcTopologyReplayStreamRetirementResult
 } from '../../rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
+import { RTC_TOPOLOGY_REPLAY_PAGE_SIZE } from '../../rallar-system/topology/replay/rtc-topology-replay-policy.ts';
+import type { PSqlSql } from '../PostgresSqlClient.ts';
 import {
-  type CursorSnapshotRow,
-  type DeliveryLogRow,
-  type PageBoundaryRow,
-  readCursorSnapshots,
-  requireCursorSnapshotRow,
-  toCursorSnapshot,
-  toLogEntry,
-  validateCursorSnapshot,
-} from './p-sql-rtc-topology-replay-rows.ts';
-import {
-  retireExpiredRtcTopologyReplayConsumerCursors,
-  retireRtcTopologyReplayEmptyStreams,
+    retireExpiredRtcTopologyReplayConsumerCursors,
+    retireRtcTopologyReplayEmptyStreams
 } from './p-sql-rtc-topology-replay-maintenance.ts';
+import {
+    readCursorSnapshots,
+    requireCursorSnapshotRow,
+    toCursorSnapshot,
+    toLogEntry,
+    validateCursorSnapshot,
+    type CursorSnapshotRow,
+    type DeliveryLogRow,
+    type PageBoundaryRow
+} from './p-sql-rtc-topology-replay-rows.ts';
 
 export class PSqlRtcTopologyReplayRepository {
-  private readonly sql: PSqlSql;
+    private readonly sql: PSqlSql;
 
-  constructor(sql: PSqlSql) {
-    this.sql = sql;
-  }
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
+    }
 
-  async initializeConsumer(
-    input: RtcTopologyReplayConsumerInput,
-  ): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
-    validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
-    const rows = await this.sql<CursorSnapshotRow[]>`
+    async initializeConsumer(
+        input: RtcTopologyReplayConsumerInput
+    ): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
+        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        const rows = await this.sql<CursorSnapshotRow[]>`
       with database_clock as materialized (
         select clock_timestamp() as now
       ),
@@ -104,31 +102,31 @@ export class PSqlRtcTopologyReplayRepository {
         on captured_publishers.stream_id = inserted_cursors.publisher_stream_id
       order by inserted_cursors.publisher_stream_id
     `;
-    if (rows.length === 0) {
-      throw new RtcTopologyDeliveryLeaseLostError(
-        `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`,
-      );
+        if (rows.length === 0) {
+            throw new RtcTopologyDeliveryLeaseLostError(
+                `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`
+            );
+        }
+        return rows.map(toCursorSnapshot);
     }
-    return rows.map(toCursorSnapshot);
-  }
 
-  async discoverPublishers(
-    input: RtcTopologyReplayConsumerInput,
-  ): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
-    validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
-    return await this.sql.begin(async (transaction) => {
-      const activeConsumer = await transaction<Readonly<{ stream_id: string }>[]>`
+    async discoverPublishers(
+        input: RtcTopologyReplayConsumerInput
+    ): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
+        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        return await this.sql.begin(async (transaction) => {
+            const activeConsumer = await transaction<Readonly<{ stream_id: string; }>[]>`
         select stream_id::text
         from rtc_topology_delivery_stream
         where stream_id = ${input.consumerStreamId}
           and lease_expires_at > clock_timestamp()
       `;
-      if (activeConsumer.length !== 1) {
-        throw new RtcTopologyDeliveryLeaseLostError(
-          `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`,
-        );
-      }
-      await transaction`
+            if (activeConsumer.length !== 1) {
+                throw new RtcTopologyDeliveryLeaseLostError(
+                    `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`
+                );
+            }
+            await transaction`
         insert into rtc_topology_replay_cursor (
           consumer_stream_id,
           publisher_stream_id,
@@ -147,24 +145,24 @@ export class PSqlRtcTopologyReplayRepository {
         )
         on conflict (consumer_stream_id, publisher_stream_id) do nothing
       `;
-      const rows = await readCursorSnapshots(transaction, input.consumerStreamId);
-      if (rows.length === 0) {
-        throw new RtcTopologyDeliveryCorruptionError(
-          `RTC topology replay consumer ${input.consumerStreamId} has no durable cursors`,
-        );
-      }
-      return rows.map(toCursorSnapshot);
-    });
-  }
+            const rows = await readCursorSnapshots(transaction, input.consumerStreamId);
+            if (rows.length === 0) {
+                throw new RtcTopologyDeliveryCorruptionError(
+                    `RTC topology replay consumer ${input.consumerStreamId} has no durable cursors`
+                );
+            }
+            return rows.map(toCursorSnapshot);
+        });
+    }
 
-  async capturePage(
-    input: RtcTopologyReplayPageInput,
-  ): Promise<RtcTopologyReplayPageResult> {
-    validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
-    validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
-    validatePageSize(input.pageSize, RTC_TOPOLOGY_REPLAY_PAGE_SIZE, 'replay');
-    return await this.sql.begin(async (transaction) => {
-      const boundaries = await transaction<PageBoundaryRow[]>`
+    async capturePage(
+        input: RtcTopologyReplayPageInput
+    ): Promise<RtcTopologyReplayPageResult> {
+        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
+        validatePageSize(input.pageSize, RTC_TOPOLOGY_REPLAY_PAGE_SIZE, 'replay');
+        return await this.sql.begin(async (transaction) => {
+            const boundaries = await transaction<PageBoundaryRow[]>`
         with database_clock as materialized (
           select clock_timestamp() as now
         )
@@ -190,55 +188,55 @@ export class PSqlRtcTopologyReplayRepository {
          and cursor.publisher_stream_id = publisher.stream_id
         where consumer.stream_id = ${input.consumerStreamId}
       `;
-      const boundary = boundaries[0];
-      if (!boundary) {
-        throw new RtcTopologyDeliveryLeaseLostError(
-          `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`,
-        );
-      }
-      if (!boundary.consumer_lease_valid) {
-        throw new RtcTopologyDeliveryLeaseLostError(
-          `RTC topology replay consumer ${input.consumerStreamId} lost its lease`,
-        );
-      }
-      if (boundary.publisher_stream_id === null) {
-        throw new RtcTopologyDeliveryCorruptionError(
-          `RTC topology replay publisher ${input.publisherStreamId} is missing`,
-        );
-      }
-      if (boundary.last_processed_sequence === null) {
-        throw new RtcTopologyDeliveryCorruptionError(
-          `RTC topology replay consumer ${input.consumerStreamId} is missing ` +
-            `a cursor for ${input.publisherStreamId}`,
-        );
-      }
-      const snapshot = toCursorSnapshot(requireCursorSnapshotRow(boundary));
-      const databaseNowEpochMs = readRtcTopologyDeliverySafeInteger(
-        boundary.database_now_epoch_ms,
-        'RTC topology replay database time',
-      );
-      validateCursorSnapshot(snapshot);
-      const capture = {
-        capturedHeadSequence: snapshot.headSequence,
-        retainedFromSequence: snapshot.retainedFromSequence,
-        databaseNowEpochMs,
-      };
-      if (snapshot.lastProcessedSequence + 1 < snapshot.retainedFromSequence) {
-        return {
-          status: 'gap',
-          ...capture,
-          cursorSequence: snapshot.lastProcessedSequence,
-        };
-      }
-      if (snapshot.lastProcessedSequence === snapshot.headSequence) {
-        return {
-          status: 'caught-up',
-          ...capture,
-          cursorSequence: snapshot.lastProcessedSequence,
-        };
-      }
+            const boundary = boundaries[0];
+            if (!boundary) {
+                throw new RtcTopologyDeliveryLeaseLostError(
+                    `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`
+                );
+            }
+            if (!boundary.consumer_lease_valid) {
+                throw new RtcTopologyDeliveryLeaseLostError(
+                    `RTC topology replay consumer ${input.consumerStreamId} lost its lease`
+                );
+            }
+            if (boundary.publisher_stream_id === null) {
+                throw new RtcTopologyDeliveryCorruptionError(
+                    `RTC topology replay publisher ${input.publisherStreamId} is missing`
+                );
+            }
+            if (boundary.last_processed_sequence === null) {
+                throw new RtcTopologyDeliveryCorruptionError(
+                    `RTC topology replay consumer ${input.consumerStreamId} is missing ` +
+                        `a cursor for ${input.publisherStreamId}`
+                );
+            }
+            const snapshot = toCursorSnapshot(requireCursorSnapshotRow(boundary));
+            const databaseNowEpochMs = readRtcTopologyDeliverySafeInteger(
+                boundary.database_now_epoch_ms,
+                'RTC topology replay database time'
+            );
+            validateCursorSnapshot(snapshot);
+            const capture = {
+                capturedHeadSequence: snapshot.headSequence,
+                retainedFromSequence: snapshot.retainedFromSequence,
+                databaseNowEpochMs
+            };
+            if (snapshot.lastProcessedSequence + 1 < snapshot.retainedFromSequence) {
+                return {
+                    status: 'gap',
+                    ...capture,
+                    cursorSequence: snapshot.lastProcessedSequence
+                };
+            }
+            if (snapshot.lastProcessedSequence === snapshot.headSequence) {
+                return {
+                    status: 'caught-up',
+                    ...capture,
+                    cursorSequence: snapshot.lastProcessedSequence
+                };
+            }
 
-      const rows = await transaction<DeliveryLogRow[]>`
+            const rows = await transaction<DeliveryLogRow[]>`
         select
           publisher_stream_id::text,
           sequence::double precision as sequence,
@@ -260,51 +258,51 @@ export class PSqlRtcTopologyReplayRepository {
         order by sequence
         limit ${input.pageSize}
       `;
-      const expectedCount = Math.min(
-        input.pageSize,
-        snapshot.headSequence - snapshot.lastProcessedSequence,
-      );
-      if (rows.length !== expectedCount) {
-        throw new RtcTopologyDeliveryCorruptionError(
-          `RTC topology replay publisher ${input.publisherStreamId} has an ` +
-            'unexplained physical hole',
-        );
-      }
-      const entries = rows.map(toLogEntry);
-      for (const [index, entry] of entries.entries()) {
-        if (entry.sequence !== snapshot.lastProcessedSequence + index + 1) {
-          throw new RtcTopologyDeliveryCorruptionError(
-            `RTC topology replay publisher ${input.publisherStreamId} is not contiguous`,
-          );
-        }
-      }
-      return {
-        status: 'page',
-        ...capture,
-        expectedCursorSequence: snapshot.lastProcessedSequence,
-        entries,
-        hasMore: entries.at(-1)!.sequence < snapshot.headSequence,
-      };
-    });
-  }
-
-  async compareAndSetCursor(
-    input: RtcTopologyReplayCursorCasInput,
-  ): Promise<RtcTopologyReplayCursorCasResult> {
-    validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
-    validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
-    const expectedSequence = readRtcTopologyDeliverySafeInteger(
-      input.expectedSequence,
-      'RTC topology replay expected cursor',
-    );
-    const nextSequence = readRtcTopologyDeliverySafeInteger(
-      input.nextSequence,
-      'RTC topology replay next cursor',
-    );
-    if (nextSequence <= expectedSequence) {
-      throw new TypeError('RTC topology replay cursor must advance');
+            const expectedCount = Math.min(
+                input.pageSize,
+                snapshot.headSequence - snapshot.lastProcessedSequence
+            );
+            if (rows.length !== expectedCount) {
+                throw new RtcTopologyDeliveryCorruptionError(
+                    `RTC topology replay publisher ${input.publisherStreamId} has an ` +
+                        'unexplained physical hole'
+                );
+            }
+            const entries = rows.map(toLogEntry);
+            for (const [index, entry] of entries.entries()) {
+                if (entry.sequence !== snapshot.lastProcessedSequence + index + 1) {
+                    throw new RtcTopologyDeliveryCorruptionError(
+                        `RTC topology replay publisher ${input.publisherStreamId} is not contiguous`
+                    );
+                }
+            }
+            return {
+                status: 'page',
+                ...capture,
+                expectedCursorSequence: snapshot.lastProcessedSequence,
+                entries,
+                hasMore: entries.at(-1)!.sequence < snapshot.headSequence
+            };
+        });
     }
-    const advanced = await this.sql<Readonly<{ consumer_stream_id: string }>[]>`
+
+    async compareAndSetCursor(
+        input: RtcTopologyReplayCursorCasInput
+    ): Promise<RtcTopologyReplayCursorCasResult> {
+        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
+        const expectedSequence = readRtcTopologyDeliverySafeInteger(
+            input.expectedSequence,
+            'RTC topology replay expected cursor'
+        );
+        const nextSequence = readRtcTopologyDeliverySafeInteger(
+            input.nextSequence,
+            'RTC topology replay next cursor'
+        );
+        if (nextSequence <= expectedSequence) {
+            throw new TypeError('RTC topology replay cursor must advance');
+        }
+        const advanced = await this.sql<Readonly<{ consumer_stream_id: string; }>[]>`
       update rtc_topology_replay_cursor
       set last_processed_sequence = ${nextSequence},
           updated_at = clock_timestamp()
@@ -319,12 +317,14 @@ export class PSqlRtcTopologyReplayRepository {
         )
       returning consumer_stream_id::text
     `;
-    if (advanced.length === 1) return { status: 'advanced' };
+        if (advanced.length === 1) {
+            return { status: 'advanced' };
+        }
 
-    const current = await this.sql<Readonly<{
-      consumer_lease_valid: boolean;
-      last_processed_sequence: RtcTopologyDeliveryBoundaryNumber | null;
-    }>[]>`
+        const current = await this.sql<Readonly<{
+            consumer_lease_valid: boolean;
+            last_processed_sequence: RtcTopologyDeliveryBoundaryNumber | null;
+        }>[]>`
       select
         consumer.lease_expires_at > clock_timestamp() as consumer_lease_valid,
         cursor.last_processed_sequence::double precision as last_processed_sequence
@@ -334,37 +334,39 @@ export class PSqlRtcTopologyReplayRepository {
        and cursor.publisher_stream_id = ${input.publisherStreamId}
       where consumer.stream_id = ${input.consumerStreamId}
     `;
-    const row = current[0];
-    if (!row || !row.consumer_lease_valid) {
-      throw new RtcTopologyDeliveryLeaseLostError(
-        `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`,
-      );
+        const row = current[0];
+        if (!row || !row.consumer_lease_valid) {
+            throw new RtcTopologyDeliveryLeaseLostError(
+                `RTC topology replay consumer ${input.consumerStreamId} is absent or lease-lost`
+            );
+        }
+        if (row.last_processed_sequence === null) {
+            return { status: 'missing' };
+        }
+        return {
+            status: 'conflict',
+            currentSequence: readRtcTopologyDeliverySafeInteger(
+                row.last_processed_sequence,
+                'RTC topology replay current cursor'
+            )
+        };
     }
-    if (row.last_processed_sequence === null) return { status: 'missing' };
-    return {
-      status: 'conflict',
-      currentSequence: readRtcTopologyDeliverySafeInteger(
-        row.last_processed_sequence,
-        'RTC topology replay current cursor',
-      ),
-    };
-  }
 
-  async retireExpiredConsumerCursors(
-    input: RtcTopologyReplayCursorRetirementInput,
-  ): Promise<RtcTopologyReplayCursorRetirementResult> {
-    return await retireExpiredRtcTopologyReplayConsumerCursors(this.sql, input);
-  }
+    async retireExpiredConsumerCursors(
+        input: RtcTopologyReplayCursorRetirementInput
+    ): Promise<RtcTopologyReplayCursorRetirementResult> {
+        return await retireExpiredRtcTopologyReplayConsumerCursors(this.sql, input);
+    }
 
-  async retireEmptyStreams(
-    input: RtcTopologyReplayStreamRetirementInput,
-  ): Promise<RtcTopologyReplayStreamRetirementResult> {
-    return await retireRtcTopologyReplayEmptyStreams(this.sql, input);
-  }
+    async retireEmptyStreams(
+        input: RtcTopologyReplayStreamRetirementInput
+    ): Promise<RtcTopologyReplayStreamRetirementResult> {
+        return await retireRtcTopologyReplayEmptyStreams(this.sql, input);
+    }
 }
 
 function validatePageSize(pageSize: number, maximum: number, label: string): void {
-  if (!Number.isSafeInteger(pageSize) || pageSize <= 0 || pageSize > maximum) {
-    throw new TypeError(`RTC topology ${label} page size must be from 1 to ${maximum}`);
-  }
+    if (!Number.isSafeInteger(pageSize) || pageSize <= 0 || pageSize > maximum) {
+        throw new TypeError(`RTC topology ${label} page size must be from 1 to ${maximum}`);
+    }
 }

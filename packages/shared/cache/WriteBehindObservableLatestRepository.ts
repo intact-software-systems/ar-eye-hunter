@@ -1,33 +1,33 @@
-import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider, } from '../persistence/PersistenceProvider.ts';
-import { ObservableLatestRepository, type ObservableLatestRepositoryOptions, } from './ObservableLatestRepository.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../persistence/PersistenceProvider.ts';
+import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from './ObservableLatestRepository.ts';
 import type { ObservableLatestValue } from './ObservableLatestValue.ts';
 import {
+    ObservableValueEventType,
     type ObservableKeyedValueEvent,
     type ObservableKeyedValueListener,
     type ObservableKeyedValues,
-    ObservableValueEventType,
     type PushKeyedValues,
     type ReadableKeyedValues,
     type Unsubscribe,
-    type UpdateIfNewerOptions,
+    type UpdateIfNewerOptions
 } from './RepositoryInterfaces.ts';
 
 export type PersistenceErrorHandler<K, V> = (
     error: unknown,
-    event: ObservableKeyedValueEvent<K, V>,
+    event: ObservableKeyedValueEvent<K, V>
 ) => void | Promise<void>;
 
 export type WriteBehindObservableLatestRepositoryOptions<K, V> =
     & ObservableLatestRepositoryOptions<K, V>
     & Readonly<{
-    persistence: PersistenceProvider<K, V>;
-    onPersistenceError?: PersistenceErrorHandler<K, V>;
-    /**
-     * Maps a written value to its absolute on-disk expiry timestamp.
-     * Default: now + ttlMs when ttlMs is set, otherwise NEVER_EXPIRE_AT_TIMESTAMP.
-     */
-    expireAtFor?: (value: V) => number;
-}>;
+        persistence: PersistenceProvider<K, V>;
+        onPersistenceError?: PersistenceErrorHandler<K, V>;
+        /**
+         * Maps a written value to its absolute on-disk expiry timestamp.
+         * Default: now + ttlMs when ttlMs is set, otherwise NEVER_EXPIRE_AT_TIMESTAMP.
+         */
+        expireAtFor?: (value: V) => number;
+    }>;
 
 /**
  * Write-behind cache: writes update RAM synchronously and the persistence layer
@@ -44,8 +44,7 @@ export type WriteBehindObservableLatestRepositoryOptions<K, V> =
  * can lose the most-recent in-flight writes. Use WriteThroughObservableLatestRepository
  * when durability matters more than write latency.
  */
-export class WriteBehindObservableLatestRepository<K, V>
-    implements PushKeyedValues<K, V>, ObservableKeyedValues<K, V> {
+export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, ObservableKeyedValues<K, V> {
     private readonly memory: ObservableLatestRepository<K, V>;
     private readonly persistence: PersistenceProvider<K, V>;
     private readonly onPersistenceError?: PersistenceErrorHandler<K, V>;
@@ -56,7 +55,7 @@ export class WriteBehindObservableLatestRepository<K, V>
     private writeChain: Promise<void> = Promise.resolve();
 
     public constructor(
-        options: WriteBehindObservableLatestRepositoryOptions<K, V>,
+        options: WriteBehindObservableLatestRepositoryOptions<K, V>
     ) {
         this.memory = new ObservableLatestRepository<K, V>(options);
         this.persistence = options.persistence;
@@ -108,15 +107,12 @@ export class WriteBehindObservableLatestRepository<K, V>
             return;
         }
 
-        const apply = () =>
-            this.applyMirror(event).catch((error) =>
-                this.handlePersistenceError(error, event)
-            );
+        const apply = () => this.applyMirror(event).catch((error) => this.handlePersistenceError(error, event));
         this.writeChain = this.writeChain.then(apply, apply);
     }
 
     private async applyMirror(
-        event: ObservableKeyedValueEvent<K, V>,
+        event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (event.type === ObservableValueEventType.Deleted) {
             await this.persistence.removeItem(event.key);
@@ -129,21 +125,22 @@ export class WriteBehindObservableLatestRepository<K, V>
         }
 
         await this.persistence.setItem(event.key, value, {
-            expireAtTimestamp: this.expireAtFor(value),
+            expireAtTimestamp: this.expireAtFor(value)
         });
     }
 
     private async handlePersistenceError(
         error: unknown,
-        event: ObservableKeyedValueEvent<K, V>,
+        event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (this.onPersistenceError) {
             try {
                 await this.onPersistenceError(error, event);
-            } catch (handlerError) {
+            }
+            catch (handlerError) {
                 console.error(
                     'Error handling persistent repository failure',
-                    handlerError,
+                    handlerError
                 );
             }
             return;
@@ -238,7 +235,7 @@ export class WriteBehindObservableLatestRepository<K, V>
 
     public updateOrCreate(
         key: K,
-        updater: (current: V | undefined) => V,
+        updater: (current: V | undefined) => V
     ): boolean {
         return this.memory.updateOrCreate(key, updater);
     }
@@ -250,7 +247,7 @@ export class WriteBehindObservableLatestRepository<K, V>
     public updateIfNewer(
         key: K,
         next: V,
-        options: UpdateIfNewerOptions<V>,
+        options: UpdateIfNewerOptions<V>
     ): boolean {
         return this.memory.updateIfNewer(key, next, options);
     }
@@ -304,31 +301,31 @@ export class WriteBehindObservableLatestRepository<K, V>
     // ── ObservableKeyedValues delegation ─────────────────────────────────────
 
     public onCreatedDo(
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         return this.memory.onCreatedDo(listener);
     }
 
     public onUpdatedDo(
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         return this.memory.onUpdatedDo(listener);
     }
 
     public onRefreshedDo(
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         return this.memory.onRefreshedDo(listener);
     }
 
     public onDeletedDo(
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         return this.memory.onDeletedDo(listener);
     }
 
     public onChangeDo(
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         return this.memory.onChangeDo(listener);
     }

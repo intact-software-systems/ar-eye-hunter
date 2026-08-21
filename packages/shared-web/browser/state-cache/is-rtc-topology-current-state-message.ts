@@ -4,7 +4,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 export function isRtcTopologyCurrentStateMessage(
     message: ALMessage,
     topology: RallarOverlayTopologySnapshot,
-    sessionId: string,
+    sessionId: string
 ): boolean {
     if (
         message.id.senderId !== 'rallar-server' ||
@@ -13,7 +13,9 @@ export function isRtcTopologyCurrentStateMessage(
         return false;
     }
     const identity = readTopologyMessageIdentity(message.id.msgId);
-    if (!identity) return false;
+    if (!identity) {
+        return false;
+    }
     const revision = topology.sourceGroupStateCausalRevision;
     if (identity[0] === 'rtc-topology-current-repair') {
         const targets = message.targets;
@@ -45,7 +47,7 @@ export function isRtcTopologyCurrentStateMessage(
 }
 
 function readTopologyMessageIdentity(
-    messageId: string,
+    messageId: string
 ): readonly (string | number)[] | undefined {
     try {
         const identity = JSON.parse(messageId) as readonly (string | number)[];
@@ -56,7 +58,8 @@ function readTopologyMessageIdentity(
             return undefined;
         }
         return identity;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -67,6 +70,6 @@ function toCanonicalGroupIdentity(topology: RallarOverlayTopologySnapshot): stri
         topology.groupRef.workspaceId === undefined
             ? ['absent']
             : ['present', topology.groupRef.workspaceId],
-        topology.groupRef.groupId,
+        topology.groupRef.groupId
     ]);
 }

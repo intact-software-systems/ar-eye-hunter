@@ -1,10 +1,6 @@
-import type {
-    RallarBlackBoxTestRecipe,
-} from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../types.ts';
 
-import type {
-    RallarBlackBoxCompositeConformanceRecipeOptions,
-} from '../composite-conformance.ts';
+import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
 import {
     closeCommand,
     commandMetadata,
@@ -16,11 +12,11 @@ import {
     rtcConnectCommand,
     scopeFields,
     statsCommand,
-    timeoutMs,
+    timeoutMs
 } from './composite-conformance-command-fixtures.ts';
 
 export function waitAssertRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -38,7 +34,7 @@ export function waitAssertRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'rtc.send',
@@ -49,12 +45,12 @@ export function waitAssertRecipe(
                 send: {
                     data: {
                         topic: 'rallar.conformance.wait-assert',
-                        marker: 'wait-assert-evidence',
+                        marker: 'wait-assert-evidence'
                     },
                     roomId,
-                    ...scopeFields(options),
+                    ...scopeFields(options)
                 },
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-send'),
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-send')
             },
             {
                 kind: 'wait',
@@ -64,9 +60,9 @@ export function waitAssertRecipe(
                     kind: 'message',
                     topic: 'rallar.conformance.message',
                     payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.wait-assert',
+                    equals: 'rallar.conformance.wait-assert'
                 },
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-wait-message'),
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-wait-message')
             },
             {
                 kind: 'assert',
@@ -74,7 +70,7 @@ export function waitAssertRecipe(
                 source: 'messages.0.payload.data.marker',
                 operator: 'equals',
                 expected: 'wait-assert-evidence',
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-message'),
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-message')
             },
             {
                 kind: 'assert',
@@ -82,7 +78,7 @@ export function waitAssertRecipe(
                 source: 'state.messages.length',
                 operator: 'gt',
                 expected: 0,
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-gt'),
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-gt')
             },
             {
                 kind: 'assert',
@@ -90,7 +86,7 @@ export function waitAssertRecipe(
                 source: 'state.messages.length',
                 operator: 'between',
                 expected: [1, 50],
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-between'),
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-between')
             },
             {
                 kind: 'assert',
@@ -100,8 +96,8 @@ export function waitAssertRecipe(
                 expected: 'wait-assert-evidence'.length,
                 metadata: commandMetadata(
                     'wait-assert-evidence',
-                    'wait-assert-check-marker-length',
-                ),
+                    'wait-assert-check-marker-length'
+                )
             },
             {
                 kind: 'assert',
@@ -111,8 +107,8 @@ export function waitAssertRecipe(
                 expected: '^rallar\\.conformance\\.',
                 metadata: commandMetadata(
                     'wait-assert-evidence',
-                    'wait-assert-check-topic-pattern',
-                ),
+                    'wait-assert-check-topic-pattern'
+                )
             },
             {
                 kind: 'assert',
@@ -121,13 +117,13 @@ export function waitAssertRecipe(
                 operator: 'matchesShape',
                 expected: {
                     data: {
-                        marker: 'wait-assert-evidence',
-                    },
+                        marker: 'wait-assert-evidence'
+                    }
                 },
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-shape'),
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-shape')
             },
             statsCommand('wait-assert-stats', 'wait-assert-evidence'),
-            closeCommand('wait-assert-close', 'wait-assert-evidence'),
-        ],
+            closeCommand('wait-assert-close', 'wait-assert-evidence')
+        ]
     };
 }

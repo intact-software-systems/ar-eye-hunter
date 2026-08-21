@@ -1,27 +1,21 @@
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
 import type {
     ControlFleetRunReport,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../../control-run-manager.ts';
-import type {
-    ControlAgentBoardRow,
-    ControlAgentBoardSummary,
-} from '../../../../control-agent-board.ts';
 import { FleetWorldMap } from '../../../../fleet-world-map.tsx';
 import type {
     FleetWorldMapLayerId,
     FleetWorldMapLayerState,
     FleetWorldMapRegion,
-    FleetWorldMapViewModel,
+    FleetWorldMapViewModel
 } from '../../../../world-map-model.ts';
-import { ControlAgentBoardPanel } from '../../agents/ControlAgentBoardPanel.tsx';
-import { Metric } from '../../../shared/Metric.tsx';
 import { json } from '../../../shared/json-presentation.ts';
+import { Metric } from '../../../shared/Metric.tsx';
 import { formatTime } from '../../../shared/time-format.ts';
-import {
-    formatFleetDuration,
-    formatPercent,
-} from '../../shared/performance-format.ts';
+import { ControlAgentBoardPanel } from '../../agents/ControlAgentBoardPanel.tsx';
+import { formatFleetDuration, formatPercent } from '../../shared/performance-format.ts';
 
 export function RunnerFleetOverview({
     liveSnapshot,
@@ -44,23 +38,28 @@ export function RunnerFleetOverview({
     setSelectedAgentId,
     selectMapRegion,
     reports,
-    error,
+    error
 }: {
     liveSnapshot: ControlServerSnapshot | undefined;
     liveRunOptions: readonly ControlRunSnapshot[];
     liveRun: ControlRunSnapshot | undefined;
     liveRunId: string;
     setLiveRunId(value: string): void;
-    liveGroupRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>;
+    liveGroupRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>;
     liveAgentRows: readonly ControlAgentBoardRow[];
     liveAgentSummary: ControlAgentBoardSummary;
     missingLabelAgents: readonly string[];
     overrideText: string;
     setOverrideText(value: string): void;
-    overrides: Readonly<{ error?: string }>;
+    overrides: Readonly<{ error?: string; }>;
     displaySummary: Readonly<{
-        runs: number; agents: number; regions: number; passRate: number;
-        failureGroups: number; p95DurationMs?: number; stale: number;
+        runs: number;
+        agents: number;
+        regions: number;
+        passRate: number;
+        failureGroups: number;
+        p95DurationMs?: number;
+        stale: number;
     }>;
     worldMapModel: FleetWorldMapViewModel;
     mapLayers: FleetWorldMapLayerState;
@@ -78,8 +77,8 @@ export function RunnerFleetOverview({
                     <div>
                         <h3>Live Fleet</h3>
                         <p>
-                            Connected control agents for the selected control
-                            run, with targetability for the current global group.
+                            Connected control agents for the selected control run, with targetability for the current
+                            global group.
                         </p>
                     </div>
                     <span>{liveSnapshot ? `${liveRunOptions.length} run(s)` : 'not loaded'}</span>
@@ -89,9 +88,7 @@ export function RunnerFleetOverview({
                         <span>Control Run</span>
                         <select
                             value={liveRun?.runId ?? liveRunId}
-                            onChange={(event) =>
-                                setLiveRunId(event.target.value)
-                            }
+                            onChange={(event) => setLiveRunId(event.target.value)}
                         >
                             <option value="">Select run</option>
                             {liveRunOptions.map((run) => (
@@ -109,11 +106,9 @@ export function RunnerFleetOverview({
                 </div>
                 <ControlAgentBoardPanel
                     title="Live Fleet Agents"
-                    subtitle={
-                        liveRun
-                            ? `${liveRun.runId} scoped to ${liveGroupRef.groupId || 'missing group'}`
-                            : 'No control run selected.'
-                    }
+                    subtitle={liveRun
+                        ? `${liveRun.runId} scoped to ${liveGroupRef.groupId || 'missing group'}`
+                        : 'No control run selected.'}
                     rows={liveAgentRows}
                     summary={liveAgentSummary}
                     emptyMessage="No live control agents loaded. Refresh the control server or open browser agents."
@@ -122,12 +117,10 @@ export function RunnerFleetOverview({
             {missingLabelAgents.length > 0 && (
                 <details className="fleet-label-warning">
                     <summary>
-                        {missingLabelAgents.length} agents need region/provider
-                        labels
+                        {missingLabelAgents.length} agents need region/provider labels
                     </summary>
                     <p>
-                        Add fleet metadata when agents register, or paste
-                        temporary analysis overrides below.
+                        Add fleet metadata when agents register, or paste temporary analysis overrides below.
                     </p>
                     <pre className="mini-json">
                         {missingLabelAgents.slice(0, 12).join('\n')}
@@ -135,14 +128,12 @@ export function RunnerFleetOverview({
                     <textarea
                         rows={5}
                         value={overrideText}
-                        onChange={(event) =>
-                            setOverrideText(event.target.value)
-                        }
+                        onChange={(event) => setOverrideText(event.target.value)}
                         placeholder={json({
                             'agent-01': {
                                 region: 'eu-north',
-                                provider: 'hetzner',
-                            },
+                                provider: 'hetzner'
+                            }
                         })}
                     />
                     {overrides.error && (
@@ -186,8 +177,8 @@ export function RunnerFleetOverview({
             />
             {reports.length === 0 && !error && (
                 <div className="empty-state">
-                    No terminal distributed run reports found for these filters.
-                    Start connected-agent recipes or rebuild the fleet index.
+                    No terminal distributed run reports found for these filters. Start connected-agent recipes or
+                    rebuild the fleet index.
                 </div>
             )}
         </>

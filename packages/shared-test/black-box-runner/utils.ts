@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 
-type ReplaceValue = string | number | boolean | undefined
-type ReplaceConfig = Record<string, ReplaceValue>
-type GeneratedReplace = Record<string, ReplaceValue>
+type ReplaceValue = string | number | boolean | undefined;
+type ReplaceConfig = Record<string, ReplaceValue>;
+type GeneratedReplace = Record<string, ReplaceValue>;
 
 function asStringOrNumber(value: ReplaceValue): string | number | undefined {
     return typeof value === 'string' || typeof value === 'number'
@@ -55,7 +55,7 @@ function generatedEntry(value: string, config: ReplaceConfig): GeneratedReplace 
 
 function generateReplace(generate: string[], config: ReplaceConfig): GeneratedReplace {
     const filtered = generate
-        .map(value => generatedEntry(value, config))
+        .map((value) => generatedEntry(value, config))
         .filter((gen): gen is GeneratedReplace => gen !== undefined);
 
     const generated = filtered.length === 0
@@ -112,8 +112,8 @@ function parseYamlScalar(value: string): unknown {
 function parseSimpleYaml(text: string): unknown {
     return text
         .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(line => line.length > 0 && !line.startsWith('#'))
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#'))
         .reduce<Record<string, unknown>>((result, line) => {
             const separator = line.indexOf(':');
             if (separator <= 0) {
@@ -194,7 +194,8 @@ function getValuePaths(currPath: string, item: unknown, valuePaths: string[] = [
 
     if (Array.isArray(item)) {
         item.forEach((el, idx) => getValuePaths(`${currPath}.${idx}`, el, valuePaths));
-    } else if (item && typeof item === 'object') {
+    }
+    else if (item && typeof item === 'object') {
         Object.entries(item)
             .forEach(([key, value]) => {
                 getValuePaths(`${currPath}.${key}`, value, valuePaths);
@@ -209,7 +210,7 @@ export function getAllValuePaths(data: Record<string, unknown>): string[] {
         .map(([key, value]) => {
             return [...new Set([key, ...getValuePaths(key, value)])];
         })
-        .flatMap(a => a);
+        .flatMap((a) => a);
 }
 
 export async function loadJsonFile(fileName: string): Promise<unknown> {
@@ -218,9 +219,9 @@ export async function loadJsonFile(fileName: string): Promise<unknown> {
         {
             with: { type: 'json' }
         }
-        )
-        .then(a => a.default)
-        .catch(e => {
+    )
+        .then((a) => a.default)
+        .catch((e) => {
             console.error(e);
             return {};
         });
@@ -275,5 +276,5 @@ export default {
 
     inputReplacesToJson: (csv?: string): Record<string, string> => inputReplacesToJson(csv),
 
-    resolvePathData,
+    resolvePathData
 };

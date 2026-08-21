@@ -12,8 +12,8 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
                 notify,
                 listen: async (_channel, listener) => {
                     databaseListener = listener;
-                },
-            },
+                }
+            }
         );
         const notification = {
             v: 2 as const,
@@ -21,13 +21,13 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
             groupRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
             publicationId: 'work-1:4:2',
             sourceGroupStateCausalRevision: {
                 groupRevision: 4,
-                presenceRevision: 2,
-            },
+                presenceRevision: 2
+            }
         };
         const receive = vi.fn();
 
@@ -36,43 +36,43 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
         await databaseListener?.(JSON.stringify(notification));
         await databaseListener?.(JSON.stringify({
             ...notification,
-            publisherId: 'publisher-b',
+            publisherId: 'publisher-b'
         }));
         await databaseListener?.(JSON.stringify({
             v: 1,
             publisherId: 'publisher-b',
             publicationId: 'legacy-work:4:2',
-            sourceGroupStateRevision: 4,
+            sourceGroupStateRevision: 4
         }));
         await databaseListener?.(JSON.stringify({
             v: 1,
             publisherId: 'publisher-b',
             groupRef: notification.groupRef,
             publicationId: 'legacy-work:4:2',
-            sourceGroupStateRevision: 4,
+            sourceGroupStateRevision: 4
         }));
         await databaseListener?.('{not-json');
         await databaseListener?.(JSON.stringify({
             v: 3,
             publisherId: 'publisher-b',
             publicationId: 'publication-2',
-            sourceGroupStateRevision: 5,
+            sourceGroupStateRevision: 5
         }));
 
         expect(notify).toHaveBeenCalledWith(
             'topology-channel',
-            notification,
+            notification
         );
         expect(receive).toHaveBeenCalledTimes(2);
         expect(receive).toHaveBeenNthCalledWith(1, {
             ...notification,
-            publisherId: 'publisher-b',
+            publisherId: 'publisher-b'
         });
         expect(receive).toHaveBeenNthCalledWith(2, {
             v: 1,
             publisherId: 'publisher-b',
             publicationId: 'legacy-work:4:2',
-            sourceGroupStateRevision: 4,
+            sourceGroupStateRevision: 4
         });
     });
 });

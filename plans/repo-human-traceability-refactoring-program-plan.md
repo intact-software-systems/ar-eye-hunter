@@ -386,11 +386,11 @@ the canonical `toXxx` vocabulary, for example:
 
 ```ts
 interface ToCreateGroupStateRequestInput {
-  readonly roomInput: RallarCreateRoomInput;
-  readonly principalId: string;
-  readonly sessionId: string;
-  readonly generationId: string;
-  readonly requestId: string;
+    readonly roomInput: RallarCreateRoomInput;
+    readonly principalId: string;
+    readonly sessionId: string;
+    readonly generationId: string;
+    readonly requestId: string;
 }
 
 function toCreateGroupStateRequest(input: ToCreateGroupStateRequestInput): CreateGroupRequest;

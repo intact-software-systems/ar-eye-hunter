@@ -1,24 +1,14 @@
-import {
-    expect,
-    test,
-    type BrowserContext,
-    type Page,
-    type Route,
-} from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
 import type {
     ControlAgentSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
-const EXECUTE_ROUTE =
-    '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
+const EXECUTE_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&applicationId=rallar-server&workspaceId=default&roomId=execute-live-group';
 
-test('opens three browser agents and selects the exact registered cohort from current UI controls', async ({
-    context,
-    page,
-}) => {
+test('opens three browser agents and selects the exact registered cohort from current UI controls', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context);
     await page.goto(EXECUTE_ROUTE);
 
@@ -26,28 +16,29 @@ test('opens three browser agents and selects the exact registered cohort from cu
     await page.getByLabel('Agent ID prefix').fill('human-agent');
     await page.getByLabel('Agent count').fill('3');
     const childPages: Page[] = [];
-    context.on('page', child => {
-        if (child !== page) childPages.push(child);
+    context.on('page', (child) => {
+        if (child !== page) {
+            childPages.push(child);
+        }
     });
     await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
     await expect.poll(() => childPages.length).toBe(3);
 
     await expect(page.getByText(
         '3 launched browser agents are ready and selected as targets.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     await expect(page.locator('[data-execute-targets]')).toContainText('3 selected');
     expect(control.tokenRequests).toHaveLength(3);
-    expect(new Set(control.tokenRequests.map(value => value.agentId)).size).toBe(3);
-    expect(control.tokenRequests.every(value => value.runId === 'human-flow-run'))
+    expect(new Set(control.tokenRequests.map((value) => value.agentId)).size).toBe(3);
+    expect(control.tokenRequests.every((value) => value.runId === 'human-flow-run'))
         .toBe(true);
-    for (const child of childPages) await child.close();
+    for (const child of childPages) {
+        await child.close();
+    }
 });
 
-test('lets an operator replace an already selected control run ID', async ({
-    context,
-    page,
-}) => {
+test('lets an operator replace an already selected control run ID', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(EXECUTE_ROUTE);
@@ -65,17 +56,14 @@ test('lets an operator replace an already selected control run ID', async ({
     await expect.poll(() => control.tokenRequests.slice(-3)).toEqual([
         expect.objectContaining({ runId: 'replacement-run' }),
         expect.objectContaining({ runId: 'replacement-run' }),
-        expect.objectContaining({ runId: 'replacement-run' }),
+        expect.objectContaining({ runId: 'replacement-run' })
     ]);
 });
 
-test('holds lifecycle actions while a new cohort registers beside existing agents', async ({
-    context,
-    page,
-}) => {
+test('holds lifecycle actions while a new cohort registers beside existing agents', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context, {
         registerOnToken: false,
-        initialAgents: [{ runId: 'cohort-run', agentId: 'existing-agent' }],
+        initialAgents: [{ runId: 'cohort-run', agentId: 'existing-agent' }]
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=cohort-run`);
@@ -86,31 +74,28 @@ test('holds lifecycle actions while a new cohort registers beside existing agent
 
     const runway = page.locator('[data-execute-action-runway]');
     await expect(runway.getByRole('heading', {
-        name: '0 of 3 browser agents ready',
+        name: '0 of 3 browser agents ready'
     })).toBeVisible();
     await expect(runway.getByRole('button', { name: /Resolve/ })).toHaveCount(0);
     await expect(runway.getByRole('status')).toContainText(
-        '0 of 3 browser agents ready',
+        '0 of 3 browser agents ready'
     );
     expect(control.tokenRequests).toHaveLength(3);
 
     control.registerAgent('cohort-run', control.tokenRequests[0].agentId);
     await runway.getByRole('button', { name: 'Refresh' }).click();
     await expect(runway.getByRole('status')).toContainText(
-        '1 of 3 browser agents ready',
+        '1 of 3 browser agents ready'
     );
 });
 
-test('blocks lifecycle actions while launch authority is prepared and recovers after a run switch', async ({
-    context,
-    page,
-}) => {
+test('blocks lifecycle actions while launch authority is prepared and recovers after a run switch', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context, {
         holdTokenResponses: true,
         initialAgents: [
             { runId: 'pending-run', agentId: 'pending-existing' },
-            { runId: 'other-run', agentId: 'other-existing' },
-        ],
+            { runId: 'other-run', agentId: 'other-existing' }
+        ]
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=pending-run`);
@@ -123,7 +108,7 @@ test('blocks lifecycle actions while launch authority is prepared and recovers a
     await expect(runway.getByRole('button', { name: /Resolve|Create draft/ }))
         .toHaveCount(0);
     await expect(runway.getByRole('status')).toContainText(
-        '0 of 3 browser agents ready',
+        '0 of 3 browser agents ready'
     );
 
     await chooseControlRun(page, 'other-run');
@@ -135,16 +120,13 @@ test('blocks lifecycle actions while launch authority is prepared and recovers a
         .toBeVisible();
 });
 
-test('clears completed cohort gating when the selected control run changes', async ({
-    context,
-    page,
-}) => {
+test('clears completed cohort gating when the selected control run changes', async ({ context, page }) => {
     await installAgentLaunchControl(context, {
         registerOnToken: false,
         initialAgents: [
             { runId: 'first-run', agentId: 'first-existing' },
-            { runId: 'second-run', agentId: 'second-existing' },
-        ],
+            { runId: 'second-run', agentId: 'second-existing' }
+        ]
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=first-run`);
@@ -154,14 +136,13 @@ test('clears completed cohort gating when the selected control run changes', asy
         .toContainText('0 of 3 browser agents ready');
 
     await chooseControlRun(page, 'second-run');
-    await expect(page.locator('[data-execute-action-runway]')
-        .getByRole('button', { name: 'Resolve 1 target' })).toBeVisible();
+    await expect(
+        page.locator('[data-execute-action-runway]')
+            .getByRole('button', { name: 'Resolve 1 target' })
+    ).toBeVisible();
 });
 
-test('allows manual target adjustment after the launched cohort is selected', async ({
-    context,
-    page,
-}) => {
+test('allows manual target adjustment after the launched cohort is selected', async ({ context, page }) => {
     await installAgentLaunchControl(context);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(EXECUTE_ROUTE);
@@ -173,22 +154,21 @@ test('allows manual target adjustment after the launched cohort is selected', as
     const firstTarget = page.locator('[data-execute-target]').first();
     await firstTarget.getByRole('checkbox').uncheck();
     await expect(page.locator('[data-execute-targets]')).toContainText('2 selected');
-    await expect(page.locator('[data-execute-action-runway]')
-        .getByRole('button', { name: 'Resolve 2 targets' })).toBeVisible();
+    await expect(
+        page.locator('[data-execute-action-runway]')
+            .getByRole('button', { name: 'Resolve 2 targets' })
+    ).toBeVisible();
 });
 
-test('explains popup blocking without minting and keeps copy-link fallback usable', async ({
-    context,
-    page,
-}) => {
+test('explains popup blocking without minting and keeps copy-link fallback usable', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context, {
-        registerOnToken: false,
+        registerOnToken: false
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.addInitScript(() => {
         Object.defineProperty(window, 'open', {
             configurable: true,
-            value: () => null,
+            value: () => null
         });
     });
     await page.goto(EXECUTE_ROUTE);
@@ -199,9 +179,9 @@ test('explains popup blocking without minting and keeps copy-link fallback usabl
     await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
 
     await expect(
-        page.locator('[data-execute-agent-setup]').getByRole('status'),
+        page.locator('[data-execute-agent-setup]').getByRole('status')
     ).toContainText(
-        'Your browser blocked all 3 agent tabs. Copy the launch links instead.',
+        'Your browser blocked all 3 agent tabs. Copy the launch links instead.'
     );
     const copyLinks = page.getByRole('button', { name: 'Copy 3 launch links' });
     await expect(copyLinks).toBeEnabled();
@@ -213,22 +193,19 @@ test('explains popup blocking without minting and keeps copy-link fallback usabl
     await expect(individualLinks).toHaveCount(3);
     await individualLinks.first().click();
     await expect(
-        page.locator('[data-execute-agent-setup]').getByRole('status'),
+        page.locator('[data-execute-agent-setup]').getByRole('status')
     ).toContainText('Copied 1 fresh, short-lived launch link.');
     expect(control.tokenRequests).toHaveLength(1);
     await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
     await expect(
-        page.locator('[data-execute-agent-setup]').getByRole('status'),
+        page.locator('[data-execute-agent-setup]').getByRole('status')
     ).toContainText('Copied 3 fresh, short-lived launch links.');
     expect(control.tokenRequests).toHaveLength(4);
 });
 
-test('replaces an unopened copied cohort when the whole batch is copied again', async ({
-    context,
-    page,
-}) => {
+test('replaces an unopened copied cohort when the whole batch is copied again', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context, {
-        registerOnToken: false,
+        registerOnToken: false
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(EXECUTE_ROUTE);
@@ -238,12 +215,12 @@ test('replaces an unopened copied cohort when the whole batch is copied again', 
     const copyLinks = page.getByRole('button', { name: 'Copy 3 launch links' });
     await copyLinks.click();
     await expect.poll(() => control.tokenRequests.length).toBe(3);
-    const firstAgentIds = control.tokenRequests.map(request => request.agentId);
+    const firstAgentIds = control.tokenRequests.map((request) => request.agentId);
 
     await copyLinks.click();
     await expect.poll(() => control.tokenRequests.length).toBe(6);
     const replacementAgentIds = control.tokenRequests.slice(3)
-        .map(request => request.agentId);
+        .map((request) => request.agentId);
     expect(replacementAgentIds).not.toEqual(firstAgentIds);
 
     for (const agentId of replacementAgentIds) {
@@ -253,16 +230,15 @@ test('replaces an unopened copied cohort when the whole batch is copied again', 
         .getByRole('button', { name: 'Refresh' }).click();
 
     await expect(page.locator('[data-execute-targets]')).toContainText('3 selected');
-    await expect(page.locator('[data-execute-action-runway]')
-        .getByRole('button', { name: 'Resolve 3 targets' })).toBeVisible();
+    await expect(
+        page.locator('[data-execute-action-runway]')
+            .getByRole('button', { name: 'Resolve 3 targets' })
+    ).toBeVisible();
     await expect(page.locator('[data-execute-action-runway]'))
         .not.toContainText('3 of 6 browser agents ready');
 });
 
-test('mints only reserved tabs and keeps each partially blocked identity copyable', async ({
-    context,
-    page,
-}) => {
+test('mints only reserved tabs and keeps each partially blocked identity copyable', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.addInitScript(() => {
@@ -273,7 +249,7 @@ test('mints only reserved tabs and keeps each partially blocked identity copyabl
             value: (...args: Parameters<typeof window.open>) => {
                 callCount += 1;
                 return callCount === 2 ? null : nativeOpen(...args);
-            },
+            }
         });
     });
     await page.goto(EXECUTE_ROUTE);
@@ -282,38 +258,39 @@ test('mints only reserved tabs and keeps each partially blocked identity copyabl
     await page.getByLabel('Agent count').fill('3');
 
     const childPages: Page[] = [];
-    context.on('page', child => {
-        if (child !== page) childPages.push(child);
+    context.on('page', (child) => {
+        if (child !== page) {
+            childPages.push(child);
+        }
     });
     await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
     await expect.poll(() => childPages.length).toBe(2);
     await expect(
-        page.locator('[data-execute-agent-setup]').getByRole('status'),
+        page.locator('[data-execute-agent-setup]').getByRole('status')
     ).toContainText('2 launched browser agents are ready and selected as targets.');
     expect(control.tokenRequests).toHaveLength(2);
 
     const blockedFallback = page.getByRole('group', {
-        name: 'Popup-blocked browser-agent launch links',
+        name: 'Popup-blocked browser-agent launch links'
     });
     const copyBlocked = blockedFallback.getByRole('button', {
-        name: /^Copy link for partial-agent-/,
+        name: /^Copy link for partial-agent-/
     });
     await expect(copyBlocked).toHaveCount(1);
     await copyBlocked.click();
     expect(control.tokenRequests).toHaveLength(3);
     await expect(
-        page.locator('[data-execute-agent-setup]').getByRole('status'),
+        page.locator('[data-execute-agent-setup]').getByRole('status')
     ).toContainText('3 launched browser agents are ready and selected as targets.');
-    for (const child of childPages) await child.close();
+    for (const child of childPages) {
+        await child.close();
+    }
 });
 
-test('removes a reserved tab closed during preparation from registration gating', async ({
-    context,
-    page,
-}) => {
+test('removes a reserved tab closed during preparation from registration gating', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context, {
         holdTokenResponses: true,
-        registerOnToken: false,
+        registerOnToken: false
     });
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(EXECUTE_ROUTE);
@@ -325,8 +302,10 @@ test('removes a reserved tab closed during preparation from registration gating'
         .locator('code')
         .allTextContents();
     const childPages: Page[] = [];
-    context.on('page', child => {
-        if (child !== page) childPages.push(child);
+    context.on('page', (child) => {
+        if (child !== page) {
+            childPages.push(child);
+        }
     });
     await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
     await expect.poll(() => childPages.length).toBe(3);
@@ -336,11 +315,13 @@ test('removes a reserved tab closed during preparation from registration gating'
     control.releaseTokenResponses();
     await expect(page.locator('[data-execute-agent-setup]').getByRole('status'))
         .toContainText('Opened 2 browser agent tabs. 1 popup was blocked or closed.');
-    await expect(page.getByRole('group', {
-        name: 'Popup-blocked browser-agent launch links',
-    }).getByRole('button', {
-        name: `Copy link for ${agentIds[1]}`,
-    })).toBeVisible();
+    await expect(
+        page.getByRole('group', {
+            name: 'Popup-blocked browser-agent launch links'
+        }).getByRole('button', {
+            name: `Copy link for ${agentIds[1]}`
+        })
+    ).toBeVisible();
 
     for (const agentId of agentIds.filter((_, index) => index !== 1)) {
         control.registerAgent('closed-tab-run', agentId);
@@ -348,25 +329,26 @@ test('removes a reserved tab closed during preparation from registration gating'
     await page.locator('[data-execute-action-runway]')
         .getByRole('button', { name: 'Refresh' }).click();
     await expect(page.locator('[data-execute-targets]')).toContainText('2 selected');
-    await expect(page.locator('[data-execute-action-runway]')
-        .getByRole('button', { name: 'Resolve 2 targets' })).toBeVisible();
+    await expect(
+        page.locator('[data-execute-action-runway]')
+            .getByRole('button', { name: 'Resolve 2 targets' })
+    ).toBeVisible();
 
     for (const child of childPages) {
-        if (!child.isClosed()) await child.close();
+        if (!child.isClosed()) {
+            await child.close();
+        }
     }
 });
 
-test('gates missing launch identity and browser-rallar authentication in the visible setup', async ({
-    context,
-    page,
-}) => {
+test('gates missing launch identity and browser-rallar authentication in the visible setup', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context);
     await page.goto(EXECUTE_ROUTE);
 
     const setup = page.locator('[data-execute-agent-setup]');
     await page.getByLabel('Control run ID for new agents').fill('');
     await expect(setup.getByRole('alert')).toHaveText(
-        'Enter a control run ID before launching agents.',
+        'Enter a control run ID before launching agents.'
     );
     await expect(setup.getByRole('button', { name: 'Open 3 browser agents' }))
         .toBeDisabled();
@@ -374,7 +356,7 @@ test('gates missing launch identity and browser-rallar authentication in the vis
     await page.getByLabel('Control run ID for new agents').fill('gated-run');
     await page.getByLabel('Agent ID prefix').fill('');
     await expect(setup.getByRole('alert')).toHaveText(
-        'Enter an agent ID prefix before launching agents.',
+        'Enter an agent ID prefix before launching agents.'
     );
 
     await page.goto(EXECUTE_ROUTE.replace('provider=simulated', 'provider=browser-rallar'));
@@ -389,17 +371,17 @@ async function installAgentLaunchControl(
     options: Readonly<{
         registerOnToken?: boolean;
         holdTokenResponses?: boolean;
-        initialAgents?: readonly Readonly<{ runId: string; agentId: string }>[];
-    }> = {},
+        initialAgents?: readonly Readonly<{ runId: string; agentId: string; }>[];
+    }> = {}
 ) {
     const agents = new Map<string, ControlAgentSnapshot>();
     for (const agent of options.initialAgents ?? []) {
         agents.set(agent.agentId, connectedAgent(agent.runId, agent.agentId));
     }
-    const tokenRequests: Array<{ runId: string; agentId: string }> = [];
+    const tokenRequests: Array<{ runId: string; agentId: string; }> = [];
     let releaseTokenResponses = () => undefined;
     const tokenResponseGate = options.holdTokenResponses
-        ? new Promise<void>(resolve => {
+        ? new Promise<void>((resolve) => {
             releaseTokenResponses = resolve;
         })
         : undefined;
@@ -421,14 +403,14 @@ async function installAgentLaunchControl(
             events: [],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         }));
     };
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         const tokenMatch = url.pathname.match(
-            /^\/runs\/([^/]+)\/agents\/([^/]+)\/tokens$/,
+            /^\/runs\/([^/]+)\/agents\/([^/]+)\/tokens$/
         );
         if (request.method() === 'POST' && tokenMatch) {
             const runId = decodeURIComponent(tokenMatch[1]);
@@ -443,25 +425,25 @@ async function installAgentLaunchControl(
                 agentId,
                 token: `secret-${agentId}`,
                 issuedAtEpochMs: Date.now(),
-                expiresAtEpochMs: Date.now() + 60_000,
+                expiresAtEpochMs: Date.now() + 60_000
             }, 201);
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await fulfillJson(route, {
                 runs: currentRuns(),
-                distributedRuns: [],
+                distributedRuns: []
             });
             return;
         }
         const detailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
         if (request.method() === 'GET' && detailMatch) {
             const runId = decodeURIComponent(detailMatch[1]);
-            const run = currentRuns().find(candidate => candidate.runId === runId);
+            const run = currentRuns().find((candidate) => candidate.runId === runId);
             await fulfillJson(
                 route,
                 run ?? { error: 'Control run not found.' },
-                run ? 200 : 404,
+                run ? 200 : 404
             );
             return;
         }
@@ -472,7 +454,7 @@ async function installAgentLaunchControl(
         registerAgent: (runId: string, agentId: string) => {
             agents.set(agentId, connectedAgent(runId, agentId));
         },
-        releaseTokenResponses,
+        releaseTokenResponses
     };
 }
 
@@ -503,14 +485,14 @@ function connectedAgent(runId: string, agentId: string): ControlAgentSnapshot {
             workspaceId: 'default',
             groupId: 'execute-live-group',
             providerMode: 'simulated',
-            browserName: 'chromium',
+            browserName: 'chromium'
         },
         connectionSequence: 1,
         reconnectCount: 0,
         receivedResultCount: 0,
         receivedEventCount: 0,
         completedCommandIds: [],
-        resumeCompletedCommandIds: [],
+        resumeCompletedCommandIds: []
     };
 }
 
@@ -519,6 +501,6 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
         status,
         contentType: 'application/json',
         headers: { 'access-control-allow-origin': '*' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 }

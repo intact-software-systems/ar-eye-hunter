@@ -1,6 +1,6 @@
-import { TreeGraph, VertexId, VertexState, } from '../graph-props.ts';
-import { DynamicMeshAlgo } from './group-dynamics-mesh-types.ts';
 import { GroupInformation } from '../algo-props.ts';
+import { TreeGraph, VertexId, VertexState } from '../graph-props.ts';
+import { DynamicMeshAlgo } from './group-dynamics-mesh-types.ts';
 
 export type RemoveDynamicsLike = {
     rvLeaf(): void;
@@ -16,7 +16,7 @@ export type CreateRemoveDynamicsFn = (
     globalGraph: TreeGraph,
     groupInfo: GroupInformation,
     fifoSteiner: unknown,
-    actionVertexId: VertexId,
+    actionVertexId: VertexId
 ) => RemoveDynamicsLike;
 
 export type RemoveMeshAlgorithmResult = {
@@ -31,7 +31,7 @@ export type RemoveFromMeshInputDto = {
     actionVertexId: VertexId;
     k: number;
     algo: DynamicMeshAlgo;
-}
+};
 
 export function removeFromMesh(
     globalGraph: TreeGraph,
@@ -40,7 +40,7 @@ export function removeFromMesh(
     actionVertexId: VertexId,
     k: number,
     algo: DynamicMeshAlgo,
-    createRemoveDynamics: CreateRemoveDynamicsFn,
+    createRemoveDynamics: CreateRemoveDynamicsFn
 ): RemoveMeshAlgorithmResult {
     const started = performance.now();
 
@@ -51,14 +51,14 @@ export function removeFromMesh(
         actionVertexId,
         k,
         algo,
-        createRemoveDynamics,
+        createRemoveDynamics
     );
 
     const elapsedMs = performance.now() - started;
 
     return {
         elapsedMs,
-        validMesh: isValidMesh(groupInfo.getTreeStructure()),
+        validMesh: isValidMesh(groupInfo.getTreeStructure())
     };
 }
 
@@ -69,7 +69,7 @@ export function removeMeshAlgorithm(
     actionVertexId: VertexId,
     k: number,
     algo: DynamicMeshAlgo,
-    createRemoveDynamics: CreateRemoveDynamicsFn,
+    createRemoveDynamics: CreateRemoveDynamicsFn
 ): number {
     const groupGraph = groupInfo.getTreeStructure();
     const rd = createRemoveDynamics(globalGraph, groupInfo, fifoSteiner, actionVertexId);
@@ -78,9 +78,11 @@ export function removeMeshAlgorithm(
 
     if (groupInfo.getMembers().size <= 1) {
         removeLastMeshVertex(groupGraph, actionVertexId);
-    } else if (groupGraph.degree(actionVertexId) === 1) {
+    }
+    else if (groupGraph.degree(actionVertexId) === 1) {
         rd.rvLeaf();
-    } else {
+    }
+    else {
         let again = true;
         let currentAlgo = algo;
 
@@ -118,7 +120,8 @@ export function removeMeshAlgorithm(
                     default:
                         throw new Error(`removeMeshAlgorithm: unsupported algorithm ${currentAlgo}`);
                 }
-            } catch (_error) {
+            }
+            catch (_error) {
                 again = true;
                 currentAlgo = DynamicMeshAlgo.K_REMOVE_MC;
             }
@@ -133,7 +136,7 @@ export function removeMeshAlgorithm(
 export function kRemoveMDDL(
     rd: RemoveDynamicsLike,
     actionVertexId: VertexId,
-    k: number,
+    k: number
 ): void {
     void actionVertexId;
     void k;
@@ -144,7 +147,7 @@ export function kRemoveMDDL(
 export function kRemoveMC(
     rd: RemoveDynamicsLike,
     actionVertexId: VertexId,
-    k: number,
+    k: number
 ): void {
     void actionVertexId;
     void k;
@@ -154,7 +157,7 @@ export function kRemoveMC(
 
 function removeLastMeshVertex(
     groupGraph: TreeGraph,
-    actionVertexId: VertexId,
+    actionVertexId: VertexId
 ): void {
     if (groupGraph.hasNode(actionVertexId)) {
         groupGraph.dropNode(actionVertexId);

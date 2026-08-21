@@ -1,15 +1,15 @@
+import { ALMessage } from '../al-contracts/al-contract.ts';
 import type { ALAckStatus, ALCompletedPendingAck, ALControlAcceptance } from '../al-contracts/al-control.ts';
 import {
     isALControlTypeId,
     newALAckControlMessage,
     newALNackControlMessage,
-    newALRepairControlMessage,
+    newALRepairControlMessage
 } from '../al-contracts/al-control.ts';
-import { ALMessage } from '../al-contracts/al-contract.ts';
 import { ALMessageHandlingPlan, resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { RetryableConflictError, RetryPolicies, tryWithPolicy, } from '../resilience/TryWith.ts';
+import { RetryableConflictError, RetryPolicies, tryWithPolicy } from '../resilience/TryWith.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundAdmissionStore,
@@ -18,13 +18,13 @@ import type {
     ALInboundDurableEffectWrite,
     ALInboundMessageReadDto,
     ALInboundPlanner,
-    ALPersistedInboundEffect,
+    ALPersistedInboundEffect
 } from './ALInboundAdmissionStore.ts';
 import {
     createALInboundAdmissionStore,
     createInMemoryALInboundAdmissionState,
     markPendingAckLocalReadySnapshot,
-    trackPendingAckSnapshot,
+    trackPendingAckSnapshot
 } from './ALInboundAdmissionStore.ts';
 
 export type ALInboundRuntimeStores = Readonly<{
@@ -36,22 +36,22 @@ export type ALInboundMessageRuntimeInput = Readonly<{
     inbox: QueueBoxResourceEntryRepository;
     planIncomingMessage: ALInboundPlanner;
     readStoredEntry: (
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ) => Readonly<ALMessage>;
     toInboxEntry: (msg: ALMessage) => ResourceEntry;
     dispatchInboxEntry: (
         entry: ResourceEntry,
-        plan?: ALMessageHandlingPlan,
+        plan?: ALMessageHandlingPlan
     ) => Promise<void>;
     sendControlMessage: (msg: ALMessage) => Promise<void>;
     onControlMessage?: (
         msg: ALMessage,
-        acceptance: ALControlAcceptance,
+        acceptance: ALControlAcceptance
     ) => Promise<void>;
     forwardMessage?: (
         msg: ALMessage,
         fromPeerId: string,
-        plan: ALMessageHandlingPlan,
+        plan: ALMessageHandlingPlan
     ) => Promise<void>;
     /**
      * Per-message forwarding capability, reconciled at admission so a
@@ -87,7 +87,7 @@ export class ALInboundMessageRuntime {
         .maxAttempts(ALInboundMessageRuntime.MAX_COMMIT_ATTEMPTS)
         .retryIntervalMsecs(ALInboundMessageRuntime.COMMIT_RETRY_INTERVAL_MSECS)
         .maxRetryIntervalMsecs(
-            ALInboundMessageRuntime.COMMIT_MAX_RETRY_INTERVAL_MSECS,
+            ALInboundMessageRuntime.COMMIT_MAX_RETRY_INTERVAL_MSECS
         )
         .maxElapsedMsecs(ALInboundMessageRuntime.COMMIT_MAX_ELAPSED_MSECS);
     private static readonly EFFECT_LEASE_MS = 10_000;
@@ -104,7 +104,7 @@ export class ALInboundMessageRuntime {
     private readonly input: ALInboundMessageRuntimeInput;
 
     constructor(
-        input: ALInboundMessageRuntimeInput,
+        input: ALInboundMessageRuntimeInput
     ) {
         this.input = input;
         this.admissionStore = input.stores?.admissionStore ?? createALInboundAdmissionStore({
@@ -112,7 +112,7 @@ export class ALInboundMessageRuntime {
             namespace: 'al-inbound-runtime',
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
-            state: createInMemoryALInboundAdmissionState(),
+            state: createInMemoryALInboundAdmissionState()
         });
         this.readyPromise = this.admissionStore.ready();
     }
@@ -135,7 +135,7 @@ export class ALInboundMessageRuntime {
 
     async handleIncomingMessage(
         msg: ALMessage,
-        fromPeerId: string,
+        fromPeerId: string
     ): Promise<void> {
         await this.ready();
 
@@ -152,22 +152,23 @@ export class ALInboundMessageRuntime {
     private async handleIncomingMessageWithAdmission(
         msg: ALMessage,
         fromPeerId: string,
-        options: BufferedReleaseOptions = {},
+        options: BufferedReleaseOptions = {}
     ): Promise<void> {
         await this.withSenderCommitQueue(
             msg.id.senderId,
-            async () => await this.handleIncomingMessageWithAdmissionNow(
-                msg,
-                fromPeerId,
-                options,
-            ),
+            async () =>
+                await this.handleIncomingMessageWithAdmissionNow(
+                    msg,
+                    fromPeerId,
+                    options
+                )
         );
     }
 
     private async handleIncomingMessageWithAdmissionNow(
         msg: ALMessage,
         fromPeerId: string,
-        options: BufferedReleaseOptions,
+        options: BufferedReleaseOptions
     ): Promise<void> {
         const dependencies = this.toComputeDependencies();
 
@@ -177,7 +178,7 @@ export class ALInboundMessageRuntime {
                     const read = await this.admissionStore.readIncomingMessage(
                         msg,
                         fromPeerId,
-                        this.input.planIncomingMessage,
+                        this.input.planIncomingMessage
                     );
                     const computed = ALInboundMessageRuntime.computeAdmission(read, dependencies);
                     const status = await this.admissionStore.commitBundle(computed.bundle);
@@ -189,20 +190,21 @@ export class ALInboundMessageRuntime {
                     await this.finalizeCommittedAdmission(options.drainAfterCommit !== false);
                     return;
                 },
-                ALInboundMessageRuntime.COMMIT_RETRY_POLICY,
+                ALInboundMessageRuntime.COMMIT_RETRY_POLICY
             );
             return;
-        } catch (error) {
+        }
+        catch (error) {
             throw new Error(
                 `Failed to commit inbound message after retries: ${msg.id.msgId}`,
-                { cause: error },
+                { cause: error }
             );
         }
     }
 
     static computeAdmission(
         read: ALInboundMessageReadDto,
-        dependencies: AdmissionComputeDependencies,
+        dependencies: AdmissionComputeDependencies
     ): AdmissionComputedDto {
         const plan = read.plan;
         const mutations: ALInboundAdmissionMutation[] = [];
@@ -216,36 +218,36 @@ export class ALInboundMessageRuntime {
                 dependencies.selfPeerId,
                 read.msg,
                 plan,
-                read.fromPeerId,
+                read.fromPeerId
             );
             return {
                 bundle: {
                     senderId: read.msg.id.senderId,
                     expectedVersion: read.clientRecord?.version,
                     mutations: [],
-                    durableEffects,
-                },
+                    durableEffects
+                }
             };
         }
 
         mutations.push({
             kind: 'set-msg-owner',
             msgId: read.msg.id.msgId,
-            senderId: read.msg.id.senderId,
+            senderId: read.msg.id.senderId
         });
 
         if (read.orderingAcceptance.observation.trackKey && read.orderingAcceptance.nextSnapshot) {
             mutations.push({
                 kind: 'set-ordering',
                 trackKey: read.orderingAcceptance.observation.trackKey,
-                snapshot: read.orderingAcceptance.nextSnapshot,
+                snapshot: read.orderingAcceptance.nextSnapshot
             });
         }
 
         mutations.push({
             kind: 'set-dedup',
             dedupKey: plan.dedupKey,
-            expireAtTimestamp: read.nowMs + Math.max(0, plan.effective.dedup.opts.windowMs),
+            expireAtTimestamp: read.nowMs + Math.max(0, plan.effective.dedup.opts.windowMs)
         });
 
         if (plan.localDelivery.deferred) {
@@ -253,14 +255,14 @@ export class ALInboundMessageRuntime {
                 if (plan.supersedence.enabled && plan.supersedence.key) {
                     for (const buffered of read.bufferedSnapshots) {
                         if (
-                            buffered.seq !== plan.orderingRuntime.seq
-                            && buffered.plan.supersedence.key === plan.supersedence.key
-                            && this.isNewerMessage(read.msg, buffered.msg)
+                            buffered.seq !== plan.orderingRuntime.seq &&
+                            buffered.plan.supersedence.key === plan.supersedence.key &&
+                            this.isNewerMessage(read.msg, buffered.msg)
                         ) {
                             mutations.push({
                                 kind: 'delete-buffered',
                                 trackKey: buffered.trackKey,
-                                seq: buffered.seq,
+                                seq: buffered.seq
                             });
                         }
                     }
@@ -272,8 +274,8 @@ export class ALInboundMessageRuntime {
                         trackKey: plan.orderingRuntime.trackKey,
                         seq: plan.orderingRuntime.seq,
                         msg: read.msg,
-                        plan,
-                    },
+                        plan
+                    }
                 });
             }
 
@@ -282,27 +284,28 @@ export class ALInboundMessageRuntime {
                 dependencies.selfPeerId,
                 read.msg,
                 plan,
-                read.fromPeerId,
+                read.fromPeerId
             );
-        } else {
+        }
+        else {
             this.appendLocalDeliveryEffects(
                 durableEffects,
                 dependencies.toInboxEntry,
                 read.msg,
-                plan,
+                plan
             );
 
             if (read.supersedenceAcceptance?.latestWrite && plan.supersedence.key) {
                 mutations.push({
                     kind: 'set-supersedence-latest',
                     supersedenceKey: plan.supersedence.key,
-                    value: read.supersedenceAcceptance.latestWrite,
+                    value: read.supersedenceAcceptance.latestWrite
                 });
                 for (const replacement of read.supersedenceAcceptance.replacementWrites) {
                     mutations.push({
                         kind: 'set-supersedence-replacement',
                         msgId: replacement.msgId,
-                        value: replacement.value,
+                        value: replacement.value
                     });
                 }
             }
@@ -320,7 +323,7 @@ export class ALInboundMessageRuntime {
                 plan.ack.toPeerId,
                 plan.forwarding.nextHopPeerIds,
                 !plan.localDelivery.deferred,
-                this.toMessageEffectExpireAtTimestamp(read.msg, plan),
+                this.toMessageEffectExpireAtTimestamp(read.msg, plan)
             );
             if (transition.pending) {
                 mutations.push({
@@ -328,13 +331,14 @@ export class ALInboundMessageRuntime {
                     msgId: read.msg.id.msgId,
                     value: {
                         kind: 'pending',
-                        value: transition.pending,
-                    },
+                        value: transition.pending
+                    }
                 });
-            } else if (read.pendingAck) {
+            }
+            else if (read.pendingAck) {
                 mutations.push({
                     kind: 'delete-control-pending',
-                    msgId: read.msg.id.msgId,
+                    msgId: read.msg.id.msgId
                 });
             }
 
@@ -350,8 +354,8 @@ export class ALInboundMessageRuntime {
                     plan.ack.toPeerId,
                     read.msg.id.msgId,
                     shouldForward ? 'forwarded' : 'delivered',
-                    this.toMessageEffectExpireAtTimestamp(read.msg, plan),
-                ),
+                    this.toMessageEffectExpireAtTimestamp(read.msg, plan)
+                )
             );
         }
 
@@ -363,16 +367,17 @@ export class ALInboundMessageRuntime {
                     kind: 'forward-message',
                     msg: read.msg,
                     fromPeerId: read.fromPeerId,
-                    plan,
-                },
+                    plan
+                }
             });
-        } else if (!plan.localDelivery.deferred && !plan.nack.enabled) {
+        }
+        else if (!plan.localDelivery.deferred && !plan.nack.enabled) {
             this.appendRepairEffect(
                 durableEffects,
                 dependencies.selfPeerId,
                 read.msg,
                 plan,
-                read.fromPeerId,
+                read.fromPeerId
             );
         }
 
@@ -380,7 +385,7 @@ export class ALInboundMessageRuntime {
             durableEffects,
             dependencies.selfPeerId,
             completedPendingAcks,
-            this.toMessageEffectExpireAtTimestamp(read.msg, plan),
+            this.toMessageEffectExpireAtTimestamp(read.msg, plan)
         );
 
         if (!plan.localDelivery.deferred && read.orderingAcceptance.observation.trackKey) {
@@ -390,8 +395,8 @@ export class ALInboundMessageRuntime {
                     payload: {
                         kind: 'release-buffered',
                         trackKey: read.orderingAcceptance.observation.trackKey,
-                        seq,
-                    },
+                        seq
+                    }
                 });
             }
         }
@@ -401,17 +406,18 @@ export class ALInboundMessageRuntime {
                 senderId: read.msg.id.senderId,
                 expectedVersion: read.clientRecord?.version,
                 mutations,
-                durableEffects,
-            },
+                durableEffects
+            }
         };
     }
 
     private async finalizeCommittedAdmission(
-        drainAfterCommit: boolean,
+        drainAfterCommit: boolean
     ): Promise<void> {
         if (drainAfterCommit) {
             await this.drainDurableEffectsNow();
-        } else {
+        }
+        else {
             this.requestEffectDrain();
         }
     }
@@ -419,7 +425,7 @@ export class ALInboundMessageRuntime {
     private async releaseBufferedMessageWithAdmission(
         trackKey: string,
         seq: number,
-        options: BufferedReleaseOptions = {},
+        options: BufferedReleaseOptions = {}
     ): Promise<void> {
         const dependencies = this.toComputeDependencies();
 
@@ -436,31 +442,32 @@ export class ALInboundMessageRuntime {
 
                     if (status === 'conflict') {
                         throw new RetryableConflictError(
-                            'Buffered inbound release commit conflict',
+                            'Buffered inbound release commit conflict'
                         );
                     }
 
                     await this.finalizeCommittedAdmission(options.drainAfterCommit !== false);
                     return;
                 },
-                ALInboundMessageRuntime.COMMIT_RETRY_POLICY,
+                ALInboundMessageRuntime.COMMIT_RETRY_POLICY
             );
             return;
-        } catch (error) {
+        }
+        catch (error) {
             throw new Error(
                 `Failed to release buffered inbound message after retries: ${trackKey}:${seq}`,
-                { cause: error },
+                { cause: error }
             );
         }
     }
 
     private async withSenderCommitQueue<T>(
         senderId: string,
-        task: () => Promise<T>,
+        task: () => Promise<T>
     ): Promise<T> {
         const previous = this.commitQueuesBySenderId.get(senderId) ?? Promise.resolve();
         let release: (() => void) | undefined;
-        const gate = new Promise<void>(resolve => {
+        const gate = new Promise<void>((resolve) => {
             release = resolve;
         });
         const tail = previous.catch(() => undefined).then(() => gate);
@@ -470,7 +477,8 @@ export class ALInboundMessageRuntime {
 
         try {
             return await task();
-        } finally {
+        }
+        finally {
             release?.();
             if (this.commitQueuesBySenderId.get(senderId) === tail) {
                 this.commitQueuesBySenderId.delete(senderId);
@@ -480,28 +488,28 @@ export class ALInboundMessageRuntime {
 
     static computeBufferedRelease(
         read: ALInboundBufferedReleaseReadDto,
-        dependencies: AdmissionComputeDependencies,
+        dependencies: AdmissionComputeDependencies
     ): AdmissionComputedDto {
         const plan = {
             ...read.snapshot.plan,
             localDelivery: {
                 ...read.snapshot.plan.localDelivery,
                 enabled: true,
-                deferred: false,
-            },
+                deferred: false
+            }
         } satisfies ALMessageHandlingPlan;
         const superseded = read.supersedenceAcceptance?.observation.status === 'superseded';
         const mutations: ALInboundAdmissionMutation[] = [
             {
                 kind: 'set-msg-owner',
                 msgId: read.snapshot.msg.id.msgId,
-                senderId: read.snapshot.msg.id.senderId,
+                senderId: read.snapshot.msg.id.senderId
             },
             {
                 kind: 'delete-buffered',
                 trackKey: read.snapshot.trackKey,
-                seq: read.snapshot.seq,
-            },
+                seq: read.snapshot.seq
+            }
         ];
         const durableEffects: ALInboundDurableEffectWrite[] = [];
         const completedPendingAcks: ALCompletedPendingAck[] = [];
@@ -510,13 +518,13 @@ export class ALInboundMessageRuntime {
             mutations.push({
                 kind: 'set-supersedence-latest',
                 supersedenceKey: plan.supersedence.key,
-                value: read.supersedenceAcceptance.latestWrite,
+                value: read.supersedenceAcceptance.latestWrite
             });
             for (const replacement of read.supersedenceAcceptance.replacementWrites) {
                 mutations.push({
                     kind: 'set-supersedence-replacement',
                     msgId: replacement.msgId,
-                    value: replacement.value,
+                    value: replacement.value
                 });
             }
         }
@@ -525,7 +533,7 @@ export class ALInboundMessageRuntime {
             const transition = markPendingAckLocalReadySnapshot(
                 read.snapshot.msg.id.msgId,
                 read.pendingAck,
-                read.acks,
+                read.acks
             );
             if (transition.pending) {
                 mutations.push({
@@ -533,13 +541,14 @@ export class ALInboundMessageRuntime {
                     msgId: read.snapshot.msg.id.msgId,
                     value: {
                         kind: 'pending',
-                        value: transition.pending,
-                    },
+                        value: transition.pending
+                    }
                 });
-            } else if (read.pendingAck) {
+            }
+            else if (read.pendingAck) {
                 mutations.push({
                     kind: 'delete-control-pending',
-                    msgId: read.snapshot.msg.id.msgId,
+                    msgId: read.snapshot.msg.id.msgId
                 });
             }
 
@@ -553,7 +562,7 @@ export class ALInboundMessageRuntime {
                 durableEffects,
                 dependencies.toInboxEntry,
                 read.snapshot.msg,
-                plan,
+                plan
             );
         }
 
@@ -564,8 +573,8 @@ export class ALInboundMessageRuntime {
                     plan.ack.toPeerId,
                     read.snapshot.msg.id.msgId,
                     'delivered',
-                    this.toMessageEffectExpireAtTimestamp(read.snapshot.msg, plan),
-                ),
+                    this.toMessageEffectExpireAtTimestamp(read.snapshot.msg, plan)
+                )
             );
         }
 
@@ -573,7 +582,7 @@ export class ALInboundMessageRuntime {
             durableEffects,
             dependencies.selfPeerId,
             completedPendingAcks,
-            this.toMessageEffectExpireAtTimestamp(read.snapshot.msg, plan),
+            this.toMessageEffectExpireAtTimestamp(read.snapshot.msg, plan)
         );
 
         return {
@@ -581,8 +590,8 @@ export class ALInboundMessageRuntime {
                 senderId: read.snapshot.msg.id.senderId,
                 expectedVersion: read.clientRecord?.version,
                 mutations,
-                durableEffects,
-            },
+                durableEffects
+            }
         };
     }
 
@@ -592,7 +601,7 @@ export class ALInboundMessageRuntime {
         const msg = this.input.readStoredEntry(entry);
         const plan = await this.admissionStore.planStoredEntry(
             msg,
-            this.input.planIncomingMessage,
+            this.input.planIncomingMessage
         );
 
         if (plan.dropReason) {
@@ -624,7 +633,7 @@ export class ALInboundMessageRuntime {
     }
 
     private requestEffectDrain(): void {
-        void this.startEffectDrain().catch(error => {
+        void this.startEffectDrain().catch((error) => {
             console.error('Failed to drain inbound durable effects', error);
         });
     }
@@ -637,7 +646,7 @@ export class ALInboundMessageRuntime {
             }
 
             this.effectDrainPromise = this.runDurableEffectDrainLoop()
-                .catch(error => {
+                .catch((error) => {
                     console.error('Inbound durable effect drain failed', error);
                 })
                 .finally(() => {
@@ -653,7 +662,7 @@ export class ALInboundMessageRuntime {
             const claimed = await this.admissionStore.claimReadyEffects(
                 this.effectWorkerId,
                 ALInboundMessageRuntime.MAX_EFFECT_BATCH,
-                ALInboundMessageRuntime.EFFECT_LEASE_MS,
+                ALInboundMessageRuntime.EFFECT_LEASE_MS
             );
             if (claimed.length === 0) {
                 break;
@@ -663,12 +672,13 @@ export class ALInboundMessageRuntime {
                 try {
                     await this.runDurableEffect(effect);
                     await this.admissionStore.completeEffect(effect.effectId, this.effectWorkerId);
-                } catch (error) {
+                }
+                catch (error) {
                     await this.admissionStore.rescheduleEffect(
                         effect.effectId,
                         this.effectWorkerId,
                         Date.now() + this.toEffectRetryDelayMs(effect.attempts),
-                        ALInboundMessageRuntime.toErrorMessage(error),
+                        ALInboundMessageRuntime.toErrorMessage(error)
                     );
                 }
             }
@@ -681,7 +691,7 @@ export class ALInboundMessageRuntime {
     }
 
     private scheduleEffectDrainAt(
-        readyAtMs: number,
+        readyAtMs: number
     ): void {
         if (this.effectDrainTimer !== undefined) {
             clearTimeout(this.effectDrainTimer);
@@ -695,7 +705,7 @@ export class ALInboundMessageRuntime {
     }
 
     private async runDurableEffect(
-        effect: ALPersistedInboundEffect,
+        effect: ALPersistedInboundEffect
     ): Promise<void> {
         if (effect.expireAtTimestamp <= Date.now()) {
             return;
@@ -719,7 +729,7 @@ export class ALInboundMessageRuntime {
                 await this.input.forwardMessage(
                     effect.payload.msg,
                     effect.payload.fromPeerId,
-                    effect.payload.plan,
+                    effect.payload.plan
                 );
                 return;
             case 'release-buffered':
@@ -727,8 +737,8 @@ export class ALInboundMessageRuntime {
                     effect.payload.trackKey,
                     effect.payload.seq,
                     {
-                        drainAfterCommit: false,
-                    },
+                        drainAfterCommit: false
+                    }
                 );
                 return;
         }
@@ -740,12 +750,12 @@ export class ALInboundMessageRuntime {
             toInboxEntry: this.input.toInboxEntry,
             canForward: (msg) =>
                 this.input.forwardMessage !== undefined &&
-                (this.input.canForwardMessage?.(msg) ?? true),
+                (this.input.canForwardMessage?.(msg) ?? true)
         };
     }
 
     private toEffectRetryDelayMs(
-        attempts: number,
+        attempts: number
     ): number {
         return Math.min(5_000, 25 * Math.pow(2, Math.max(0, attempts)));
     }
@@ -754,7 +764,7 @@ export class ALInboundMessageRuntime {
         durableEffects: ALInboundDurableEffectWrite[],
         toInboxEntry: (msg: ALMessage) => ResourceEntry,
         msg: ALMessage,
-        plan: ALMessageHandlingPlan,
+        plan: ALMessageHandlingPlan
     ): void {
         if (!plan.localDelivery.enabled) {
             return;
@@ -770,8 +780,8 @@ export class ALInboundMessageRuntime {
                     kind: 'enqueue-inbox',
                     msg,
                     entry,
-                    plan,
-                },
+                    plan
+                }
             });
             return;
         }
@@ -783,8 +793,8 @@ export class ALInboundMessageRuntime {
                 kind: 'dispatch-local',
                 msg,
                 entry,
-                plan,
-            },
+                plan
+            }
         });
     }
 
@@ -793,7 +803,7 @@ export class ALInboundMessageRuntime {
         selfPeerId: string,
         msg: ALMessage,
         plan: ALMessageHandlingPlan,
-        fromPeerId: string,
+        fromPeerId: string
     ): void {
         if (!plan.nack.enabled) {
             return;
@@ -806,7 +816,7 @@ export class ALInboundMessageRuntime {
                 'nack',
                 msg.id.msgId,
                 toPeerId,
-                this.toNackReason(plan.nack.reason),
+                this.toNackReason(plan.nack.reason)
             ),
             expireAtTimestamp,
             payload: {
@@ -816,9 +826,9 @@ export class ALInboundMessageRuntime {
                     toPeerId,
                     msg.id.msgId,
                     this.toNackReason(plan.nack.reason),
-                    plan.orderingRuntime,
-                ),
-            },
+                    plan.orderingRuntime
+                )
+            }
         });
 
         this.appendRepairEffect(durableEffects, selfPeerId, msg, plan, fromPeerId);
@@ -829,7 +839,7 @@ export class ALInboundMessageRuntime {
         selfPeerId: string,
         msg: ALMessage,
         plan: ALMessageHandlingPlan,
-        fromPeerId: string,
+        fromPeerId: string
     ): void {
         if (!plan.repair.enabled && plan.orderingRuntime.status !== 'gap') {
             return;
@@ -845,7 +855,7 @@ export class ALInboundMessageRuntime {
                 plan.orderingRuntime.trackKey ?? '-',
                 plan.orderingRuntime.seq ?? '-',
                 plan.orderingRuntime.expectedSeq ?? '-',
-                plan.orderingRuntime.missingSeqs.join(','),
+                plan.orderingRuntime.missingSeqs.join(',')
             ),
             expireAtTimestamp,
             payload: {
@@ -855,9 +865,9 @@ export class ALInboundMessageRuntime {
                     toPeerId,
                     msg.id.msgId,
                     plan.orderingRuntime.status === 'gap' ? 'missing-seq' : 'retransmit',
-                    plan.orderingRuntime,
-                ),
-            },
+                    plan.orderingRuntime
+                )
+            }
         });
     }
 
@@ -865,7 +875,7 @@ export class ALInboundMessageRuntime {
         durableEffects: ALInboundDurableEffectWrite[],
         selfPeerId: string,
         completedPendingAcks: readonly ALCompletedPendingAck[],
-        expireAtTimestamp?: number,
+        expireAtTimestamp?: number
     ): void {
         for (const completed of completedPendingAcks) {
             durableEffects.push(
@@ -874,8 +884,8 @@ export class ALInboundMessageRuntime {
                     completed.toPeerId,
                     completed.msgId,
                     completed.status,
-                    completed.expireAtTimestamp ?? expireAtTimestamp,
-                ),
+                    completed.expireAtTimestamp ?? expireAtTimestamp
+                )
             );
         }
     }
@@ -885,7 +895,7 @@ export class ALInboundMessageRuntime {
         toPeerId: string,
         ackedMsgId: string,
         status: ALAckStatus,
-        expireAtTimestamp?: number,
+        expireAtTimestamp?: number
     ): ALInboundDurableEffectWrite {
         return {
             effectId: this.toEffectId('ack', ackedMsgId, toPeerId, status),
@@ -896,21 +906,21 @@ export class ALInboundMessageRuntime {
                     selfPeerId,
                     toPeerId,
                     ackedMsgId,
-                    status,
-                ),
-            },
+                    status
+                )
+            }
         };
     }
 
     private static toEffectId(
         ...parts: readonly (number | string)[]
     ): string {
-        return parts.map(part => encodeURIComponent(String(part))).join(':');
+        return parts.map((part) => encodeURIComponent(String(part))).join(':');
     }
 
     private static toMessageEffectExpireAtTimestamp(
         msg: ALMessage,
-        plan: ALMessageHandlingPlan,
+        plan: ALMessageHandlingPlan
     ): number | undefined {
         return resolveALMessageExpireAtMs(msg, plan.effective);
     }
@@ -929,22 +939,23 @@ export class ALInboundMessageRuntime {
     }
 
     static shouldDeferLocalDelivery(
-        plan: ALMessageHandlingPlan,
+        plan: ALMessageHandlingPlan
     ): boolean {
-        return plan.localDelivery.enabled
-            && plan.congestion.overloaded
-            && plan.congestion.action === 'defer';
+        return plan.localDelivery.enabled &&
+            plan.congestion.overloaded &&
+            plan.congestion.action === 'defer';
     }
 
     static isNewerMessage(
         candidate: ALMessage,
-        existing: ALMessage,
+        existing: ALMessage
     ): boolean {
         const candidateSeq = candidate.ordering?.seq;
         const existingSeq = existing.ordering?.seq;
 
         if (candidateSeq !== undefined || existingSeq !== undefined) {
-            const seqComparison = (candidateSeq ?? Number.NEGATIVE_INFINITY) - (existingSeq ?? Number.NEGATIVE_INFINITY);
+            const seqComparison = (candidateSeq ?? Number.NEGATIVE_INFINITY) -
+                (existingSeq ?? Number.NEGATIVE_INFINITY);
             if (seqComparison !== 0) {
                 return seqComparison > 0;
             }
@@ -954,7 +965,7 @@ export class ALInboundMessageRuntime {
     }
 
     private static toErrorMessage(
-        error: unknown,
+        error: unknown
     ): string {
         if (error instanceof Error) {
             return error.message;

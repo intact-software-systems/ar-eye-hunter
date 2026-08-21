@@ -3,14 +3,17 @@ import type {
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime,
     RallarBlackBoxBrowserWebSocket,
-    RallarBlackBoxBrowserWebSocketFactory,
+    RallarBlackBoxBrowserWebSocketFactory
 } from './browser-adapter.ts';
 
-type BrowserRallarWindow = Window & Readonly<{
-    __blackBoxRallar?: RallarBlackBoxBrowserRallarRuntime;
-}> & {
-    __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void | Promise<void>;
-};
+type BrowserRallarWindow =
+    & Window
+    & Readonly<{
+        __blackBoxRallar?: RallarBlackBoxBrowserRallarRuntime;
+    }>
+    & {
+        __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void | Promise<void>;
+    };
 
 let runtimeImportPromise: Promise<void> | undefined;
 
@@ -43,7 +46,9 @@ async function resolveBrowserRallarRuntime(): Promise<RallarBlackBoxBrowserRalla
     return runtime;
 }
 
-async function resolveBrowserRallarDirectorRuntime(): Promise<NonNullable<RallarBlackBoxBrowserRallarRuntime['director']>> {
+async function resolveBrowserRallarDirectorRuntime(): Promise<
+    NonNullable<RallarBlackBoxBrowserRallarRuntime['director']>
+> {
     const runtime = await resolveBrowserRallarRuntime();
     if (!runtime.director) {
         throw new Error('browser-rallar provider did not expose director runtime commands.');
@@ -92,23 +97,23 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
             },
             async relayStop(input) {
                 return await (await resolveBrowserRallarDirectorRuntime()).relayStop(input);
-            },
+            }
         },
         async close() {
             return await (await resolveBrowserRallarRuntime()).close();
         },
         async health(input?: unknown) {
             return await (await resolveBrowserRallarRuntime()).health(input);
-        },
+        }
     };
 }
 
 export function installSpaBrowserRallarEventBridge(
-    runtime: RallarBlackBoxBrowserTestRuntime,
+    runtime: RallarBlackBoxBrowserTestRuntime
 ): () => void {
     const targetWindow = browserWindow();
     const previous = targetWindow.__blackBoxRallarEmit;
-    targetWindow.__blackBoxRallarEmit = event => runtime.receiveRallarBrowserEvent(event);
+    targetWindow.__blackBoxRallarEmit = (event) => runtime.receiveRallarBrowserEvent(event);
     return () => {
         targetWindow.__blackBoxRallarEmit = previous;
     };
@@ -122,7 +127,7 @@ export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketF
 
         return new WebSocket(
             url,
-            protocols as string | string[] | undefined,
+            protocols as string | string[] | undefined
         ) as RallarBlackBoxBrowserWebSocket;
     };
 }

@@ -36,33 +36,33 @@ stop_after_run: true
 Use these repo manifests with `manifest_path`. Green manifests are ordered from
 cheapest confidence check to the low-risk RTC stability baseline:
 
-| Order | Manifest | Agents | Purpose |
-| --- | --- | ---: | --- |
-| 1 | `apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json` | 2 | Control/headless reachability with `health` and `stats`. |
-| 2 | `apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json` | 2 | Loop, parallel, wait, and assert evidence without live RTC dependency. |
-| 3 | `apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json` | 2 | Live RTC connect/send/stats smoke. |
-| 4 | `apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json` | 2 | Browser-rallar provider parity across connect, direct, multicast, broadcast, health, close, and reset. |
-| 5 | `apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json` | 2 | Lower-risk 5 Hz RTC realtime stability stream. |
+| Order | Manifest                                                                             | Agents | Purpose                                                                                                |
+| ----- | ------------------------------------------------------------------------------------ | -----: | ------------------------------------------------------------------------------------------------------ |
+| 1     | `apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json`                     |      2 | Control/headless reachability with `health` and `stats`.                                               |
+| 2     | `apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json`         |      2 | Loop, parallel, wait, and assert evidence without live RTC dependency.                                 |
+| 3     | `apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json`                  |      2 | Live RTC connect/send/stats smoke.                                                                     |
+| 4     | `apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json`            |      2 | Browser-rallar provider parity across connect, direct, multicast, broadcast, health, close, and reset. |
+| 5     | `apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json` |      2 | Lower-risk 5 Hz RTC realtime stability stream.                                                         |
 
 Extended manifests keep heavier or longer realtime baselines out of the default
 green order:
 
-| Manifest | Agents | Purpose |
-| --- | ---: | --- |
-| `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json` | 2 | Short 10 Hz RTC realtime `rtc.stream` performance baseline. |
-| `apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json` | 2 | Longer 30 second, 5 Hz RTC realtime stability stream. |
-| `apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json` | 2 | Longer 30 second, 10 Hz RTC realtime stability stream. |
-| `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json` | 3 | Heavier three-agent realtime/load `rtc.stream` baseline. |
+| Manifest                                                                                   | Agents | Purpose                                                     |
+| ------------------------------------------------------------------------------------------ | -----: | ----------------------------------------------------------- |
+| `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json`                  |      2 | Short 10 Hz RTC realtime `rtc.stream` performance baseline. |
+| `apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json`      |      2 | Longer 30 second, 5 Hz RTC realtime stability stream.       |
+| `apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json` |      2 | Longer 30 second, 10 Hz RTC realtime stability stream.      |
+| `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json`                 |      3 | Heavier three-agent realtime/load `rtc.stream` baseline.    |
 
 Diagnostic manifests live under
 `apps/rallar-black-box/manifests/hetzner/diagnostic/` and are not part of the
 green run order:
 
-| Manifest | Agents | Purpose |
-| --- | ---: | --- |
-| `diagnostic/barrier-health-2-agent.json` | 2 | Validates synchronized barrier orchestration before start. |
-| `diagnostic/expected-failure-1-agent.json` | 1 | Intentionally fails to verify analyzer fix proposals and artifact capture. |
-| `diagnostic/rtc-realtime-2-agent-20hz-stress.json` | 2 | Strict 20 Hz realtime stress run for stream pacing and backlog diagnostics. |
+| Manifest                                           | Agents | Purpose                                                                     |
+| -------------------------------------------------- | -----: | --------------------------------------------------------------------------- |
+| `diagnostic/barrier-health-2-agent.json`           |      2 | Validates synchronized barrier orchestration before start.                  |
+| `diagnostic/expected-failure-1-agent.json`         |      1 | Intentionally fails to verify analyzer fix proposals and artifact capture.  |
+| `diagnostic/rtc-realtime-2-agent-20hz-stress.json` |      2 | Strict 20 Hz realtime stress run for stream pacing and backlog diagnostics. |
 
 Regenerate or verify the checked-in JSON from the TypeScript catalog:
 

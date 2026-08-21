@@ -2,7 +2,7 @@ import type { DistributedRunArtifactFiles } from './distributed-artifact-analysi
 import {
     distributedArtifactPipelineJsonRecord,
     parseDistributedArtifactPipeline,
-    type ParsedDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline
 } from './distributed-artifact-pipeline.ts';
 import type { DistributedArtifactWorkspaceIssue } from './distributed-artifact-workspace-contracts.ts';
 
@@ -13,17 +13,17 @@ type IdentityEvidence = Readonly<{
 }>;
 
 export function distributedArtifactIdentityIssues(
-    files: DistributedRunArtifactFiles,
+    files: DistributedRunArtifactFiles
 ): readonly DistributedArtifactWorkspaceIssue[] {
     return distributedArtifactIdentityIssuesFromParsed(
         parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files',
-        }),
+            projection: 'literal-loose-files'
+        })
     );
 }
 
 export function distributedArtifactIdentityIssuesFromParsed(
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): readonly DistributedArtifactWorkspaceIssue[] {
     const distributed = distributedArtifactPipelineJsonRecord(parsed, 'distributed-run.json');
     const embeddedManifest = record(distributed.manifest);
@@ -35,58 +35,63 @@ export function distributedArtifactIdentityIssuesFromParsed(
         {
             fileName: 'distributed-run.json',
             distributedRunId: string(distributed.distributedRunId),
-            controlRunId: string(distributed.controlRunId),
+            controlRunId: string(distributed.controlRunId)
         },
         {
             fileName: 'distributed-run.json#manifest',
             distributedRunId: string(embeddedManifest.distributedRunId),
-            controlRunId: string(embeddedManifest.controlRunId),
+            controlRunId: string(embeddedManifest.controlRunId)
         },
         {
             fileName: 'manifest.json',
             distributedRunId: string(manifest.distributedRunId),
-            controlRunId: string(manifest.controlRunId),
+            controlRunId: string(manifest.controlRunId)
         },
         {
             fileName: 'control-run.json',
-            controlRunId: string(controlRun.runId),
+            controlRunId: string(controlRun.runId)
         },
         {
             fileName: 'report.json',
             distributedRunId: string(report.distributedRunId),
-            controlRunId: string(report.controlRunId),
+            controlRunId: string(report.controlRunId)
         },
         {
             fileName: 'metadata.json',
             distributedRunId: string(metadata.distributedRunId),
-            controlRunId: string(metadata.controlRunId),
-        },
+            controlRunId: string(metadata.controlRunId)
+        }
     ];
     return [
         ...dimensionIssues(
             evidence,
             'distributedRunId',
-            'distributed run',
+            'distributed run'
         ),
-        ...dimensionIssues(evidence, 'controlRunId', 'control run'),
+        ...dimensionIssues(evidence, 'controlRunId', 'control run')
     ];
 }
 
 function dimensionIssues(
     evidence: readonly IdentityEvidence[],
     dimension: 'distributedRunId' | 'controlRunId',
-    label: string,
+    label: string
 ): DistributedArtifactWorkspaceIssue[] {
-    const canonical = evidence.find(item => item[dimension])?.[dimension];
-    if (!canonical) return [];
-    return evidence.flatMap(item => {
+    const canonical = evidence.find((item) => item[dimension])?.[dimension];
+    if (!canonical) {
+        return [];
+    }
+    return evidence.flatMap((item) => {
         const observed = item[dimension];
-        if (!observed || observed === canonical) return [];
+        if (!observed || observed === canonical) {
+            return [];
+        }
         return [{
             code: 'identity-conflict' as const,
             severity: 'error' as const,
             fileName: item.fileName.split('#')[0],
-            message: `${item.fileName} identifies ${label} ${observed}, but the imported artifact workspace identifies ${canonical}.`,
+            message:
+                `${item.fileName} identifies ${label} ${observed}, but the imported artifact workspace identifies ${canonical}.`
         }];
     });
 }

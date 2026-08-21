@@ -33,8 +33,8 @@ export type QuickRallarReceivedMessageRow = Readonly<{
 }>;
 
 export type QuickRallarPayloadResult =
-    | Readonly<{ ok: true }>
-    | Readonly<{ ok: false; error: string }>;
+    | Readonly<{ ok: true; }>
+    | Readonly<{ ok: false; error: string; }>;
 
 export type QuickRallarWorkflowStep = Readonly<{
     id: string;
@@ -76,7 +76,7 @@ export type QuickRallarTestViewModel = Readonly<{
     payloadResult: QuickRallarPayloadResult;
     updateValue<K extends keyof QuickRallarValues>(
         key: K,
-        value: QuickRallarValues[K],
+        value: QuickRallarValues[K]
     ): void;
     updateGroupId(groupId: string): void;
     createGroup(): Promise<void>;

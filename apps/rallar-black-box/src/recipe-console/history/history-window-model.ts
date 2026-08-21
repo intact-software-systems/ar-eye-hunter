@@ -1,24 +1,14 @@
-import {
-    projectDistributedRunHistoryLabels,
-    type DistributedRunHistoryLabels,
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
-    buildTuneRunCatalog,
-    type TuneQuarantineCode,
-    type TuneQuarantinedRun,
-} from '../tune/tune-run-catalog.ts';
-import {
-    historyRowSelectionActions,
-    type HistoryRowSelectionActions,
-} from './history-url-patches.ts';
-import type {
-    RecipeConsoleHistoryCollection,
-    RecipeConsoleHistoryProvenance,
-} from './history-window-collection.ts';
+    projectDistributedRunHistoryLabels,
+    type DistributedRunHistoryLabels
+} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { buildTuneRunCatalog, type TuneQuarantineCode, type TuneQuarantinedRun } from '../tune/tune-run-catalog.ts';
+import { historyRowSelectionActions, type HistoryRowSelectionActions } from './history-url-patches.ts';
+import type { RecipeConsoleHistoryCollection, RecipeConsoleHistoryProvenance } from './history-window-collection.ts';
 
 export const RECIPE_CONSOLE_HISTORY_WINDOW_SIZE = 80;
 
@@ -63,47 +53,49 @@ export type RecipeConsoleHistoryModel = Readonly<{
 
 export function deriveRecipeConsoleHistoryWindow(
     collection: RecipeConsoleHistoryCollection,
-    requestedStartIndex: number,
+    requestedStartIndex: number
 ): RecipeConsoleHistoryModel {
     const startIndex = boundedWindowStart(
         requestedStartIndex,
-        collection.counts.total,
+        collection.counts.total
     );
     const visible = collection.entries.slice(
         startIndex,
-        startIndex + RECIPE_CONSOLE_HISTORY_WINDOW_SIZE,
+        startIndex + RECIPE_CONSOLE_HISTORY_WINDOW_SIZE
     );
     const catalogRuns = visible
-        .map(entry => entry.run)
-        .filter(run => collection.distributedIdCounts.get(run.distributedRunId) === 1);
+        .map((entry) => entry.run)
+        .filter((run) => collection.distributedIdCounts.get(run.distributedRunId) === 1);
     const catalog = buildTuneRunCatalog({
         distributedRuns: catalogRuns,
         controlRuns: boundedCatalogControls(catalogRuns, collection.controlsById),
-        includePerformanceEvidence: false,
+        includePerformanceEvidence: false
     });
-    const optionById = new Map(catalog.options.map(option => [
+    const optionById = new Map(catalog.options.map((option) => [
         option.distributedRunId,
-        option,
+        option
     ]));
     const work = {
         projectedRows: 0,
         labelProjections: 0,
         catalogRunProjections: catalogRuns.length,
         actionProjections: 0,
-        controlAgentVisits: 0,
+        controlAgentVisits: 0
     };
     const rows = visible.map((entry): RecipeConsoleHistoryRow => {
         const run = entry.run;
         const quarantine = quarantineFor(
             catalog.quarantined,
             run,
-            collection.distributedIdCounts,
+            collection.distributedIdCounts
         );
         const option = quarantine ? undefined : optionById.get(run.distributedRunId);
         const controls = collection.controlsById.get(run.controlRunId) ?? [];
         const pairStatus = controls.length === 1
             ? 'paired' as const
-            : controls.length === 0 ? 'missing' as const : 'ambiguous' as const;
+            : controls.length === 0
+            ? 'missing' as const
+            : 'ambiguous' as const;
         const controlRun = pairStatus === 'paired' ? controls[0] : undefined;
         const connectedAgentCount = connectedAgents(controlRun, work);
         work.projectedRows += 1;
@@ -127,7 +119,7 @@ export function deriveRecipeConsoleHistoryWindow(
             quarantined: option === undefined && quarantine !== undefined,
             quarantineCodes: quarantine?.codes ?? [],
             issues: quarantine?.issues ?? [],
-            actions: historyRowSelectionActions(option),
+            actions: historyRowSelectionActions(option)
         };
     });
     return {
@@ -136,10 +128,10 @@ export function deriveRecipeConsoleHistoryWindow(
             available: collection.counts.available,
             total: collection.counts.total,
             rendered: rows.length,
-            omitted: collection.counts.total - rows.length,
+            omitted: collection.counts.total - rows.length
         },
         rows,
-        work: Object.freeze({ ...work }),
+        work: Object.freeze({ ...work })
     };
 }
 
@@ -149,19 +141,23 @@ function boundedWindowStart(requested: number, total: number): number {
         : 0;
     const pageStart = Math.floor(normalized / RECIPE_CONSOLE_HISTORY_WINDOW_SIZE) *
         RECIPE_CONSOLE_HISTORY_WINDOW_SIZE;
-    const lastStart = total === 0 ? 0 : Math.floor((total - 1) /
-        RECIPE_CONSOLE_HISTORY_WINDOW_SIZE) * RECIPE_CONSOLE_HISTORY_WINDOW_SIZE;
+    const lastStart = total === 0 ? 0 : Math.floor(
+        (total - 1) /
+            RECIPE_CONSOLE_HISTORY_WINDOW_SIZE
+    ) * RECIPE_CONSOLE_HISTORY_WINDOW_SIZE;
     return Math.min(pageStart, lastStart);
 }
 
 function boundedCatalogControls(
     runs: readonly ControlDistributedRunSnapshot[],
-    controlsById: ReadonlyMap<string, readonly ControlRunSnapshot[]>,
+    controlsById: ReadonlyMap<string, readonly ControlRunSnapshot[]>
 ): readonly ControlRunSnapshot[] {
     const controls: ControlRunSnapshot[] = [];
     const visited = new Set<string>();
     for (const run of runs) {
-        if (visited.has(run.controlRunId)) continue;
+        if (visited.has(run.controlRunId)) {
+            continue;
+        }
         visited.add(run.controlRunId);
         controls.push(...(controlsById.get(run.controlRunId) ?? []).slice(0, 2));
     }
@@ -171,17 +167,17 @@ function boundedCatalogControls(
 function quarantineFor(
     quarantined: readonly TuneQuarantinedRun[],
     run: ControlDistributedRunSnapshot,
-    distributedIdCounts: ReadonlyMap<string, number>,
+    distributedIdCounts: ReadonlyMap<string, number>
 ): TuneQuarantinedRun | undefined {
     if ((distributedIdCounts.get(run.distributedRunId) ?? 0) > 1) {
         return {
             key: 'history-duplicate',
             distributedRunId: run.distributedRunId,
             codes: ['ambiguous-run'],
-            issues: ['Duplicate distributed run identity is ambiguous.'],
+            issues: ['Duplicate distributed run identity is ambiguous.']
         };
     }
-    return quarantined.find(candidate =>
+    return quarantined.find((candidate) =>
         candidate.distributedRunId === run.distributedRunId &&
         (candidate.controlRunId === undefined || candidate.controlRunId === run.controlRunId)
     );
@@ -189,12 +185,14 @@ function quarantineFor(
 
 function connectedAgents(
     controlRun: ControlRunSnapshot | undefined,
-    work: { controlAgentVisits: number },
+    work: { controlAgentVisits: number; }
 ): number {
     let connected = 0;
     for (const agent of controlRun?.agents ?? []) {
         work.controlAgentVisits += 1;
-        if (agent.connected) connected += 1;
+        if (agent.connected) {
+            connected += 1;
+        }
     }
     return connected;
 }

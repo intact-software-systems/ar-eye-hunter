@@ -3,7 +3,7 @@ import {
     distributedArtifactSnapshotsFromPipeline,
     parseDistributedRunArtifactPipeline,
     type DistributedRunAnalysis,
-    type DistributedRunArtifactSnapshots,
+    type DistributedRunArtifactSnapshots
 } from './distributed-artifact-analysis.ts';
 import {
     createDistributedArtifactInventoryFromParsed,
@@ -12,23 +12,20 @@ import {
     distributedArtifactSchemaInventory,
     distributedArtifactWorkspaceSupport,
     identifyDistributedArtifactFamilyFromParsed,
-    inferredDistributedArtifactSchemaVersionFromParsed,
+    inferredDistributedArtifactSchemaVersionFromParsed
 } from './distributed-artifact-compatibility.ts';
 import { distributedArtifactIdentityIssuesFromParsed } from './distributed-artifact-identity.ts';
 import {
     parseDistributedArtifactPipeline,
-    type ParsedDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline
 } from './distributed-artifact-pipeline.ts';
-import type {
-    DistributedRunAnalysisReport,
-    DistributedRunMonitor,
-} from './distributed-run-monitor.ts';
 import {
     DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS,
     type DistributedArtifactWorkspace,
     type DistributedArtifactWorkspaceInput,
-    type DistributedArtifactWorkspaceIssue,
+    type DistributedArtifactWorkspaceIssue
 } from './distributed-artifact-workspace-contracts.ts';
+import type { DistributedRunAnalysisReport, DistributedRunMonitor } from './distributed-run-monitor.ts';
 
 export type {
     DistributedArtifactFamily,
@@ -39,11 +36,11 @@ export type {
     DistributedArtifactWorkspaceIssue,
     DistributedArtifactWorkspaceIssueCode,
     DistributedArtifactWorkspaceSource,
-    DistributedArtifactWorkspaceSupport,
+    DistributedArtifactWorkspaceSupport
 } from './distributed-artifact-workspace-contracts.ts';
 
 export function createDistributedArtifactWorkspace(
-    input: DistributedArtifactWorkspaceInput,
+    input: DistributedArtifactWorkspaceInput
 ): DistributedArtifactWorkspace {
     return deriveDistributedArtifactWorkspace(input).workspace;
 }
@@ -65,7 +62,7 @@ export type DerivedDistributedArtifactWorkspace = Readonly<{
 }>;
 
 export function deriveDistributedArtifactWorkspace(
-    input: DistributedArtifactWorkspaceInput,
+    input: DistributedArtifactWorkspaceInput
 ): DerivedDistributedArtifactWorkspace {
     const parsed = parseDistributedArtifactPipeline(input.files);
     const telemetry = {
@@ -73,20 +70,20 @@ export function deriveDistributedArtifactWorkspace(
         normalizedSnapshotCount: 0,
         bundleDerivationCount: 0,
         monitorDerivationCount: 0,
-        reportDerivationCount: 0,
+        reportDerivationCount: 0
     };
     const projection = parsed.projection;
     const files = projection.files;
     const family = identifyDistributedArtifactFamilyFromParsed(
         parsed,
-        projection.distributedRunId,
+        projection.distributedRunId
     );
     const issues: DistributedArtifactWorkspaceIssue[] = [];
     const inventory = createDistributedArtifactInventoryFromParsed(
         family,
         parsed,
         projection,
-        issues,
+        issues
     );
     const envelopeVersion = projection.artifactSchemaVersion;
     const hasSchemaConflict = input.artifactSchemaVersion !== undefined &&
@@ -97,47 +94,57 @@ export function deriveDistributedArtifactWorkspace(
         inferredDistributedArtifactSchemaVersionFromParsed(parsed, family);
 
     if (hasSchemaConflict) {
-        const message = `Caller schema version ${input.artifactSchemaVersion} conflicts with envelope schema version ${envelopeVersion}.`;
+        const message =
+            `Caller schema version ${input.artifactSchemaVersion} conflicts with envelope schema version ${envelopeVersion}.`;
         artifactSchemaVersion = undefined;
         inventory.push(distributedArtifactSchemaInventory('incompatible', message));
         issues.push({
-            code: 'schema-version-conflict', severity: 'error', message,
-            fileName: '$artifactSchemaVersion',
+            code: 'schema-version-conflict',
+            severity: 'error',
+            message,
+            fileName: '$artifactSchemaVersion'
         });
-    } else if (projection.invalidSchemaMessage) {
+    }
+    else if (projection.invalidSchemaMessage) {
         inventory.push(distributedArtifactSchemaInventory(
             'incompatible',
-            projection.invalidSchemaMessage,
+            projection.invalidSchemaMessage
         ));
         issues.push({
-            code: 'incompatible-file', severity: 'error',
+            code: 'incompatible-file',
+            severity: 'error',
             message: projection.invalidSchemaMessage,
-            fileName: projection.envelopeFileName,
+            fileName: projection.envelopeFileName
         });
-    } else if (
+    }
+    else if (
         artifactSchemaVersion !== undefined &&
         !DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS.has(artifactSchemaVersion)
     ) {
         const message = `Artifact schema version ${artifactSchemaVersion} is not supported.`;
         inventory.push(distributedArtifactSchemaInventory('unknown-version', message));
         issues.push({
-            code: 'unknown-schema-version', severity: 'error', message,
-            fileName: '$artifactSchemaVersion',
+            code: 'unknown-schema-version',
+            severity: 'error',
+            message,
+            fileName: '$artifactSchemaVersion'
         });
     }
     if (projection.fatalMessage) {
         issues.push({
-            code: projection.fatalCode ?? 'incompatible-file', severity: 'error',
+            code: projection.fatalCode ?? 'incompatible-file',
+            severity: 'error',
             message: projection.fatalMessage,
-            fileName: projection.envelopeFileName,
+            fileName: projection.envelopeFileName
         });
     }
     if (family !== 'distributed-run') {
         issues.push({
-            code: 'unsupported-family', severity: 'error',
+            code: 'unsupported-family',
+            severity: 'error',
             message: family === 'black-box-runner'
                 ? 'Generic black-box-runner artifacts use a separate reader and are not distributed-run artifacts.'
-                : 'The selected files do not identify a supported distributed-run artifact family.',
+                : 'The selected files do not identify a supported distributed-run artifact family.'
         });
     }
     const identityIssues = family === 'distributed-run'
@@ -154,9 +161,11 @@ export function deriveDistributedArtifactWorkspace(
         hasSchemaConflict,
         hasInvalidEnvelopeSchema: projection.invalidSchemaMessage !== undefined,
         hasFatalEnvelopeIssue: projection.fatalMessage !== undefined,
-        artifactSchemaVersion,
+        artifactSchemaVersion
     });
-    if (identityIssues.length > 0) support = 'incompatible';
+    if (identityIssues.length > 0) {
+        support = 'incompatible';
+    }
     let analysis: DistributedRunAnalysis | undefined;
     let snapshots: DistributedRunArtifactSnapshots | undefined;
     let bundle: DistributedArtifactWorkspace['bundle'];
@@ -173,7 +182,7 @@ export function deriveDistributedArtifactWorkspace(
                 parsed,
                 generatedAtEpochMs,
                 artifactSchemaVersion,
-                parsedFiles,
+                parsedFiles
             );
             telemetry.normalizedSnapshotCount += 1;
             telemetry.bundleDerivationCount += 1;
@@ -184,20 +193,20 @@ export function deriveDistributedArtifactWorkspace(
                 artifactSchemaVersion,
                 parsedFiles,
                 snapshots,
-                artifactBundle: bundle,
+                artifactBundle: bundle
             });
             analysis = analysisResult.analysis;
             monitor = analysisResult.monitor;
             report = analysisResult.report;
-            telemetry.monitorDerivationCount +=
-                analysisResult.telemetry.monitorDerivationCount;
-            telemetry.reportDerivationCount +=
-                analysisResult.telemetry.reportDerivationCount;
-        } catch (error) {
+            telemetry.monitorDerivationCount += analysisResult.telemetry.monitorDerivationCount;
+            telemetry.reportDerivationCount += analysisResult.telemetry.reportDerivationCount;
+        }
+        catch (error) {
             support = 'incompatible';
             issues.push({
-                code: 'analysis-failed', severity: 'error',
-                message: `Unable to analyze distributed-run artifacts: ${errorMessage(error)}`,
+                code: 'analysis-failed',
+                severity: 'error',
+                message: `Unable to analyze distributed-run artifacts: ${errorMessage(error)}`
             });
         }
     }
@@ -207,9 +216,12 @@ export function deriveDistributedArtifactWorkspace(
     ) {
         support = 'incompatible';
         issues.push({
-            code: 'identity-conflict', severity: 'error',
+            code: 'identity-conflict',
+            severity: 'error',
             fileName: projection.envelopeFileName,
-            message: `${projection.envelopeFileName ?? 'Artifact envelope'} declares distributed run ${projection.distributedRunId}, but distributed-run.json contains ${analysis.distributedRunId}.`,
+            message: `${
+                projection.envelopeFileName ?? 'Artifact envelope'
+            } declares distributed run ${projection.distributedRunId}, but distributed-run.json contains ${analysis.distributedRunId}.`
         });
     }
     const workspace = {
@@ -224,7 +236,7 @@ export function deriveDistributedArtifactWorkspace(
         issues,
         analysis,
         snapshots,
-        bundle,
+        bundle
     };
     return { parsed, workspace, monitor, report, telemetry };
 }

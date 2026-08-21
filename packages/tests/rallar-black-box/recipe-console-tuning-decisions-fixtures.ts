@@ -1,20 +1,17 @@
 import type {
     DistributedRunAnalysis,
     DistributedRunPerformanceAnalysis,
-    DistributedRunTargetResolutionAnalysis,
+    DistributedRunTargetResolutionAnalysis
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    inventoryDistributedRunTuningKnobs,
-    type DistributedRunTuningInventory,
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
 export function tuningManifest(input: Readonly<{
     commands?: readonly RallarBlackBoxTestCommand[];
     referenceOnly?: boolean;
     ackTimeoutMs?: number;
-    barrier?: Readonly<{ enabled?: boolean; timeoutMs?: number }>;
+    barrier?: Readonly<{ enabled?: boolean; timeoutMs?: number; }>;
 }> = {}): RallarBlackBoxDistributedRunManifest {
     const recipe = input.referenceOnly
         ? undefined
@@ -22,7 +19,7 @@ export function tuningManifest(input: Readonly<{
             schemaVersion: 1 as const,
             recipeId: 'tune-recipe',
             name: 'Tune recipe',
-            commands: input.commands ?? [streamCommand()],
+            commands: input.commands ?? [streamCommand()]
         };
     return {
         schemaVersion: 1,
@@ -31,21 +28,21 @@ export function tuningManifest(input: Readonly<{
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'tune-group',
+            groupId: 'tune-group'
         },
         recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
-            expectedParticipantCount: 2,
+            expectedParticipantCount: 2
         },
         roleAssignments: [
             { agentId: 'agent-a', role: 'sender', required: true },
-            { agentId: 'agent-b', role: 'receiver', required: true },
+            { agentId: 'agent-b', role: 'receiver', required: true }
         ],
         ackTimeoutMs: input.ackTimeoutMs ?? 5_000,
         barrier: input.barrier ?? { enabled: true, timeoutMs: 7_500 },
-        startMode: 'manual',
+        startMode: 'manual'
     };
 }
 
@@ -54,7 +51,7 @@ export function streamCommand(input: Readonly<{
     rateHz?: number;
     intervalMs?: number;
     thresholds?: Readonly<Record<string, number>>;
-}> = {}): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream' }> {
+}> = {}): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream'; }> {
     return {
         kind: 'rtc.stream',
         commandId: input.commandId ?? 'stream-position',
@@ -67,13 +64,13 @@ export function streamCommand(input: Readonly<{
         thresholds: {
             maxDroppedFrames: 5,
             maxP95SendDurationMs: 200,
-            ...input.thresholds,
-        },
+            ...input.thresholds
+        }
     };
 }
 
 export function tuningInventory(
-    manifest = tuningManifest(),
+    manifest = tuningManifest()
 ): DistributedRunTuningInventory {
     return inventoryDistributedRunTuningKnobs(manifest);
 }
@@ -95,19 +92,19 @@ export function tuningAnalysis(input: Readonly<{
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'tune-group',
+            groupId: 'tune-group'
         },
         summary: {
             agents: 2,
             passRate: ok ? 1 : 0.5,
             failureGroups: input.failure ? 1 : 0,
-            blockingFailures: input.failure ? 1 : 0,
+            blockingFailures: input.failure ? 1 : 0
         },
         parseWarnings: [],
         failure: input.failure,
         performance: input.performance,
         targetResolution: input.targetResolution,
-        summaryMarkdown: '',
+        summaryMarkdown: ''
     };
 }
 
@@ -141,13 +138,13 @@ export function tuningPerformance(input: Readonly<{
             maxMs: 140,
             averageMs: 55,
             spreadRatio: 2,
-            outlierCount: 1,
+            outlierCount: 1
         },
         slowestAgents: [
             { agentId: 'agent-a', streamCount: 1, plannedFrames: 100, completedFrames: 100, maxMs: 500 },
-            { agentId: 'agent-b', streamCount: 1, plannedFrames: 100, completedFrames: 100, maxMs: 100 },
+            { agentId: 'agent-b', streamCount: 1, plannedFrames: 100, completedFrames: 100, maxMs: 100 }
         ],
-        ...input.stream,
+        ...input.stream
     } satisfies NonNullable<DistributedRunPerformanceAnalysis['streamTiming']>;
     return {
         runDurationMs: 10_000,
@@ -172,18 +169,18 @@ export function tuningPerformance(input: Readonly<{
             maxMs: input.commandP95Ms ?? 200,
             averageMs: 125,
             spreadRatio: 2,
-            outlierCount: 1,
+            outlierCount: 1
         },
         streamTiming: stream,
         slowestAgents: input.slowestAgents ?? [
             { agentId: 'agent-a', commandCount: 2, averageMs: 1_000, maxMs: 2_000 },
-            { agentId: 'agent-b', commandCount: 2, averageMs: 250, maxMs: 500 },
-        ],
+            { agentId: 'agent-b', commandCount: 2, averageMs: 250, maxMs: 500 }
+        ]
     };
 }
 
 export function targetResolution(
-    overrides: Partial<DistributedRunTargetResolutionAnalysis> = {},
+    overrides: Partial<DistributedRunTargetResolutionAnalysis> = {}
 ): DistributedRunTargetResolutionAnalysis {
     return {
         selected: 2,
@@ -199,13 +196,13 @@ export function targetResolution(
         providers: { browser: 2 },
         targetAgentIds: ['agent-a', 'agent-b'],
         blockingAgentIds: [],
-        ...overrides,
+        ...overrides
     };
 }
 
 export function failure(
     category: string,
-    title: string,
+    title: string
 ): NonNullable<DistributedRunAnalysis['failure']> {
     return {
         category,
@@ -216,6 +213,6 @@ export function failure(
         verificationCommand: 'npm test',
         affectedAgents: [],
         affectedRegions: [],
-        evidenceFile: 'results.jsonl',
+        evidenceFile: 'results.jsonl'
     };
 }

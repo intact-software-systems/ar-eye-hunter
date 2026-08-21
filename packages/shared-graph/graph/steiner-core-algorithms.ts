@@ -3,7 +3,7 @@ import { compareVertexIds, VertexId, VertexSet, WeightedGraph } from '../graph-p
 export const CoreSelectionAlgo = {
     MEDIAN_DISTANCE: 'MEDIAN_DISTANCE',
     AVERAGE_DISTANCE: 'AVERAGE_DISTANCE',
-    CENTER_SELECTION: 'CENTER_SELECTION',
+    CENTER_SELECTION: 'CENTER_SELECTION'
 } as const;
 
 export type CoreSelectionAlgo = (typeof CoreSelectionAlgo)[keyof typeof CoreSelectionAlgo];
@@ -19,7 +19,7 @@ export function findWCNodes(
     relativeSet: VertexSet,
     excludeSet: VertexSet,
     k: number,
-    algo: CoreSelectionAlgo,
+    algo: CoreSelectionAlgo
 ): VertexId[] {
     if (k <= 0) {
         return [];
@@ -31,7 +31,7 @@ export function findWCNodes(
                 nodeSearchSet,
                 relativeSet,
                 excludeSet,
-                k,
+                k
             );
 
         case CoreSelectionAlgo.CENTER_SELECTION:
@@ -40,7 +40,7 @@ export function findWCNodes(
                 nodeSearchSet,
                 relativeSet,
                 excludeSet,
-                k,
+                k
             );
 
         case CoreSelectionAlgo.MEDIAN_DISTANCE:
@@ -49,7 +49,7 @@ export function findWCNodes(
                 nodeSearchSet,
                 relativeSet,
                 excludeSet,
-                k,
+                k
             );
 
         default:
@@ -62,7 +62,7 @@ export function kMedianNodes(
     nodeSearchSet: VertexSet,
     relativeSet: VertexSet,
     excludeSet: VertexSet,
-    k: number,
+    k: number
 ): VertexId[] {
     const ranked: RankedNode[] = [];
 
@@ -70,10 +70,14 @@ export function kMedianNodes(
         let sumWeight = 0;
 
         for (const other of relativeSet) {
-            if (node === other) continue;
+            if (node === other) {
+                continue;
+            }
 
             const edgeKey = graph.edge(node, other);
-            if (edgeKey === undefined) continue;
+            if (edgeKey === undefined) {
+                continue;
+            }
 
             const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
             sumWeight += weight;
@@ -81,7 +85,7 @@ export function kMedianNodes(
 
         ranked.push({
             node,
-            score: sumWeight,
+            score: sumWeight
         });
     }
 
@@ -89,10 +93,14 @@ export function kMedianNodes(
 
     const selected: VertexId[] = [];
     for (const entry of ranked) {
-        if (excludeSet.has(entry.node)) continue;
+        if (excludeSet.has(entry.node)) {
+            continue;
+        }
 
         selected.push(entry.node);
-        if (selected.length >= k) break;
+        if (selected.length >= k) {
+            break;
+        }
     }
 
     return selected;
@@ -103,27 +111,29 @@ export function kCenterNodes(
     nodeSearchSet: VertexSet,
     relativeSet: VertexSet,
     excludeSet: VertexSet,
-    k: number,
+    k: number
 ): VertexId[] {
     if (k <= 0 || relativeSet.size === 0) {
         return [];
     }
 
-    const ranked: Array<{ node: VertexId; eccentricity: number }> = [];
-    const expectedFullMeshEdges =
-        (nodeSearchSet.size * (nodeSearchSet.size - 1)) / 2;
-    const isFullMesh =
-        countEdgesWithinSubset(graph, nodeSearchSet) === expectedFullMeshEdges;
+    const ranked: Array<{ node: VertexId; eccentricity: number; }> = [];
+    const expectedFullMeshEdges = (nodeSearchSet.size * (nodeSearchSet.size - 1)) / 2;
+    const isFullMesh = countEdgesWithinSubset(graph, nodeSearchSet) === expectedFullMeshEdges;
 
     if (isFullMesh) {
         for (const node of nodeSearchSet) {
             let worstCaseDistance = 0;
 
             for (const other of relativeSet) {
-                if (node === other) continue;
+                if (node === other) {
+                    continue;
+                }
 
                 const edgeKey = graph.edge(node, other);
-                if (edgeKey === undefined) continue;
+                if (edgeKey === undefined) {
+                    continue;
+                }
 
                 const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
                 if (weight > worstCaseDistance) {
@@ -133,7 +143,8 @@ export function kCenterNodes(
 
             ranked.push({ node, eccentricity: worstCaseDistance });
         }
-    } else {
+    }
+    else {
         for (const node of nodeSearchSet) {
             let worstCaseDistance = 0;
 
@@ -146,16 +157,19 @@ export function kCenterNodes(
     }
 
     ranked.sort(
-        (a, b) =>
-            a.eccentricity - b.eccentricity || compareVertexIds(a.node, b.node),
+        (a, b) => a.eccentricity - b.eccentricity || compareVertexIds(a.node, b.node)
     );
 
     const selected: VertexId[] = [];
     for (const entry of ranked) {
-        if (excludeSet.has(entry.node)) continue;
+        if (excludeSet.has(entry.node)) {
+            continue;
+        }
 
         selected.push(entry.node);
-        if (selected.length >= k) break;
+        if (selected.length >= k) {
+            break;
+        }
     }
 
     return selected;
@@ -166,7 +180,7 @@ export function findkBestLocatedNodesNotInSetsMedian(
     nodeSearchSet: VertexSet,
     relativeSet: VertexSet,
     excludeSet: VertexSet,
-    k: number,
+    k: number
 ): VertexId[] {
     const ranked: RankedNode[] = [];
 
@@ -174,23 +188,29 @@ export function findkBestLocatedNodesNotInSetsMedian(
         const weights: number[] = [];
 
         for (const other of relativeSet) {
-            if (node === other) continue;
+            if (node === other) {
+                continue;
+            }
 
             const edgeKey = graph.edge(node, other);
-            if (edgeKey === undefined) continue;
+            if (edgeKey === undefined) {
+                continue;
+            }
 
             const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
             weights.push(weight);
         }
 
-        if (weights.length === 0) continue;
+        if (weights.length === 0) {
+            continue;
+        }
 
         weights.sort((a, b) => a - b);
         const medianIndex = Math.floor(weights.length / 2);
 
         ranked.push({
             node,
-            score: weights[medianIndex],
+            score: weights[medianIndex]
         });
     }
 
@@ -198,10 +218,14 @@ export function findkBestLocatedNodesNotInSetsMedian(
 
     const selected: VertexId[] = [];
     for (const entry of ranked) {
-        if (excludeSet.has(entry.node)) continue;
+        if (excludeSet.has(entry.node)) {
+            continue;
+        }
 
         selected.push(entry.node);
-        if (selected.length >= k) break;
+        if (selected.length >= k) {
+            break;
+        }
     }
 
     return selected;
@@ -210,7 +234,7 @@ export function findkBestLocatedNodesNotInSetsMedian(
 function eccentricityDistance(
     graph: WeightedGraph,
     relativeSet: VertexSet,
-    source: VertexId,
+    source: VertexId
 ): number {
     const distances = dijkstraDistances(graph, relativeSet, source);
 
@@ -228,7 +252,7 @@ function eccentricityDistance(
 function dijkstraDistances(
     graph: WeightedGraph,
     allowed: VertexSet,
-    source: VertexId,
+    source: VertexId
 ): Map<VertexId, number> {
     const distances = new Map<VertexId, number>();
     const visited = new Set<VertexId>();
@@ -246,7 +270,9 @@ function dijkstraDistances(
         let bestDistance = Number.POSITIVE_INFINITY;
 
         for (const node of frontier) {
-            if (visited.has(node)) continue;
+            if (visited.has(node)) {
+                continue;
+            }
 
             const d = distances.get(node) ?? Number.POSITIVE_INFINITY;
             if (d < bestDistance) {
@@ -262,11 +288,17 @@ function dijkstraDistances(
         visited.add(current);
 
         graph.forEachNeighbor(current, (neighbor: string) => {
-            if (!frontier.has(neighbor)) return;
-            if (visited.has(neighbor)) return;
+            if (!frontier.has(neighbor)) {
+                return;
+            }
+            if (visited.has(neighbor)) {
+                return;
+            }
 
             const edgeKey = graph.edge(current!, neighbor);
-            if (edgeKey === undefined) return;
+            if (edgeKey === undefined) {
+                return;
+            }
 
             const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
             const alt = bestDistance + weight;
@@ -283,7 +315,7 @@ function dijkstraDistances(
 
 function countEdgesWithinSubset(
     graph: WeightedGraph,
-    subset: VertexSet,
+    subset: VertexSet
 ): number {
     let count = 0;
 

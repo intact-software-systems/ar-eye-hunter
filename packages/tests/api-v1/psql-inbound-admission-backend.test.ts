@@ -1,13 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    createALInboundAdmissionStore,
-    createALOutboundAdmissionStore,
-    newALAckControlMessage,
-    newALUnicastMessage,
-} from '@shared/mod.ts';
 import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
 import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
+import { createALInboundAdmissionStore, createALOutboundAdmissionStore, newALAckControlMessage, newALUnicastMessage } from '@shared/mod.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 afterEach(() => {
@@ -27,26 +22,26 @@ describe('PSqlInboundAdmissionBackend', () => {
                 namespace,
                 `${prefix}${String(index).padStart(6, '0')}`,
                 JSON.stringify({ index }),
-                Date.now() + 60_000,
+                Date.now() + 60_000
             );
         }
         await repository.upsert(
             namespace,
             'other:000001',
             JSON.stringify({ index: -1 }),
-            Date.now() + 60_000,
+            Date.now() + 60_000
         );
 
-        const values = await backend.list<{ index: number }>(prefix);
+        const values = await backend.list<{ index: number; }>(prefix);
 
         expect(values).toHaveLength(total);
         expect(values[0]).toEqual({
             key: 'effect:000000',
-            value: { index: 0 },
+            value: { index: 0 }
         });
         expect(values.at(-1)).toEqual({
             key: `effect:${String(total - 1).padStart(6, '0')}`,
-            value: { index: total - 1 },
+            value: { index: total - 1 }
         });
         expect(repository.findEntriesByPrefixCalls).toEqual([]);
         expect(repository.findEntriesByPrefixPageCalls).toEqual([
@@ -54,14 +49,14 @@ describe('PSqlInboundAdmissionBackend', () => {
                 namespace,
                 keyPrefix: prefix,
                 afterKey: undefined,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
             },
             {
                 namespace,
                 keyPrefix: prefix,
                 afterKey: `effect:${String(RUNTIME_STATE_PREFIX_READ_PAGE_SIZE - 1).padStart(6, '0')}`,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
-            },
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
+            }
         ]);
     });
 
@@ -73,7 +68,7 @@ describe('PSqlInboundAdmissionBackend', () => {
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000,
+            supersedenceTrackTtlMs: 5 * 60_000
         });
 
         const status = await store.commitMutations({
@@ -83,9 +78,9 @@ describe('PSqlInboundAdmissionBackend', () => {
                 {
                     kind: 'set-msg-owner',
                     msgId: 'msg-1',
-                    senderId: 'peer-1',
-                },
-            ],
+                    senderId: 'peer-1'
+                }
+            ]
         });
 
         expect(status).toBe('committed');
@@ -96,7 +91,7 @@ describe('PSqlInboundAdmissionBackend', () => {
         expect(versionEntry).toBeDefined();
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'peer-1',
-            version: 1,
+            version: 1
         });
     });
 
@@ -108,7 +103,7 @@ describe('PSqlInboundAdmissionBackend', () => {
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000,
+            supersedenceTrackTtlMs: 5 * 60_000
         });
 
         await store.commitMutations({
@@ -118,14 +113,14 @@ describe('PSqlInboundAdmissionBackend', () => {
                 {
                     kind: 'set-msg-owner',
                     msgId: 'msg-1',
-                    senderId: 'peer-1',
-                },
-            ],
+                    senderId: 'peer-1'
+                }
+            ]
         });
         repository.lockedKeys.length = 0;
 
         const acceptance = await store.acceptControlMessage(
-            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered'),
+            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered')
         );
 
         expect(acceptance.handled).toBe(true);
@@ -134,7 +129,7 @@ describe('PSqlInboundAdmissionBackend', () => {
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'peer-1',
-            version: 2,
+            version: 2
         });
 
         const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1`);
@@ -155,15 +150,15 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 namespace,
                 `${prefix}${String(index).padStart(6, '0')}`,
                 JSON.stringify({ index }),
-                Date.now() + 60_000,
+                Date.now() + 60_000
             );
         }
 
-        const values = await backend.list<{ index: number }>(prefix);
+        const values = await backend.list<{ index: number; }>(prefix);
 
         expect(values).toHaveLength(total);
         expect(values.map((entry) => entry.value.index)).toEqual(
-            Array.from({ length: total }, (_, index) => index),
+            Array.from({ length: total }, (_, index) => index)
         );
         expect(repository.findEntriesByPrefixCalls).toEqual([]);
         expect(repository.findEntriesByPrefixPageCalls).toEqual([
@@ -171,14 +166,14 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 namespace,
                 keyPrefix: prefix,
                 afterKey: undefined,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
             },
             {
                 namespace,
                 keyPrefix: prefix,
                 afterKey: `sent:${String(RUNTIME_STATE_PREFIX_READ_PAGE_SIZE - 1).padStart(6, '0')}`,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
-            },
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
+            }
         ]);
     });
 
@@ -189,13 +184,13 @@ describe('PSqlOutboundAdmissionBackend', () => {
             kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 5 * 60_000,
+            supersedenceTrackTtlMs: 5 * 60_000
         });
         const msg = createOutboundMessage('msg-outbound-1');
         const effectId = `send:${msg.id.msgId}`;
         const prepared = {
             kind: 'send',
-            msgId: msg.id.msgId,
+            msgId: msg.id.msgId
         } satisfies TestPreparedOutboundSend;
 
         const status = await store.commitBundle({
@@ -205,8 +200,8 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 {
                     kind: 'set-msg-owner',
                     msgId: msg.id.msgId,
-                    senderId: 'self',
-                },
+                    senderId: 'self'
+                }
             ],
             durableEffects: [
                 {
@@ -216,10 +211,10 @@ describe('PSqlOutboundAdmissionBackend', () => {
                         kind: 'send-prepared',
                         msg,
                         prepared,
-                        phase: 'immediate',
-                    },
-                },
-            ],
+                        phase: 'immediate'
+                    }
+                }
+            ]
         });
 
         expect(status).toBe('committed');
@@ -228,12 +223,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
-            version: 1,
+            version: 1
         });
 
         const effectEntry = await repository.findEntry(
             namespace,
-            `${namespace}:effect:${effectId}`,
+            `${namespace}:effect:${effectId}`
         );
         expect(effectEntry).toBeDefined();
         expect(JSON.parse(effectEntry!.value)).toMatchObject({
@@ -241,8 +236,8 @@ describe('PSqlOutboundAdmissionBackend', () => {
             status: 'pending',
             attempts: 0,
             payload: {
-                kind: 'send-prepared',
-            },
+                kind: 'send-prepared'
+            }
         });
 
         repository.lockedKeys.length = 0;
@@ -250,7 +245,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
             'worker-1',
             1,
             10_000,
-            Date.now(),
+            Date.now()
         );
 
         expect(claimed).toHaveLength(1);
@@ -259,7 +254,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
 
         await store.completeEffect(effectId, 'worker-1');
         expect(
-            await repository.findEntry(namespace, `${namespace}:effect:${effectId}`),
+            await repository.findEntry(namespace, `${namespace}:effect:${effectId}`)
         ).toBeUndefined();
     });
 
@@ -270,7 +265,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
             kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 5 * 60_000,
+            supersedenceTrackTtlMs: 5 * 60_000
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -281,15 +276,15 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 {
                     kind: 'set-msg-owner',
                     msgId: msg.id.msgId,
-                    senderId: 'self',
-                },
+                    senderId: 'self'
+                }
             ],
-            durableEffects: [],
+            durableEffects: []
         });
         repository.lockedKeys.length = 0;
 
         const acceptance = await store.acceptControlMessage(
-            newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+            newALAckControlMessage('peer-1', 'self', msg.id.msgId)
         );
 
         expect(acceptance.handled).toBe(true);
@@ -298,12 +293,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
-            version: 2,
+            version: 2
         });
 
         const ackEntry = await repository.findEntry(
             namespace,
-            `${namespace}:control:acks:${msg.id.msgId}`,
+            `${namespace}:control:acks:${msg.id.msgId}`
         );
         expect(ackEntry).toBeDefined();
     });
@@ -311,12 +306,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
     it('wires PostgreSQL outbound admission into the server runtime store factory', async () => {
         const { createPSqlALOutboundRuntimeStores } = await import(
             '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts'
-            );
+        );
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:factory';
         const stores = createPSqlALOutboundRuntimeStores({
             namespace,
-            repository,
+            repository
         });
         const msg = createOutboundMessage('msg-factory');
 
@@ -328,20 +323,20 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 {
                     kind: 'set-msg-owner',
                     msgId: msg.id.msgId,
-                    senderId: 'self',
-                },
+                    senderId: 'self'
+                }
             ],
-            durableEffects: [],
+            durableEffects: []
         });
 
         const admissionNamespace = `${namespace}:outbound:admission`;
         const versionEntry = await repository.findEntry(
             admissionNamespace,
-            `${admissionNamespace}:version:self`,
+            `${admissionNamespace}:version:self`
         );
         expect(JSON.parse(versionEntry!.value)).toEqual({
             senderId: 'self',
-            version: 1,
+            version: 1
         });
     });
 });
@@ -352,13 +347,13 @@ function createOutboundMessage(resourceId: string) {
         {
             topicId: 'chat',
             resourceId,
-            contextId: 'conversation-1',
+            contextId: 'conversation-1'
         },
         'peer-1',
         'chat.private-text.v1',
         {
-            text: resourceId,
-        },
+            text: resourceId
+        }
     );
 }
 

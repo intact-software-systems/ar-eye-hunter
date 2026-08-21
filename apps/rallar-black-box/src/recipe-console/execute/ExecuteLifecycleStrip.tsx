@@ -1,5 +1,4 @@
-import type { RallarBlackBoxDistributedRunState } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedRunState } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { ExecuteNextStep } from './execute-next-action.ts';
 import styles from './ExecuteLifecycleStrip.module.css';
 
@@ -9,12 +8,12 @@ const PHASES = [
     ['draft', 'Draft'],
     ['staged', 'Staged'],
     ['running', 'Running'],
-    ['monitor', 'Monitor'],
+    ['monitor', 'Monitor']
 ] as const;
 
 export function ExecuteLifecycleStrip({
     nextStep,
-    runState,
+    runState
 }: Readonly<{
     nextStep: ExecuteNextStep;
     runState?: RallarBlackBoxDistributedRunState;
@@ -26,7 +25,9 @@ export function ExecuteLifecycleStrip({
             {PHASES.map(([phase, label], index) => {
                 const status = phase === current
                     ? 'current'
-                    : index <= completeThrough ? 'complete' : 'future';
+                    : index <= completeThrough
+                    ? 'complete'
+                    : 'future';
                 return (
                     <li
                         aria-current={status === 'current' ? 'step' : undefined}
@@ -46,29 +47,43 @@ function currentPhase(step: ExecuteNextStep): typeof PHASES[number][0] {
     switch (step) {
         case 'refresh-control':
         case 'connect-agents':
-        case 'registering': return 'agents';
-        case 'resolve': return 'targets';
-        case 'create': return 'draft';
+        case 'registering':
+            return 'agents';
+        case 'resolve':
+            return 'targets';
+        case 'create':
+            return 'draft';
         case 'stage':
-        case 'waiting-for-ack': return 'staged';
-        case 'review-start': return 'running';
-        case 'monitor': return 'monitor';
+        case 'waiting-for-ack':
+            return 'staged';
+        case 'review-start':
+            return 'running';
+        case 'monitor':
+            return 'monitor';
     }
 }
 
 function completedPhaseIndex(
     step: ExecuteNextStep,
-    runState: RallarBlackBoxDistributedRunState | undefined,
+    runState: RallarBlackBoxDistributedRunState | undefined
 ): number {
-    if (step === 'monitor') return runState ? 4 : 3;
+    if (step === 'monitor') {
+        return runState ? 4 : 3;
+    }
     switch (step) {
         case 'refresh-control':
         case 'connect-agents':
-        case 'registering': return -1;
-        case 'resolve': return 0;
-        case 'create': return 1;
-        case 'stage': return 2;
-        case 'waiting-for-ack': return 2;
-        case 'review-start': return 3;
+        case 'registering':
+            return -1;
+        case 'resolve':
+            return 0;
+        case 'create':
+            return 1;
+        case 'stage':
+            return 2;
+        case 'waiting-for-ack':
+            return 2;
+        case 'review-start':
+            return 3;
     }
 }

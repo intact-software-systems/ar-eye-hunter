@@ -7,7 +7,7 @@ import {
     BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG,
     BLACK_BOX_RUNNER_COVERAGE_HANDOFF,
     toBlackBoxRunnerRecipeCatalog,
-    type BlackBoxRunnerRecipeMatrix,
+    type BlackBoxRunnerRecipeMatrix
 } from '../../shared-test/black-box-runner/artifacts/handoff-contract.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
@@ -20,12 +20,10 @@ function readMatrix(): BlackBoxRunnerRecipeMatrix {
 describe('black-box runner command-center handoff contract', () => {
     it('normalizes recipe matrix entries into command-center catalog entries', () => {
         const catalog = toBlackBoxRunnerRecipeCatalog(readMatrix());
-        const memoryTraffic = catalog.entries.find(entry => entry.id === 'memory-seeded-traffic');
-        const browserLive = catalog.entries.find(entry => entry.id === 'browser-realtime-live');
-        const liveSoak = catalog.entries.find(entry =>
-            entry.id === 'browser-messages-rtc-same-connection-soak-live'
-        );
-        const expectedFailure = catalog.entries.find(entry => entry.id === 'memory-routing-failures');
+        const memoryTraffic = catalog.entries.find((entry) => entry.id === 'memory-seeded-traffic');
+        const browserLive = catalog.entries.find((entry) => entry.id === 'browser-realtime-live');
+        const liveSoak = catalog.entries.find((entry) => entry.id === 'browser-messages-rtc-same-connection-soak-live');
+        const expectedFailure = catalog.entries.find((entry) => entry.id === 'memory-routing-failures');
 
         expect(catalog.version).toBe(1);
         expect(memoryTraffic).toMatchObject({
@@ -34,18 +32,18 @@ describe('black-box runner command-center handoff contract', () => {
             expectedResult: 'pass',
             support: {
                 deterministic: true,
-                replayArtifacts: true,
-            },
+                replayArtifacts: true
+            }
         });
-        expect(memoryTraffic?.commands.some(command => command.command.includes('--id=memory-seeded-traffic')))
+        expect(memoryTraffic?.commands.some((command) => command.command.includes('--id=memory-seeded-traffic')))
             .toBe(true);
 
         expect(browserLive).toMatchObject({
             providerMode: 'rallar-browser',
             liveSupport: 'gated-live',
             prerequisites: {
-                requiresPlaywright: true,
-            },
+                requiresPlaywright: true
+            }
         });
         expect(browserLive?.prerequisites.requiredEnvVars).toContain('RALLAR_API_BASE_URL');
 
@@ -53,30 +51,24 @@ describe('black-box runner command-center handoff contract', () => {
             providerMode: 'rallar-browser',
             liveSupport: 'gated-live',
             support: {
-                live: true,
-            },
+                live: true
+            }
         });
-        expect(liveSoak?.commands.some(command =>
-            command.command.includes('test:shared-black-box:matrix:live:soak')
-        )).toBe(true);
+        expect(liveSoak?.commands.some((command) => command.command.includes('test:shared-black-box:matrix:live:soak'))).toBe(true);
 
         expect(expectedFailure).toMatchObject({
-            expectedResult: 'expected-failure',
+            expectedResult: 'expected-failure'
         });
     });
 
     it('ships a small static fixture catalog that only references matrix recipe ids', () => {
-        const matrixIds = new Set(readMatrix().entries.map(entry => entry.id));
-        const fixtureIds = BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG.entries.map(entry => entry.id);
+        const matrixIds = new Set(readMatrix().entries.map((entry) => entry.id));
+        const fixtureIds = BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG.entries.map((entry) => entry.id);
 
         expect(fixtureIds.length).toBeGreaterThanOrEqual(4);
-        expect(fixtureIds.every(id => matrixIds.has(id))).toBe(true);
-        expect(BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG.entries.some(entry =>
-            entry.liveSupport === 'gated-live'
-        )).toBe(true);
-        expect(BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG.entries.every(entry =>
-            entry.commands.length > 0 && entry.artifactName.length > 0
-        )).toBe(true);
+        expect(fixtureIds.every((id) => matrixIds.has(id))).toBe(true);
+        expect(BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG.entries.some((entry) => entry.liveSupport === 'gated-live')).toBe(true);
+        expect(BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG.entries.every((entry) => entry.commands.length > 0 && entry.artifactName.length > 0)).toBe(true);
     });
 
     it('documents artifact files and coverage ownership for SPA artifact browsing', () => {
@@ -84,7 +76,7 @@ describe('black-box runner command-center handoff contract', () => {
             'report.json',
             'events.jsonl',
             'failures.json',
-            'metadata.json',
+            'metadata.json'
         ]);
         expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles)
             .toContain('artifact-index.json');
@@ -100,7 +92,7 @@ describe('black-box runner command-center handoff contract', () => {
         expect(BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.eventStream.truncationEventKind)
             .toBe('artifact-truncated');
 
-        const owners = BLACK_BOX_RUNNER_COVERAGE_HANDOFF.map(entry => entry.owner);
+        const owners = BLACK_BOX_RUNNER_COVERAGE_HANDOFF.map((entry) => entry.owner);
 
         expect(owners).toContain('black-box-runner');
         expect(owners).toContain('rallar-bb-test');

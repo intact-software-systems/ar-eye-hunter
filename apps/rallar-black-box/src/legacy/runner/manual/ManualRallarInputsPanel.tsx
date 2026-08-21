@@ -1,14 +1,14 @@
 import {
     MANUAL_PAYLOAD_PRESETS,
     type ManualDeliveryMode,
-    type ManualWorkbenchTransport,
+    type ManualWorkbenchTransport
 } from '../../../manual-workbench.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import type { ManualRallarWorkbenchModel } from './use-manual-rallar-workbench.ts';
 
 export function ManualRallarInputsPanel({
     busy,
-    model,
+    model
 }: {
     busy: boolean;
     model: ManualRallarWorkbenchModel;
@@ -21,7 +21,7 @@ export function ManualRallarInputsPanel({
         updateValue,
         selectPreset,
         setPayloadPresetId,
-        setPayloadText,
+        setPayloadText
     } = model;
 
     return (
@@ -35,9 +35,7 @@ export function ManualRallarInputsPanel({
                         <span>Environment</span>
                         <input
                             value={values.environment}
-                            onChange={(event) =>
-                                updateValue('environment', event.target.value)
-                            }
+                            onChange={(event) => updateValue('environment', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -45,9 +43,7 @@ export function ManualRallarInputsPanel({
                         <span>API Base URL</span>
                         <input
                             value={values.apiBaseUrl}
-                            onChange={(event) =>
-                                updateValue('apiBaseUrl', event.target.value)
-                            }
+                            onChange={(event) => updateValue('apiBaseUrl', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -55,9 +51,7 @@ export function ManualRallarInputsPanel({
                         <span>Application</span>
                         <input
                             value={values.applicationId}
-                            onChange={(event) =>
-                                updateValue('applicationId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('applicationId', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -65,9 +59,7 @@ export function ManualRallarInputsPanel({
                         <span>Workspace</span>
                         <input
                             value={values.workspaceId}
-                            onChange={(event) =>
-                                updateValue('workspaceId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('workspaceId', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -75,9 +67,7 @@ export function ManualRallarInputsPanel({
                         <span>Actor</span>
                         <input
                             value={values.actor}
-                            onChange={(event) =>
-                                updateValue('actor', event.target.value)
-                            }
+                            onChange={(event) => updateValue('actor', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -85,9 +75,7 @@ export function ManualRallarInputsPanel({
                         <span>Session</span>
                         <input
                             value={values.sessionId}
-                            onChange={(event) =>
-                                updateValue('sessionId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('sessionId', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -95,9 +83,7 @@ export function ManualRallarInputsPanel({
                         <span>Group</span>
                         <input
                             value={values.groupId}
-                            onChange={(event) =>
-                                updateValue('groupId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('groupId', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -105,9 +91,7 @@ export function ManualRallarInputsPanel({
                         <span>Scope JSON</span>
                         <input
                             value={values.scopeText}
-                            onChange={(event) =>
-                                updateValue('scopeText', event.target.value)
-                            }
+                            onChange={(event) => updateValue('scopeText', event.target.value)}
                             disabled={busy}
                             placeholder='{"workspaceId":"default"}'
                         />
@@ -116,9 +100,7 @@ export function ManualRallarInputsPanel({
                         <span>Room Ref JSON</span>
                         <input
                             value={values.roomRefText}
-                            onChange={(event) =>
-                                updateValue('roomRefText', event.target.value)
-                            }
+                            onChange={(event) => updateValue('roomRefText', event.target.value)}
                             disabled={busy}
                             placeholder='{"groupId":"bb-group"}'
                         />
@@ -132,9 +114,8 @@ export function ManualRallarInputsPanel({
                             onChange={(event) =>
                                 updateValue(
                                     'minSnapshotVersion',
-                                    Number(event.target.value),
-                                )
-                            }
+                                    Number(event.target.value)
+                                )}
                             disabled={busy}
                         />
                     </label>
@@ -142,9 +123,7 @@ export function ManualRallarInputsPanel({
                         <span>Connection</span>
                         <input
                             value={values.connection}
-                            onChange={(event) =>
-                                updateValue('connection', event.target.value)
-                            }
+                            onChange={(event) => updateValue('connection', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -156,9 +135,8 @@ export function ManualRallarInputsPanel({
                                 updateValue(
                                     'transport',
                                     event.target
-                                        .value as ManualWorkbenchTransport,
-                                )
-                            }
+                                        .value as ManualWorkbenchTransport
+                                )}
                             disabled={busy}
                         >
                             <option value="realtime">RTC realtime</option>
@@ -175,9 +153,8 @@ export function ManualRallarInputsPanel({
                             onChange={(event) =>
                                 updateValue(
                                     'timeoutMs',
-                                    Number(event.target.value),
-                                )
-                            }
+                                    Number(event.target.value)
+                                )}
                             disabled={busy}
                         />
                     </label>
@@ -185,9 +162,7 @@ export function ManualRallarInputsPanel({
                         <span>Target Client</span>
                         <input
                             value={values.targetClient}
-                            onChange={(event) =>
-                                updateValue('targetClient', event.target.value)
-                            }
+                            onChange={(event) => updateValue('targetClient', event.target.value)}
                             disabled={busy || values.deliveryMode !== 'direct'}
                         />
                     </label>
@@ -198,21 +173,16 @@ export function ManualRallarInputsPanel({
                             onChange={(event) =>
                                 updateValue(
                                     'multicastClients',
-                                    event.target.value,
-                                )
-                            }
-                            disabled={
-                                busy || values.deliveryMode !== 'multicast'
-                            }
+                                    event.target.value
+                                )}
+                            disabled={busy || values.deliveryMode !== 'multicast'}
                         />
                     </label>
                     <label className="field">
                         <span>WS URL</span>
                         <input
                             value={values.wsUrl}
-                            onChange={(event) =>
-                                updateValue('wsUrl', event.target.value)
-                            }
+                            onChange={(event) => updateValue('wsUrl', event.target.value)}
                             disabled={busy || values.transport !== 'ws'}
                         />
                     </label>
@@ -220,9 +190,7 @@ export function ManualRallarInputsPanel({
                         <span>Topic</span>
                         <input
                             value={values.topic}
-                            onChange={(event) =>
-                                updateValue('topic', event.target.value)
-                            }
+                            onChange={(event) => updateValue('topic', event.target.value)}
                             disabled={busy}
                         />
                     </label>
@@ -230,24 +198,16 @@ export function ManualRallarInputsPanel({
                         <span>Type ID</span>
                         <input
                             value={values.typeId}
-                            onChange={(event) =>
-                                updateValue('typeId', event.target.value)
-                            }
-                            disabled={
-                                busy || values.transport !== 'messages.rtc'
-                            }
+                            onChange={(event) => updateValue('typeId', event.target.value)}
+                            disabled={busy || values.transport !== 'messages.rtc'}
                         />
                     </label>
                     <label className="field">
                         <span>Topic ID</span>
                         <input
                             value={values.topicId}
-                            onChange={(event) =>
-                                updateValue('topicId', event.target.value)
-                            }
-                            disabled={
-                                busy || values.transport !== 'messages.rtc'
-                            }
+                            onChange={(event) => updateValue('topicId', event.target.value)}
+                            disabled={busy || values.transport !== 'messages.rtc'}
                         />
                     </label>
                 </div>
@@ -261,22 +221,19 @@ export function ManualRallarInputsPanel({
                             <button
                                 key={mode}
                                 type="button"
-                                className={
-                                    values.deliveryMode === mode
-                                        ? 'selected'
-                                        : ''
-                                }
+                                className={values.deliveryMode === mode
+                                    ? 'selected'
+                                    : ''}
                                 onClick={() =>
                                     updateValue(
                                         'deliveryMode',
-                                        mode as ManualDeliveryMode,
-                                    )
-                                }
+                                        mode as ManualDeliveryMode
+                                    )}
                                 disabled={busy}
                             >
                                 {mode}
                             </button>
-                        ),
+                        )
                     )}
                 </div>
             </CollapsiblePanelSection>
@@ -289,9 +246,7 @@ export function ManualRallarInputsPanel({
                         <span>Payload Preset</span>
                         <select
                             value={payloadPresetId}
-                            onChange={(event) =>
-                                selectPreset(event.target.value)
-                            }
+                            onChange={(event) => selectPreset(event.target.value)}
                             disabled={busy}
                         >
                             <option value="custom">Custom</option>

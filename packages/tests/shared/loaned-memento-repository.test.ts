@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LoanedMementoRepository } from '@shared/cache/LoanedMementoRepository.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('LoanedMementoRepository', () => {
     afterEach(() => {
@@ -7,19 +7,16 @@ describe('LoanedMementoRepository', () => {
     });
 
     it('refreshes values per key and preserves manual commits in undo/redo history', async () => {
-        const repo = new LoanedMementoRepository<
-            string,
-            { version: number; content: string }
-        >(
+        const repo = new LoanedMementoRepository<string, { version: number; content: string; }>(
             async (key, current) => ({
                 version: (current?.version ?? 0) + 1,
-                content: `${key}:${(current?.version ?? 0) + 1}`,
+                content: `${key}:${(current?.version ?? 0) + 1}`
             }),
             {
                 ttlMs: 1_000,
                 undoDepth: 3,
-                redoDepth: 3,
-            },
+                redoDepth: 3
+            }
         );
 
         expect((await repo.get('doc-1')).version).toBe(1);
@@ -28,12 +25,12 @@ describe('LoanedMementoRepository', () => {
 
         repo.commitValue('doc-1', {
             version: 99,
-            content: 'manual',
+            content: 'manual'
         });
 
         await expect(repo.get('doc-1')).resolves.toMatchObject({
             version: 99,
-            content: 'manual',
+            content: 'manual'
         });
         expect(repo.undoStack('doc-1').map((value) => value.version)).toEqual([2]);
         expect(repo.undo('doc-1')?.version).toBe(2);
@@ -51,8 +48,8 @@ describe('LoanedMementoRepository', () => {
                 return deferred.promise;
             },
             {
-                ttlMs: 0,
-            },
+                ttlMs: 0
+            }
         );
 
         const first = repo.get('counter');
@@ -83,8 +80,8 @@ describe('LoanedMementoRepository', () => {
                 return deferred.promise;
             },
             {
-                ttlMs: 5,
-            },
+                ttlMs: 5
+            }
         );
 
         expect(await repo.get('job')).toBe(1);
@@ -118,6 +115,6 @@ function createDeferred<T>() {
     return {
         promise,
         resolve,
-        reject,
+        reject
     };
 }

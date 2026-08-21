@@ -144,20 +144,20 @@ Create `packages/tests/shared-test/rallar-bb-test-browser-control-agent-config.t
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
-    parseRallarBlackBoxProviderMode,
-} from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
-import {
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig,
+    validateRallarBlackBoxProviderConfig
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import {
+    parseRallarBlackBoxProviderMode,
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS
+} from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('browser control-agent bootstrap config', () => {
     it('parses URL params into a browser-rallar control-agent bootstrap config', () => {
         const config = resolveRallarBlackBoxBootstrapConfig(
             '?mode=control&autoConnect=1&provider=browser-rallar&controlUrl=wss%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-1&agentId=agent-1&apiBaseUrl=https%3A%2F%2Fapi.example.test&roomId=room-1&rallarUsername=alice&rallarPassword=secret&rallarRegister=1&fleetTags=canary%2Crtc',
-            {},
+            {}
         );
 
         expect(config.mode).toBe('control-agent');
@@ -178,7 +178,7 @@ describe('browser control-agent bootstrap config', () => {
     it('builds the exact remote-control runtime config used by browser agents', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?mode=control&autoConnect=1&provider=browser-rallar&controlUrl=wss%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-2&agentId=agent-2&apiBaseUrl=https%3A%2F%2Fapi.example.test&applicationId=rallar-server&workspaceId=default&roomId=room-2&actor=agent-2&sessionId=session-2&rallarUsername=bob&rallarPassword=secret&rallarLeaveRoomOnClose=0',
-            {},
+            {}
         );
 
         const runtimeConfig = remoteControlConfig(bootstrap, 7);
@@ -192,7 +192,7 @@ describe('browser control-agent bootstrap config', () => {
         expect(runtimeConfig.rallar).toEqual({
             username: 'bob',
             password: 'secret',
-            leaveRoomOnClose: false,
+            leaveRoomOnClose: false
         });
         expect(runtimeConfig.control).toMatchObject({
             mode: 'remote-control',
@@ -200,31 +200,31 @@ describe('browser control-agent bootstrap config', () => {
             connected: true,
             autoConnect: true,
             url: 'wss://control.example.test/control',
-            source: 'url',
+            source: 'url'
         });
         expect(runtimeConfig.defaults).toMatchObject({
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'room-2',
+            groupId: 'room-2'
         });
     });
 
     it('rejects browser-rallar config without usable API and credentials', () => {
         expect(parseRallarBlackBoxProviderMode('browser-rallar')).toBe('browser-rallar');
         expect(parseRallarBlackBoxProviderMode('anything')).toBe(
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode,
+            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode
         );
 
         const config = remoteControlConfig(
             resolveRallarBlackBoxBootstrapConfig(
                 '?mode=control&provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.invalid',
-                {},
+                {}
             ),
-            1,
+            1
         );
 
         expect(validateRallarBlackBoxProviderConfig(config)).toMatchObject({
-            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
+            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID'
         });
     });
 });
@@ -264,7 +264,10 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     actor: 'alice',
     sessionId: 'visible-session-alice',
     roomId: 'rallar-black-box-room',
-    transport: 'realtime' satisfies Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>,
+    transport: 'realtime' satisfies Extract<
+        RallarBlackBoxTestTransport,
+        'realtime' | 'messages.rtc'
+    >,
     connection: 'aliceRtc',
     remoteConnection: 'remoteAgent',
     wsUrl: 'wss://control.example.invalid/runs/manual',
@@ -277,13 +280,13 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     statsIntervalMs: 5_000,
     demoUsername: 'alice',
     demoPassword: 'local-demo-password',
-    demoToken: 'local-demo-token',
+    demoToken: 'local-demo-token'
 } as const;
 
 export type RallarBlackBoxClientDefaults = typeof RALLAR_BLACK_BOX_CLIENT_DEFAULTS;
 
 export function parseRallarBlackBoxProviderMode(
-    value: string | undefined,
+    value: string | undefined
 ): RallarBlackBoxProviderMode {
     return value === 'browser-rallar'
         ? 'browser-rallar'
@@ -297,15 +300,12 @@ Create `packages/shared-test/rallar-bb-test/browser-control-agent-config.ts` by 
 
 ```ts
 import { readSession } from '@shared/api/auth.ts';
-import type {
-    RallarBlackBoxTestConfig,
-    RallarBlackBoxTestError,
-} from './types.ts';
 import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     parseRallarBlackBoxProviderMode,
-    type RallarBlackBoxProviderMode,
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
+    type RallarBlackBoxProviderMode
 } from './client-defaults.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestError } from './types.ts';
 
 export type RallarBlackBoxBootstrapConfig = Readonly<{
     mode: 'local-workbench' | 'control-agent';
@@ -353,29 +353,29 @@ Move these functions from `runtime-store.ts` into the new file and export them:
 
 ```ts
 export function rallarBlackBoxProviderModeFromConfig(
-    config: RallarBlackBoxTestConfig | undefined,
+    config: RallarBlackBoxTestConfig | undefined
 ): RallarBlackBoxProviderMode;
 
 export function validateRallarBlackBoxProviderConfig(
-    config: RallarBlackBoxTestConfig,
+    config: RallarBlackBoxTestConfig
 ): RallarBlackBoxTestError | undefined;
 
 export function resolveRallarBlackBoxBootstrapConfig(
     search?: string,
-    env?: Readonly<Record<string, string | undefined>>,
+    env?: Readonly<Record<string, string | undefined>>
 ): RallarBlackBoxBootstrapConfig;
 
 export function rallarConfigFromBootstrap(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): RallarBlackBoxTestConfig['rallar'];
 
 export function remoteControlConfig(
     bootstrap: RallarBlackBoxBootstrapConfig,
-    runNumber: number,
+    runNumber: number
 ): RallarBlackBoxTestConfig;
 
 export function bootstrapFleetMetadata(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): Readonly<Record<string, unknown>> | undefined;
 ```
 
@@ -386,8 +386,8 @@ Keep helper functions private in the same file: `searchParams`, `paramValue`, `b
 Add to `packages/shared-test/rallar-bb-test/mod.ts`:
 
 ```ts
-export * from './client-defaults.ts';
 export * from './browser-control-agent-config.ts';
+export * from './client-defaults.ts';
 ```
 
 - [ ] **Step 6: Turn app defaults into a compatibility re-export**
@@ -410,12 +410,12 @@ import {
     rallarConfigFromBootstrap,
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig,
+    validateRallarBlackBoxProviderConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     parseRallarBlackBoxProviderMode,
-    type RallarBlackBoxProviderMode,
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
+    type RallarBlackBoxProviderMode
 } from '@shared-test/rallar-bb-test/client-defaults.ts';
 ```
 
@@ -468,7 +468,7 @@ Create `packages/tests/shared-test/rallar-bb-test-control-client.test.ts` by mov
 import { describe, expect, it, vi } from 'vitest';
 import {
     RallarBlackBoxControlClient,
-    type RallarBlackBoxControlSnapshot,
+    type RallarBlackBoxControlSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 
 describe('shared rallar black-box control client', () => {
@@ -478,7 +478,7 @@ describe('shared rallar black-box control client', () => {
             state: 'idle',
             reconnectAttempt: 0,
             sentCount: 0,
-            receivedCount: 0,
+            receivedCount: 0
         };
         expect(snapshot.state).toBe('idle');
     });
@@ -504,6 +504,16 @@ Copy the full current contents of `apps/rallar-black-box/src/control-client.ts` 
 Update relative imports inside the new package file so they point to sibling shared-test modules:
 
 ```ts
+import {
+    parseControlServerMessage,
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    toControlEventEnvelope,
+    type ControlClientEnvelope,
+    type ControlCommandEnvelope,
+    type ControlResultEnvelope
+} from './control-protocol.ts';
+import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
+import { redactRallarBlackBoxValue } from './redaction.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -511,18 +521,8 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestState,
-    RallarBlackBoxTestStatsSnapshot,
+    RallarBlackBoxTestStatsSnapshot
 } from './types.ts';
-import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
-import {
-    type ControlClientEnvelope,
-    type ControlCommandEnvelope,
-    type ControlResultEnvelope,
-    parseControlServerMessage,
-    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
-    toControlEventEnvelope,
-} from './control-protocol.ts';
 ```
 
 Keep `commandForEnvelope`, `toControlAgentIdentity`, `toStatsSnapshot`, and storage cleanup helpers local in `control-client.ts`; do not import `commandForEnvelope` from `control-protocol.ts` because it is not exported there. Keep the existing public export names unchanged.
@@ -587,7 +587,7 @@ Create `packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts`
 import { describe, expect, it, vi } from 'vitest';
 import {
     createRallarBlackBoxBrowserControlAgent,
-    initialControlSnapshot,
+    initialControlSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
 import { RallarBlackBoxControlClient } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 
@@ -595,7 +595,7 @@ describe('browser control-agent lifecycle', () => {
     it('creates an idle snapshot before startup', () => {
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=0&runId=run-1&agentId=agent-1',
-            env: {},
+            env: {}
         });
 
         const snapshot = agent.getSnapshot();
@@ -611,7 +611,7 @@ describe('browser control-agent lifecycle', () => {
     it('notifies subscribers when snapshot changes', () => {
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=0&runId=run-2&agentId=agent-2',
-            env: {},
+            env: {}
         });
         let callCount = 0;
         const unsubscribe = agent.subscribe(() => {
@@ -631,7 +631,7 @@ describe('browser control-agent lifecycle', () => {
         const connectSpy = vi.spyOn(RallarBlackBoxControlClient.prototype, 'connect');
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=0&runId=run-3&agentId=agent-3',
-            env: {},
+            env: {}
         });
 
         await agent.start();
@@ -648,8 +648,9 @@ describe('browser control-agent lifecycle', () => {
             .spyOn(RallarBlackBoxControlClient.prototype, 'connect')
             .mockImplementation(() => undefined);
         const agent = createRallarBlackBoxBrowserControlAgent({
-            search: '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-4&agentId=agent-4',
-            env: {},
+            search:
+                '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-4&agentId=agent-4',
+            env: {}
         });
 
         await agent.start();
@@ -658,7 +659,7 @@ describe('browser control-agent lifecycle', () => {
             url: 'ws://control.example.test/control',
             runId: 'run-4',
             agentId: 'agent-4',
-            token: undefined,
+            token: undefined
         });
         expect(agent.getSnapshot().lastAction).toBe('Remote control agent configured; connecting');
 
@@ -685,7 +686,7 @@ Create `packages/shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts` fr
 ```ts
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime;
 export function installSpaBrowserRallarEventBridge(
-    runtime: RallarBlackBoxBrowserTestRuntime,
+    runtime: RallarBlackBoxBrowserTestRuntime
 ): () => void;
 export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketFactory;
 ```
@@ -693,7 +694,7 @@ export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketF
 The dynamic runtime import stays:
 
 ```ts
-import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts')
+import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts');
 ```
 
 - [ ] **Step 4: Turn the app bridge into a compatibility re-export**
@@ -710,26 +711,23 @@ Create `packages/shared-test/rallar-bb-test/browser-control-agent.ts` with these
 
 ```ts
 import { createRallarBlackBoxBrowserTestRuntime } from './browser-adapter.ts';
-import { createRallarBlackBoxTestRuntime } from './runtime.ts';
-import type {
-    RallarBlackBoxTestRuntime,
-    RallarBlackBoxTestState,
-} from './types.ts';
 import {
-    type RallarBlackBoxBootstrapConfig,
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
     validateRallarBlackBoxProviderConfig,
+    type RallarBlackBoxBootstrapConfig
 } from './browser-control-agent-config.ts';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
-    installSpaBrowserRallarEventBridge,
+    installSpaBrowserRallarEventBridge
 } from './browser-rallar-runtime-bridge.ts';
 import {
     RallarBlackBoxControlClient,
-    type RallarBlackBoxControlSnapshot,
+    type RallarBlackBoxControlSnapshot
 } from './control-client.ts';
+import { createRallarBlackBoxTestRuntime } from './runtime.ts';
+import type { RallarBlackBoxTestRuntime, RallarBlackBoxTestState } from './types.ts';
 
 export type BrowserControlAgentRunState =
     | 'waiting'
@@ -763,14 +761,14 @@ Use this startup behavior:
 
 ```ts
 export function initialControlSnapshot(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): RallarBlackBoxControlSnapshot {
     return {
         state: 'idle',
         url: bootstrap.controlUrl,
         reconnectAttempt: 0,
         sentCount: 0,
-        receivedCount: 0,
+        receivedCount: 0
     };
 }
 ```
@@ -797,7 +795,7 @@ if (bootstrap.autoConnect) {
         url: bootstrap.controlUrl,
         runId: config.runId,
         agentId: bootstrap.agentId,
-        token: bootstrap.controlToken,
+        token: bootstrap.controlToken
     });
 }
 ```
@@ -810,7 +808,7 @@ Keep `apps/rallar-black-box/src/runtime-store.ts` as the React-facing store. Rep
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
-    installSpaBrowserRallarEventBridge,
+    installSpaBrowserRallarEventBridge
 } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { RallarBlackBoxControlClient } from '@shared-test/rallar-bb-test/control-client.ts';
 ```
@@ -822,8 +820,8 @@ Do not remove local workbench methods from `runtime-store.ts`; those belong to t
 Add to `packages/shared-test/rallar-bb-test/mod.ts`:
 
 ```ts
-export * from './browser-rallar-runtime-bridge.ts';
 export * from './browser-control-agent.ts';
+export * from './browser-rallar-runtime-bridge.ts';
 ```
 
 - [ ] **Step 8: Verify shared lifecycle and operator bridge tests pass**
@@ -905,7 +903,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             rallarRestoreSession: false,
             rallarLogoutOnClose: false,
             rallarLeaveRoomOnClose: false,
-            source: 'url',
+            source: 'url'
         },
         control: {
             state: 'registered',
@@ -914,15 +912,15 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             agentId: 'agent-1',
             reconnectAttempt: 0,
             sentCount: 3,
-            receivedCount: 1,
+            receivedCount: 1
         },
         state: {
             status: 'waiting',
             commandHistory: [],
             events: [],
             failures: [],
-            resultCache: {},
-        },
+            resultCache: {}
+        }
     };
 }
 
@@ -949,8 +947,8 @@ describe('headless status view', () => {
             lastError: unsafe,
             bootstrap: {
                 ...snapshot().bootstrap,
-                agentId: unsafe,
-            },
+                agentId: unsafe
+            }
         });
 
         expect(root.querySelector('img')).toBeNull();
@@ -983,7 +981,7 @@ const esbuildBin = path.join(
     repoRoot,
     'node_modules',
     '.bin',
-    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild',
+    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
 );
 
 describe('rallar-black-box-headless bundle boundary', () => {
@@ -991,22 +989,24 @@ describe('rallar-black-box-headless bundle boundary', () => {
         const result = bundleHeadlessEntry();
         const inputs = Object.keys(result.metafile.inputs);
 
-        for (const forbidden of [
-            'node_modules/react',
-            'node_modules/react-dom',
-            'node_modules/sigma',
-            'node_modules/graphology',
-            'apps/rallar-black-box/src/App.tsx',
-            'apps/rallar-black-box/src/control-run-manager.ts',
-            'apps/rallar-black-box/src/distributed-recipes.ts',
-            'apps/rallar-black-box/src/rtc-diagnostics.ts',
-            'apps/rallar-black-box/src/topology-graph.ts',
-            'apps/rallar-black-box/src/flow-builder.ts',
-            'apps/rallar-black-box/src/schema-authoring.ts',
-        ]) {
+        for (
+            const forbidden of [
+                'node_modules/react',
+                'node_modules/react-dom',
+                'node_modules/sigma',
+                'node_modules/graphology',
+                'apps/rallar-black-box/src/App.tsx',
+                'apps/rallar-black-box/src/control-run-manager.ts',
+                'apps/rallar-black-box/src/distributed-recipes.ts',
+                'apps/rallar-black-box/src/rtc-diagnostics.ts',
+                'apps/rallar-black-box/src/topology-graph.ts',
+                'apps/rallar-black-box/src/flow-builder.ts',
+                'apps/rallar-black-box/src/schema-authoring.ts'
+            ]
+        ) {
             expect(
                 inputs,
-                `headless bundle should not include ${forbidden}`,
+                `headless bundle should not include ${forbidden}`
             ).not.toContainEqual(expect.stringContaining(forbidden));
         }
 
@@ -1033,24 +1033,24 @@ function bundleHeadlessEntry(): Readonly<{
             '--target=es2023',
             '--tsconfig=apps/rallar-black-box-headless/tsconfig.json',
             `--outfile=${outputPath}`,
-            `--metafile=${metafilePath}`,
+            `--metafile=${metafilePath}`
         ],
         {
             cwd: repoRoot,
-            stdio: ['ignore', 'ignore', 'pipe'],
-        },
+            stdio: ['ignore', 'ignore', 'pipe']
+        }
     );
 
     const bytes = readFileSync(outputPath);
     const brotliBytes = brotliCompressSync(bytes, {
         params: {
-            [constants.BROTLI_PARAM_QUALITY]: 11,
-        },
+            [constants.BROTLI_PARAM_QUALITY]: 11
+        }
     }).length;
 
     return {
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile,
+        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
     };
 }
 ```
@@ -1096,20 +1096,20 @@ Create `apps/rallar-black-box-headless/package.json`:
 Create `apps/rallar-black-box-headless/index.html`:
 
 ```html
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rallar Black Box Headless Agent</title>
-</head>
-<body>
-<main id="root" data-headless-agent-root>
-    <h1>Rallar Black Box Headless Agent</h1>
-    <p data-boot-status>Loading agent...</p>
-</main>
-<script type="module" src="/src/main.ts"></script>
-</body>
+  </head>
+  <body>
+    <main id="root" data-headless-agent-root>
+      <h1>Rallar Black Box Headless Agent</h1>
+      <p data-boot-status>Loading agent...</p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
 ```
 
@@ -1173,18 +1173,18 @@ export default defineConfig({
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
             '@shared-server': path.resolve(__dirname, '../../packages/shared-server'),
             '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),
-            '@shared': path.resolve(__dirname, '../../packages/shared'),
-        },
+            '@shared': path.resolve(__dirname, '../../packages/shared')
+        }
     },
     server: {
         port: 5179,
-        strictPort: true,
+        strictPort: true
     },
     build: {
         outDir: 'dist',
         emptyOutDir: true,
-        target: 'es2023',
-    },
+        target: 'es2023'
+    }
 });
 ```
 
@@ -1203,7 +1203,7 @@ function appendText(
     parent: HTMLElement,
     tagName: 'h1' | 'p',
     value: unknown,
-    attr?: string,
+    attr?: string
 ): HTMLElement {
     const element = document.createElement(tagName);
     element.textContent = text(value);
@@ -1218,7 +1218,7 @@ function appendRow(
     list: HTMLDListElement,
     label: string,
     value: unknown,
-    attr: string,
+    attr: string
 ): void {
     const term = document.createElement('dt');
     term.textContent = label;
@@ -1232,7 +1232,7 @@ function appendRow(
 
 export function renderHeadlessStatus(
     root: HTMLElement,
-    snapshot: RallarBlackBoxBrowserControlAgentSnapshot,
+    snapshot: RallarBlackBoxBrowserControlAgentSnapshot
 ): void {
     const latestCommand = snapshot.state.commandHistory.at(-1);
     const latestEvent = snapshot.state.events.at(-1);
@@ -1332,7 +1332,7 @@ Create `apps/rallar-black-box-headless/src/main.ts`:
 
 ```ts
 import {
-    createRallarBlackBoxBrowserControlAgent,
+    createRallarBlackBoxBrowserControlAgent
 } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
 import { renderHeadlessStatus } from './status-view.ts';
 import './styles.css';
@@ -1344,7 +1344,7 @@ if (!root) {
 
 const agent = createRallarBlackBoxBrowserControlAgent({
     search: window.location.search,
-    env: (import.meta as { env?: Record<string, string | undefined> }).env ?? {},
+    env: (import.meta as { env?: Record<string, string | undefined>; }).env ?? {}
 });
 
 function render(): void {
@@ -1356,7 +1356,7 @@ render();
 
 void agent.start().catch((error) => {
     agent.recordStatus(
-        error instanceof Error ? error.message : String(error),
+        error instanceof Error ? error.message : String(error)
     );
     render();
 });
@@ -1381,7 +1381,7 @@ const forbiddenPathParts = [
     '/artifacts',
     '/run-manager',
     '/analysis',
-    '/reports',
+    '/reports'
 ];
 const agentId = '<rendered-smoke-agent>';
 
@@ -1398,14 +1398,16 @@ function headlessUrl(): string {
 
 async function verifyViewport(
     page: Page,
-    viewport: Readonly<{ width: number; height: number }>,
+    viewport: Readonly<{ width: number; height: number; }>
 ): Promise<void> {
     await page.setViewportSize(viewport);
     await page.goto(headlessUrl(), { waitUntil: 'networkidle' });
     await page.locator('[data-headless-agent-root]').waitFor({ state: 'visible' });
     const renderedAgentId = await page.locator('[data-agent-id]').textContent();
     if (renderedAgentId !== agentId) {
-        throw new Error(`Expected rendered agent id ${agentId}; received ${renderedAgentId ?? '<missing>'}`);
+        throw new Error(
+            `Expected rendered agent id ${agentId}; received ${renderedAgentId ?? '<missing>'}`
+        );
     }
     const layout = await page.evaluate(() => {
         const root = document.querySelector('[data-headless-agent-root]');
@@ -1413,14 +1415,16 @@ async function verifyViewport(
             clientWidth: document.documentElement.clientWidth,
             scrollWidth: document.documentElement.scrollWidth,
             rootVisible: root instanceof HTMLElement && root.getBoundingClientRect().height > 0,
-            renderedRows: document.querySelectorAll('dl dd').length,
+            renderedRows: document.querySelectorAll('dl dd').length
         };
     });
     if (!layout.rootVisible) {
         throw new Error('Headless status root is not visibly laid out.');
     }
     if (layout.scrollWidth > layout.clientWidth) {
-        throw new Error(`Headless status page overflows horizontally: ${layout.scrollWidth} > ${layout.clientWidth}`);
+        throw new Error(
+            `Headless status page overflows horizontally: ${layout.scrollWidth} > ${layout.clientWidth}`
+        );
     }
     if (layout.renderedRows < 8) {
         throw new Error(`Expected at least 8 status rows; rendered ${layout.renderedRows}.`);
@@ -1458,9 +1462,12 @@ try {
         throw new Error(`Console errors during rendered smoke:\n${consoleErrors.join('\n')}`);
     }
     if (forbiddenRequests.length > 0) {
-        throw new Error(`Headless app requested operator endpoints:\n${forbiddenRequests.join('\n')}`);
+        throw new Error(
+            `Headless app requested operator endpoints:\n${forbiddenRequests.join('\n')}`
+        );
     }
-} finally {
+}
+finally {
     await browser.close();
 }
 ```
@@ -1538,48 +1545,48 @@ Goal: allow Hetzner worker pages to target `/headless/` while preserving a rollb
 Extend `packages/tests/rallar-black-box/headless-worker-config.test.ts` with:
 
 ```ts
-it("targets the headless SPA when RALLAR_BLACK_BOX_HEADLESS_ENTRY=headless", () => {
-  const config = readHeadlessWorkerConfig({
-    env: {
-      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
-      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-      RALLAR_API_BASE_URL: "https://api.example.test/",
-      RALLAR_BLACK_BOX_RUN_ID: "run-headless",
-      RALLAR_BLACK_BOX_ROOM_ID: "room-headless",
-      RALLAR_BLACK_BOX_USERNAME: "alice",
-      RALLAR_BLACK_BOX_PASSWORD: "secret",
-      RALLAR_BLACK_BOX_HEADLESS_ENTRY: "headless",
-    },
-  });
+it('targets the headless SPA when RALLAR_BLACK_BOX_HEADLESS_ENTRY=headless', () => {
+    const config = readHeadlessWorkerConfig({
+        env: {
+            RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+            RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+            RALLAR_API_BASE_URL: 'https://api.example.test/',
+            RALLAR_BLACK_BOX_RUN_ID: 'run-headless',
+            RALLAR_BLACK_BOX_ROOM_ID: 'room-headless',
+            RALLAR_BLACK_BOX_USERNAME: 'alice',
+            RALLAR_BLACK_BOX_PASSWORD: 'secret',
+            RALLAR_BLACK_BOX_HEADLESS_ENTRY: 'headless'
+        }
+    });
 
-  expect(config.headlessEntry).toBe("headless");
-  const url = new URL(config.agents[0].url);
-  expect(url.origin).toBe("https://blackbox.example.test");
-  expect(url.pathname).toBe("/headless/");
-  expect(url.searchParams.get("mode")).toBe("control");
-  expect(url.searchParams.get("provider")).toBe("browser-rallar");
-  expect(url.searchParams.get("autoConnect")).toBe("1");
-  expect(url.searchParams.get("tab")).toBeNull();
+    expect(config.headlessEntry).toBe('headless');
+    const url = new URL(config.agents[0].url);
+    expect(url.origin).toBe('https://blackbox.example.test');
+    expect(url.pathname).toBe('/headless/');
+    expect(url.searchParams.get('mode')).toBe('control');
+    expect(url.searchParams.get('provider')).toBe('browser-rallar');
+    expect(url.searchParams.get('autoConnect')).toBe('1');
+    expect(url.searchParams.get('tab')).toBeNull();
 });
 
-it("keeps the operator SPA local-workbench route for rollback", () => {
-  const config = readHeadlessWorkerConfig({
-    env: {
-      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
-      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-      RALLAR_API_BASE_URL: "https://api.example.test/",
-      RALLAR_BLACK_BOX_RUN_ID: "run-operator",
-      RALLAR_BLACK_BOX_ROOM_ID: "room-operator",
-      RALLAR_BLACK_BOX_USERNAME: "alice",
-      RALLAR_BLACK_BOX_PASSWORD: "secret",
-      RALLAR_BLACK_BOX_HEADLESS_ENTRY: "operator-spa",
-    },
-  });
+it('keeps the operator SPA local-workbench route for rollback', () => {
+    const config = readHeadlessWorkerConfig({
+        env: {
+            RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+            RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+            RALLAR_API_BASE_URL: 'https://api.example.test/',
+            RALLAR_BLACK_BOX_RUN_ID: 'run-operator',
+            RALLAR_BLACK_BOX_ROOM_ID: 'room-operator',
+            RALLAR_BLACK_BOX_USERNAME: 'alice',
+            RALLAR_BLACK_BOX_PASSWORD: 'secret',
+            RALLAR_BLACK_BOX_HEADLESS_ENTRY: 'operator-spa'
+        }
+    });
 
-  expect(config.headlessEntry).toBe("operator-spa");
-  const url = new URL(config.agents[0].url);
-  expect(url.pathname).toBe("/");
-  expect(url.searchParams.get("tab")).toBe("local-workbench");
+    expect(config.headlessEntry).toBe('operator-spa');
+    const url = new URL(config.agents[0].url);
+    expect(url.pathname).toBe('/');
+    expect(url.searchParams.get('tab')).toBe('local-workbench');
 });
 ```
 
@@ -1598,7 +1605,7 @@ Expected: FAIL because `headlessEntry` is not supported.
 Modify `apps/rallar-black-box/src/headless-worker-config.ts`:
 
 ```ts
-export type HeadlessWorkerEntry = "operator-spa" | "headless";
+export type HeadlessWorkerEntry = 'operator-spa' | 'headless';
 ```
 
 Add to `HeadlessWorkerConfig`:
@@ -1611,16 +1618,16 @@ Add env parsing:
 
 ```ts
 function headlessEntryEnv(
-  env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): HeadlessWorkerEntry {
-  const value = envValue(env, "RALLAR_BLACK_BOX_HEADLESS_ENTRY");
-  if (!value || value === "operator-spa") {
-    return "operator-spa";
-  }
-  if (value === "headless") {
-    return "headless";
-  }
-  throw new Error("RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless");
+    const value = envValue(env, 'RALLAR_BLACK_BOX_HEADLESS_ENTRY');
+    if (!value || value === 'operator-spa') {
+        return 'operator-spa';
+    }
+    if (value === 'headless') {
+        return 'headless';
+    }
+    throw new Error('RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless');
 }
 ```
 
@@ -1636,16 +1643,16 @@ Add helper:
 
 ```ts
 function agentSpaUrl(spaUrl: string, entry: HeadlessWorkerEntry): URL {
-  const url = new URL(spaUrl);
-  if (entry === "headless") {
-    const basePath = url.pathname.endsWith("/")
-      ? url.pathname
-      : `${url.pathname}/`;
-    url.pathname = basePath.endsWith("/headless/")
-      ? basePath
-      : `${basePath.replace(/\/+$/, "")}/headless/`;
-  }
-  return url;
+    const url = new URL(spaUrl);
+    if (entry === 'headless') {
+        const basePath = url.pathname.endsWith('/')
+            ? url.pathname
+            : `${url.pathname}/`;
+        url.pathname = basePath.endsWith('/headless/')
+            ? basePath
+            : `${basePath.replace(/\/+$/, '')}/headless/`;
+    }
+    return url;
 }
 ```
 
@@ -1654,13 +1661,14 @@ Use it in `createHeadlessWorkerAgentUrl`:
 ```ts
 const url = agentSpaUrl(input.spaUrl, input.headlessEntry);
 const params = url.searchParams;
-params.set("mode", "control");
-params.set("provider", "browser-rallar");
-params.set("autoConnect", "1");
-if (input.headlessEntry === "operator-spa") {
-  params.set("tab", "local-workbench");
-} else {
-  params.delete("tab");
+params.set('mode', 'control');
+params.set('provider', 'browser-rallar');
+params.set('autoConnect', '1');
+if (input.headlessEntry === 'operator-spa') {
+    params.set('tab', 'local-workbench');
+}
+else {
+    params.delete('tab');
 }
 ```
 
@@ -1669,10 +1677,11 @@ if (input.headlessEntry === "operator-spa") {
 Modify `apps/rallar-black-box/scripts/headless-worker.ts` after `waitForAgentRegistration(agent)`:
 
 ```ts
-if (config.headlessEntry === "operator-spa") {
-  await confirmWorkbenchRegistrationUi(page, agent);
-} else {
-  await confirmHeadlessRegistrationUi(page, agent);
+if (config.headlessEntry === 'operator-spa') {
+    await confirmWorkbenchRegistrationUi(page, agent);
+}
+else {
+    await confirmHeadlessRegistrationUi(page, agent);
 }
 ```
 
@@ -1680,21 +1689,21 @@ Add:
 
 ```ts
 async function confirmHeadlessRegistrationUi(
-  page: Page,
-  agent: HeadlessWorkerAgentConfig,
+    page: Page,
+    agent: HeadlessWorkerAgentConfig
 ): Promise<void> {
-  const timeout = Math.min(
-    config.readyTimeoutMs,
-    WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS,
-  );
-  await page.locator("[data-headless-agent-root]").waitFor({
-    state: "visible",
-    timeout,
-  });
-  await page.locator("[data-agent-id]").getByText(agent.agentId, { exact: false }).waitFor({
-    state: "visible",
-    timeout,
-  }).catch(() => undefined);
+    const timeout = Math.min(
+        config.readyTimeoutMs,
+        WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS
+    );
+    await page.locator('[data-headless-agent-root]').waitFor({
+        state: 'visible',
+        timeout
+    });
+    await page.locator('[data-agent-id]').getByText(agent.agentId, { exact: false }).waitFor({
+        state: 'visible',
+        timeout
+    }).catch(() => undefined);
 }
 ```
 
@@ -1746,79 +1755,79 @@ Goal: allow Hetzner headless workers to launch Chromium, Firefox, or Playwright 
 Extend `packages/tests/rallar-black-box/headless-worker-config.test.ts` with:
 
 ```ts
-it("defaults the Playwright browser engine to chromium", () => {
-  const config = readHeadlessWorkerConfig({
-    env: {
-      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
-      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-      RALLAR_API_BASE_URL: "https://api.example.test/",
-      RALLAR_BLACK_BOX_RUN_ID: "run-engine-default",
-      RALLAR_BLACK_BOX_ROOM_ID: "room-engine-default",
-      RALLAR_BLACK_BOX_USERNAME: "alice",
-      RALLAR_BLACK_BOX_PASSWORD: "secret",
-    },
-  });
-
-  expect(config.browserEngine).toBe("chromium");
-  expect(config.fleetBrowserName).toBe("chromium");
-  expect(new URL(config.agents[0].url).searchParams.get("fleetBrowserName")).toBe("chromium");
-});
-
-it.each(["chromium", "firefox", "webkit"] as const)(
-  "parses RALLAR_BLACK_BOX_BROWSER_ENGINE=%s",
-  (engine) => {
+it('defaults the Playwright browser engine to chromium', () => {
     const config = readHeadlessWorkerConfig({
-      env: {
-        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
-        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-        RALLAR_API_BASE_URL: "https://api.example.test/",
-        RALLAR_BLACK_BOX_RUN_ID: `run-${engine}`,
-        RALLAR_BLACK_BOX_ROOM_ID: `room-${engine}`,
-        RALLAR_BLACK_BOX_USERNAME: "alice",
-        RALLAR_BLACK_BOX_PASSWORD: "secret",
-        RALLAR_BLACK_BOX_BROWSER_ENGINE: engine,
-      },
+        env: {
+            RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+            RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+            RALLAR_API_BASE_URL: 'https://api.example.test/',
+            RALLAR_BLACK_BOX_RUN_ID: 'run-engine-default',
+            RALLAR_BLACK_BOX_ROOM_ID: 'room-engine-default',
+            RALLAR_BLACK_BOX_USERNAME: 'alice',
+            RALLAR_BLACK_BOX_PASSWORD: 'secret'
+        }
     });
 
-    expect(config.browserEngine).toBe(engine);
-    expect(config.fleetBrowserName).toBe(engine);
-  },
-);
-
-it("lets explicit fleet browser metadata override the engine label", () => {
-  const config = readHeadlessWorkerConfig({
-    env: {
-      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
-      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-      RALLAR_API_BASE_URL: "https://api.example.test/",
-      RALLAR_BLACK_BOX_RUN_ID: "run-custom-browser-name",
-      RALLAR_BLACK_BOX_ROOM_ID: "room-custom-browser-name",
-      RALLAR_BLACK_BOX_USERNAME: "alice",
-      RALLAR_BLACK_BOX_PASSWORD: "secret",
-      RALLAR_BLACK_BOX_BROWSER_ENGINE: "webkit",
-      RALLAR_AGENT_BROWSER_NAME: "safari-family-webkit",
-    },
-  });
-
-  expect(config.browserEngine).toBe("webkit");
-  expect(config.fleetBrowserName).toBe("safari-family-webkit");
+    expect(config.browserEngine).toBe('chromium');
+    expect(config.fleetBrowserName).toBe('chromium');
+    expect(new URL(config.agents[0].url).searchParams.get('fleetBrowserName')).toBe('chromium');
 });
 
-it("rejects unsupported Playwright browser engines", () => {
-  expect(() =>
-    readHeadlessWorkerConfig({
-      env: {
-        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
-        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-        RALLAR_API_BASE_URL: "https://api.example.test/",
-        RALLAR_BLACK_BOX_RUN_ID: "run-invalid-engine",
-        RALLAR_BLACK_BOX_ROOM_ID: "room-invalid-engine",
-        RALLAR_BLACK_BOX_USERNAME: "alice",
-        RALLAR_BLACK_BOX_PASSWORD: "secret",
-        RALLAR_BLACK_BOX_BROWSER_ENGINE: "safari",
-      },
-    })
-  ).toThrow(/RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit/);
+it.each(['chromium', 'firefox', 'webkit'] as const)(
+    'parses RALLAR_BLACK_BOX_BROWSER_ENGINE=%s',
+    (engine) => {
+        const config = readHeadlessWorkerConfig({
+            env: {
+                RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+                RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+                RALLAR_API_BASE_URL: 'https://api.example.test/',
+                RALLAR_BLACK_BOX_RUN_ID: `run-${engine}`,
+                RALLAR_BLACK_BOX_ROOM_ID: `room-${engine}`,
+                RALLAR_BLACK_BOX_USERNAME: 'alice',
+                RALLAR_BLACK_BOX_PASSWORD: 'secret',
+                RALLAR_BLACK_BOX_BROWSER_ENGINE: engine
+            }
+        });
+
+        expect(config.browserEngine).toBe(engine);
+        expect(config.fleetBrowserName).toBe(engine);
+    }
+);
+
+it('lets explicit fleet browser metadata override the engine label', () => {
+    const config = readHeadlessWorkerConfig({
+        env: {
+            RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+            RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+            RALLAR_API_BASE_URL: 'https://api.example.test/',
+            RALLAR_BLACK_BOX_RUN_ID: 'run-custom-browser-name',
+            RALLAR_BLACK_BOX_ROOM_ID: 'room-custom-browser-name',
+            RALLAR_BLACK_BOX_USERNAME: 'alice',
+            RALLAR_BLACK_BOX_PASSWORD: 'secret',
+            RALLAR_BLACK_BOX_BROWSER_ENGINE: 'webkit',
+            RALLAR_AGENT_BROWSER_NAME: 'safari-family-webkit'
+        }
+    });
+
+    expect(config.browserEngine).toBe('webkit');
+    expect(config.fleetBrowserName).toBe('safari-family-webkit');
+});
+
+it('rejects unsupported Playwright browser engines', () => {
+    expect(() =>
+        readHeadlessWorkerConfig({
+            env: {
+                RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+                RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+                RALLAR_API_BASE_URL: 'https://api.example.test/',
+                RALLAR_BLACK_BOX_RUN_ID: 'run-invalid-engine',
+                RALLAR_BLACK_BOX_ROOM_ID: 'room-invalid-engine',
+                RALLAR_BLACK_BOX_USERNAME: 'alice',
+                RALLAR_BLACK_BOX_PASSWORD: 'secret',
+                RALLAR_BLACK_BOX_BROWSER_ENGINE: 'safari'
+            }
+        })
+    ).toThrow(/RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit/);
 });
 ```
 
@@ -1827,27 +1836,27 @@ it("rejects unsupported Playwright browser engines", () => {
 Create `packages/tests/rallar-black-box/headless-worker-script.test.ts`:
 
 ```ts
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
 
-const repoRoot = path.resolve(__dirname, "../../..");
+const repoRoot = path.resolve(__dirname, '../../..');
 
-describe("rallar-black-box headless worker script", () => {
-  it("launches the configured Playwright browser engine", async () => {
-    const source = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
+describe('rallar-black-box headless worker script', () => {
+    it('launches the configured Playwright browser engine', async () => {
+        const source = await readFile(
+            path.join(repoRoot, 'apps/rallar-black-box/scripts/headless-worker.ts'),
+            'utf8'
+        );
 
-    expect(source).toContain("type BrowserType");
-    expect(source).toContain("chromium,");
-    expect(source).toContain("firefox,");
-    expect(source).toContain("webkit,");
-    expect(source).toContain("satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>");
-    expect(source).toContain("browserTypes[config.browserEngine].launch");
-    expect(source).toContain("engine=${config.browserEngine}");
-  });
+        expect(source).toContain('type BrowserType');
+        expect(source).toContain('chromium,');
+        expect(source).toContain('firefox,');
+        expect(source).toContain('webkit,');
+        expect(source).toContain('satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>');
+        expect(source).toContain('browserTypes[config.browserEngine].launch');
+        expect(source).toContain('engine=${config.browserEngine}');
+    });
 });
 ```
 
@@ -1866,7 +1875,7 @@ Expected: FAIL because `browserEngine` parsing and launcher selection do not exi
 Modify `apps/rallar-black-box/src/headless-worker-config.ts`:
 
 ```ts
-export type HeadlessWorkerBrowserEngine = "chromium" | "firefox" | "webkit";
+export type HeadlessWorkerBrowserEngine = 'chromium' | 'firefox' | 'webkit';
 ```
 
 Add to `HeadlessWorkerConfig`:
@@ -1878,19 +1887,19 @@ browserEngine: HeadlessWorkerBrowserEngine;
 Add constants and parsing:
 
 ```ts
-const DEFAULT_BROWSER_ENGINE: HeadlessWorkerBrowserEngine = "chromium";
+const DEFAULT_BROWSER_ENGINE: HeadlessWorkerBrowserEngine = 'chromium';
 
 function browserEngineEnv(
-  env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): HeadlessWorkerBrowserEngine {
-  const value = envValue(env, "RALLAR_BLACK_BOX_BROWSER_ENGINE");
-  if (!value) {
-    return DEFAULT_BROWSER_ENGINE;
-  }
-  if (value === "chromium" || value === "firefox" || value === "webkit") {
-    return value;
-  }
-  throw new Error("RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit");
+    const value = envValue(env, 'RALLAR_BLACK_BOX_BROWSER_ENGINE');
+    if (!value) {
+        return DEFAULT_BROWSER_ENGINE;
+    }
+    if (value === 'chromium' || value === 'firefox' || value === 'webkit') {
+        return value;
+    }
+    throw new Error('RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit');
 }
 ```
 
@@ -1899,12 +1908,12 @@ Compute it before `baseConfig` and use it in fleet metadata:
 ```ts
 const browserEngine = browserEngineEnv(env);
 const baseConfig = {
-  // existing fields
-  browserEngine,
-  fleetBrowserName: envValue(env, "RALLAR_AGENT_BROWSER_NAME") ??
-    envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_NAME") ??
+    // existing fields
     browserEngine,
-  // existing fields
+    fleetBrowserName: envValue(env, 'RALLAR_AGENT_BROWSER_NAME') ??
+        envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_NAME') ??
+        browserEngine
+    // existing fields
 };
 ```
 
@@ -1914,25 +1923,25 @@ Modify `apps/rallar-black-box/scripts/headless-worker.ts`:
 
 ```ts
 import {
-  type Browser,
-  type BrowserContext,
-  type BrowserType,
-  chromium,
-  firefox,
-  type Page,
-  webkit,
-} from "playwright";
+    chromium,
+    firefox,
+    webkit,
+    type Browser,
+    type BrowserContext,
+    type BrowserType,
+    type Page
+} from 'playwright';
 import {
-  controlRunSnapshotUrlFromControlUrl,
-  type HeadlessWorkerAgentConfig,
-  type HeadlessWorkerBrowserEngine,
-  readHeadlessWorkerConfig,
-} from "../src/headless-worker-config.ts";
+    controlRunSnapshotUrlFromControlUrl,
+    readHeadlessWorkerConfig,
+    type HeadlessWorkerAgentConfig,
+    type HeadlessWorkerBrowserEngine
+} from '../src/headless-worker-config.ts';
 
 const browserTypes = {
-  chromium,
-  firefox,
-  webkit,
+    chromium,
+    firefox,
+    webkit
 } satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>;
 ```
 
@@ -1940,13 +1949,13 @@ Replace the Chromium-only launch block with:
 
 ```ts
 log(
-  `Starting rallar-black-box headless worker run=${config.runId} ` +
-    `agents=${config.agentCount} engine=${config.browserEngine} ` +
-    `spa=${config.spaUrl} control=${config.controlUrl}`,
+    `Starting rallar-black-box headless worker run=${config.runId} ` +
+        `agents=${config.agentCount} engine=${config.browserEngine} ` +
+        `spa=${config.spaUrl} control=${config.controlUrl}`
 );
 browser = await browserTypes[config.browserEngine].launch({
-  headless: config.headless,
-  timeout: config.launchTimeoutMs,
+    headless: config.headless,
+    timeout: config.launchTimeoutMs
 });
 ```
 
@@ -1965,59 +1974,67 @@ Expected: PASS.
 Extend `packages/tests/hetzner/distributed-recipe-workflow.test.ts` with assertions that read `.github/workflows/hetzner-distributed-recipe.yml`, `.github/workflows/hetzner-headless-browsers.yml`, `scripts/hetzner/controller/rallar-playwright-install.sh`, `scripts/hetzner/controller/09-start-headless-workers.sh`, `scripts/hetzner/controller/12-status-headless-workers.sh`, and `scripts/hetzner/dispatch-distributed-recipe.sh`:
 
 ```ts
-it("passes the selected Playwright browser engine through Hetzner workflows and helpers", async () => {
-  const distributedWorkflow = await readFile(
-    path.join(repoRoot, ".github/workflows/hetzner-distributed-recipe.yml"),
-    "utf8",
-  );
-  const headlessWorkflow = await readFile(
-    path.join(repoRoot, ".github/workflows/hetzner-headless-browsers.yml"),
-    "utf8",
-  );
-  const startScript = await readFile(
-    path.join(repoRoot, "scripts/hetzner/controller/09-start-headless-workers.sh"),
-    "utf8",
-  );
-  const statusScript = await readFile(
-    path.join(repoRoot, "scripts/hetzner/controller/12-status-headless-workers.sh"),
-    "utf8",
-  );
-  const installScript = await readFile(
-    path.join(repoRoot, "scripts/hetzner/controller/rallar-playwright-install.sh"),
-    "utf8",
-  );
-  const dispatchScript = await readFile(
-    path.join(repoRoot, "scripts/hetzner/dispatch-distributed-recipe.sh"),
-    "utf8",
-  );
+it('passes the selected Playwright browser engine through Hetzner workflows and helpers', async () => {
+    const distributedWorkflow = await readFile(
+        path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+        'utf8'
+    );
+    const headlessWorkflow = await readFile(
+        path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+        'utf8'
+    );
+    const startScript = await readFile(
+        path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+        'utf8'
+    );
+    const statusScript = await readFile(
+        path.join(repoRoot, 'scripts/hetzner/controller/12-status-headless-workers.sh'),
+        'utf8'
+    );
+    const installScript = await readFile(
+        path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh'),
+        'utf8'
+    );
+    const dispatchScript = await readFile(
+        path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh'),
+        'utf8'
+    );
 
-  for (const workflow of [distributedWorkflow, headlessWorkflow]) {
-    expect(workflow).toContain("browser_engine:");
-    expect(workflow).toContain("default: chromium");
-    expect(workflow).toContain("- chromium");
-    expect(workflow).toContain("- firefox");
-    expect(workflow).toContain("- webkit");
-    expect(workflow).toContain("RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}");
-    expect(workflow).toContain(`printf 'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\\n' "$(quote "\${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"`);
-  }
+    for (const workflow of [distributedWorkflow, headlessWorkflow]) {
+        expect(workflow).toContain('browser_engine:');
+        expect(workflow).toContain('default: chromium');
+        expect(workflow).toContain('- chromium');
+        expect(workflow).toContain('- firefox');
+        expect(workflow).toContain('- webkit');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}');
+        expect(workflow).toContain(
+            `printf 'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\\n' "$(quote "\${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"`
+        );
+    }
 
-  expect(startScript).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"');
-  expect(startScript).toContain("validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE");
-  expect(startScript).toContain("RALLAR_BLACK_BOX_BROWSER_ENGINE");
-  expect(startScript).toContain('install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"');
-  expect(startScript).toContain('echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE}"');
+    expect(startScript).toContain(
+        'RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"'
+    );
+    expect(startScript).toContain('validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE');
+    expect(startScript).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE');
+    expect(startScript).toContain(
+        'install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"'
+    );
+    expect(startScript).toContain('echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE}"');
 
-  expect(installScript).toContain("rallar_playwright_normalize_browser");
-  expect(installScript).toContain("install_rallar_playwright_browser()");
-  expect(installScript).toContain('playwright install-deps "${browser_name}"');
-  expect(installScript).toContain('playwright install "${browser_name}"');
+    expect(installScript).toContain('rallar_playwright_normalize_browser');
+    expect(installScript).toContain('install_rallar_playwright_browser()');
+    expect(installScript).toContain('playwright install-deps "${browser_name}"');
+    expect(installScript).toContain('playwright install "${browser_name}"');
 
-  expect(statusScript).toContain("chrome|chromium|firefox|webkit|WebKit|MiniBrowser|rallar-black-box");
+    expect(statusScript).toContain(
+        'chrome|chromium|firefox|webkit|WebKit|MiniBrowser|rallar-black-box'
+    );
 
-  expect(dispatchScript).toContain('--browser-engine <engine>');
-  expect(dispatchScript).toContain('BROWSER_ENGINE="chromium"');
-  expect(dispatchScript).toContain('normalize_browser_engine');
-  expect(dispatchScript).toContain('-f "browser_engine=${BROWSER_ENGINE}"');
+    expect(dispatchScript).toContain('--browser-engine <engine>');
+    expect(dispatchScript).toContain('BROWSER_ENGINE="chromium"');
+    expect(dispatchScript).toContain('normalize_browser_engine');
+    expect(dispatchScript).toContain('-f "browser_engine=${BROWSER_ENGINE}"');
 });
 ```
 
@@ -2173,7 +2190,7 @@ BROWSER_ENGINE="chromium"
 Add this usage line:
 
 ```sh
-  --browser-engine <engine>      Pass browser_engine. Values: chromium, firefox, webkit. Default: chromium.
+--browser-engine <engine>      Pass browser_engine. Values: chromium, firefox, webkit. Default: chromium.
 ```
 
 Add this parser case:
@@ -2205,7 +2222,7 @@ BROWSER_ENGINE="$(normalize_browser_engine "${BROWSER_ENGINE}")"
 Forward it in the workflow invocation:
 
 ```sh
-  -f "browser_engine=${BROWSER_ENGINE}" \
+-f "browser_engine=${BROWSER_ENGINE}" \
 ```
 
 Print it in the dispatch summary:
@@ -2267,7 +2284,9 @@ Extend `packages/tests/hetzner/spa-env-script.test.ts` to assert:
 
 ```ts
 expect(source).toContain('npm --prefix "${checkout_dir}" --workspace rallar-black-box run build');
-expect(source).toContain('npm --prefix "${checkout_dir}" --workspace rallar-black-box-headless run build');
+expect(source).toContain(
+    'npm --prefix "${checkout_dir}" --workspace rallar-black-box-headless run build'
+);
 ```
 
 Extend the deploy/rollout assertions to check:
@@ -2280,7 +2299,7 @@ expect(source).toContain('/var/www/rallar-black-box/headless/');
 Extend `packages/tests/hetzner/distributed-recipe-workflow.test.ts` to assert the workflow forwards:
 
 ```ts
-RALLAR_BLACK_BOX_HEADLESS_ENTRY
+RALLAR_BLACK_BOX_HEADLESS_ENTRY;
 ```
 
 Extend the same test suite, or the existing dispatch-helper source assertions if they are split into another Hetzner test file, to assert `scripts/hetzner/dispatch-distributed-recipe.sh` contains:
@@ -2377,8 +2396,8 @@ In `.github/workflows/hetzner-distributed-recipe.yml`, add input:
 ```yaml
 headless_entry:
   description: Headless browser app entry: operator-spa or headless
-  required: false
-  default: operator-spa
+    required: false
+    default: operator-spa
 ```
 
 Forward to the remote worker start environment:
@@ -2403,7 +2422,7 @@ HEADLESS_ENTRY="operator-spa"
 Add this usage line:
 
 ```sh
-  --headless-entry <entry> Pass headless_entry. Values: operator-spa, headless. Default: operator-spa.
+--headless-entry <entry> Pass headless_entry. Values: operator-spa, headless. Default: operator-spa.
 ```
 
 Add this parser case:
@@ -2435,7 +2454,7 @@ HEADLESS_ENTRY="$(normalize_headless_entry "${HEADLESS_ENTRY}")"
 Forward it in the `gh workflow run hetzner-distributed-recipe.yml` invocation:
 
 ```sh
-  -f "headless_entry=${HEADLESS_ENTRY}" \
+-f "headless_entry=${HEADLESS_ENTRY}" \
 ```
 
 Keep the `--browser-engine` option, normalization, summary output, and `-f "browser_engine=${BROWSER_ENGINE}"` forwarding from Iteration 6.
@@ -2715,11 +2734,11 @@ Expected: per-agent RSS is lower than the previous full SPA baseline because the
 After health and RTC smoke pass on the new app under Chromium, and after Firefox/WebKit diagnostic health evidence is recorded, change `headlessEntryEnv` default from `operator-spa` to `headless`:
 
 ```ts
-if (!value || value === "headless") {
-  return "headless";
+if (!value || value === 'headless') {
+    return 'headless';
 }
-if (value === "operator-spa") {
-  return "operator-spa";
+if (value === 'operator-spa') {
+    return 'operator-spa';
 }
 ```
 

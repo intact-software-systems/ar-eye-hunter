@@ -459,21 +459,21 @@ pass-through wrapper or generic `utils.mjs` module.
 
 ```js
 export const layoutLimits = Object.freeze({
-  directTypeScriptFileCount: 20,
-  featurePrefixFileCount: 4,
-  displayedFileSampleCount: 5,
+    directTypeScriptFileCount: 20,
+    featurePrefixFileCount: 4,
+    displayedFileSampleCount: 5
 });
 
 export const layoutRuleIds = Object.freeze({
-  directoryDensity: 'layout.directory-density',
-  featurePrefixCluster: 'layout.feature-prefix-cluster',
-  filenameStyle: 'layout.filename-style',
-  genericFilename: 'layout.generic-filename',
-  genericRouteInit: 'layout.generic-route-init',
-  unapprovedMod: 'layout.unapproved-mod',
-  primaryExportName: 'layout.primary-export-name',
-  browserRoomBoundary: 'layout.browser-room-boundary',
-  serverGroupStateVocabulary: 'layout.server-group-state-vocabulary',
+    directoryDensity: 'layout.directory-density',
+    featurePrefixCluster: 'layout.feature-prefix-cluster',
+    filenameStyle: 'layout.filename-style',
+    genericFilename: 'layout.generic-filename',
+    genericRouteInit: 'layout.generic-route-init',
+    unapprovedMod: 'layout.unapproved-mod',
+    primaryExportName: 'layout.primary-export-name',
+    browserRoomBoundary: 'layout.browser-room-boundary',
+    serverGroupStateVocabulary: 'layout.server-group-state-vocabulary'
 });
 
 export function isLayoutTypeScriptFile(file) {}
@@ -619,20 +619,20 @@ approved or implemented by this revision.
 
   ```ts
   expectAll(canonicalStyle, [
-    '## Feature ownership and repository organization',
-    '## File and primary symbol names',
-    'Organize by owned feature or capability before technical role',
-    'More than 20 direct production TypeScript files prompts an ownership review',
-    'Four or more sibling files with the same meaningful feature prefix',
-    '`room` is the product and browser term',
-    '`group-state` is the authoritative API and server term',
-    '`room-group-state-translation.ts`',
+      '## Feature ownership and repository organization',
+      '## File and primary symbol names',
+      'Organize by owned feature or capability before technical role',
+      'More than 20 direct production TypeScript files prompts an ownership review',
+      'Four or more sibling files with the same meaningful feature prefix',
+      '`room` is the product and browser term',
+      '`group-state` is the authoritative API and server term',
+      '`room-group-state-translation.ts`'
   ]);
   expectAll(humanGuide, [
-    'obvious feature entry file',
-    'primary exported symbol',
-    'co-located with the feature that owns it',
-    'room/group-state translation boundary',
+      'obvious feature entry file',
+      'primary exported symbol',
+      'co-located with the feature that owns it',
+      'room/group-state translation boundary'
   ]);
   ```
 
@@ -802,34 +802,34 @@ approved or implemented by this revision.
   expect(scan(makeSources(21)).counts['layout.directory-density']).toBe(1);
 
   expect(
-    scan(
-      denseSourcesWithFeatureFiles([
-        'read-auth-session.ts',
-        'compute-auth-session.ts',
-        'validate-auth-session.ts',
-        'write-auth-session.ts',
-      ]),
-    ).counts['layout.feature-prefix-cluster'],
+      scan(
+          denseSourcesWithFeatureFiles([
+              'read-auth-session.ts',
+              'compute-auth-session.ts',
+              'validate-auth-session.ts',
+              'write-auth-session.ts'
+          ])
+      ).counts['layout.feature-prefix-cluster']
   ).toBe(1);
 
   expect(
-    scan(
-      sources({
-        'feature/ThingService.ts': 'export class ThingService {}',
-        'feature/thingService.ts': 'export class OtherThingService {}',
-        'feature/thing-service.ts': 'export class ThingService {}',
-        'feature/vite.config.ts': 'export default {};',
-      }),
-    ).counts['layout.filename-style'],
+      scan(
+          sources({
+              'feature/ThingService.ts': 'export class ThingService {}',
+              'feature/thingService.ts': 'export class OtherThingService {}',
+              'feature/thing-service.ts': 'export class ThingService {}',
+              'feature/vite.config.ts': 'export default {};'
+          })
+      ).counts['layout.filename-style']
   ).toBe(2);
 
   expect(
-    scan(
-      sources({
-        'feature/types.ts': 'export interface Value {}',
-        'feature/group-state-types.ts': 'export interface GroupStateValue {}',
-      }),
-    ).counts['layout.generic-filename'],
+      scan(
+          sources({
+              'feature/types.ts': 'export interface Value {}',
+              'feature/group-state-types.ts': 'export interface GroupStateValue {}'
+          })
+      ).counts['layout.generic-filename']
   ).toBe(1);
   ```
 
@@ -851,7 +851,7 @@ approved or implemented by this revision.
   ```ts
   const planningResult = scanRepositoryLayout(planningCountFixture());
   const prefixFindings = planningResult.findings.filter(
-    (finding) => finding.ruleId === 'layout.feature-prefix-cluster',
+      (finding) => finding.ruleId === 'layout.feature-prefix-cluster'
   );
 
   expect(prefixFindings).toHaveLength(22);
@@ -879,12 +879,12 @@ approved or implemented by this revision.
   const typeScriptSuffixPattern = /(?:\.d)?\.(?:ts|tsx|mts|cts)$/u;
   const kebabCasePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
   const genericFileStems = new Set([
-    'utils',
-    'types',
-    'helpers',
-    'contracts',
-    'runtime',
-    'middleware',
+      'utils',
+      'types',
+      'helpers',
+      'contracts',
+      'runtime',
+      'middleware'
   ]);
   const conventionalToolFileNames = new Set(['prisma.config.ts', 'vite.config.ts']);
   ```
@@ -933,20 +933,20 @@ approved or implemented by this revision.
 
   ```js
   const approvedModCompatibilityBoundaries = new Set([
-    'packages/relic-hunters/mod.ts',
-    'packages/shared-graph/mod.ts',
-    'packages/shared-server/game/mod.ts',
-    'packages/shared-server/mod.ts',
-    'packages/shared-server/rallar-ai/mod.ts',
-    'packages/shared-test/rallar-bb-test/mod.ts',
-    'packages/shared-web/game/mod.ts',
-    'packages/shared-web/mod.ts',
-    'packages/shared/crdt/mod.ts',
-    'packages/shared/mod.ts',
-    'packages/shared/rallar-ai/mod.ts',
-    'packages/shared/rallar-game/mod.ts',
-    'packages/shared/rallar-match/mod.ts',
-    'packages/shared/rallar-motion/mod.ts',
+      'packages/relic-hunters/mod.ts',
+      'packages/shared-graph/mod.ts',
+      'packages/shared-server/game/mod.ts',
+      'packages/shared-server/mod.ts',
+      'packages/shared-server/rallar-ai/mod.ts',
+      'packages/shared-test/rallar-bb-test/mod.ts',
+      'packages/shared-web/game/mod.ts',
+      'packages/shared-web/mod.ts',
+      'packages/shared/crdt/mod.ts',
+      'packages/shared/mod.ts',
+      'packages/shared/rallar-ai/mod.ts',
+      'packages/shared/rallar-game/mod.ts',
+      'packages/shared/rallar-match/mod.ts',
+      'packages/shared/rallar-motion/mod.ts'
   ]);
   ```
 
@@ -1014,33 +1014,33 @@ approved or implemented by this revision.
 
   ```ts
   expect(
-    detailCount(
-      {
-        'feature/thing-service.ts': 'export class ThingService {}',
-      },
-      'layout.primary-export-name',
-    ),
+      detailCount(
+          {
+              'feature/thing-service.ts': 'export class ThingService {}'
+          },
+          'layout.primary-export-name'
+      )
   ).toBe(0);
 
   expect(
-    detailCount(
-      {
-        'feature/service.ts': 'export class ThingService {}',
-      },
-      'layout.primary-export-name',
-    ),
+      detailCount(
+          {
+              'feature/service.ts': 'export class ThingService {}'
+          },
+          'layout.primary-export-name'
+      )
   ).toBe(1);
 
   expect(
-    detailCount(
-      {
-        'feature/contracts.ts': [
-          'export interface ThingInput {}',
-          'export interface ThingOutput {}',
-        ].join('\n'),
-      },
-      'layout.primary-export-name',
-    ),
+      detailCount(
+          {
+              'feature/contracts.ts': [
+                  'export interface ThingInput {}',
+                  'export interface ThingOutput {}'
+              ].join('\n')
+          },
+          'layout.primary-export-name'
+      )
   ).toBe(0);
   ```
 
@@ -1055,35 +1055,35 @@ approved or implemented by this revision.
 
   ```ts
   expect(
-    detailCount(
-      {
-        'packages/shared-web/browser/rooms/create-room.ts': [
-          "import type { CreateGroupRequest } from '@shared/api/state-types.ts';",
-          'export function createRoom(input: CreateGroupRequest) { return input; }',
-        ].join('\n'),
-      },
-      'layout.browser-room-boundary',
-    ),
+      detailCount(
+          {
+              'packages/shared-web/browser/rooms/create-room.ts': [
+                  'import type { CreateGroupRequest } from \'@shared/api/state-types.ts\';',
+                  'export function createRoom(input: CreateGroupRequest) { return input; }'
+              ].join('\n')
+          },
+          'layout.browser-room-boundary'
+      )
   ).toBe(1);
 
   expect(
-    detailCount(
-      {
-        'packages/shared-web/browser/rooms/room-group-state-translation.ts':
-          "import type { CreateGroupRequest } from '@shared/api/state-types.ts';",
-      },
-      'layout.browser-room-boundary',
-    ),
+      detailCount(
+          {
+              'packages/shared-web/browser/rooms/room-group-state-translation.ts':
+                  'import type { CreateGroupRequest } from \'@shared/api/state-types.ts\';'
+          },
+          'layout.browser-room-boundary'
+      )
   ).toBe(0);
 
   expect(
-    detailCount(
-      {
-        'packages/shared-web/browser/rooms/room-ref.ts':
-          "import type { GroupRef } from '@shared/api/group-types.ts';",
-      },
-      'layout.browser-room-boundary',
-    ),
+      detailCount(
+          {
+              'packages/shared-web/browser/rooms/room-ref.ts':
+                  'import type { GroupRef } from \'@shared/api/group-types.ts\';'
+          },
+          'layout.browser-room-boundary'
+      )
   ).toBe(0);
   ```
 
@@ -1248,10 +1248,10 @@ approved or implemented by this revision.
   ```js
   const productionFiles = nestedFiles.flat().filter(isProductionCodeFile).sort();
   const productionSources = await Promise.all(
-    productionFiles.map(async (file) => ({
-      file,
-      raw: await fs.readFile(file, 'utf8'),
-    })),
+      productionFiles.map(async (file) => ({
+          file,
+          raw: await fs.readFile(file, 'utf8')
+      }))
   );
   const layoutSources = productionSources.filter(({ file }) => isLayoutTypeScriptFile(file));
   ```

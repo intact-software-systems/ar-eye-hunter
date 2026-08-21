@@ -1,24 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useMemo, useState } from 'react';
 import {
-    FLOW_BUILDER_TEMPLATES,
     addFlowBuilderStep,
     buildFlowBuilderRecipe,
     buildFlowBuilderRunnerScenario,
+    FLOW_BUILDER_TEMPLATES,
     flowBuilderText,
     parseFlowBuilderDefinition,
     templateFlowBuilderText,
-    type FlowBuilderStepKind,
+    type FlowBuilderStepKind
 } from '../../../flow-builder.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringValue } from '../../../schema-authoring.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-import {
-    flowBuilderVariablesFromGlobalValues,
-    parseVariablesText,
-} from './flow-builder-support.ts';
+import { flowBuilderVariablesFromGlobalValues, parseVariablesText } from './flow-builder-support.ts';
 
 export type UseFlowBuilderControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -31,34 +28,32 @@ export function useFlowBuilderController({
     state,
     authSession,
     globalValues,
-    onSelectCommand,
+    onSelectCommand
 }: UseFlowBuilderControllerInput) {
     const [templateId, setTemplateId] = useState(
-        FLOW_BUILDER_TEMPLATES[0].templateId,
+        FLOW_BUILDER_TEMPLATES[0].templateId
     );
-    const [flowText, setFlowText] = useState(() =>
-        templateFlowBuilderText(templateId),
-    );
+    const [flowText, setFlowText] = useState(() => templateFlowBuilderText(templateId));
     const [variablesText, setVariablesText] = useState(() =>
         JSON.stringify(
             flowBuilderVariablesFromGlobalValues(
                 FLOW_BUILDER_TEMPLATES[0].flow.variables,
-                globalValues,
+                globalValues
             ),
             null,
-            2,
-        ),
+            2
+        )
     );
     const [variablesEdited, setVariablesEdited] = useState(false);
     const [sequence, setSequence] = useState(1);
     const [localError, setLocalError] = useState<string | undefined>();
     const flowResult = useMemo(
         () => parseFlowBuilderDefinition(flowText),
-        [flowText],
+        [flowText]
     );
     const variablesResult = useMemo(
         () => parseVariablesText(variablesText),
-        [variablesText],
+        [variablesText]
     );
     const recipe = useMemo(() => {
         if (!flowResult.ok || !variablesResult.ok) {
@@ -67,7 +62,7 @@ export function useFlowBuilderController({
 
         return buildFlowBuilderRecipe(
             flowResult.flow,
-            variablesResult.variables,
+            variablesResult.variables
         );
     }, [flowResult, variablesResult]);
     const runnerScenario = useMemo(() => {
@@ -77,14 +72,14 @@ export function useFlowBuilderController({
 
         return buildFlowBuilderRunnerScenario(
             flowResult.flow,
-            variablesResult.variables,
+            variablesResult.variables
         );
     }, [flowResult, variablesResult]);
     const parseError = !flowResult.ok
         ? flowResult.error
         : !variablesResult.ok
-          ? variablesResult.error
-          : undefined;
+        ? variablesResult.error
+        : undefined;
     const recipeText = recipe
         ? redactedJson(recipe, state, authSession)
         : (parseError ?? 'No recipe preview available.');
@@ -92,37 +87,35 @@ export function useFlowBuilderController({
         ? redactedJson(runnerScenario, state, authSession)
         : recipeText;
     const recipeValidation = useMemo(
-        () =>
-            recipe ? validateSchemaAuthoringValue('recipe', recipe) : undefined,
-        [recipe],
+        () => recipe ? validateSchemaAuthoringValue('recipe', recipe) : undefined,
+        [recipe]
     );
     const runnerValidation = useMemo(
         () =>
             runnerScenario
                 ? validateSchemaAuthoringValue(
-                      'runner-scenario',
-                      runnerScenario,
-                  )
+                    'runner-scenario',
+                    runnerScenario
+                )
                 : undefined,
-        [runnerScenario],
+        [runnerScenario]
     );
 
     const selectTemplate = (nextTemplateId: string): void => {
-        const template =
-            FLOW_BUILDER_TEMPLATES.find(
-                (entry) => entry.templateId === nextTemplateId,
-            ) ?? FLOW_BUILDER_TEMPLATES[0];
+        const template = FLOW_BUILDER_TEMPLATES.find(
+            (entry) => entry.templateId === nextTemplateId
+        ) ?? FLOW_BUILDER_TEMPLATES[0];
         setTemplateId(template.templateId);
         setFlowText(flowBuilderText(template.flow));
         setVariablesText(
             JSON.stringify(
                 flowBuilderVariablesFromGlobalValues(
                     template.flow.variables,
-                    globalValues,
+                    globalValues
                 ),
                 null,
-                2,
-            ),
+                2
+            )
         );
         setVariablesEdited(false);
         setLocalError(undefined);
@@ -133,19 +126,18 @@ export function useFlowBuilderController({
             return;
         }
 
-        const template =
-            FLOW_BUILDER_TEMPLATES.find(
-                (entry) => entry.templateId === templateId,
-            ) ?? FLOW_BUILDER_TEMPLATES[0];
+        const template = FLOW_BUILDER_TEMPLATES.find(
+            (entry) => entry.templateId === templateId
+        ) ?? FLOW_BUILDER_TEMPLATES[0];
         setVariablesText(
             JSON.stringify(
                 flowBuilderVariablesFromGlobalValues(
                     template.flow.variables,
-                    globalValues,
+                    globalValues
                 ),
                 null,
-                2,
-            ),
+                2
+            )
         );
     }, [
         globalValues?.apiBaseUrl,
@@ -155,7 +147,7 @@ export function useFlowBuilderController({
         globalValues?.sessionId,
         globalValues?.workspaceId,
         templateId,
-        variablesEdited,
+        variablesEdited
     ]);
 
     const addStep = (kind: FlowBuilderStepKind): void => {
@@ -194,14 +186,15 @@ export function useFlowBuilderController({
                         kind: 'recipe.run',
                         commandId,
                         label: `Run ${recipe.name ?? recipe.recipeId}`,
-                        recipe,
-                    },
+                        recipe
+                    }
                 ],
-                'Run Flow Builder',
+                'Run Flow Builder'
             );
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
@@ -232,10 +225,8 @@ export function useFlowBuilderController({
         addStep,
         normalizeFlowJson,
         runFlow,
-        copyText,
+        copyText
     };
 }
 
-export type FlowBuilderControllerModel = ReturnType<
-    typeof useFlowBuilderController
->;
+export type FlowBuilderControllerModel = ReturnType<typeof useFlowBuilderController>;

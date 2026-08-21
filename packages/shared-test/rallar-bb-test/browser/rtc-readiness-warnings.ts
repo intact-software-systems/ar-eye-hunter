@@ -1,10 +1,6 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestConfig,
-    RallarBlackBoxTestRecipe,
-} from '../types.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '../types.ts';
 
-type RtcConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' }>;
+type RtcConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
 type RecipeCommandNode = Readonly<{
     command: RallarBlackBoxTestCommand;
     insideLoop: boolean;
@@ -13,48 +9,44 @@ type RuntimeValue = string | number | boolean | bigint | symbol | object | null 
 
 const ROOM_IDENTITY_REMEDY =
     'provide roomRef or applicationId plus roomId on rtc.connect or the active configure command.';
-const RTC_STREAM_READINESS_WARNING =
-    'RTC stream traffic starts without an explicit rtc.connect readiness contract; ' +
+const RTC_STREAM_READINESS_WARNING = 'RTC stream traffic starts without an explicit rtc.connect readiness contract; ' +
     'frames can race signaling and data-channel readiness.';
-const RTC_SEND_READINESS_WARNING =
-    'RTC send traffic starts without an explicit rtc.connect readiness contract; ' +
+const RTC_SEND_READINESS_WARNING = 'RTC send traffic starts without an explicit rtc.connect readiness contract; ' +
     'sends can race signaling and data-channel readiness.';
-const LOOPED_RTC_SEND_WARNING =
-    'Looped RTC sends are especially sensitive to missing ready-peer checks ' +
+const LOOPED_RTC_SEND_WARNING = 'Looped RTC sends are especially sensitive to missing ready-peer checks ' +
     'before the first frame.';
-const STREAMED_RTC_SEND_WARNING =
-    'Streamed RTC frames are especially sensitive to missing ready-peer checks ' +
+const STREAMED_RTC_SEND_WARNING = 'Streamed RTC frames are especially sensitive to missing ready-peer checks ' +
     'before the first frame.';
 
 export function rtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return [
         ...missingRtcReadinessWarnings(recipe),
-        ...validateRtcReadinessRoomIdentity(recipe),
+        ...validateRtcReadinessRoomIdentity(recipe)
     ];
 }
 
 function recipeCommandNodes(
     commands: readonly RallarBlackBoxTestCommand[],
-    insideLoop = false,
+    insideLoop = false
 ): readonly RecipeCommandNode[] {
     return commands.flatMap((command): readonly RecipeCommandNode[] => {
         const current = [{ command, insideLoop }];
         if (command.kind === 'loop') {
             return [
                 ...current,
-                ...recipeCommandNodes(command.commands, true),
+                ...recipeCommandNodes(command.commands, true)
             ];
         }
         if (command.kind === 'parallel') {
             return [
                 ...current,
-                ...command.groups.flatMap(group => recipeCommandNodes(group.commands, insideLoop)),
+                ...command.groups.flatMap((group) => recipeCommandNodes(group.commands, insideLoop))
             ];
         }
         if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
             return [
                 ...current,
-                ...recipeCommandNodes(command.recipe.commands, insideLoop),
+                ...recipeCommandNodes(command.recipe.commands, insideLoop)
             ];
         }
         return current;
@@ -67,16 +59,14 @@ function hasRtcConnectReadiness(command: RallarBlackBoxTestCommand): boolean {
 
 function missingRtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     const nodes = recipeCommandNodes(recipe.commands);
-    const sends = nodes.filter(node =>
-        node.command.kind === 'rtc.send' || node.command.kind === 'rtc.stream'
-    );
-    if (sends.length === 0 || nodes.some(node => hasRtcConnectReadiness(node.command))) {
+    const sends = nodes.filter((node) => node.command.kind === 'rtc.send' || node.command.kind === 'rtc.stream');
+    if (sends.length === 0 || nodes.some((node) => hasRtcConnectReadiness(node.command))) {
         return [];
     }
 
-    const hasStream = sends.some(node => node.command.kind === 'rtc.stream');
+    const hasStream = sends.some((node) => node.command.kind === 'rtc.stream');
     const warnings = [hasStream ? RTC_STREAM_READINESS_WARNING : RTC_SEND_READINESS_WARNING];
-    if (sends.some(node => node.insideLoop)) {
+    if (sends.some((node) => node.insideLoop)) {
         warnings.push(LOOPED_RTC_SEND_WARNING);
     }
     if (hasStream) {
@@ -86,7 +76,7 @@ function missingRtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly
 }
 
 function validateRtcReadinessRoomIdentity(
-    recipe: RallarBlackBoxTestRecipe,
+    recipe: RallarBlackBoxTestRecipe
 ): readonly string[] {
     return validateCommandList(recipe.commands, '$.commands', undefined);
 }
@@ -94,7 +84,7 @@ function validateRtcReadinessRoomIdentity(
 function validateCommandList(
     commands: readonly RallarBlackBoxTestCommand[],
     path: string,
-    inheritedConfig: RallarBlackBoxTestConfig | undefined,
+    inheritedConfig: RallarBlackBoxTestConfig | undefined
 ): readonly string[] {
     const warnings: string[] = [];
     let activeConfig = inheritedConfig;
@@ -108,7 +98,7 @@ function validateCommandList(
         warnings.push(...validateCommandRtcReadinessRoomIdentity(
             command,
             commandPath,
-            activeConfig,
+            activeConfig
         ));
     }
 
@@ -118,14 +108,14 @@ function validateCommandList(
 function validateCommandRtcReadinessRoomIdentity(
     command: RallarBlackBoxTestCommand,
     commandPath: string,
-    activeConfig: RallarBlackBoxTestConfig | undefined,
+    activeConfig: RallarBlackBoxTestConfig | undefined
 ): readonly string[] {
     if (command.kind === 'rtc.connect' && command.readiness) {
         return hasExactRoomIdentity(command, activeConfig)
             ? []
             : [
                 `${commandPath}: Browser Rallar RTC readiness cannot point-refresh room state ` +
-                `without an exact room reference; ${ROOM_IDENTITY_REMEDY}`,
+                `without an exact room reference; ${ROOM_IDENTITY_REMEDY}`
             ];
     }
     if (command.kind === 'loop') {
@@ -136,7 +126,7 @@ function validateCommandRtcReadinessRoomIdentity(
             validateCommandList(
                 group.commands,
                 `${commandPath}.groups[${groupIndex}].commands`,
-                activeConfig,
+                activeConfig
             )
         );
     }
@@ -144,7 +134,7 @@ function validateCommandRtcReadinessRoomIdentity(
         return validateCommandList(
             command.recipe.commands,
             `${commandPath}.recipe.commands`,
-            activeConfig,
+            activeConfig
         );
     }
     return [];
@@ -152,7 +142,7 @@ function validateCommandRtcReadinessRoomIdentity(
 
 function hasExactRoomIdentity(
     command: RtcConnectCommand,
-    activeConfig: RallarBlackBoxTestConfig | undefined,
+    activeConfig: RallarBlackBoxTestConfig | undefined
 ): boolean {
     const configuredRallar = activeConfig?.rallar;
     const commandRallar = command.rallar;
@@ -175,7 +165,7 @@ function hasExactRoomIdentity(
     const rallarApplicationId = selectedProperty(
         commandRallar,
         configuredRallar,
-        'applicationId',
+        'applicationId'
     );
     const applicationId = command.applicationId !== undefined
         ? command.applicationId
@@ -188,7 +178,7 @@ function hasExactRoomIdentity(
 function selectedProperty(
     preferred: object | undefined,
     fallback: object | undefined,
-    property: string,
+    property: string
 ): RuntimeValue {
     if (preferred && Object.prototype.hasOwnProperty.call(preferred, property)) {
         return Reflect.get(preferred, property);

@@ -81,29 +81,29 @@ model changes `Group.status` semantics.
 ## Lifecycle state machine (formation intent)
 
 ```text
-            create(policy)
-                 |
-                 v
-             FORMING            discovery: membership + presence only;
-                 |              no topology work, no commanded dials
-                 | start-establishment
-                 | (by EstablishmentPolicy.initiator, or immediately
-                 |  when FormationPolicy = immediate)
-                 v
-           ESTABLISHING         communication establishment underway
-                 |              (RTC and/or WS per policy; batches,
-                 |              pacing, budgets from the data plane)
-                 | activation criterion met
-                 | (threshold / deadline / manual, per policy)
-                 v
-              ACTIVE            application data phase; admission now
-                 |              governed by AdmissionPolicy
-                 | re-establishment (membership change, degradation,
-                 |   manager/app request) --> back to ESTABLISHING
-                 |   while remaining app-ACTIVE (matches the existing
-                 |   RECONFIGURING observation state)
-                 v
-        (business lifecycle end: archived / deleted)
+    create(policy)
+         |
+         v
+     FORMING            discovery: membership + presence only;
+         |              no topology work, no commanded dials
+         | start-establishment
+         | (by EstablishmentPolicy.initiator, or immediately
+         |  when FormationPolicy = immediate)
+         v
+   ESTABLISHING         communication establishment underway
+         |              (RTC and/or WS per policy; batches,
+         |              pacing, budgets from the data plane)
+         | activation criterion met
+         | (threshold / deadline / manual, per policy)
+         v
+      ACTIVE            application data phase; admission now
+         |              governed by AdmissionPolicy
+         | re-establishment (membership change, degradation,
+         |   manager/app request) --> back to ESTABLISHING
+         |   while remaining app-ACTIVE (matches the existing
+         |   RECONFIGURING observation state)
+         v
+(business lifecycle end: archived / deleted)
 ```
 
 Invariants:

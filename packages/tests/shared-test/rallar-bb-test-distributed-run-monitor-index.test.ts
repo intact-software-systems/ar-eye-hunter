@@ -1,103 +1,94 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-} from '../../shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../shared-test/rallar-bb-test/control-snapshots.ts';
+import { distributedRunMonitorDerivationWorkForTest } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
-    deriveRunVerdictView,
+    deriveRunVerdictView
 } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { distributedRunMonitorDerivationWorkForTest } from
-    '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 
 const SCALE = 5_000;
 // Captured from the pre-index implementation before Task 6A production edits.
-const PRE_INDEX_MONITOR_SHA256 =
-    'fa00d7b1056a20a68e99c154285eeb444dd517e08c25986eb499dbbe2624162f';
-const PRE_INDEX_REPORT_SHA256 =
-    '863b2130b109c34ef474a3f306623bfe4c0cd3e9209fe350e25639cccf41d415';
-const PRE_INDEX_VERDICT_SHA256 =
-    'd52788b32fb4dfbada1c092580c8546de9faab055eb728c7f4a3f0fc32ed35b5';
-const PRE_MEMBERSHIP_INDEX_MONITOR_SHA256 =
-    '3d35dc6ea97ca5f97f53b9a1d4cca53be3be4486cfe77c4937f50ad6758cb14d';
+const PRE_INDEX_MONITOR_SHA256 = 'fa00d7b1056a20a68e99c154285eeb444dd517e08c25986eb499dbbe2624162f';
+const PRE_INDEX_REPORT_SHA256 = '863b2130b109c34ef474a3f306623bfe4c0cd3e9209fe350e25639cccf41d415';
+const PRE_INDEX_VERDICT_SHA256 = 'd52788b32fb4dfbada1c092580c8546de9faab055eb728c7f4a3f0fc32ed35b5';
+const PRE_MEMBERSHIP_INDEX_MONITOR_SHA256 = '3d35dc6ea97ca5f97f53b9a1d4cca53be3be4486cfe77c4937f50ad6758cb14d';
 
 describe('distributed run monitor indexed derivation', () => {
-    it('preserves the complete pre-index monitor, report, and verdict observables at 5,000 scale',
-        () => {
-            const input = adversarialScaleInput();
-            const monitor = deriveDistributedRunMonitor(input);
-            const report = deriveDistributedRunAnalysisReport({
-                ...input,
-                monitor,
-                snapshotBounds: {
-                    commands: SCALE,
-                    results: SCALE,
-                    events: SCALE,
-                },
-            });
-            const verdict = deriveRunVerdictView({
-                distributedRun: input.distributedRun,
-                monitor,
-                report,
-                refreshedAtEpochMs: 90_000,
-            });
+    it('preserves the complete pre-index monitor, report, and verdict observables at 5,000 scale', () => {
+        const input = adversarialScaleInput();
+        const monitor = deriveDistributedRunMonitor(input);
+        const report = deriveDistributedRunAnalysisReport({
+            ...input,
+            monitor,
+            snapshotBounds: {
+                commands: SCALE,
+                results: SCALE,
+                events: SCALE
+            }
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun: input.distributedRun,
+            monitor,
+            report,
+            refreshedAtEpochMs: 90_000
+        });
 
-            expect(sha256(monitor)).toBe(PRE_INDEX_MONITOR_SHA256);
-            expect(sha256(report)).toBe(PRE_INDEX_REPORT_SHA256);
-            expect(sha256(verdict)).toBe(PRE_INDEX_VERDICT_SHA256);
-            expect(distributedRunMonitorDerivationWorkForTest(report)).toEqual({
-                monitorDerivationCount: 1,
-                reportDerivationCount: 1,
-                commandLinkIndexPassCount: 1,
-                commandLinkVisitCount: SCALE,
-                controlCommandIndexPassCount: 1,
-                controlCommandVisitCount: SCALE,
-                controlResultIndexPassCount: 1,
-                controlResultVisitCount: SCALE,
-                controlEventIndexPassCount: 1,
-                controlEventVisitCount: SCALE,
-                linkedEventAgentIndexVisitCount: monitor.events.length,
-                failureIndexVisitCount: monitor.failures.length,
-                targetAgentIndexPassCount: 1,
-                targetAgentVisitCount: SCALE,
-                recipeSelectionIndexPassCount: 1,
-                recipeSelectionVisitCount: 3,
-                roleAssignmentIndexPassCount: 1,
-                roleAssignmentVisitCount: 0,
-                targetPolicyRoleMembershipVisitCount: 0,
-                membershipDescriptorBuildCount: SCALE,
-                membershipInvertedIndexWriteCount: 0,
-                membershipIntersectionCandidateVisitCount: 0,
-                recipeTargetCountProjectionVisitCount: 3,
-                retainedMembershipDescriptorCount: SCALE,
-                retainedRecipeTargetCountCount: 3,
-                commandLinkCompletionProbeCount: SCALE,
-                agentLinkBucketLookupCount: SCALE,
-                agentEventBucketLookupCount: SCALE,
-                agentRoleLookupCount: SCALE * 2,
-                agentLinkProjectionVisitCount: SCALE,
-                agentEventProjectionVisitCount: monitor.events.length,
-                recipeLinkBucketLookupCount: 3,
-                recipeLinkProjectionVisitCount: 1_176,
-                recipeTargetCountLookupCount: 3,
-                linkedAgentExpectedMembershipProbeCount: 1_176,
-                readinessLinkBucketLookupCount: SCALE,
-                readinessStageLinkProjectionVisitCount: 1_250,
-                timelineCommandLinkProjectionVisitCount: SCALE,
-                diagnosticFailureCandidateVisitCount: 2,
-                reportCommandLinkLookupCount: 4,
-                reportFallbackCommandLinkIndexPassCount: 0,
-                reportFallbackCommandLinkVisitCount: 0,
-                reportFallbackCommandPhaseLookupCount: 0,
-            });
-        }, 30_000);
+        expect(sha256(monitor)).toBe(PRE_INDEX_MONITOR_SHA256);
+        expect(sha256(report)).toBe(PRE_INDEX_REPORT_SHA256);
+        expect(sha256(verdict)).toBe(PRE_INDEX_VERDICT_SHA256);
+        expect(distributedRunMonitorDerivationWorkForTest(report)).toEqual({
+            monitorDerivationCount: 1,
+            reportDerivationCount: 1,
+            commandLinkIndexPassCount: 1,
+            commandLinkVisitCount: SCALE,
+            controlCommandIndexPassCount: 1,
+            controlCommandVisitCount: SCALE,
+            controlResultIndexPassCount: 1,
+            controlResultVisitCount: SCALE,
+            controlEventIndexPassCount: 1,
+            controlEventVisitCount: SCALE,
+            linkedEventAgentIndexVisitCount: monitor.events.length,
+            failureIndexVisitCount: monitor.failures.length,
+            targetAgentIndexPassCount: 1,
+            targetAgentVisitCount: SCALE,
+            recipeSelectionIndexPassCount: 1,
+            recipeSelectionVisitCount: 3,
+            roleAssignmentIndexPassCount: 1,
+            roleAssignmentVisitCount: 0,
+            targetPolicyRoleMembershipVisitCount: 0,
+            membershipDescriptorBuildCount: SCALE,
+            membershipInvertedIndexWriteCount: 0,
+            membershipIntersectionCandidateVisitCount: 0,
+            recipeTargetCountProjectionVisitCount: 3,
+            retainedMembershipDescriptorCount: SCALE,
+            retainedRecipeTargetCountCount: 3,
+            commandLinkCompletionProbeCount: SCALE,
+            agentLinkBucketLookupCount: SCALE,
+            agentEventBucketLookupCount: SCALE,
+            agentRoleLookupCount: SCALE * 2,
+            agentLinkProjectionVisitCount: SCALE,
+            agentEventProjectionVisitCount: monitor.events.length,
+            recipeLinkBucketLookupCount: 3,
+            recipeLinkProjectionVisitCount: 1_176,
+            recipeTargetCountLookupCount: 3,
+            linkedAgentExpectedMembershipProbeCount: 1_176,
+            readinessLinkBucketLookupCount: SCALE,
+            readinessStageLinkProjectionVisitCount: 1_250,
+            timelineCommandLinkProjectionVisitCount: SCALE,
+            diagnosticFailureCandidateVisitCount: 2,
+            reportCommandLinkLookupCount: 4,
+            reportFallbackCommandLinkIndexPassCount: 0,
+            reportFallbackCommandLinkVisitCount: 0,
+            reportFallbackCommandPhaseLookupCount: 0
+        });
+    }, 30_000);
 
     it('indexes 5,000 role assignments and expected recipe memberships once', () => {
         const input = adversarialScaleInput();
         const recipeIds = input.distributedRun.manifest.recipes.map(
-            selection => selection.recipeId!,
+            (selection) => selection.recipeId!
         );
         const roleAssignments = input.distributedRun.targetAgentIds.map(
             (agentId, index) => ({
@@ -108,8 +99,8 @@ describe('distributed run monitor indexed derivation', () => {
                     : index % 3 === 1
                     ? []
                     : ['unknown:recipe|界'],
-                required: true,
-            }),
+                required: true
+            })
         );
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
@@ -117,21 +108,21 @@ describe('distributed run monitor indexed derivation', () => {
                 ...input.distributedRun.manifest,
                 recipes: [{
                     ...input.distributedRun.manifest.recipes[0]!,
-                    role: undefined,
+                    role: undefined
                 }, {
                     ...input.distributedRun.manifest.recipes[1]!,
-                    role: 'role:receiver\u202E|界',
+                    role: 'role:receiver\u202E|界'
                 }, {
                     ...input.distributedRun.manifest.recipes[2]!,
-                    role: undefined,
+                    role: undefined
                 }],
-                roleAssignments,
-            },
+                roleAssignments
+            }
         };
 
         const monitor = deriveDistributedRunMonitor({
             distributedRun,
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
         const work = distributedRunMonitorDerivationWorkForTest(monitor);
 
@@ -179,14 +170,14 @@ describe('distributed run monitor indexed derivation', () => {
             reportCommandLinkLookupCount: 0,
             reportFallbackCommandLinkIndexPassCount: 0,
             reportFallbackCommandLinkVisitCount: 0,
-            reportFallbackCommandPhaseLookupCount: 0,
+            reportFallbackCommandPhaseLookupCount: 0
         });
         expect(monitor.agentProgress[0]?.role).toBe('role:receiver\u202E|界');
         expect(monitor.readiness[0]?.role).toBe('role:receiver\u202E|界');
-        expect(monitor.recipeProgress.map(row => row.targetCount)).toEqual([
+        expect(monitor.recipeProgress.map((row) => row.targetCount)).toEqual([
             5_000,
             3_334,
-            3_333,
+            3_333
         ]);
     }, 30_000);
 
@@ -195,13 +186,13 @@ describe('distributed run monitor indexed derivation', () => {
         const input = focusedInput({
             agentIds: Array.from(
                 { length: dimension },
-                (_, index) => `matrix-agent-${index}`,
+                (_, index) => `matrix-agent-${index}`
             ),
             recipeIds: Array.from(
                 { length: dimension },
-                (_, index) => `matrix-recipe-${index}`,
+                (_, index) => `matrix-recipe-${index}`
             ),
-            links: [],
+            links: []
         });
 
         const monitor = deriveDistributedRunMonitor(input);
@@ -210,11 +201,11 @@ describe('distributed run monitor indexed derivation', () => {
         expect(monitor.recipeProgress).toHaveLength(dimension);
         expect(monitor.recipeProgress[0]).toMatchObject({
             targetCount: dimension,
-            missingCount: dimension,
+            missingCount: dimension
         });
         expect(monitor.recipeProgress.at(-1)).toMatchObject({
             targetCount: dimension,
-            missingCount: dimension,
+            missingCount: dimension
         });
         expect(work).toEqual(twoDimensionalMonitorWork(dimension));
         expect(work).not.toHaveProperty('expectedRecipeMembershipWriteCount');
@@ -227,51 +218,51 @@ describe('distributed run monitor indexed derivation', () => {
         const role = 'matrix-role|\u202E界';
         const agentIds = Array.from(
             { length: dimension },
-            (_, index) => `role-matrix-agent-${index}`,
+            (_, index) => `role-matrix-agent-${index}`
         );
         const input = focusedInput({
             agentIds,
             recipeIds: Array.from(
                 { length: dimension },
-                (_, index) => `role-matrix-recipe-${index}`,
+                (_, index) => `role-matrix-recipe-${index}`
             ),
-            links: [],
+            links: []
         });
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
             manifest: {
                 ...input.distributedRun.manifest,
-                recipes: input.distributedRun.manifest.recipes.map(selection => ({
+                recipes: input.distributedRun.manifest.recipes.map((selection) => ({
                     ...selection,
-                    role,
+                    role
                 })),
-                roleAssignments: agentIds.map(agentId => ({
+                roleAssignments: agentIds.map((agentId) => ({
                     agentId,
                     role,
-                    recipeIds: [],
-                })),
-            },
+                    recipeIds: []
+                }))
+            }
         };
 
         const monitor = deriveDistributedRunMonitor({
             distributedRun,
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
         const work = distributedRunMonitorDerivationWorkForTest(monitor);
 
         expect(monitor.recipeProgress).toHaveLength(dimension);
         expect(monitor.recipeProgress[0]).toMatchObject({
             targetCount: dimension,
-            missingCount: dimension,
+            missingCount: dimension
         });
         expect(monitor.recipeProgress.at(-1)).toMatchObject({
             targetCount: dimension,
-            missingCount: dimension,
+            missingCount: dimension
         });
         expect(work).toEqual({
             ...twoDimensionalMonitorWork(dimension),
             roleAssignmentVisitCount: dimension,
-            membershipInvertedIndexWriteCount: dimension,
+            membershipInvertedIndexWriteCount: dimension
         });
         expect(work).not.toHaveProperty('explicitRecipeMembershipVisitCount');
     }, 30_000);
@@ -280,7 +271,7 @@ describe('distributed run monitor indexed derivation', () => {
         const input = focusedInput({
             agentIds: ['agent:duplicate|\u202E界', 'agent:duplicate|\u202E界'],
             recipeIds: ['manifest-role', 'unroled'],
-            links: [],
+            links: []
         });
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
@@ -289,44 +280,44 @@ describe('distributed run monitor indexed derivation', () => {
                 recipes: [{
                     recipeId: 'manifest-role',
                     role: 'role:manifest|界',
-                    required: true,
+                    required: true
                 }, {
                     recipeId: 'resolved-role',
                     role: 'role:resolved|界',
-                    required: true,
+                    required: true
                 }, {
                     recipeId: 'unroled',
-                    required: true,
+                    required: true
                 }],
                 roleAssignments: [{
                     agentId: 'agent:duplicate|\u202E界',
                     role: 'role:manifest|界',
                     recipeIds: ['manifest-role'],
-                    required: true,
-                }],
+                    required: true
+                }]
             },
             targetResolution: focusedTargetResolution({
                 targetAgentIds: input.distributedRun.targetAgentIds,
-                roleAssignments: [],
-            }),
+                roleAssignments: []
+            })
         };
 
         const monitor = deriveDistributedRunMonitor({
             distributedRun,
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
 
         expect(monitor.agentProgress).toHaveLength(1);
         expect(monitor.agentProgress[0]?.role).toBeUndefined();
-        expect(monitor.readiness.map(row => [row.agentId, row.role])).toEqual([
+        expect(monitor.readiness.map((row) => [row.agentId, row.role])).toEqual([
             ['agent:duplicate|\u202E界', undefined],
-            ['agent:duplicate|\u202E界', undefined],
+            ['agent:duplicate|\u202E界', undefined]
         ]);
-        expect(monitor.recipeProgress.map(row => [row.recipeId, row.targetCount]))
+        expect(monitor.recipeProgress.map((row) => [row.recipeId, row.targetCount]))
             .toEqual([
                 ['manifest-role', 0],
                 ['resolved-role', 0],
-                ['unroled', 2],
+                ['unroled', 2]
             ]);
 
         const resolvedMonitor = deriveDistributedRunMonitor({
@@ -337,18 +328,18 @@ describe('distributed run monitor indexed derivation', () => {
                     roleAssignments: [{
                         agentId: 'agent:duplicate|\u202E界',
                         role: 'role:resolved|界',
-                        recipeIds: [],
-                    }],
-                }),
+                        recipeIds: []
+                    }]
+                })
             },
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
         expect(resolvedMonitor.agentProgress[0]?.role).toBe('role:resolved|界');
-        expect(resolvedMonitor.recipeProgress.map(row => [row.recipeId, row.targetCount]))
+        expect(resolvedMonitor.recipeProgress.map((row) => [row.recipeId, row.targetCount]))
             .toEqual([
                 ['manifest-role', 0],
                 ['resolved-role', 2],
-                ['unroled', 2],
+                ['unroled', 2]
             ]);
     });
 
@@ -364,10 +355,10 @@ describe('distributed run monitor indexed derivation', () => {
                 assignedAgentId,
                 policyAgentId,
                 fallbackAgentId,
-                fallbackAgentId,
+                fallbackAgentId
             ],
             recipeIds: [],
-            links: [],
+            links: []
         });
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
@@ -376,73 +367,73 @@ describe('distributed run monitor indexed derivation', () => {
                 recipes: [{
                     recipeId: 'recipe:id-only|\u202E界',
                     role: 'role:not-assigned',
-                    required: true,
+                    required: true
                 }, {
                     recipeId: 'recipe:duplicate|界',
                     role: matchingRole,
-                    required: true,
+                    required: true
                 }, {
                     recipeId: 'recipe:duplicate|界',
                     role: matchingRole,
-                    required: true,
+                    required: true
                 }, {
                     recipeId: '',
-                    required: true,
+                    required: true
                 }, {
                     recipeId: 'recipe:fallback|界',
-                    required: true,
+                    required: true
                 }],
                 targetPolicy: {
                     ...input.distributedRun.manifest.targetPolicy,
-                    roles: { [matchingRole]: [policyAgentId] },
+                    roles: { [matchingRole]: [policyAgentId] }
                 },
                 roleAssignments: [{
                     agentId: assignedAgentId,
                     role: matchingRole,
-                    recipeIds: ['recipe:id-only|\u202E界'],
+                    recipeIds: ['recipe:id-only|\u202E界']
                 }, {
                     agentId: assignedAgentId,
                     role: matchingRole,
-                    recipeIds: [],
+                    recipeIds: []
                 }, {
                     agentId: assignedAgentId,
-                    role: 'role:third|界',
+                    role: 'role:third|界'
                 }, {
                     agentId: emptyAgentId,
                     role: '',
-                    recipeIds: ['recipe:unknown|界'],
+                    recipeIds: ['recipe:unknown|界']
                 }, {
                     agentId: fallbackAgentId,
                     role: 'role:no-match|界',
-                    recipeIds: ['recipe:unknown|界'],
-                }],
-            },
+                    recipeIds: ['recipe:unknown|界']
+                }]
+            }
         };
 
         const monitor = deriveDistributedRunMonitor({
             distributedRun,
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
 
-        expect(monitor.agentProgress.find(row => row.agentId === assignedAgentId)?.role)
+        expect(monitor.agentProgress.find((row) => row.agentId === assignedAgentId)?.role)
             .toBe(`${matchingRole}, ${matchingRole}, role:third|界`);
-        expect(monitor.agentProgress.find(row => row.agentId === emptyAgentId)?.role)
+        expect(monitor.agentProgress.find((row) => row.agentId === emptyAgentId)?.role)
             .toBe('');
-        expect(monitor.agentProgress.find(row => row.agentId === policyAgentId)?.role)
+        expect(monitor.agentProgress.find((row) => row.agentId === policyAgentId)?.role)
             .toBeUndefined();
-        expect(monitor.readiness.map(row => row.agentId)).toEqual(
-            distributedRun.targetAgentIds,
+        expect(monitor.readiness.map((row) => row.agentId)).toEqual(
+            distributedRun.targetAgentIds
         );
-        expect(monitor.recipeProgress.map(row => [
+        expect(monitor.recipeProgress.map((row) => [
             row.recipeId,
             row.role,
-            row.targetCount,
+            row.targetCount
         ])).toEqual([
             ['recipe:id-only|\u202E界', 'role:not-assigned', 1],
             ['recipe:duplicate|界', matchingRole, 2],
             ['recipe:duplicate|界', matchingRole, 2],
             ['recipe-4', undefined, 4],
-            ['recipe:fallback|界', undefined, 4],
+            ['recipe:fallback|界', undefined, 4]
         ]);
     });
 
@@ -451,38 +442,44 @@ describe('distributed run monitor indexed derivation', () => {
         const input = focusedInput({
             agentIds: ['overlap-agent', 'overlap-agent', 'role-agent', 'direct-agent'],
             recipeIds: [],
-            links: [],
+            links: []
         });
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
             manifest: {
                 ...input.distributedRun.manifest,
                 recipes: [{ recipeId: 'shared-recipe', role }, {
-                    recipeId: 'shared-recipe', role,
+                    recipeId: 'shared-recipe',
+                    role
                 }],
                 roleAssignments: [{
-                    agentId: 'overlap-agent', role, recipeIds: ['shared-recipe'],
+                    agentId: 'overlap-agent',
+                    role,
+                    recipeIds: ['shared-recipe']
                 }, {
-                    agentId: 'role-agent', role, recipeIds: [],
+                    agentId: 'role-agent',
+                    role,
+                    recipeIds: []
                 }, {
-                    agentId: 'direct-agent', role: 'role:other',
-                    recipeIds: ['shared-recipe'],
-                }],
-            },
+                    agentId: 'direct-agent',
+                    role: 'role:other',
+                    recipeIds: ['shared-recipe']
+                }]
+            }
         };
 
         const monitor = deriveDistributedRunMonitor({
             distributedRun,
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
 
-        expect(monitor.recipeProgress.map(row => [
+        expect(monitor.recipeProgress.map((row) => [
             row.targetCount,
-            row.missingCount,
+            row.missingCount
         ])).toEqual([[4, 4], [4, 4]]);
         expect(distributedRunMonitorDerivationWorkForTest(monitor)).toMatchObject({
             membershipIntersectionCandidateVisitCount: 2,
-            recipeTargetCountProjectionVisitCount: 2,
+            recipeTargetCountProjectionVisitCount: 2
         });
     });
 
@@ -491,18 +488,28 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a', 'agent-b'],
             recipeIds: ['recipe-a', 'recipe-b'],
             links: [{
-                phase: 'stage', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'command-a', queuedAtEpochMs: 1,
+                phase: 'stage',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'command-a',
+                queuedAtEpochMs: 1
             }, {
-                phase: 'start', agentId: 'agent-b', recipeId: 'recipe-b',
-                commandId: 'command-b', queuedAtEpochMs: 2,
+                phase: 'start',
+                agentId: 'agent-b',
+                recipeId: 'recipe-b',
+                commandId: 'command-b',
+                queuedAtEpochMs: 2
             }],
-            results: [focusedResult('command-b', 'agent-b', false, 10)],
+            results: [focusedResult('command-b', 'agent-b', false, 10)]
         });
         const roleAssignments = [{
-            agentId: 'agent-a', role: 'role-a', recipeIds: ['recipe-a'],
+            agentId: 'agent-a',
+            role: 'role-a',
+            recipeIds: ['recipe-a']
         }, {
-            agentId: 'agent-b', role: 'role-b', recipeIds: ['recipe-b'],
+            agentId: 'agent-b',
+            role: 'role-b',
+            recipeIds: ['recipe-b']
         }];
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
@@ -511,43 +518,55 @@ describe('distributed run monitor indexed derivation', () => {
             manifest: {
                 ...input.distributedRun.manifest,
                 recipes: singleReadArray(input.distributedRun.manifest.recipes, 'recipes'),
-                roleAssignments: singleReadArray(roleAssignments, 'assignments'),
-            },
+                roleAssignments: singleReadArray(roleAssignments, 'assignments')
+            }
         };
 
         let report: ReturnType<typeof deriveDistributedRunAnalysisReport> | undefined;
         expect(() => {
             const monitor = deriveDistributedRunMonitor({
                 distributedRun,
-                controlRun: input.controlRun,
+                controlRun: input.controlRun
             });
             report = deriveDistributedRunAnalysisReport({
                 distributedRun,
                 controlRun: input.controlRun,
-                monitor,
+                monitor
             });
         }).not.toThrow();
         expect(distributedRunMonitorDerivationWorkForTest(report!)).toMatchObject({
             monitorDerivationCount: 1,
             reportDerivationCount: 1,
             commandLinkVisitCount: 2,
-            reportCommandLinkLookupCount: 1,
+            reportCommandLinkLookupCount: 1
         });
     });
 
     it('keeps delimiter-colliding agent and recipe identities isolated', () => {
         const links: ControlDistributedRunSnapshot['commandLinks'] = [{
-            phase: 'start', agentId: 'agent:a', recipeId: 'b',
-            commandId: 'command-a', queuedAtEpochMs: 1,
+            phase: 'start',
+            agentId: 'agent:a',
+            recipeId: 'b',
+            commandId: 'command-a',
+            queuedAtEpochMs: 1
         }, {
-            phase: 'start', agentId: 'agent', recipeId: 'a:b',
-            commandId: 'command-b', queuedAtEpochMs: 2,
+            phase: 'start',
+            agentId: 'agent',
+            recipeId: 'a:b',
+            commandId: 'command-b',
+            queuedAtEpochMs: 2
         }, {
-            phase: 'start', agentId: 'agent|a', recipeId: 'b',
-            commandId: 'command-c', queuedAtEpochMs: 3,
+            phase: 'start',
+            agentId: 'agent|a',
+            recipeId: 'b',
+            commandId: 'command-c',
+            queuedAtEpochMs: 3
         }, {
-            phase: 'start', agentId: 'agent', recipeId: 'a|b',
-            commandId: 'command-d', queuedAtEpochMs: 4,
+            phase: 'start',
+            agentId: 'agent',
+            recipeId: 'a|b',
+            commandId: 'command-d',
+            queuedAtEpochMs: 4
         }];
         const input = focusedInput({
             agentIds: ['agent:a', 'agent', 'agent|a'],
@@ -557,56 +576,77 @@ describe('distributed run monitor indexed derivation', () => {
                 focusedResult('command-a', 'agent:a', false, 10),
                 focusedResult('command-b', 'agent', true, 11),
                 focusedResult('command-c', 'agent|a', true, 12),
-                focusedResult('command-d', 'agent', false, 13),
+                focusedResult('command-d', 'agent', false, 13)
             ],
             events: [{
-                kind: 'event', protocolVersion: 1, runId: 'focused-control',
-                agentId: 'agent:a', commandId: 'command-a', atEpochMs: 20,
-                eventId: 'event-agent-colon', payload: { message: 'colon' },
+                kind: 'event',
+                protocolVersion: 1,
+                runId: 'focused-control',
+                agentId: 'agent:a',
+                commandId: 'command-a',
+                atEpochMs: 20,
+                eventId: 'event-agent-colon',
+                payload: { message: 'colon' }
             }, {
-                kind: 'event', protocolVersion: 1, runId: 'focused-control',
-                agentId: 'agent', commandId: 'command-b', atEpochMs: 21,
-                eventId: 'event-recipe-colon', payload: { message: 'recipe colon' },
+                kind: 'event',
+                protocolVersion: 1,
+                runId: 'focused-control',
+                agentId: 'agent',
+                commandId: 'command-b',
+                atEpochMs: 21,
+                eventId: 'event-recipe-colon',
+                payload: { message: 'recipe colon' }
             }, {
-                kind: 'event', protocolVersion: 1, runId: 'focused-control',
-                agentId: 'agent|a', commandId: 'command-c', atEpochMs: 22,
-                eventId: 'event-agent-pipe', payload: { message: 'pipe' },
-            }],
+                kind: 'event',
+                protocolVersion: 1,
+                runId: 'focused-control',
+                agentId: 'agent|a',
+                commandId: 'command-c',
+                atEpochMs: 22,
+                eventId: 'event-agent-pipe',
+                payload: { message: 'pipe' }
+            }]
         });
 
         const monitor = deriveDistributedRunMonitor(input);
 
-        expect(monitor.agentProgress.find(row => row.agentId === 'agent:a')).toMatchObject({
+        expect(monitor.agentProgress.find((row) => row.agentId === 'agent:a')).toMatchObject({
             failedCommandCount: 1,
-            eventCount: 1,
+            eventCount: 1
         });
-        expect(monitor.agentProgress.find(row => row.agentId === 'agent')).toMatchObject({
+        expect(monitor.agentProgress.find((row) => row.agentId === 'agent')).toMatchObject({
             failedCommandCount: 1,
             resultCount: 2,
-            eventCount: 1,
+            eventCount: 1
         });
-        expect(monitor.agentProgress.find(row => row.agentId === 'agent|a')).toMatchObject({
+        expect(monitor.agentProgress.find((row) => row.agentId === 'agent|a')).toMatchObject({
             failedCommandCount: 0,
-            eventCount: 1,
+            eventCount: 1
         });
-        expect(monitor.recipeProgress.map(row => [
+        expect(monitor.recipeProgress.map((row) => [
             row.recipeId,
             row.passedCount,
-            row.failedCount,
+            row.failedCount
         ])).toEqual([
             ['b', 1, 1],
             ['a:b', 1, 0],
-            ['a|b', 0, 1],
+            ['a|b', 0, 1]
         ]);
     });
 
     it('preserves undefined versus empty recipe links and absent versus empty control truth', () => {
         const links: ControlDistributedRunSnapshot['commandLinks'] = [{
-            phase: 'start', agentId: 'agent-a', recipeId: undefined,
-            commandId: 'undefined-recipe', queuedAtEpochMs: 1,
+            phase: 'start',
+            agentId: 'agent-a',
+            recipeId: undefined,
+            commandId: 'undefined-recipe',
+            queuedAtEpochMs: 1
         }, {
-            phase: 'start', agentId: 'agent-b', recipeId: '',
-            commandId: 'empty-recipe', queuedAtEpochMs: 2,
+            phase: 'start',
+            agentId: 'agent-b',
+            recipeId: '',
+            commandId: 'empty-recipe',
+            queuedAtEpochMs: 2
         }];
         const input = focusedInput({
             agentIds: ['agent-a', 'agent-b'],
@@ -614,26 +654,28 @@ describe('distributed run monitor indexed derivation', () => {
             links,
             results: [
                 focusedResult('undefined-recipe', 'agent-a', true, 10),
-                focusedResult('empty-recipe', 'agent-b', true, 11),
-            ],
+                focusedResult('empty-recipe', 'agent-b', true, 11)
+            ]
         });
         const monitor = deriveDistributedRunMonitor(input);
         expect(monitor.recipeProgress[0]).toMatchObject({
             recipeId: 'only-recipe',
             targetCount: 2,
             passedCount: 1,
-            missingCount: 1,
+            missingCount: 1
         });
 
         const withoutControl = deriveDistributedRunMonitor({
-            distributedRun: input.distributedRun,
+            distributedRun: input.distributedRun
         });
         const withEmptyControl = deriveDistributedRunMonitor({
             distributedRun: input.distributedRun,
             controlRun: {
                 ...input.controlRun,
-                commands: [], results: [], events: [],
-            },
+                commands: [],
+                results: [],
+                events: []
+            }
         });
         expect(withoutControl).toEqual(withEmptyControl);
     });
@@ -643,29 +685,38 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a', 'agent-b', 'agent-c'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'start', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'command-a', queuedAtEpochMs: 1,
+                phase: 'start',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'command-a',
+                queuedAtEpochMs: 1
             }, {
-                phase: 'start', agentId: 'agent-b', recipeId: 'recipe-a',
-                commandId: 'command-b', queuedAtEpochMs: 2,
+                phase: 'start',
+                agentId: 'agent-b',
+                recipeId: 'recipe-a',
+                commandId: 'command-b',
+                queuedAtEpochMs: 2
             }, {
-                phase: 'start', agentId: 'agent-c', recipeId: 'recipe-a',
-                commandId: 'command-c', queuedAtEpochMs: 3,
+                phase: 'start',
+                agentId: 'agent-c',
+                recipeId: 'recipe-a',
+                commandId: 'command-c',
+                queuedAtEpochMs: 3
             }],
             results: [
                 focusedResult('command-a', 'agent-a', true, 10),
                 focusedResult('command-b', 'agent-b', false, 11),
-                focusedResult('command-b', 'agent-b', true, 12),
-            ],
+                focusedResult('command-b', 'agent-b', true, 12)
+            ]
         });
 
         const monitor = deriveDistributedRunMonitor(input);
 
         expect(monitor.resultCounts).toEqual({ total: 3, ok: 2, failed: 1 });
         expect(monitor.agentProgress.reduce((sum, row) => sum + row.resultCount, 0)).toBe(2);
-        expect(monitor.agentProgress.find(row => row.agentId === 'agent-b')).toMatchObject({
+        expect(monitor.agentProgress.find((row) => row.agentId === 'agent-b')).toMatchObject({
             failedCommandCount: 0,
-            execution: 'passed',
+            execution: 'passed'
         });
     });
 
@@ -674,18 +725,24 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a', 'agent-b'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'stage', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'duplicate-command', queuedAtEpochMs: 1,
+                phase: 'stage',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'duplicate-command',
+                queuedAtEpochMs: 1
             }, {
-                phase: 'start', agentId: 'agent-b', recipeId: 'recipe-a',
-                commandId: 'duplicate-command', queuedAtEpochMs: 2,
+                phase: 'start',
+                agentId: 'agent-b',
+                recipeId: 'recipe-a',
+                commandId: 'duplicate-command',
+                queuedAtEpochMs: 2
             }],
-            results: [focusedResult('duplicate-command', 'agent-a', false, 10)],
+            results: [focusedResult('duplicate-command', 'agent-a', false, 10)]
         });
         const monitor = deriveDistributedRunMonitor(input);
         const report = deriveDistributedRunAnalysisReport({ ...input, monitor });
 
-        expect(report.nextActions.find(action => action.category === 'command')?.nextAction)
+        expect(report.nextActions.find((action) => action.category === 'command')?.nextAction)
             .toContain('recipe-load output');
         expect(distributedRunMonitorDerivationWorkForTest(report))
             .toMatchObject({ reportCommandLinkLookupCount: 1 });
@@ -696,10 +753,13 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'stage', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'local-report-lookup', queuedAtEpochMs: 1,
+                phase: 'stage',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'local-report-lookup',
+                queuedAtEpochMs: 1
             }],
-            results: [focusedResult('local-report-lookup', 'agent-a', false, 10)],
+            results: [focusedResult('local-report-lookup', 'agent-a', false, 10)]
         });
         const monitor = deriveDistributedRunMonitor(input);
 
@@ -712,7 +772,7 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRunMonitorDerivationWorkForTest(secondReport)
                 .reportCommandLinkLookupCount,
             distributedRunMonitorDerivationWorkForTest(monitor)
-                .reportCommandLinkLookupCount,
+                .reportCommandLinkLookupCount
         ]).toEqual([1, 1, 0]);
         expect([
             distributedRunMonitorDerivationWorkForTest(firstReport)
@@ -720,7 +780,7 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRunMonitorDerivationWorkForTest(secondReport)
                 .reportDerivationCount,
             distributedRunMonitorDerivationWorkForTest(monitor)
-                .reportDerivationCount,
+                .reportDerivationCount
         ]).toEqual([1, 1, 0]);
     });
 
@@ -729,29 +789,32 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'stage', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'cross-snapshot-command', queuedAtEpochMs: 1,
+                phase: 'stage',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'cross-snapshot-command',
+                queuedAtEpochMs: 1
             }],
-            results: [focusedResult('cross-snapshot-command', 'agent-a', false, 10)],
+            results: [focusedResult('cross-snapshot-command', 'agent-a', false, 10)]
         });
         const monitor = deriveDistributedRunMonitor(input);
         const reportRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
             commandLinks: [{
                 ...input.distributedRun.commandLinks[0]!,
-                phase: 'start',
-            }],
+                phase: 'start'
+            }]
         };
         const headReport = deriveDistributedRunAnalysisReport({
             distributedRun: reportRun,
-            monitor: { ...monitor },
+            monitor: { ...monitor }
         });
 
         expect(deriveDistributedRunAnalysisReport({
             distributedRun: reportRun,
-            monitor,
+            monitor
         })).toEqual(headReport);
-        expect(headReport.nextActions.find(action => action.category === 'command')?.nextAction)
+        expect(headReport.nextActions.find((action) => action.category === 'command')?.nextAction)
             .toContain('composite drilldown');
     });
 
@@ -760,32 +823,35 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'stage', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'replaced-links-command', queuedAtEpochMs: 1,
+                phase: 'stage',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'replaced-links-command',
+                queuedAtEpochMs: 1
             }],
-            results: [focusedResult('replaced-links-command', 'agent-a', false, 10)],
+            results: [focusedResult('replaced-links-command', 'agent-a', false, 10)]
         });
         const mutableRun = { ...input.distributedRun };
         const monitor = deriveDistributedRunMonitor({
             distributedRun: mutableRun,
-            controlRun: input.controlRun,
+            controlRun: input.controlRun
         });
         Object.assign(mutableRun, {
             commandLinks: [{
                 ...input.distributedRun.commandLinks[0]!,
-                phase: 'start',
-            }],
+                phase: 'start'
+            }]
         });
         const headReport = deriveDistributedRunAnalysisReport({
             distributedRun: mutableRun,
-            monitor: { ...monitor },
+            monitor: { ...monitor }
         });
 
         expect(deriveDistributedRunAnalysisReport({
             distributedRun: mutableRun,
-            monitor,
+            monitor
         })).toEqual(headReport);
-        expect(headReport.nextActions.find(action => action.category === 'command')?.nextAction)
+        expect(headReport.nextActions.find((action) => action.category === 'command')?.nextAction)
             .toContain('composite drilldown');
     });
 
@@ -794,28 +860,28 @@ describe('distributed run monitor indexed derivation', () => {
         const suppliedMonitorInput = focusedInput({
             agentIds: ['supplied-agent'],
             recipeIds: ['supplied-recipe'],
-            links: [],
+            links: []
         });
         const suppliedMonitor = deriveDistributedRunMonitor(suppliedMonitorInput);
         const reportRun: ControlDistributedRunSnapshot = {
             ...scaleInput.distributedRun,
             commandLinks: noReadArray(
                 scaleInput.distributedRun.commandLinks,
-                'no-failure fallback links',
-            ),
+                'no-failure fallback links'
+            )
         };
         let report: ReturnType<typeof deriveDistributedRunAnalysisReport> | undefined;
 
         expect(() => {
             report = deriveDistributedRunAnalysisReport({
                 distributedRun: reportRun,
-                monitor: suppliedMonitor,
+                monitor: suppliedMonitor
             });
         }).not.toThrow();
         expect(distributedRunMonitorDerivationWorkForTest(report!)).toMatchObject({
             reportFallbackCommandLinkIndexPassCount: 0,
             reportFallbackCommandLinkVisitCount: 0,
-            reportFallbackCommandPhaseLookupCount: 0,
+            reportFallbackCommandPhaseLookupCount: 0
         });
     });
 
@@ -826,28 +892,30 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['supplied-agent'],
             recipeIds: ['supplied-recipe'],
             links: [{
-                phase: 'stage', agentId: 'supplied-agent',
-                recipeId: 'supplied-recipe', commandId: failedCommandId,
-                queuedAtEpochMs: 1,
+                phase: 'stage',
+                agentId: 'supplied-agent',
+                recipeId: 'supplied-recipe',
+                commandId: failedCommandId,
+                queuedAtEpochMs: 1
             }],
-            results: [focusedResult(failedCommandId, 'supplied-agent', false, 10)],
+            results: [focusedResult(failedCommandId, 'supplied-agent', false, 10)]
         });
         const suppliedMonitor = deriveDistributedRunMonitor(suppliedMonitorInput);
         const headReport = deriveDistributedRunAnalysisReport({
             distributedRun: scaleInput.distributedRun,
-            monitor: { ...suppliedMonitor },
+            monitor: { ...suppliedMonitor }
         });
         const reportRun: ControlDistributedRunSnapshot = {
             ...scaleInput.distributedRun,
             commandLinks: singleReadArray(
                 scaleInput.distributedRun.commandLinks,
-                'one-failure fallback links',
-            ),
+                'one-failure fallback links'
+            )
         };
 
         const report = deriveDistributedRunAnalysisReport({
             distributedRun: reportRun,
-            monitor: suppliedMonitor,
+            monitor: suppliedMonitor
         });
 
         expect(report).toEqual(headReport);
@@ -856,13 +924,13 @@ describe('distributed run monitor indexed derivation', () => {
             reportDerivationCount: 1,
             reportFallbackCommandLinkIndexPassCount: 1,
             reportFallbackCommandLinkVisitCount: SCALE,
-            reportFallbackCommandPhaseLookupCount: 1,
+            reportFallbackCommandPhaseLookupCount: 1
         });
         expect(distributedRunMonitorDerivationWorkForTest(report)).toMatchObject({
             reportCommandLinkLookupCount: 0,
             reportFallbackCommandLinkIndexPassCount: 1,
             reportFallbackCommandLinkVisitCount: SCALE,
-            reportFallbackCommandPhaseLookupCount: 1,
+            reportFallbackCommandPhaseLookupCount: 1
         });
     }, 30_000);
 
@@ -870,32 +938,34 @@ describe('distributed run monitor indexed derivation', () => {
         const verdictInput = focusedInput({
             agentIds: ['verdict-agent'],
             recipeIds: ['verdict-recipe'],
-            links: [],
+            links: []
         });
         const suppliedMonitorInput = focusedInput({
             agentIds: ['supplied-agent'],
             recipeIds: ['supplied-recipe'],
             links: [{
-                phase: 'start', agentId: 'supplied-agent',
-                recipeId: 'supplied-recipe', commandId: 'supplied-failure',
-                queuedAtEpochMs: 1,
+                phase: 'start',
+                agentId: 'supplied-agent',
+                recipeId: 'supplied-recipe',
+                commandId: 'supplied-failure',
+                queuedAtEpochMs: 1
             }],
-            results: [focusedResult('supplied-failure', 'supplied-agent', false, 10)],
+            results: [focusedResult('supplied-failure', 'supplied-agent', false, 10)]
         });
         const suppliedMonitor = deriveDistributedRunMonitor(suppliedMonitorInput);
         const headReport = deriveDistributedRunAnalysisReport({
-            distributedRun: verdictInput.distributedRun,
+            distributedRun: verdictInput.distributedRun
         });
 
         expect(deriveRunVerdictView({
             distributedRun: verdictInput.distributedRun,
             monitor: suppliedMonitor,
-            refreshedAtEpochMs: 123,
+            refreshedAtEpochMs: 123
         })).toEqual(deriveRunVerdictView({
             distributedRun: verdictInput.distributedRun,
             monitor: suppliedMonitor,
             report: headReport,
-            refreshedAtEpochMs: 123,
+            refreshedAtEpochMs: 123
         }));
     });
 
@@ -906,48 +976,70 @@ describe('distributed run monitor indexed derivation', () => {
             recipeIds: ['recipe-a'],
             updatedAtEpochMs: 30_000,
             links: [{
-                phase: 'start', agentId: 'failure-agent', recipeId: 'recipe-a',
-                commandId: 'exact-command', queuedAtEpochMs: 1,
+                phase: 'start',
+                agentId: 'failure-agent',
+                recipeId: 'recipe-a',
+                commandId: 'exact-command',
+                queuedAtEpochMs: 1
             }, {
-                phase: 'start', agentId: 'boundary-agent', recipeId: 'recipe-a',
-                commandId: 'near-15000', queuedAtEpochMs: 2,
+                phase: 'start',
+                agentId: 'boundary-agent',
+                recipeId: 'recipe-a',
+                commandId: 'near-15000',
+                queuedAtEpochMs: 2
             }, {
-                phase: 'start', agentId: 'boundary-agent', recipeId: 'recipe-a',
-                commandId: 'far-15001', queuedAtEpochMs: 3,
+                phase: 'start',
+                agentId: 'boundary-agent',
+                recipeId: 'recipe-a',
+                commandId: 'far-15001',
+                queuedAtEpochMs: 3
             }, {
-                phase: 'start', agentId: 'duplicate-key', recipeId: 'recipe-a',
-                commandId: 'duplicate-key', queuedAtEpochMs: 4,
+                phase: 'start',
+                agentId: 'duplicate-key',
+                recipeId: 'recipe-a',
+                commandId: 'duplicate-key',
+                queuedAtEpochMs: 4
             }],
             results: [
                 focusedResult('exact-command', 'failure-agent', false, 12_000),
                 focusedResult('near-15000', 'boundary-agent', false, 10_000),
-                focusedResult('far-15001', 'boundary-agent', false, 9_999),
+                focusedResult('far-15001', 'boundary-agent', false, 9_999)
             ],
             failures: [{
-                kind: 'participant', key: 'duplicate-key', state: 'failed', required: true,
+                kind: 'participant',
+                key: 'duplicate-key',
+                state: 'failed',
+                required: true
             }, {
-                kind: 'recipe', key: 'duplicate-key', state: 'failed', required: true,
+                kind: 'recipe',
+                key: 'duplicate-key',
+                state: 'failed',
+                required: true
             }],
             events: [
                 focusedDiagnostic('diagnostic-exact', 'other-agent', 40_000, {
-                    commandId: 'exact-command', distributedRunId,
+                    commandId: 'exact-command',
+                    distributedRunId
                 }),
                 focusedDiagnostic('diagnostic-duplicates', 'other-agent', 40_001, {
-                    commandId: 'duplicate-key', distributedRunId,
+                    commandId: 'duplicate-key',
+                    distributedRunId
                 }),
                 focusedDiagnostic('diagnostic-boundary', 'boundary-agent', 25_000, {
-                    distributedRunId,
-                }),
-            ],
+                    distributedRunId
+                })
+            ]
         });
 
-        const diagnostics = new Map(deriveDistributedRunMonitor(input)
-            .runtimeDiagnostics.map(row => [row.eventId, row.correlatedFailureKeys]));
+        const diagnostics = new Map(
+            deriveDistributedRunMonitor(input)
+                .runtimeDiagnostics.map((row) => [row.eventId, row.correlatedFailureKeys])
+        );
 
         expect(diagnostics.get('diagnostic-exact')).toContain('exact-command');
         expect(diagnostics.get('diagnostic-duplicates')).toEqual([
             'duplicate-key',
-            'duplicate-key',
+            'duplicate-key'
         ]);
         expect(diagnostics.get('diagnostic-boundary')).toContain('near-15000');
         expect(diagnostics.get('diagnostic-boundary')).not.toContain('far-15001');
@@ -958,17 +1050,22 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: [''],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'start', agentId: '', recipeId: 'recipe-a',
-                commandId: 'empty-agent-failure', queuedAtEpochMs: 1,
+                phase: 'start',
+                agentId: '',
+                recipeId: 'recipe-a',
+                commandId: 'empty-agent-failure',
+                queuedAtEpochMs: 1
             }],
             results: [focusedResult('empty-agent-failure', '', false, 10_000)],
             events: [focusedDiagnostic('empty-agent-diagnostic', '', 10_001, {
-                distributedRunId: 'focused-distributed',
-            })],
+                distributedRunId: 'focused-distributed'
+            })]
         });
 
-        expect(deriveDistributedRunMonitor(input).runtimeDiagnostics[0]
-            ?.correlatedFailureKeys).toEqual([]);
+        expect(
+            deriveDistributedRunMonitor(input).runtimeDiagnostics[0]
+                ?.correlatedFailureKeys
+        ).toEqual([]);
     });
 
     it('does not time-correlate non-finite diagnostic or failure timestamps', () => {
@@ -976,31 +1073,35 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['nan-failure-agent', 'nan-diagnostic-agent'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'start', agentId: 'nan-failure-agent', recipeId: 'recipe-a',
-                commandId: 'nan-failure', queuedAtEpochMs: 1,
+                phase: 'start',
+                agentId: 'nan-failure-agent',
+                recipeId: 'recipe-a',
+                commandId: 'nan-failure',
+                queuedAtEpochMs: 1
             }, {
-                phase: 'start', agentId: 'nan-diagnostic-agent', recipeId: 'recipe-a',
-                commandId: 'finite-failure', queuedAtEpochMs: 2,
+                phase: 'start',
+                agentId: 'nan-diagnostic-agent',
+                recipeId: 'recipe-a',
+                commandId: 'finite-failure',
+                queuedAtEpochMs: 2
             }],
             results: [
                 focusedResult('nan-failure', 'nan-failure-agent', false, Number.NaN),
-                focusedResult('finite-failure', 'nan-diagnostic-agent', false, 10_000),
+                focusedResult('finite-failure', 'nan-diagnostic-agent', false, 10_000)
             ],
             events: [
                 focusedDiagnostic('finite-diagnostic', 'nan-failure-agent', 10_000, {
-                    distributedRunId: 'focused-distributed',
+                    distributedRunId: 'focused-distributed'
                 }),
                 focusedDiagnostic('nan-diagnostic', 'nan-diagnostic-agent', Number.NaN, {
-                    distributedRunId: 'focused-distributed',
-                }),
-            ],
+                    distributedRunId: 'focused-distributed'
+                })
+            ]
         });
 
-        expect(deriveDistributedRunMonitor(input).runtimeDiagnostics.map(row =>
-            [row.eventId, row.correlatedFailureKeys]
-        )).toEqual([
+        expect(deriveDistributedRunMonitor(input).runtimeDiagnostics.map((row) => [row.eventId, row.correlatedFailureKeys])).toEqual([
             ['finite-diagnostic', []],
-            ['nan-diagnostic', []],
+            ['nan-diagnostic', []]
         ]);
     });
 
@@ -1009,27 +1110,33 @@ describe('distributed run monitor indexed derivation', () => {
             agentIds: ['agent-a', 'agent-b'],
             recipeIds: ['recipe-a'],
             links: [{
-                phase: 'start', agentId: 'agent-a', recipeId: 'recipe-a',
-                commandId: 'command-a', queuedAtEpochMs: 1,
+                phase: 'start',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'command-a',
+                queuedAtEpochMs: 1
             }, {
-                phase: 'start', agentId: 'agent-b', recipeId: 'recipe-a',
-                commandId: 'command-b', queuedAtEpochMs: 2,
+                phase: 'start',
+                agentId: 'agent-b',
+                recipeId: 'recipe-a',
+                commandId: 'command-b',
+                queuedAtEpochMs: 2
             }],
             events: [
                 focusedDiagnostic(undefined, 'agent-a', 200, { commandId: 'command-a' }),
-                focusedDiagnostic(undefined, 'agent-b', 100, { commandId: 'command-b' }),
-            ],
+                focusedDiagnostic(undefined, 'agent-b', 100, { commandId: 'command-b' })
+            ]
         });
 
         const monitor = deriveDistributedRunMonitor(input);
 
-        expect(monitor.events.map(row => row.eventId)).toEqual([
+        expect(monitor.events.map((row) => row.eventId)).toEqual([
             'agent-b-command-b-0',
-            'agent-a-command-a-1',
+            'agent-a-command-a-1'
         ]);
-        expect(monitor.runtimeDiagnostics.map(row => row.eventId)).toEqual([
+        expect(monitor.runtimeDiagnostics.map((row) => row.eventId)).toEqual([
             'agent-b-command-b-1',
-            'agent-a-command-a-0',
+            'agent-a-command-a-0'
         ]);
     });
 
@@ -1039,20 +1146,26 @@ describe('distributed run monitor indexed derivation', () => {
             recipeIds: ['recipe-a'],
             links: [],
             events: [{
-                kind: 'event', protocolVersion: 1, runId: 'focused-control',
-                agentId: 'agent-a', atEpochMs: 1, payload: null,
-            }],
+                kind: 'event',
+                protocolVersion: 1,
+                runId: 'focused-control',
+                agentId: 'agent-a',
+                atEpochMs: 1,
+                payload: null
+            }]
         });
         const distributedRun = {
             ...input.distributedRun,
             distributedRunId: 'null',
-            manifest: { ...input.distributedRun.manifest, distributedRunId: 'null' },
+            manifest: { ...input.distributedRun.manifest, distributedRunId: 'null' }
         };
 
-        expect(deriveDistributedRunMonitor({
-            distributedRun,
-            controlRun: input.controlRun,
-        }).events).toEqual([]);
+        expect(
+            deriveDistributedRunMonitor({
+                distributedRun,
+                controlRun: input.controlRun
+            }).events
+        ).toEqual([]);
     });
 });
 
@@ -1064,26 +1177,37 @@ function adversarialScaleInput(): Readonly<{
     const controlRunId = 'control:scale|界';
     const recipeIds = ['recipe:a|b', 'recipe:a:b', 'מתכון-界'] as const;
     const agentIds = Array.from({ length: SCALE }, (_, index) => {
-        if (index === 0) return 'agent:a|b';
-        if (index === 1) return 'agent:a:b';
-        if (index === 2) return 'agent-\u202Egnul-界';
+        if (index === 0) {
+            return 'agent:a|b';
+        }
+        if (index === 1) {
+            return 'agent:a:b';
+        }
+        if (index === 2) {
+            return 'agent-\u202Egnul-界';
+        }
         return `agent-${String(index).padStart(4, '0')}`;
     });
     const commandIds = Array.from({ length: SCALE }, (_, index) => {
-        if (index === 0) return 'command:a|b';
-        if (index === 1) return 'command:a:b';
-        if (index === 2) return 'command-\u2066exact\u2069-🧪';
+        if (index === 0) {
+            return 'command:a|b';
+        }
+        if (index === 1) {
+            return 'command:a:b';
+        }
+        if (index === 2) {
+            return 'command-\u2066exact\u2069-🧪';
+        }
         return `command-${String(index).padStart(4, '0')}`;
     });
     const phases = ['stage', 'barrier', 'start', 'cancel'] as const;
-    const commandLinks: ControlDistributedRunSnapshot['commandLinks'] =
-        commandIds.map((commandId, index) => ({
-            phase: phases[index % phases.length]!,
-            agentId: agentIds[index]!,
-            commandId,
-            ...(index % 17 === 0 ? {} : { recipeId: recipeIds[index % recipeIds.length]! }),
-            queuedAtEpochMs: 10_000 + index,
-        }));
+    const commandLinks: ControlDistributedRunSnapshot['commandLinks'] = commandIds.map((commandId, index) => ({
+        phase: phases[index % phases.length]!,
+        agentId: agentIds[index]!,
+        commandId,
+        ...(index % 17 === 0 ? {} : { recipeId: recipeIds[index % recipeIds.length]! }),
+        queuedAtEpochMs: 10_000 + index
+    }));
     const commands: ControlRunSnapshot['commands'] = commandIds.map((commandId, index) => ({
         envelope: {
             kind: 'command',
@@ -1091,12 +1215,12 @@ function adversarialScaleInput(): Readonly<{
             runId: controlRunId,
             agentId: agentIds[index],
             commandId,
-            command: { kind: 'health' },
+            command: { kind: 'health' }
         },
         queuedAtEpochMs: 10_000 + index,
         dispatchedAtEpochMs: index % 13 === 0 ? undefined : 10_100 + index,
         completedAtEpochMs: index % 19 === 0 ? undefined : 10_200 + index,
-        dispatchCount: index % 13 === 0 ? 0 : 1,
+        dispatchCount: index % 13 === 0 ? 0 : 1
     }));
     const results: ControlRunSnapshot['results'] = commandIds.map((commandId, index) => {
         const ok = index % 997 !== 0;
@@ -1118,16 +1242,16 @@ function adversarialScaleInput(): Readonly<{
                 ...(ok ? {} : {
                     error: {
                         code: `FAIL_${index}`,
-                        message: `Failure ${index} for ${agentIds[index]}.`,
-                    },
-                }),
+                        message: `Failure ${index} for ${agentIds[index]}.`
+                    }
+                })
             },
             ...(ok ? {} : {
                 error: {
                     code: `FAIL_${index}`,
-                    message: `Failure ${index} for ${agentIds[index]}.`,
-                },
-            }),
+                    message: `Failure ${index} for ${agentIds[index]}.`
+                }
+            })
         };
     });
     const events: ControlRunSnapshot['events'] = Array.from(
@@ -1156,16 +1280,16 @@ function adversarialScaleInput(): Readonly<{
                         data: {
                             ...(payloadLinked ? { distributedRunId } : {}),
                             expectedLaneId: `lane:${index % 7}`,
-                            observedLaneId: `lane|${index % 11}`,
-                        },
+                            observedLaneId: `lane|${index % 11}`
+                        }
                     }
                     : {
                         topic: `topic:${index % 31}`,
                         message: `Event ${index}`,
-                        ...(payloadLinked ? { distributedRunId } : {}),
-                    },
+                        ...(payloadLinked ? { distributedRunId } : {})
+                    }
             };
-        },
+        }
     );
     const distributedRun: ControlDistributedRunSnapshot = {
         distributedRunId,
@@ -1185,18 +1309,18 @@ function adversarialScaleInput(): Readonly<{
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'workspace:界',
-                groupId: 'group|exact:界',
+                groupId: 'group|exact:界'
             },
             recipes: recipeIds.map((recipeId, index) => ({
                 recipeId,
                 profile: index === 0 ? 'profile:a|b' : `profile-${index}`,
-                required: true,
+                required: true
             })),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: SCALE,
-            },
+                expectedParticipantCount: SCALE
+            }
         },
         commandLinks,
         rollup: {
@@ -1215,22 +1339,22 @@ function adversarialScaleInput(): Readonly<{
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: 2,
+                blockingFailures: 2
             },
             failures: [{
                 kind: 'participant',
                 key: agentIds[0]!,
                 state: 'failed',
                 required: true,
-                error: { code: 'PARTICIPANT_FAILED', message: 'Adversarial agent failed.' },
+                error: { code: 'PARTICIPANT_FAILED', message: 'Adversarial agent failed.' }
             }, {
                 kind: 'recipe',
                 key: recipeIds[0],
                 state: 'failed',
                 required: true,
-                error: { code: 'RECIPE_FAILED', message: 'Adversarial recipe failed.' },
-            }],
-        },
+                error: { code: 'RECIPE_FAILED', message: 'Adversarial recipe failed.' }
+            }]
+        }
     };
     return {
         distributedRun,
@@ -1244,20 +1368,22 @@ function adversarialScaleInput(): Readonly<{
             events,
             stats: [],
             reports: [],
-            heartbeats: [],
-        },
+            heartbeats: []
+        }
     };
 }
 
-function focusedInput(input: Readonly<{
-    agentIds: readonly string[];
-    recipeIds: readonly string[];
-    links: ControlDistributedRunSnapshot['commandLinks'];
-    results?: ControlRunSnapshot['results'];
-    events?: ControlRunSnapshot['events'];
-    failures?: ControlDistributedRunSnapshot['rollup']['failures'];
-    updatedAtEpochMs?: number;
-}>): Readonly<{
+function focusedInput(
+    input: Readonly<{
+        agentIds: readonly string[];
+        recipeIds: readonly string[];
+        links: ControlDistributedRunSnapshot['commandLinks'];
+        results?: ControlRunSnapshot['results'];
+        events?: ControlRunSnapshot['events'];
+        failures?: ControlDistributedRunSnapshot['rollup']['failures'];
+        updatedAtEpochMs?: number;
+    }>
+): Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     controlRun: ControlRunSnapshot;
 }> {
@@ -1265,7 +1391,7 @@ function focusedInput(input: Readonly<{
     const distributedRunId = 'focused-distributed';
     const results = input.results ?? [];
     const failures = input.failures ?? [];
-    const failed = failures.length > 0 || results.some(result => !result.ok);
+    const failed = failures.length > 0 || results.some((result) => !result.ok);
     const distributedRun: ControlDistributedRunSnapshot = {
         distributedRunId,
         controlRunId,
@@ -1280,14 +1406,14 @@ function focusedInput(input: Readonly<{
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'focused-group',
+                groupId: 'focused-group'
             },
-            recipes: input.recipeIds.map(recipeId => ({ recipeId, required: true })),
+            recipes: input.recipeIds.map((recipeId) => ({ recipeId, required: true })),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: input.agentIds,
-                expectedParticipantCount: input.agentIds.length,
-            },
+                expectedParticipantCount: input.agentIds.length
+            }
         },
         commandLinks: input.links,
         rollup: {
@@ -1306,10 +1432,10 @@ function focusedInput(input: Readonly<{
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: failures.length,
+                blockingFailures: failures.length
             },
-            failures,
-        },
+            failures
+        }
     };
     return {
         distributedRun,
@@ -1318,38 +1444,40 @@ function focusedInput(input: Readonly<{
             createdAtEpochMs: 0,
             updatedAtEpochMs: input.updatedAtEpochMs ?? 100,
             agents: [],
-            commands: input.links.map(link => ({
+            commands: input.links.map((link) => ({
                 envelope: {
                     kind: 'command',
                     protocolVersion: 1,
                     runId: controlRunId,
                     agentId: link.agentId,
                     commandId: link.commandId,
-                    command: { kind: 'health' },
+                    command: { kind: 'health' }
                 },
                 queuedAtEpochMs: link.queuedAtEpochMs,
                 dispatchedAtEpochMs: link.queuedAtEpochMs + 1,
                 completedAtEpochMs: link.queuedAtEpochMs + 2,
-                dispatchCount: 1,
+                dispatchCount: 1
             })),
             results,
             events: input.events ?? [],
             stats: [],
             reports: [],
-            heartbeats: [],
-        },
+            heartbeats: []
+        }
     };
 }
 
-function focusedTargetResolution(input: Readonly<{
-    targetAgentIds: readonly string[];
-    roleAssignments: ControlDistributedRunSnapshot['manifest']['roleAssignments'];
-}>): NonNullable<ControlDistributedRunSnapshot['targetResolution']> {
+function focusedTargetResolution(
+    input: Readonly<{
+        targetAgentIds: readonly string[];
+        roleAssignments: ControlDistributedRunSnapshot['manifest']['roleAssignments'];
+    }>
+): NonNullable<ControlDistributedRunSnapshot['targetResolution']> {
     return {
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'focused-group',
+            groupId: 'focused-group'
         },
         resolvedAtEpochMs: 0,
         staleAfterMs: 30_000,
@@ -1368,14 +1496,14 @@ function focusedTargetResolution(input: Readonly<{
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
-            providers: {},
-        },
+            providers: {}
+        }
     };
 }
 
 function singleReadArray<Value>(
     values: readonly Value[],
-    label: string,
+    label: string
 ): readonly Value[] {
     const reads = new Set<string>();
     return new Proxy([...values], {
@@ -1387,13 +1515,13 @@ function singleReadArray<Value>(
                 reads.add(property);
             }
             return Reflect.get(target, property, receiver);
-        },
+        }
     });
 }
 
 function noReadArray<Value>(
     values: readonly Value[],
-    label: string,
+    label: string
 ): readonly Value[] {
     return new Proxy([...values], {
         get(target, property, receiver) {
@@ -1401,7 +1529,7 @@ function noReadArray<Value>(
                 throw new Error(`${label}[${property}] was read.`);
             }
             return Reflect.get(target, property, receiver);
-        },
+        }
     });
 }
 
@@ -1409,7 +1537,7 @@ function focusedResult(
     commandId: string,
     agentId: string,
     ok: boolean,
-    endedAtEpochMs: number,
+    endedAtEpochMs: number
 ): ControlRunSnapshot['results'][number] {
     return {
         kind: 'result',
@@ -1427,12 +1555,12 @@ function focusedResult(
             endedAtEpochMs,
             durationMs: 1,
             ...(ok ? {} : {
-                error: { code: 'FOCUSED_FAILURE', message: `${commandId} failed.` },
-            }),
+                error: { code: 'FOCUSED_FAILURE', message: `${commandId} failed.` }
+            })
         },
         ...(ok ? {} : {
-            error: { code: 'FOCUSED_FAILURE', message: `${commandId} failed.` },
-        }),
+            error: { code: 'FOCUSED_FAILURE', message: `${commandId} failed.` }
+        })
     };
 }
 
@@ -1440,7 +1568,7 @@ function focusedDiagnostic(
     eventId: string | undefined,
     agentId: string,
     atEpochMs: number,
-    input: Readonly<{ commandId?: string; distributedRunId?: string }>,
+    input: Readonly<{ commandId?: string; distributedRunId?: string; }>
 ): ControlRunSnapshot['events'][number] {
     return {
         kind: 'diagnostic',
@@ -1459,9 +1587,9 @@ function focusedDiagnostic(
             data: {
                 ...(input.distributedRunId === undefined
                     ? {}
-                    : { distributedRunId: input.distributedRunId }),
-            },
-        },
+                    : { distributedRunId: input.distributedRunId })
+            }
+        }
     };
 }
 
@@ -1513,6 +1641,6 @@ function twoDimensionalMonitorWork(dimension: number) {
         reportCommandLinkLookupCount: 0,
         reportFallbackCommandLinkIndexPassCount: 0,
         reportFallbackCommandLinkVisitCount: 0,
-        reportFallbackCommandPhaseLookupCount: 0,
+        reportFallbackCommandPhaseLookupCount: 0
     };
 }

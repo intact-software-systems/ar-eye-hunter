@@ -28,14 +28,14 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
 
     public constructor(
         current?: LatestValue<T>,
-        options: LatestMementoOptions<T> = {},
+        options: LatestMementoOptions<T> = {}
     ) {
         this.current = current;
         this.undoDepth = options.undoDepth ?? DEFAULT_UNDO_DEPTH;
         this.redoDepth = options.redoDepth ?? DEFAULT_REDO_DEPTH;
         this.defaultLatestOptions = {
             ttlMs: options.ttlMs,
-            isValid: options.isValid,
+            isValid: options.isValid
         };
 
         if (!Number.isInteger(this.undoDepth) || this.undoDepth < 0) {
@@ -48,36 +48,36 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
     }
 
     public static empty<T>(
-        options: LatestMementoOptions<T> = {},
+        options: LatestMementoOptions<T> = {}
     ): LatestMementoValue<T> {
         return new LatestMementoValue<T>(undefined, options);
     }
 
     public static fromLatest<T>(
         latest: LatestValue<T>,
-        options: LatestMementoOptions<T> = {},
+        options: LatestMementoOptions<T> = {}
     ): LatestMementoValue<T> {
         return new LatestMementoValue<T>(latest, options);
     }
 
     public static fromValue<T>(
         value: T,
-        options: LatestMementoOptions<T> = {},
+        options: LatestMementoOptions<T> = {}
     ): LatestMementoValue<T> {
         return new LatestMementoValue<T>(
             LatestMementoValue.fixedLatest(value, options),
-            options,
+            options
         );
     }
 
     public static fromSnapshot<T>(
-        snapshot: LatestMementoSnapshot<T>,
+        snapshot: LatestMementoSnapshot<T>
     ): LatestMementoValue<T> {
         const instance = new LatestMementoValue<T>(snapshot.current, {
             undoDepth: snapshot.undoDepth,
             redoDepth: snapshot.redoDepth,
             ttlMs: snapshot.defaultLatestOptions.ttlMs,
-            isValid: snapshot.defaultLatestOptions.isValid,
+            isValid: snapshot.defaultLatestOptions.isValid
         });
 
         instance.undos.push(...snapshot.undos);
@@ -97,7 +97,7 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
             redos: [...this.redos],
             undoDepth: this.undoDepth,
             redoDepth: this.redoDepth,
-            defaultLatestOptions: { ...this.defaultLatestOptions },
+            defaultLatestOptions: { ...this.defaultLatestOptions }
         };
     }
 
@@ -233,20 +233,20 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
      */
     public setValue(
         value: T,
-        options: LatestValueOptions<T> = this.defaultLatestOptions,
+        options: LatestValueOptions<T> = this.defaultLatestOptions
     ): this {
         return this.setLatest(LatestMementoValue.fixedLatest(value, options));
     }
 
     public commitValue(
         value: T,
-        options: LatestValueOptions<T> = this.defaultLatestOptions,
+        options: LatestValueOptions<T> = this.defaultLatestOptions
     ): this {
         return this.setValue(value, options);
     }
 
     public getAndSetLatest(
-        latest: LatestValue<T> | undefined,
+        latest: LatestValue<T> | undefined
     ): LatestValue<T> | undefined {
         const previous = this.current;
         this.captureCurrentIntoUndo();
@@ -257,7 +257,7 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
 
     public compareAndSetLatest(
         expect: LatestValue<T> | undefined,
-        update: LatestValue<T> | undefined,
+        update: LatestValue<T> | undefined
     ): boolean {
         if (this.current !== expect) {
             return false;
@@ -282,7 +282,7 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
         this.captureCurrentIntoRedo();
         this.current = LatestMementoValue.fixedLatest<T>(
             nextValue,
-            this.defaultLatestOptions,
+            this.defaultLatestOptions
         );
         return nextValue;
     }
@@ -300,7 +300,7 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
         this.captureCurrentIntoUndo();
         this.current = LatestMementoValue.fixedLatest<T>(
             nextValue,
-            this.defaultLatestOptions,
+            this.defaultLatestOptions
         );
         return nextValue;
     }
@@ -430,7 +430,7 @@ export class LatestMementoValue<T> implements ReadableValue<T> {
 
     private static fixedLatest<T>(
         value: T,
-        options: LatestValueOptions<T> = {},
+        options: LatestValueOptions<T> = {}
     ): LatestValue<T> {
         const latest = new LatestValue<T>(options);
         latest.accept(value);

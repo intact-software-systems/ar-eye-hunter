@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { DistributedRunMonitorPanel } from '../../../apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunMonitorPanel.tsx';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('legacy distributed monitor row identity', () => {
@@ -20,13 +20,11 @@ describe('legacy distributed monitor row identity', () => {
 
         await act(async () => {
             root.render(createElement(DistributedRunMonitorPanel, {
-                monitor: monitorWithAgentLocalEventIds(),
+                monitor: monitorWithAgentLocalEventIds()
             }));
         });
 
-        const duplicateKeyErrors = consoleError.mock.calls.filter(call =>
-            call.some(value => String(value).includes('same key'))
-        );
+        const duplicateKeyErrors = consoleError.mock.calls.filter((call) => call.some((value) => String(value).includes('same key')));
         expect(duplicateKeyErrors).toEqual([]);
 
         await act(async () => root.unmount());
@@ -38,7 +36,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
     const events = [
         { agentId: 'agent-a', label: 'before restart' },
         { agentId: 'agent-a', label: 'after restart' },
-        { agentId: 'agent-b', label: 'other agent' },
+        { agentId: 'agent-b', label: 'other agent' }
     ] as const;
     return {
         distributedRunId: 'distributed-run-a',
@@ -51,7 +49,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             cancel: 0,
             completed: 0,
             failed: 0,
-            pending: 0,
+            pending: 0
         },
         resultCounts: { total: 0, ok: 0, failed: 0 },
         compositeCounts: {
@@ -60,7 +58,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             failed: 0,
             childResults: 0,
             composite: 0,
-            leaf: 0,
+            leaf: 0
         },
         diagnosticCounts: {
             total: 3,
@@ -70,13 +68,13 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             ws: 3,
             rtc: 0,
             http: 0,
-            runtime: 0,
+            runtime: 0
         },
         latency: { count: 0 },
         artifact: {
             status: 'not-loaded',
             fileCount: 0,
-            message: 'Not loaded',
+            message: 'Not loaded'
         },
         timeline: events.map(({ agentId, label }) => ({
             id: 'event-event-1',
@@ -84,7 +82,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             kind: 'event',
             label,
             tone: 'muted',
-            agentId,
+            agentId
         })),
         agentProgress: [],
         recipeProgress: [],
@@ -96,7 +94,7 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             kind: 'event',
             agentId,
             summary: label,
-            payloadSummary: label,
+            payloadSummary: label
         })),
         runtimeDiagnostics: events.map(({ agentId, label }) => ({
             eventId: 'event-1',
@@ -109,8 +107,8 @@ function monitorWithAgentLocalEventIds(): DistributedRunMonitor {
             message: label,
             summary: label,
             payloadSummary: label,
-            correlatedFailureKeys: [],
+            correlatedFailureKeys: []
         })),
-        compositeDrilldowns: [],
+        compositeDrilldowns: []
     };
 }

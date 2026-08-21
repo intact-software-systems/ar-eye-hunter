@@ -1,7 +1,7 @@
-import type { KeyboardEvent } from 'react';
 import type {
-    DistributedRecipeCatalogEntryProjection,
+    DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import type { KeyboardEvent } from 'react';
 import type { ExecuteRecipeSelection } from './execute-workflow-state.ts';
 import styles from './ExecuteCatalog.module.css';
 
@@ -26,21 +26,21 @@ export function ExecuteCatalog({
     disabled = false,
     onQueryChange,
     onProfileChange,
-    onSelectRecipe,
+    onSelectRecipe
 }: ExecuteCatalogProps) {
     const selectedRecipeId = selection.selected?.item.recipe.recipeId;
     const selectedVisible = entries.some(
-        entry => entry.item.recipe.recipeId === selectedRecipeId,
+        (entry) => entry.item.recipe.recipeId === selectedRecipeId
     );
 
     function moveSelection(
         event: KeyboardEvent<HTMLButtonElement>,
-        direction: 'next' | 'previous' | 'first' | 'last',
+        direction: 'next' | 'previous' | 'first' | 'last'
     ): void {
         const options = Array.from(
             event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                '[role="option"]',
-            ) ?? [],
+                '[role="option"]'
+            ) ?? []
         );
         const current = options.indexOf(event.currentTarget);
         const next = direction === 'first'
@@ -51,7 +51,9 @@ export function ExecuteCatalog({
             ? Math.min(current + 1, options.length - 1)
             : Math.max(current - 1, 0);
         const option = options[next];
-        if (!option) return;
+        if (!option) {
+            return;
+        }
         event.preventDefault();
         option.focus();
         onSelectRecipe(option.dataset.recipeId ?? '');
@@ -75,7 +77,7 @@ export function ExecuteCatalog({
                     <span>Search recipes</span>
                     <input
                         disabled={disabled}
-                        onChange={event => onQueryChange(event.currentTarget.value)}
+                        onChange={(event) => onQueryChange(event.currentTarget.value)}
                         placeholder="Name, provider, command…"
                         type="search"
                         value={query}
@@ -85,19 +87,15 @@ export function ExecuteCatalog({
                     <span>Profile</span>
                     <select
                         disabled={disabled}
-                        onChange={event => onProfileChange(event.currentTarget.value)}
+                        onChange={(event) => onProfileChange(event.currentTarget.value)}
                         value={profile}
                     >
                         <option value="">All profiles</option>
-                        {profiles.map(value => (
-                            <option key={value} value={value}>{value}</option>
-                        ))}
+                        {profiles.map((value) => <option key={value} value={value}>{value}</option>)}
                     </select>
                 </label>
             </div>
-            {selection.issue ? (
-                <p className={styles.issue} role="alert">{selection.issue.message}</p>
-            ) : null}
+            {selection.issue ? <p className={styles.issue} role="alert">{selection.issue.message}</p> : null}
             <div
                 aria-label="Available recipes"
                 className={styles.list}
@@ -115,11 +113,19 @@ export function ExecuteCatalog({
                             disabled={disabled}
                             key={entry.item.itemId}
                             onClick={() => onSelectRecipe(recipeId)}
-                            onKeyDown={event => {
-                                if (event.key === 'ArrowDown') moveSelection(event, 'next');
-                                if (event.key === 'ArrowUp') moveSelection(event, 'previous');
-                                if (event.key === 'Home') moveSelection(event, 'first');
-                                if (event.key === 'End') moveSelection(event, 'last');
+                            onKeyDown={(event) => {
+                                if (event.key === 'ArrowDown') {
+                                    moveSelection(event, 'next');
+                                }
+                                if (event.key === 'ArrowUp') {
+                                    moveSelection(event, 'previous');
+                                }
+                                if (event.key === 'Home') {
+                                    moveSelection(event, 'first');
+                                }
+                                if (event.key === 'End') {
+                                    moveSelection(event, 'last');
+                                }
                             }}
                             role="option"
                             tabIndex={selected || (!selectedVisible && index === 0) ? 0 : -1}
@@ -155,9 +161,9 @@ export function ExecuteCatalog({
                         </button>
                     );
                 })}
-                {entries.length === 0 ? (
-                    <p className={styles.empty}>No repository recipe matches these filters.</p>
-                ) : null}
+                {entries.length === 0
+                    ? <p className={styles.empty}>No repository recipe matches these filters.</p>
+                    : null}
             </div>
         </section>
     );
@@ -175,7 +181,9 @@ function preflightLabel(entry: DistributedRecipeCatalogEntryProjection): string 
         return `${entry.preflight.errors.length} preflight error${entry.preflight.errors.length === 1 ? '' : 's'}`;
     }
     if (entry.preflight.warnings.length > 0) {
-        return `${entry.preflight.warnings.length} preflight warning${entry.preflight.warnings.length === 1 ? '' : 's'}`;
+        return `${entry.preflight.warnings.length} preflight warning${
+            entry.preflight.warnings.length === 1 ? '' : 's'
+        }`;
     }
     return 'Preflight ready';
 }

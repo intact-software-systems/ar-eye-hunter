@@ -1,15 +1,9 @@
-import {
-    expect,
-    type BrowserContext,
-    type Page,
-    type Route,
-    test,
-} from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
@@ -18,10 +12,9 @@ const API_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):8080\/.*/;
 const GROUP = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
-    groupId: 'bb-group',
+    groupId: 'bb-group'
 } as const satisfies RallarBlackBoxDistributedGroupRef;
-const RECIPE_CONSOLE_ROUTE =
-    '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
+const RECIPE_CONSOLE_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&applicationId=rallar-server&workspaceId=default&roomId=bb-group';
 
 const TARGET_REASONS = {
@@ -29,14 +22,14 @@ const TARGET_REASONS = {
     stale: 'Agent matches the group but the last heartbeat is stale.',
     offline: 'Agent matches the group but is disconnected from the control server.',
     'different-group': 'Agent identity does not match the selected global group.',
-    'missing-identity': 'Agent has not reported enough Rallar identity metadata.',
+    'missing-identity': 'Agent has not reported enough Rallar identity metadata.'
 } as const;
 
 type ControlMockStep =
-    | Readonly<{ kind: 'snapshot'; snapshot: ControlServerSnapshot }>
-    | Readonly<{ kind: 'raw-snapshot'; snapshot: unknown }>
-    | Readonly<{ kind: 'http-error'; status: number; message: string }>
-    | Readonly<{ kind: 'network-error' }>;
+    | Readonly<{ kind: 'snapshot'; snapshot: ControlServerSnapshot; }>
+    | Readonly<{ kind: 'raw-snapshot'; snapshot: unknown; }>
+    | Readonly<{ kind: 'http-error'; status: number; message: string; }>
+    | Readonly<{ kind: 'network-error'; }>;
 
 type ControlRouteMock = Readonly<{
     runRequestCount(): number;
@@ -50,7 +43,7 @@ function controlAgent(
         heartbeatAgeMs?: number;
         identity?: false;
         groupId?: string;
-    }> = {},
+    }> = {}
 ): ControlAgentSnapshot {
     const atEpochMs = Date.now() - (options.heartbeatAgeMs ?? 1_000);
     return {
@@ -72,20 +65,20 @@ function controlAgent(
                 groupId: options.groupId ?? GROUP.groupId,
                 providerMode: 'browser-rallar',
                 browserName: 'chromium',
-                region: 'eu-north',
+                region: 'eu-north'
             },
         connectionSequence: 1,
         reconnectCount: 0,
         receivedResultCount: 0,
         receivedEventCount: 0,
         completedCommandIds: [],
-        resumeCompletedCommandIds: [],
+        resumeCompletedCommandIds: []
     };
 }
 
 function controlRun(
     runId: string,
-    agents: readonly ControlAgentSnapshot[],
+    agents: readonly ControlAgentSnapshot[]
 ): ControlRunSnapshot {
     const now = Date.now();
     return {
@@ -98,13 +91,13 @@ function controlRun(
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
 function activeDistributedRun(
     controlRunId: string,
-    targetAgentIds: readonly string[],
+    targetAgentIds: readonly string[]
 ): ControlDistributedRunSnapshot {
     const now = Date.now();
     return {
@@ -120,8 +113,8 @@ function activeDistributedRun(
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,
-                expectedParticipantCount: targetAgentIds.length,
-            },
+                expectedParticipantCount: targetAgentIds.length
+            }
         },
         state: 'running',
         createdAtEpochMs: now - 10_000,
@@ -142,10 +135,10 @@ function activeDistributedRun(
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
-                blockingFailures: 0,
+                blockingFailures: 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 }
 
@@ -156,26 +149,26 @@ function liveBoardSnapshot(): ControlServerSnapshot {
         controlAgent(runId, 'agent-stale', { heartbeatAgeMs: 60_000 }),
         controlAgent(runId, 'agent-offline', { connected: false }),
         controlAgent(runId, 'agent-wrong-group', { groupId: 'other-group' }),
-        controlAgent(runId, 'agent-missing-identity', { identity: false }),
+        controlAgent(runId, 'agent-missing-identity', { identity: false })
     ];
     return {
         runs: [controlRun(runId, agents)],
-        distributedRuns: [activeDistributedRun(runId, agents.map(agent => agent.agentId))],
+        distributedRuns: [activeDistributedRun(runId, agents.map((agent) => agent.agentId))]
     };
 }
 
 async function fulfillJson(
     route: Route,
     status: number,
-    body: unknown,
+    body: unknown
 ): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',
         headers: {
-            'access-control-allow-origin': '*',
+            'access-control-allow-origin': '*'
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 }
 
@@ -186,7 +179,7 @@ async function installControlRouteMock(
         distributedRunsFallback?: readonly ControlDistributedRunSnapshot[];
         distributedRunsPayload?: unknown;
         distributedRunsStatus?: number;
-    }> = {},
+    }> = {}
 ): Promise<ControlRouteMock> {
     let runRequestCount = 0;
     let latestSnapshot: unknown;
@@ -212,22 +205,30 @@ async function installControlRouteMock(
         if (request.method() === 'GET' && runDetailMatch) {
             const runId = decodeURIComponent(runDetailMatch[1]);
             const run = controlRunFromSnapshot(latestSnapshot, runId);
-            await fulfillJson(route, run ? 200 : 404, run ?? {
-                error: 'Control run not found.',
-            });
+            await fulfillJson(
+                route,
+                run ? 200 : 404,
+                run ?? {
+                    error: 'Control run not found.'
+                }
+            );
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             const status = options.distributedRunsStatus ?? 200;
-            await fulfillJson(route, status, status === 200
-                ? options.distributedRunsPayload ?? {
-                    distributedRuns: options.distributedRunsFallback ?? [],
-                }
-                : { error: 'Distributed-run context unavailable.' });
+            await fulfillJson(
+                route,
+                status,
+                status === 200
+                    ? options.distributedRunsPayload ?? {
+                        distributedRuns: options.distributedRunsFallback ?? []
+                    }
+                    : { error: 'Distributed-run context unavailable.' }
+            );
             return;
         }
         await fulfillJson(route, 404, {
-            error: `Unhandled ${request.method()} ${url.pathname}`,
+            error: `Unhandled ${request.method()} ${url.pathname}`
         });
     });
     return { runRequestCount: () => runRequestCount };
@@ -235,15 +236,21 @@ async function installControlRouteMock(
 
 function controlRunFromSnapshot(
     snapshot: unknown,
-    runId: string,
+    runId: string
 ): ControlRunSnapshot | undefined {
-    if (!snapshot || typeof snapshot !== 'object') return undefined;
-    const runs = (snapshot as { runs?: unknown }).runs;
-    if (!Array.isArray(runs)) return undefined;
-    return runs.find((run): run is ControlRunSnapshot => Boolean(
-        run && typeof run === 'object' &&
-        (run as { runId?: unknown }).runId === runId,
-    ));
+    if (!snapshot || typeof snapshot !== 'object') {
+        return undefined;
+    }
+    const runs = (snapshot as { runs?: unknown; }).runs;
+    if (!Array.isArray(runs)) {
+        return undefined;
+    }
+    return runs.find((run): run is ControlRunSnapshot =>
+        Boolean(
+            run && typeof run === 'object' &&
+                (run as { runId?: unknown; }).runId === runId
+        )
+    );
 }
 
 function commandContextItem(page: Page, label: string) {
@@ -255,7 +262,7 @@ function commandContextItem(page: Page, label: string) {
 function commandStatus(
     page: Page,
     status: 'passed' | 'failed' | 'partial' | 'stale' | 'warning',
-    label: string,
+    label: string
 ) {
     return page.locator(`[data-command-bar] [data-status="${status}"]`)
         .filter({ hasText: label });
@@ -267,7 +274,7 @@ function executeTargets(page: Page) {
 
 function targetRow(page: Page, agentId: string) {
     return executeTargets(page).locator('[data-execute-target]').filter({
-        has: page.getByText(agentId, { exact: true }),
+        has: page.getByText(agentId, { exact: true })
     });
 }
 
@@ -277,7 +284,7 @@ function executeActionBand(page: Page) {
 
 function targetEmptyState(page: Page) {
     return executeTargets(page).getByRole('status').filter({
-        hasText: 'No current target evidence',
+        hasText: 'No current target evidence'
     });
 }
 
@@ -286,7 +293,7 @@ function controlRunPicker(page: Page) {
     return {
         group,
         search: group.getByRole('combobox', { name: 'Search Control run' }),
-        trigger: group.getByRole('button', { name: /^Control run(?:\s|$)/u }),
+        trigger: group.getByRole('button', { name: /^Control run(?:\s|$)/u })
     };
 }
 
@@ -302,13 +309,10 @@ async function chooseControlRun(page: Page, runId: string): Promise<void> {
     await picker.search.press('Enter');
 }
 
-test('renders live command context and canonical repository-derived target reasons', async ({
-    context,
-    page,
-}) => {
+test('renders live command context and canonical repository-derived target reasons', async ({ context, page }) => {
     await installControlRouteMock(context, [{
         kind: 'snapshot',
-        snapshot: liveBoardSnapshot(),
+        snapshot: liveBoardSnapshot()
     }]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
@@ -318,27 +322,29 @@ test('renders live command context and canonical repository-derived target reaso
     await expect(commandStatus(page, 'passed', 'Live'))
         .toBeVisible();
     await expect(commandContextItem(page, 'Control server')).toContainText(
-        'http://localhost:5180',
+        'http://localhost:5180'
     );
     await expect(commandContextItem(page, 'Control run')).toContainText('control-canonical');
     await expect(commandContextItem(page, 'Group')).toContainText(
-        'rallar-server/default/bb-group',
+        'rallar-server/default/bb-group'
     );
     await expect(commandContextItem(page, 'Connected')).toContainText('4/5');
     await expect(commandContextItem(page, 'Safe targets')).toContainText('1');
     await expect(commandContextItem(page, 'Active run')).toContainText(
-        'dist-live-canonical · running',
+        'dist-live-canonical · running'
     );
 
     await expect(controlRunPicker(page).trigger).toContainText('control-canonical');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(5);
-    for (const [agentId, status] of [
-        ['agent-matched', 'matched'],
-        ['agent-stale', 'stale'],
-        ['agent-offline', 'offline'],
-        ['agent-wrong-group', 'different-group'],
-        ['agent-missing-identity', 'missing-identity'],
-    ] as const) {
+    for (
+        const [agentId, status] of [
+            ['agent-matched', 'matched'],
+            ['agent-stale', 'stale'],
+            ['agent-offline', 'offline'],
+            ['agent-wrong-group', 'different-group'],
+            ['agent-missing-identity', 'missing-identity']
+        ] as const
+    ) {
         const row = targetRow(page, agentId);
         await expect(row).toHaveAttribute('data-target-status', status);
         await expect(row.getByText(TARGET_REASONS[status], { exact: true }))
@@ -347,7 +353,8 @@ test('renders live command context and canonical repository-derived target reaso
         if (status === 'matched') {
             await expect(row.getByRole('checkbox', { name: `Select ${agentId}` }))
                 .toBeChecked();
-        } else {
+        }
+        else {
             await expect(row.getByRole('checkbox')).toHaveCount(0);
             await expect(row.getByLabel('Not selectable')).toBeVisible();
         }
@@ -356,10 +363,7 @@ test('renders live command context and canonical repository-derived target reaso
     await expect(targets).not.toContainText('seed-agent-b');
 });
 
-test('shows initial network failure as offline without seeded board fallback', async ({
-    context,
-    page,
-}) => {
+test('shows initial network failure as offline without seeded board fallback', async ({ context, page }) => {
     await installControlRouteMock(context, [{ kind: 'network-error' }]);
 
     await page.goto(RECIPE_CONSOLE_ROUTE);
@@ -374,34 +378,35 @@ test('shows initial network failure as offline without seeded board fallback', a
         .toBeVisible();
     await expect(empty.getByText(
         'Control is offline. Refresh to retry.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     const runPicker = controlRunPicker(page).trigger;
     await expect(runPicker).toContainText('Control runs unavailable');
     await expect(runPicker).not.toContainText('No control runs');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
     await expect(targets).not.toContainText('seed-agent');
-    await expect(executeActionBand(page).getByRole('button', {
-        name: 'Refresh',
-        exact: true,
-    })).toHaveCount(0);
-    await expect(executeActionBand(page).getByRole('button', {
-        name: 'Refresh control data',
-        exact: true,
-    })).toBeEnabled();
+    await expect(
+        executeActionBand(page).getByRole('button', {
+            name: 'Refresh',
+            exact: true
+        })
+    ).toHaveCount(0);
+    await expect(
+        executeActionBand(page).getByRole('button', {
+            name: 'Refresh control data',
+            exact: true
+        })
+    ).toBeEnabled();
     await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toHaveCount(0);
     await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
         .toBeVisible();
 });
 
-test('keeps malformed successful control responses reachable', async ({
-    context,
-    page,
-}) => {
+test('keeps malformed successful control responses reachable', async ({ context, page }) => {
     await installControlRouteMock(context, [{
         kind: 'raw-snapshot',
-        snapshot: { runs: null, distributedRuns: [] },
+        snapshot: { runs: null, distributedRuns: [] }
     }]);
 
     await page.goto(RECIPE_CONSOLE_ROUTE);
@@ -415,7 +420,7 @@ test('keeps malformed successful control responses reachable', async ({
         .toBeVisible();
     await expect(empty.getByText(
         'Control is reachable but returned invalid data. Refresh to retry.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toHaveCount(0);
@@ -423,44 +428,40 @@ test('keeps malformed successful control responses reachable', async ({
         .toBeVisible();
 });
 
-test('contains nested malformed control snapshots before repository derivation', async ({
-    context,
-    page,
-}) => {
+test('contains nested malformed control snapshots before repository derivation', async ({ context, page }) => {
     const pageErrors: string[] = [];
-    page.on('pageerror', error => pageErrors.push(error.message));
+    page.on('pageerror', (error) => pageErrors.push(error.message));
     await installControlRouteMock(context, [{
         kind: 'raw-snapshot',
         snapshot: {
             runs: [{ runId: 'run-malformed', agents: null }],
-            distributedRuns: [],
-        },
+            distributedRuns: []
+        }
     }]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=run-malformed`);
 
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Control error · reachable');
-    await expect(targetEmptyState(page).getByText(
-        'Control is reachable but returned invalid data. Refresh to retry.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(
+        targetEmptyState(page).getByText(
+            'Control is reachable but returned invalid data. Refresh to retry.',
+            { exact: true }
+        )
+    ).toBeVisible();
     await expect(executeTargets(page).locator('[data-execute-target]')).toHaveCount(0);
     await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
         .toBeVisible();
     expect(pageErrors).toEqual([]);
 });
 
-test('keeps usable rows in a partial snapshot and labels active-run context unknown', async ({
-    context,
-    page,
-}) => {
+test('keeps usable rows in a partial snapshot and labels active-run context unknown', async ({ context, page }) => {
     const runId = 'control-partial';
     await installControlRouteMock(context, [{
         kind: 'snapshot',
         snapshot: {
-            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial')])],
-        },
+            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial')])]
+        }
     }], { distributedRunsStatus: 503 });
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
@@ -470,7 +471,7 @@ test('keeps usable rows in a partial snapshot and labels active-run context unkn
     const row = targetRow(page, 'agent-partial');
     await expect(row).toHaveAttribute(
         'data-target-status',
-        'matched',
+        'matched'
     );
     await expect(row.getByRole('checkbox', { name: 'Select agent-partial' }))
         .toBeEnabled();
@@ -482,18 +483,15 @@ test('keeps usable rows in a partial snapshot and labels active-run context unkn
         .toHaveCount(0);
 });
 
-test('keeps usable rows when optional distributed context is malformed', async ({
-    context,
-    page,
-}) => {
+test('keeps usable rows when optional distributed context is malformed', async ({ context, page }) => {
     const runId = 'control-partial-protocol';
     await installControlRouteMock(context, [{
         kind: 'snapshot',
         snapshot: {
-            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial-protocol')])],
-        },
+            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial-protocol')])]
+        }
     }], {
-        distributedRunsPayload: { distributedRuns: { invalid: true } },
+        distributedRunsPayload: { distributedRuns: { invalid: true } }
     });
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
@@ -502,7 +500,7 @@ test('keeps usable rows when optional distributed context is malformed', async (
     const row = targetRow(page, 'agent-partial-protocol');
     await expect(row).toHaveAttribute(
         'data-target-status',
-        'matched',
+        'matched'
     );
     await expect(row.getByRole('checkbox', { name: 'Select agent-partial-protocol' }))
         .toBeEnabled();
@@ -513,16 +511,13 @@ test('keeps usable rows when optional distributed context is malformed', async (
         .toHaveCount(0);
 });
 
-test('keeps agent rows usable while announcing distributed-context authorization', async ({
-    context,
-    page,
-}) => {
+test('keeps agent rows usable while announcing distributed-context authorization', async ({ context, page }) => {
     const runId = 'control-partial-auth';
     await installControlRouteMock(context, [{
         kind: 'snapshot',
         snapshot: {
-            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial-auth')])],
-        },
+            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial-auth')])]
+        }
     }], { distributedRunsStatus: 401 });
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
@@ -532,7 +527,7 @@ test('keeps agent rows usable while announcing distributed-context authorization
     const row = targetRow(page, 'agent-partial-auth');
     await expect(row).toHaveAttribute(
         'data-target-status',
-        'matched',
+        'matched'
     );
     await expect(row.getByRole('checkbox', { name: 'Select agent-partial-auth' }))
         .toBeEnabled();
@@ -544,20 +539,20 @@ test('keeps agent rows usable while announcing distributed-context authorization
         .toHaveCount(0);
 });
 
-test('retains partial authorization when the configured token broker is unavailable', async ({
-    context,
-    page,
-}) => {
+test('retains partial authorization when the configured token broker is unavailable', async ({ context, page }) => {
     const runId = 'control-partial-broker-error';
     const brokerAuthorizations: string[] = [];
     await context.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'configured-client',
-            sessionId: 'configured-session',
-            username: 'configured-user',
-            accessToken: 'configured-session-token',
-            expiresAtEpochMs: 4_000_000_000_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'configured-client',
+                sessionId: 'configured-session',
+                username: 'configured-user',
+                accessToken: 'configured-session-token',
+                expiresAtEpochMs: 4_000_000_000_000
+            })
+        );
     });
     await context.route(API_ROUTE, async (route) => {
         if (route.request().method() === 'OPTIONS') {
@@ -566,8 +561,8 @@ test('retains partial authorization when the configured token broker is unavaila
                 headers: {
                     'access-control-allow-origin': '*',
                     'access-control-allow-methods': 'POST, OPTIONS',
-                    'access-control-allow-headers': 'authorization, x-client-id, content-type',
-                },
+                    'access-control-allow-headers': 'authorization, x-client-id, content-type'
+                }
             });
             return;
         }
@@ -578,9 +573,9 @@ test('retains partial authorization when the configured token broker is unavaila
         kind: 'snapshot',
         snapshot: {
             runs: [controlRun(runId, [
-                controlAgent(runId, 'agent-partial-broker-error'),
-            ])],
-        },
+                controlAgent(runId, 'agent-partial-broker-error')
+            ])]
+        }
     }], { distributedRunsStatus: 401 });
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
@@ -590,7 +585,7 @@ test('retains partial authorization when the configured token broker is unavaila
     const row = targetRow(page, 'agent-partial-broker-error');
     await expect(row).toHaveAttribute(
         'data-target-status',
-        'matched',
+        'matched'
     );
     await expect(row.getByRole('checkbox', { name: 'Select agent-partial-broker-error' }))
         .toBeEnabled();
@@ -599,33 +594,30 @@ test('retains partial authorization when the configured token broker is unavaila
     await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
         .toHaveCount(0);
     await expect.poll(() => brokerAuthorizations).toEqual([
-        'Bearer configured-session-token',
+        'Bearer configured-session-token'
     ]);
 });
 
-test('retains last-good rows after a failed manual refresh but reports zero current safe targets', async ({
-    context,
-    page,
-}) => {
+test('retains last-good rows after a failed manual refresh but reports zero current safe targets', async ({ context, page }) => {
     const runId = 'control-last-good';
     const mock = await installControlRouteMock(context, [
         {
             kind: 'snapshot',
             snapshot: {
                 runs: [controlRun(runId, [controlAgent(runId, 'agent-last-good')])],
-                distributedRuns: [activeDistributedRun(runId, ['agent-last-good'])],
-            },
+                distributedRuns: [activeDistributedRun(runId, ['agent-last-good'])]
+            }
         },
-        { kind: 'network-error' },
+        { kind: 'network-error' }
     ]);
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
     await expect(targetRow(page, 'agent-last-good')).toHaveAttribute(
         'data-target-status',
-        'matched',
+        'matched'
     );
     await expect(commandStatus(page, 'passed', 'Live')).toBeVisible();
     await expect(commandContextItem(page, 'Active run')).toContainText(
-        'dist-live-canonical · running',
+        'dist-live-canonical · running'
     );
 
     const requestsBeforeRefresh = mock.runRequestCount();
@@ -643,19 +635,23 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
     await expect(lastKnownRow.getByRole('checkbox')).toHaveCount(0);
     await expect(lastKnownRow.getByLabel('Not selectable')).toBeVisible();
     await expect(commandContextItem(page, 'Safe targets')).toContainText(
-        '0 current · 1 last-known recipe-safe',
+        '0 current · 1 last-known recipe-safe'
     );
     await expect(commandContextItem(page, 'Active run')).toContainText(
-        'dist-live-canonical · running · last known',
+        'dist-live-canonical · running · last known'
     );
-    await expect(executeTargets(page).getByText(
-        'Last-known evidence · Stale',
-        { exact: true },
-    )).toBeVisible();
-    await expect(executeTargets(page).getByText(
-        'Target evidence is retained for diagnosis. Selection is disabled until current control truth returns.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(
+        executeTargets(page).getByText(
+            'Last-known evidence · Stale',
+            { exact: true }
+        )
+    ).toBeVisible();
+    await expect(
+        executeTargets(page).getByText(
+            'Target evidence is retained for diagnosis. Selection is disabled until current control truth returns.',
+            { exact: true }
+        )
+    ).toBeVisible();
     await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toHaveCount(0);
     await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
@@ -665,7 +661,7 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
 test('renders a truthful live-empty control state', async ({ context, page }) => {
     await installControlRouteMock(context, [{
         kind: 'snapshot',
-        snapshot: { runs: [], distributedRuns: [] },
+        snapshot: { runs: [], distributedRuns: [] }
     }]);
 
     await page.goto(RECIPE_CONSOLE_ROUTE);
@@ -678,7 +674,7 @@ test('renders a truthful live-empty control state', async ({ context, page }) =>
         .toBeVisible();
     await expect(empty.getByText(
         'The selected live control run contains no target agents.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     await expect(controlRunPicker(page).trigger)
         .toContainText('Control runs unavailable');
@@ -690,26 +686,28 @@ test('renders a truthful live-empty control state', async ({ context, page }) =>
     await expect(executeActionBand(page)).toContainText('Connect agents to continue.');
 });
 
-for (const unresolvedCase of [
-    {
-        name: 'multiple unselected runs',
-        routeSuffix: '',
-    },
-    {
-        name: 'an unavailable explicit run',
-        routeSuffix: '&controlRunId=missing-control-run',
-    },
-] as const) {
+for (
+    const unresolvedCase of [
+        {
+            name: 'multiple unselected runs',
+            routeSuffix: ''
+        },
+        {
+            name: 'an unavailable explicit run',
+            routeSuffix: '&controlRunId=missing-control-run'
+        }
+    ] as const
+) {
     test(`keeps ${unresolvedCase.name} non-authoritative`, async ({ context, page }) => {
         await installControlRouteMock(context, [{
             kind: 'snapshot',
             snapshot: {
                 runs: [
                     controlRun('control-a', [controlAgent('control-a', 'agent-a')]),
-                    controlRun('control-b', [controlAgent('control-b', 'agent-b')]),
+                    controlRun('control-b', [controlAgent('control-b', 'agent-b')])
                 ],
-                distributedRuns: [],
-            },
+                distributedRuns: []
+            }
         }]);
 
         await page.goto(`${RECIPE_CONSOLE_ROUTE}${unresolvedCase.routeSuffix}`);
@@ -723,7 +721,8 @@ for (const unresolvedCase of [
         if (unresolvedCase.routeSuffix) {
             await expect(runPicker).toContainText('Unavailable selection');
             await expect(runPicker).toContainText('missing-control-run');
-        } else {
+        }
+        else {
             await expect(runPicker).toContainText('Select a control run');
         }
         const empty = targetEmptyState(page);
@@ -731,12 +730,12 @@ for (const unresolvedCase of [
             .toBeVisible();
         await expect(empty.getByText(
             'The selected live control run contains no target agents.',
-            { exact: true },
+            { exact: true }
         )).toBeVisible();
         await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
         if (unresolvedCase.routeSuffix) {
             await expect(targets.getByRole('alert')).toHaveText(
-                'Control run missing-control-run is not present in the latest snapshot.',
+                'Control run missing-control-run is not present in the latest snapshot.'
             );
         }
         await expect(executeActionBand(page)).toContainText('Connect agents to continue.');
@@ -747,7 +746,7 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
     await installControlRouteMock(context, [{
         kind: 'http-error',
         status: 401,
-        message: 'Operator token required.',
+        message: 'Operator token required.'
     }]);
 
     await page.goto(RECIPE_CONSOLE_ROUTE);
@@ -762,27 +761,27 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
         .toBeVisible();
     await expect(empty.getByText(
         'Control authorization is required.',
-        { exact: true },
+        { exact: true }
     )).toBeVisible();
     await expect(targets).not.toContainText('Control is offline');
     await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
         .toBeVisible();
 });
 
-test('keeps stored credentials away from URL-selected control and API origins', async ({
-    context,
-    page,
-}) => {
+test('keeps stored credentials away from URL-selected control and API origins', async ({ context, page }) => {
     const controlAuthorizations: Array<string | null> = [];
     const brokerAuthorizations: Array<string | null> = [];
     await context.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'victim-client',
-            sessionId: 'victim-session',
-            username: 'victim',
-            accessToken: 'victim-primary-session-token',
-            expiresAtEpochMs: 4_000_000_000_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'victim-client',
+                sessionId: 'victim-session',
+                username: 'victim',
+                accessToken: 'victim-primary-session-token',
+                expiresAtEpochMs: 4_000_000_000_000
+            })
+        );
     });
     await context.route('https://untrusted-control.test/**', async (route) => {
         const auth = route.request().headers().authorization ?? null;
@@ -800,35 +799,34 @@ test('keeps stored credentials away from URL-selected control and API origins', 
             token: 'brokered-operator-secret',
             issuedAtEpochMs: Date.now(),
             expiresAtEpochMs: Date.now() + 3_600_000,
-            ttlMs: 3_600_000,
+            ttlMs: 3_600_000
         });
     });
 
     await page.goto(
         `${RECIPE_CONSOLE_ROUTE}` +
-        '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol' +
-        '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test',
+            '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol' +
+            '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test'
     );
 
     await expect(commandStatus(page, 'warning', 'Authorization required'))
         .toBeVisible();
-    await expect(targetEmptyState(page).getByText(
-        'Automatic credentials were withheld for this URL-selected control endpoint.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(
+        targetEmptyState(page).getByText(
+            'Automatic credentials were withheld for this URL-selected control endpoint.',
+            { exact: true }
+        )
+    ).toBeVisible();
     await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
         .toBeVisible();
     expect(controlAuthorizations).toEqual([null]);
     expect(brokerAuthorizations).toEqual([]);
 });
 
-test('announces recovery from offline to live and restores canonical rows', async ({
-    context,
-    page,
-}) => {
+test('announces recovery from offline to live and restores canonical rows', async ({ context, page }) => {
     await installControlRouteMock(context, [
         { kind: 'network-error' },
-        { kind: 'snapshot', snapshot: liveBoardSnapshot() },
+        { kind: 'snapshot', snapshot: liveBoardSnapshot() }
     ]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
@@ -841,26 +839,23 @@ test('announces recovery from offline to live and restores canonical rows', asyn
     await expect(announcedStatus).toHaveText('Live · reachable');
     await expect(targetRow(page, 'agent-matched')).toHaveAttribute(
         'data-target-status',
-        'matched',
+        'matched'
     );
 });
 
-test('preserves unavailable URL selections without collection-index fallback', async ({
-    context,
-    page,
-}) => {
+test('preserves unavailable URL selections without collection-index fallback', async ({ context, page }) => {
     const snapshot = liveBoardSnapshot();
     await installControlRouteMock(context, [{ kind: 'snapshot', snapshot }]);
     await page.goto(
         `${RECIPE_CONSOLE_ROUTE}&controlRunId=control-unavailable` +
-        '&distributedRunId=distributed-unavailable&agentId=agent-unavailable',
+            '&distributedRunId=distributed-unavailable&agentId=agent-unavailable'
     );
 
     await expect(commandContextItem(page, 'Control run'))
         .toContainText('control-unavailable');
     const targets = executeTargets(page);
     await expect(targets.getByRole('alert')).toHaveText(
-        'Control run control-unavailable is not present in the latest snapshot.',
+        'Control run control-unavailable is not present in the latest snapshot.'
     );
     const runPicker = controlRunPicker(page).trigger;
     await expect(runPicker).toContainText('Unavailable selection');
@@ -868,7 +863,7 @@ test('preserves unavailable URL selections without collection-index fallback', a
     await expect(runPicker).toHaveAttribute('aria-invalid', 'true');
     await expect(runPicker).toHaveAttribute(
         'aria-describedby',
-        'execute-control-run-issue',
+        'execute-control-run-issue'
     );
     await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
     const url = new URL(page.url());
@@ -877,24 +872,20 @@ test('preserves unavailable URL selections without collection-index fallback', a
     expect(url.searchParams.get('agentId')).toBe('agent-unavailable');
 });
 
-test('commits, reloads, copies, and restores run selection while target checks stay bounded', async ({
-    baseURL,
-    context,
-    page,
-}) => {
+test('commits, reloads, copies, and restores run selection while target checks stay bounded', async ({ baseURL, context, page }) => {
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: new URL(baseURL ?? page.url()).origin },
+        { origin: new URL(baseURL ?? page.url()).origin }
     );
     const west = controlRun('control-west', [
-        controlAgent('control-west', 'agent-west'),
+        controlAgent('control-west', 'agent-west')
     ]);
     const east = controlRun('control-east', [
-        controlAgent('control-east', 'agent-east'),
+        controlAgent('control-east', 'agent-east')
     ]);
     await installControlRouteMock(context, [{
         kind: 'snapshot',
-        snapshot: { runs: [east, west], distributedRuns: [] },
+        snapshot: { runs: [east, west], distributedRuns: [] }
     }]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-west`);
@@ -921,15 +912,19 @@ test('commits, reloads, copies, and restores run selection while target checks s
 
     await page.goForward();
     await expect(runSelect).toContainText('control-east');
-    await expect(targetRow(page, 'agent-east')
-        .getByRole('checkbox', { name: 'Select agent-east' }))
+    await expect(
+        targetRow(page, 'agent-east')
+            .getByRole('checkbox', { name: 'Select agent-east' })
+    )
         .toBeChecked();
     await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
 
     await page.reload();
     await expect(runSelect).toContainText('control-east');
-    await expect(targetRow(page, 'agent-east')
-        .getByRole('checkbox', { name: 'Select agent-east' }))
+    await expect(
+        targetRow(page, 'agent-east')
+            .getByRole('checkbox', { name: 'Select agent-east' })
+    )
         .toBeChecked();
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
     const copiedHref = await page.evaluate(() => navigator.clipboard.readText());
@@ -939,10 +934,7 @@ test('commits, reloads, copies, and restores run selection while target checks s
     expect(copied.searchParams.has('controlUrl')).toBe(false);
 });
 
-test('owns one poll timer across views and clears it when Recipe Console unmounts', async ({
-    context,
-    page,
-}) => {
+test('owns one poll timer across views and clears it when Recipe Console unmounts', async ({ context, page }) => {
     await page.addInitScript(() => {
         const active = new Map<number, number>();
         const nativeSetTimeout = window.setTimeout.bind(window);
@@ -961,7 +953,7 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
                 active.set(id, timeout ?? 0);
                 return id;
             },
-            writable: true,
+            writable: true
         });
         Object.defineProperty(window, 'clearTimeout', {
             configurable: true,
@@ -971,23 +963,23 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
                     nativeClearTimeout(id);
                 }
             },
-            writable: true,
+            writable: true
         });
         Object.defineProperty(window, '__recipeConsoleTimeoutProbe', {
             value: {
-                activePolls: (): number =>
-                    [...active.values()].filter(timeout => timeout === 5_000).length,
-            },
+                activePolls: (): number => [...active.values()].filter((timeout) => timeout === 5_000).length
+            }
         });
     });
-    const activePolls = (): Promise<number> => page.evaluate(() =>
-        (window as Window & {
-            __recipeConsoleTimeoutProbe: { activePolls(): number };
-        }).__recipeConsoleTimeoutProbe.activePolls()
-    );
+    const activePolls = (): Promise<number> =>
+        page.evaluate(() =>
+            (window as Window & {
+                __recipeConsoleTimeoutProbe: { activePolls(): number; };
+            }).__recipeConsoleTimeoutProbe.activePolls()
+        );
     const mock = await installControlRouteMock(context, [{
         kind: 'snapshot',
-        snapshot: liveBoardSnapshot(),
+        snapshot: liveBoardSnapshot()
     }]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
@@ -1003,7 +995,7 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
         history.pushState(
             {},
             '',
-            '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth',
+            '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
         );
         dispatchEvent(new PopStateEvent('popstate'));
     });
@@ -1015,19 +1007,18 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
     expect(mock.runRequestCount()).toBe(requestsAfterUnmount);
 });
 
-test('keeps the connected board usable at tablet and portrait touch sizes', async ({
-    context,
-    page,
-}) => {
+test('keeps the connected board usable at tablet and portrait touch sizes', async ({ context, page }) => {
     await installControlRouteMock(context, [{
         kind: 'snapshot',
-        snapshot: liveBoardSnapshot(),
+        snapshot: liveBoardSnapshot()
     }]);
 
-    for (const viewport of [
-        { width: 900, height: 900 },
-        { width: 430, height: 932 },
-    ]) {
+    for (
+        const viewport of [
+            { width: 900, height: 900 },
+            { width: 430, height: 932 }
+        ]
+    ) {
         await page.setViewportSize(viewport);
         await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
         const closeInspector = page.getByRole('button', { name: 'Close inspector' });
@@ -1042,12 +1033,14 @@ test('keeps the connected board usable at tablet and portrait touch sizes', asyn
             .toBeGreaterThanOrEqual(44);
         const rows = targets.locator('[data-execute-target]');
         await expect(rows).toHaveCount(5);
-        for (const bounds of await rows.evaluateAll(elements =>
-            elements.map(element => {
-                const rect = element.getBoundingClientRect();
-                return { height: rect.height, width: rect.width };
-            })
-        )) {
+        for (
+            const bounds of await rows.evaluateAll((elements) =>
+                elements.map((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return { height: rect.height, width: rect.width };
+                })
+            )
+        ) {
             expect(bounds.height).toBeGreaterThanOrEqual(44);
             expect(bounds.width).toBeGreaterThanOrEqual(44);
         }
@@ -1065,24 +1058,21 @@ test('keeps the connected board usable at tablet and portrait touch sizes', asyn
     }
 });
 
-test('keeps the complete Execute workflow scrollable in mobile landscape', async ({
-    context,
-    page,
-}) => {
+test('keeps the complete Execute workflow scrollable in mobile landscape', async ({ context, page }) => {
     await page.setViewportSize({ width: 932, height: 430 });
     await installControlRouteMock(context, [{
         kind: 'snapshot',
-        snapshot: liveBoardSnapshot(),
+        snapshot: liveBoardSnapshot()
     }]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
 
     const workspace = page.locator('[data-execute-workspace]');
     await expect(workspace).toBeVisible();
-    const scrollState = await workspace.evaluate(element => ({
+    const scrollState = await workspace.evaluate((element) => ({
         clientHeight: element.clientHeight,
         overflowY: getComputedStyle(element).overflowY,
-        scrollHeight: element.scrollHeight,
+        scrollHeight: element.scrollHeight
     }));
     expect(scrollState.overflowY).toBe('auto');
     expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);

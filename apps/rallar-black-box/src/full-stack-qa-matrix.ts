@@ -24,11 +24,16 @@ export type FullStackQaCoverageSummary = Readonly<{
     covered: number;
     coveragePercent: number;
     missingIds: readonly string[];
-    byArea: Readonly<Record<FullStackQaArea, Readonly<{
-        total: number;
-        covered: number;
-        coveragePercent: number;
-    }>>>;
+    byArea: Readonly<
+        Record<
+            FullStackQaArea,
+            Readonly<{
+                total: number;
+                covered: number;
+                coveragePercent: number;
+            }>
+        >
+    >;
 }>;
 
 const AREAS: readonly FullStackQaArea[] = [
@@ -39,7 +44,7 @@ const AREAS: readonly FullStackQaArea[] = [
     'recipes-artifacts',
     'rtc',
     'control',
-    'resilience',
+    'resilience'
 ];
 
 export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
@@ -51,7 +56,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-rest-workbench.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['login header', 'authorization header', 'x-client-id', 'redacted response'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'auth-bad-credentials',
@@ -61,7 +66,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-command-center-qa-matrix.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['login error', 'no app shell'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'auth-missing-token',
@@ -71,7 +76,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-command-center-qa-matrix.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['401 or 403 response'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'rooms-state-refresh',
@@ -81,7 +86,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-browser-rallar-resilience.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['group snapshot', 'member status', 'state events'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'rooms-replay-stale-session',
@@ -91,7 +96,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-browser-rallar-resilience.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['replay events', 'disconnect events', 'snapshot refresh'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'websocket-ticket-open-send',
@@ -101,7 +106,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-command-center-qa-matrix.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['ticket request', 'ws.open result', 'ws.send result'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'websocket-missing-ticket',
@@ -111,7 +116,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-command-center-qa-matrix.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['negative open result', 'diagnostic event'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'rest-collection-assert-extract',
@@ -121,17 +126,18 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-rest-workbench.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['collection row', 'assertions', 'extracted variables'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'rest-group-login-join-existing',
         area: 'rest',
-        intent: 'A logged-in browser can create-or-accept an existing group and join it through the Rallar Server tab with the authenticated client id.',
+        intent:
+            'A logged-in browser can create-or-accept an existing group and join it through the Rallar Server tab with the authenticated client id.',
         polarity: 'positive',
         testFile: 'full-stack-rest-workbench.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['auth.session', 'PUT group member URL', 'x-client-id', 'status active body'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'rest-group-join-live-errors',
@@ -141,7 +147,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-rest-workbench.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['400 missing join body', '403 principal mismatch', 'visible error message'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'recipes-artifact-import',
@@ -151,7 +157,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-command-center-qa-matrix.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['catalog entry', 'artifact validation'],
-        liveProvider: false,
+        liveProvider: false
     },
     {
         id: 'control-artifact-cross-check',
@@ -161,7 +167,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-control-orchestration.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['control result', 'artifact bundle', 'events JSONL'],
-        liveProvider: false,
+        liveProvider: false
     },
     {
         id: 'rtc-direct-realtime',
@@ -171,7 +177,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-manual-rallar-realtime.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['received inbox', 'real-provider event stream'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'rtc-three-browser-matrix',
@@ -181,7 +187,7 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-live-rtc-three-browser-matrix.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1 and RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1',
         evidence: ['three agents', 'delivery matrix', 'nack probes', 'artifact export'],
-        liveProvider: true,
+        liveProvider: true
     },
     {
         id: 'resilience-server-reconnect',
@@ -191,21 +197,21 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         testFile: 'full-stack-browser-rallar-resilience.spec.ts',
         skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1',
         evidence: ['ws lifecycle', 'rtc lifecycle', 'replay counts'],
-        liveProvider: true,
-    },
+        liveProvider: true
+    }
 ];
 
 export function fullStackQaCoverageSummary(
-    matrix: readonly FullStackQaCase[] = FULL_STACK_QA_MATRIX,
+    matrix: readonly FullStackQaCase[] = FULL_STACK_QA_MATRIX
 ): FullStackQaCoverageSummary {
-    const coveredCases = matrix.filter(entry => entry.testFile.length > 0 && entry.skipGate.length > 0);
-    const byArea = Object.fromEntries(AREAS.map(area => {
-        const entries = matrix.filter(entry => entry.area === area);
-        const covered = entries.filter(entry => entry.testFile.length > 0 && entry.skipGate.length > 0).length;
+    const coveredCases = matrix.filter((entry) => entry.testFile.length > 0 && entry.skipGate.length > 0);
+    const byArea = Object.fromEntries(AREAS.map((area) => {
+        const entries = matrix.filter((entry) => entry.area === area);
+        const covered = entries.filter((entry) => entry.testFile.length > 0 && entry.skipGate.length > 0).length;
         return [area, {
             total: entries.length,
             covered,
-            coveragePercent: entries.length === 0 ? 100 : Math.round((covered / entries.length) * 100),
+            coveragePercent: entries.length === 0 ? 100 : Math.round((covered / entries.length) * 100)
         }];
     })) as FullStackQaCoverageSummary['byArea'];
 
@@ -214,8 +220,8 @@ export function fullStackQaCoverageSummary(
         covered: coveredCases.length,
         coveragePercent: matrix.length === 0 ? 100 : Math.round((coveredCases.length / matrix.length) * 100),
         missingIds: matrix
-            .filter(entry => entry.testFile.length === 0 || entry.skipGate.length === 0)
-            .map(entry => entry.id),
-        byArea,
+            .filter((entry) => entry.testFile.length === 0 || entry.skipGate.length === 0)
+            .map((entry) => entry.id),
+        byArea
     };
 }

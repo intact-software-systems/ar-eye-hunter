@@ -3,24 +3,24 @@ import type {
     RallarLocalMatchResultInput,
     RallarMatchResultInput,
     RallarRoomTrustedMatchResult,
-    RallarRoomTrustedMatchResultInput,
+    RallarRoomTrustedMatchResultInput
 } from './types.ts';
 
 export function createRallarMatchResult<TSummary>(
-    input: RallarLocalMatchResultInput<TSummary>,
+    input: RallarLocalMatchResultInput<TSummary>
 ): RallarLocalMatchResult<TSummary>;
 export function createRallarMatchResult<TSummary>(
-    input: RallarRoomTrustedMatchResultInput<TSummary>,
+    input: RallarRoomTrustedMatchResultInput<TSummary>
 ): RallarRoomTrustedMatchResult<TSummary>;
 export function createRallarMatchResult<TSummary>(
-    input: RallarMatchResultInput<TSummary>,
+    input: RallarMatchResultInput<TSummary>
 ): RallarLocalMatchResult<TSummary> | RallarRoomTrustedMatchResult<TSummary>;
 export function createRallarMatchResult<TSummary>(
-    input: RallarMatchResultInput<TSummary>,
+    input: RallarMatchResultInput<TSummary>
 ): RallarLocalMatchResult<TSummary> | RallarRoomTrustedMatchResult<TSummary> {
-    if ((input as Readonly<{ trust?: unknown }>).trust === 'server-validated') {
+    if ((input as Readonly<{ trust?: unknown; }>).trust === 'server-validated') {
         throw new Error(
-            'Shared Rallar match result creation cannot assign server-validated trust.',
+            'Shared Rallar match result creation cannot assign server-validated trust.'
         );
     }
     if (
@@ -28,7 +28,7 @@ export function createRallarMatchResult<TSummary>(
         !isBrowserDirectorAuthority(input.authority)
     ) {
         throw new Error(
-            'Room-trusted Rallar match results require browser-director authority.',
+            'Room-trusted Rallar match results require browser-director authority.'
         );
     }
 
@@ -48,7 +48,7 @@ export function createRallarMatchResultIdempotencyKey(
         | 'matchId'
         | 'authority'
         | 'finishedAtEpochMs'
-    >,
+    >
 ): string {
     const workspace = `workspace:${input.roomRef.workspaceId ?? ''}`;
 
@@ -61,12 +61,12 @@ export function createRallarMatchResultIdempotencyKey(
         input.authority.kind,
         input.authority.id,
         String(input.authority.epoch),
-        String(input.finishedAtEpochMs),
+        String(input.finishedAtEpochMs)
     ].map(encodeURIComponent).join(':');
 }
 
 function isBrowserDirectorAuthority(
-    authority: unknown,
+    authority: unknown
 ): boolean {
     if (!authority || typeof authority !== 'object') {
         return false;

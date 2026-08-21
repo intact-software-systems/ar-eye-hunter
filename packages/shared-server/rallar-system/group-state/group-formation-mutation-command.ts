@@ -1,5 +1,5 @@
-import { canonicalJson } from './mutation/group-state-crypto.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { canonicalJson } from './mutation/group-state-crypto.ts';
 
 import type { GroupMutationCommand } from './mutation/group-mutation-contracts.ts';
 
@@ -10,57 +10,57 @@ import type { GroupMutationCommand } from './mutation/group-mutation-contracts.t
  * inbox replay rather than a second transition.
  */
 export function toFormationActivateCommand(
-  input: Readonly<{
-    groupRef: GroupRef;
-    formationEpoch: number;
-    observedRate: number;
-    degraded: boolean;
-  }>,
+    input: Readonly<{
+        groupRef: GroupRef;
+        formationEpoch: number;
+        observedRate: number;
+        degraded: boolean;
+    }>
 ): GroupMutationCommand {
-  const semanticCommand = {
-    operation: 'activateGroup',
-    aggregateRef: input.groupRef,
-    input: {
-      actorPrincipalId: null,
-      actorSessionId: null,
-      reason: null,
-      traceId: null,
-      observedRate: input.observedRate,
-      degraded: input.degraded,
-    },
-  } as const;
-  const commandId = groupFormationCriterionRequestId(
-    input.degraded ? 'activate-degraded' : 'activate',
-    input.groupRef,
-    input.formationEpoch,
-  );
-  return { ...semanticCommand, commandId, requestId: commandId };
+    const semanticCommand = {
+        operation: 'activateGroup',
+        aggregateRef: input.groupRef,
+        input: {
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
+            traceId: null,
+            observedRate: input.observedRate,
+            degraded: input.degraded
+        }
+    } as const;
+    const commandId = groupFormationCriterionRequestId(
+        input.degraded ? 'activate-degraded' : 'activate',
+        input.groupRef,
+        input.formationEpoch
+    );
+    return { ...semanticCommand, commandId, requestId: commandId };
 }
 
 export function toFailFormationCommand(
-  input: Readonly<{
-    groupRef: GroupRef;
-    formationEpoch: number;
-    observedRate: number;
-  }>,
+    input: Readonly<{
+        groupRef: GroupRef;
+        formationEpoch: number;
+        observedRate: number;
+    }>
 ): GroupMutationCommand {
-  const semanticCommand = {
-    operation: 'failGroupFormation',
-    aggregateRef: input.groupRef,
-    input: {
-      actorPrincipalId: null,
-      actorSessionId: null,
-      reason: null,
-      traceId: null,
-      observedRate: input.observedRate,
-    },
-  } as const;
-  const commandId = groupFormationCriterionRequestId(
-    'fail-formation',
-    input.groupRef,
-    input.formationEpoch,
-  );
-  return { ...semanticCommand, commandId, requestId: commandId };
+    const semanticCommand = {
+        operation: 'failGroupFormation',
+        aggregateRef: input.groupRef,
+        input: {
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
+            traceId: null,
+            observedRate: input.observedRate
+        }
+    } as const;
+    const commandId = groupFormationCriterionRequestId(
+        'fail-formation',
+        input.groupRef,
+        input.formationEpoch
+    );
+    return { ...semanticCommand, commandId, requestId: commandId };
 }
 
 /**
@@ -68,32 +68,34 @@ export function toFailFormationCommand(
  * automation that was sanctioned by the original start-establishment, bounded
  * by maxFormationAttempts and paced by the backoff that scheduled this.
  */
-export function toFormationRetryEstablishCommand(input: Readonly<{
-  groupRef: GroupRef;
-  formationEpoch: number;
-}>): GroupMutationCommand {
-  const semanticCommand = {
-    operation: 'startGroupEstablishment',
-    aggregateRef: input.groupRef,
-    input: {
-      actorPrincipalId: null,
-      actorSessionId: null,
-      reason: null,
-      traceId: null,
-    },
-  } as const;
-  const commandId = groupFormationCriterionRequestId(
-    'retry-establish',
-    input.groupRef,
-    input.formationEpoch,
-  );
-  return { ...semanticCommand, commandId, requestId: commandId };
+export function toFormationRetryEstablishCommand(
+    input: Readonly<{
+        groupRef: GroupRef;
+        formationEpoch: number;
+    }>
+): GroupMutationCommand {
+    const semanticCommand = {
+        operation: 'startGroupEstablishment',
+        aggregateRef: input.groupRef,
+        input: {
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
+            traceId: null
+        }
+    } as const;
+    const commandId = groupFormationCriterionRequestId(
+        'retry-establish',
+        input.groupRef,
+        input.formationEpoch
+    );
+    return { ...semanticCommand, commandId, requestId: commandId };
 }
 
 function groupFormationCriterionRequestId(
-  decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish',
-  groupRef: GroupRef,
-  formationEpoch: number,
+    decision: 'activate' | 'activate-degraded' | 'fail-formation' | 'retry-establish',
+    groupRef: GroupRef,
+    formationEpoch: number
 ): string {
-  return `formation-criterion:v1:${decision}:${canonicalJson({ groupRef, formationEpoch })}`;
+    return `formation-criterion:v1:${decision}:${canonicalJson({ groupRef, formationEpoch })}`;
 }

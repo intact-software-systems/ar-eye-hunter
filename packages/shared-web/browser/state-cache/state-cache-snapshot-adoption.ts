@@ -2,17 +2,15 @@ import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-t
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import * as clientStateSnapshotsRepository
-    from '@shared/repository/client-state-snapshots-repository.ts';
-import * as groupStateSnapshotsRepository
-    from '@shared/repository/group-state-snapshots-repository.ts';
+import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
 export function acceptClientStateSnapshots(
     snapshots: readonly ClientStateSnapshot[],
-    scope: StateScope,
+    scope: StateScope
 ): boolean {
     return clientStateSnapshotsRepository.setClientStateSnapshots(
-        snapshots.filter((snapshot) => isClientSnapshotInScope(snapshot, scope)),
+        snapshots.filter((snapshot) => isClientSnapshotInScope(snapshot, scope))
     );
 }
 
@@ -20,12 +18,13 @@ export async function acceptGroupStateSnapshotsOrRecompute(
     snapshots: readonly GroupStateSnapshot[],
     scope: StateScope,
     rereadGroupSnapshots?: (
-        scope: StateScope,
-    ) => Promise<readonly GroupStateSnapshot[]>,
+        scope: StateScope
+    ) => Promise<readonly GroupStateSnapshot[]>
 ): Promise<boolean> {
     try {
         return acceptGroupStateSnapshots(snapshots, scope);
-    } catch (error) {
+    }
+    catch (error) {
         if (
             error instanceof
                 groupStateSnapshotsRepository.GroupStateSnapshotIncomparableError
@@ -35,9 +34,7 @@ export async function acceptGroupStateSnapshotsOrRecompute(
             }
             const reread = await rereadGroupSnapshots(scope);
             acceptGroupStateSnapshots(reread, scope);
-            const accepted = snapshots.filter((snapshot) =>
-                isGroupSnapshotInScope(snapshot, scope)
-            );
+            const accepted = snapshots.filter((snapshot) => isGroupSnapshotInScope(snapshot, scope));
             for (const incoming of accepted) {
                 const recovered = groupStateSnapshotsRepository
                     .findGroupStateSnapshotByRef(incoming.group);
@@ -45,7 +42,7 @@ export async function acceptGroupStateSnapshotsOrRecompute(
                     !recovered ||
                     !['equal', 'dominates'].includes(compareGroupCausalRevision(
                         recovered.causalRevision,
-                        incoming.causalRevision,
+                        incoming.causalRevision
                     ))
                 ) {
                     throw error;
@@ -58,8 +55,8 @@ export async function acceptGroupStateSnapshotsOrRecompute(
 }
 
 export function isSameStateScope(
-    left: Readonly<{ applicationId: string; workspaceId?: string }>,
-    right: Readonly<{ applicationId: string; workspaceId?: string }>,
+    left: Readonly<{ applicationId: string; workspaceId?: string; }>,
+    right: Readonly<{ applicationId: string; workspaceId?: string; }>
 ): boolean {
     return left.applicationId === right.applicationId &&
         (left.workspaceId ?? '') === (right.workspaceId ?? '');
@@ -67,23 +64,23 @@ export function isSameStateScope(
 
 function acceptGroupStateSnapshots(
     snapshots: readonly GroupStateSnapshot[],
-    scope: StateScope,
+    scope: StateScope
 ): boolean {
     return groupStateSnapshotsRepository.setGroupStateSnapshots(
-        snapshots.filter((snapshot) => isGroupSnapshotInScope(snapshot, scope)),
+        snapshots.filter((snapshot) => isGroupSnapshotInScope(snapshot, scope))
     );
 }
 
 function isClientSnapshotInScope(
     snapshot: ClientStateSnapshot,
-    scope: StateScope,
+    scope: StateScope
 ): boolean {
     return isSameStateScope(snapshot.principal, scope);
 }
 
 function isGroupSnapshotInScope(
     snapshot: GroupStateSnapshot,
-    scope: StateScope,
+    scope: StateScope
 ): boolean {
     return isSameStateScope(snapshot.group, scope);
 }

@@ -1,10 +1,7 @@
-import type { RecipeConsoleControlBootstrap } from
-    '../control/ControlConnectionProvider.tsx';
-import { CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS } from
-    '../control/ControlConnectionProvider.tsx';
+import type { RecipeConsoleControlBootstrap } from '../control/ControlConnectionProvider.tsx';
+import { CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS } from '../control/ControlConnectionProvider.tsx';
 
-export const RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY =
-    'rallar.black-box.recipe-console.preferences.v1';
+export const RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY = 'rallar.black-box.recipe-console.preferences.v1';
 
 const PREFERENCE_VERSION = 1 as const;
 const MIN_CONTROL_READ_TIMEOUT_MS = 1_000;
@@ -17,14 +14,11 @@ const VALUE_KEYS = [
     'applicationId',
     'workspaceId',
     'groupId',
-    'controlReadTimeoutMs',
+    'controlReadTimeoutMs'
 ] as const;
 
 type PreferenceField = typeof VALUE_KEYS[number];
-export type RecipeConsoleManagedPreferenceField = Exclude<
-    PreferenceField,
-    'controlReadTimeoutMs'
->;
+export type RecipeConsoleManagedPreferenceField = Exclude<PreferenceField, 'controlReadTimeoutMs'>;
 
 export type RecipeConsolePreferences = Readonly<{
     controlUrl?: string;
@@ -35,10 +29,9 @@ export type RecipeConsolePreferences = Readonly<{
     controlReadTimeoutMs: number;
 }>;
 
-export type RecipeConsolePreferenceLocks = Readonly<Partial<Record<
-    RecipeConsoleManagedPreferenceField,
-    'url' | 'deployment'
->>>;
+export type RecipeConsolePreferenceLocks = Readonly<
+    Partial<Record<RecipeConsoleManagedPreferenceField, 'url' | 'deployment'>>
+>;
 
 export type RecipeConsolePreferenceState = Readonly<{
     effectiveBootstrap: RecipeConsoleControlBootstrap;
@@ -47,10 +40,7 @@ export type RecipeConsolePreferenceState = Readonly<{
     controlReadTimeoutMs: number;
 }>;
 
-export type RecipeConsolePreferencesStorage = Pick<
-    Storage,
-    'getItem' | 'setItem' | 'removeItem'
->;
+export type RecipeConsolePreferencesStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 type StoredRecipeConsolePreferences = Readonly<{
     version: typeof PREFERENCE_VERSION;
@@ -68,91 +58,97 @@ export class RecipeConsolePreferenceValidationError extends Error {
 }
 
 export function readRecipeConsolePreferences(
-    storage: RecipeConsolePreferencesStorage,
+    storage: RecipeConsolePreferencesStorage
 ): RecipeConsolePreferences {
     try {
         const raw = storage.getItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY);
-        if (!raw) return defaultPreferences();
+        if (!raw) {
+            return defaultPreferences();
+        }
         const document = JSON.parse(raw) as unknown;
         const parsed = parseStoredPreferences(document);
         return parsed ?? defaultPreferences();
-    } catch (_error) {
+    }
+    catch (_error) {
         return defaultPreferences();
     }
 }
 
 export function writeRecipeConsolePreferences(
     storage: RecipeConsolePreferencesStorage,
-    preferences: RecipeConsolePreferences,
+    preferences: RecipeConsolePreferences
 ): RecipeConsolePreferences {
     const values = parsePreferenceValues(preferences, true);
     const document: StoredRecipeConsolePreferences = {
         version: PREFERENCE_VERSION,
-        values,
+        values
     };
     storage.setItem(
         RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY,
-        JSON.stringify(document),
+        JSON.stringify(document)
     );
     return values;
 }
 
 export function resetRecipeConsolePreferences(
-    storage: RecipeConsolePreferencesStorage,
+    storage: RecipeConsolePreferencesStorage
 ): void {
     storage.removeItem(RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY);
 }
 
-export function resolveRecipeConsolePreferenceState(input: Readonly<{
-    bootstrap: RecipeConsoleControlBootstrap;
-    preferences: RecipeConsolePreferences;
-    search: string;
-    env: Readonly<Record<string, string | undefined>>;
-}>): RecipeConsolePreferenceState {
+export function resolveRecipeConsolePreferenceState(
+    input: Readonly<{
+        bootstrap: RecipeConsoleControlBootstrap;
+        preferences: RecipeConsolePreferences;
+        search: string;
+        env: Readonly<Record<string, string | undefined>>;
+    }>
+): RecipeConsolePreferenceState {
     const params = new URLSearchParams(
-        input.search.startsWith('?') ? input.search.slice(1) : input.search,
+        input.search.startsWith('?') ? input.search.slice(1) : input.search
     );
-    const locks: Partial<Record<
-        RecipeConsoleManagedPreferenceField,
-        'url' | 'deployment'
-    >> = {};
+    const locks: Partial<Record<RecipeConsoleManagedPreferenceField, 'url' | 'deployment'>> = {};
     const sources = {
         controlUrl: ['controlUrl', 'VITE_RALLAR_CONTROL_URL'],
         apiBaseUrl: ['apiBaseUrl', 'VITE_RALLAR_API_BASE_URL'],
         applicationId: ['applicationId', 'VITE_RALLAR_APPLICATION_ID'],
         workspaceId: ['workspaceId', 'VITE_RALLAR_WORKSPACE_ID'],
-        groupId: ['roomId', 'VITE_RALLAR_ROOM_ID'],
+        groupId: ['roomId', 'VITE_RALLAR_ROOM_ID']
     } as const;
     for (const field of Object.keys(sources) as RecipeConsoleManagedPreferenceField[]) {
         const [paramName, envName] = sources[field];
-        if (params.get(paramName)?.trim()) locks[field] = 'url';
-        else if (input.env[envName]?.trim()) locks[field] = 'deployment';
+        if (params.get(paramName)?.trim()) {
+            locks[field] = 'url';
+        }
+        else if (input.env[envName]?.trim()) {
+            locks[field] = 'deployment';
+        }
     }
 
     const controlUrl = effectiveValue(
         input.bootstrap.controlUrl ?? '',
         input.preferences.controlUrl,
-        locks.controlUrl,
+        locks.controlUrl
     );
     const apiBaseUrl = effectiveValue(
         input.bootstrap.apiBaseUrl,
         input.preferences.apiBaseUrl,
-        locks.apiBaseUrl,
+        locks.apiBaseUrl
     );
     const applicationId = effectiveValue(
         input.bootstrap.bootstrapGroup.applicationId,
         input.preferences.applicationId,
-        locks.applicationId,
+        locks.applicationId
     );
     const workspaceId = effectiveValue(
         input.bootstrap.bootstrapGroup.workspaceId,
         input.preferences.workspaceId,
-        locks.workspaceId,
+        locks.workspaceId
     );
     const groupId = effectiveValue(
         input.bootstrap.bootstrapGroup.groupId,
         input.preferences.groupId,
-        locks.groupId,
+        locks.groupId
     );
     const effectiveBootstrap: RecipeConsoleControlBootstrap = {
         ...input.bootstrap,
@@ -161,8 +157,8 @@ export function resolveRecipeConsolePreferenceState(input: Readonly<{
         bootstrapGroup: {
             applicationId,
             workspaceId,
-            groupId,
-        },
+            groupId
+        }
     };
 
     return {
@@ -173,15 +169,15 @@ export function resolveRecipeConsolePreferenceState(input: Readonly<{
             applicationId,
             workspaceId,
             groupId,
-            controlReadTimeoutMs: input.preferences.controlReadTimeoutMs,
+            controlReadTimeoutMs: input.preferences.controlReadTimeoutMs
         },
         locks,
-        controlReadTimeoutMs: input.preferences.controlReadTimeoutMs,
+        controlReadTimeoutMs: input.preferences.controlReadTimeoutMs
     };
 }
 
 function parseStoredPreferences(
-    value: unknown,
+    value: unknown
 ): RecipeConsolePreferences | undefined {
     if (!isRecord(value) || value.version !== PREFERENCE_VERSION) {
         return undefined;
@@ -191,25 +187,26 @@ function parseStoredPreferences(
     }
     try {
         return parsePreferenceValues(value.values, false);
-    } catch (_error) {
+    }
+    catch (_error) {
         return undefined;
     }
 }
 
 function parsePreferenceValues(
     value: unknown,
-    rejectUnknown: boolean,
+    rejectUnknown: boolean
 ): RecipeConsolePreferences {
     if (!isRecord(value)) {
         throw new RecipeConsolePreferenceValidationError(
             'controlReadTimeoutMs',
-            'Personal defaults must be an object.',
+            'Personal defaults must be an object.'
         );
     }
     if (rejectUnknown && hasUnknownKeys(value, VALUE_KEYS)) {
         throw new RecipeConsolePreferenceValidationError(
             'controlReadTimeoutMs',
-            'Personal defaults contain unsupported fields.',
+            'Personal defaults contain unsupported fields.'
         );
     }
     const timeout = value.controlReadTimeoutMs;
@@ -221,7 +218,7 @@ function parsePreferenceValues(
     ) {
         throw new RecipeConsolePreferenceValidationError(
             'controlReadTimeoutMs',
-            'Control read timeout must be an integer from 1000 through 120000 ms.',
+            'Control read timeout must be an integer from 1000 through 120000 ms.'
         );
     }
     return removeUndefined({
@@ -230,47 +227,50 @@ function parsePreferenceValues(
         applicationId: contextValue(value.applicationId, 'applicationId'),
         workspaceId: contextValue(value.workspaceId, 'workspaceId'),
         groupId: contextValue(value.groupId, 'groupId'),
-        controlReadTimeoutMs: timeout,
+        controlReadTimeoutMs: timeout
     });
 }
 
 function endpointValue(
     value: unknown,
-    field: 'controlUrl' | 'apiBaseUrl',
+    field: 'controlUrl' | 'apiBaseUrl'
 ): string | undefined {
     const normalized = optionalString(value, field);
-    if (!normalized) return undefined;
+    if (!normalized) {
+        return undefined;
+    }
     let endpoint: URL;
     try {
         endpoint = new URL(normalized);
-    } catch (_error) {
+    }
+    catch (_error) {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} must be a valid endpoint URL.`,
+            `${fieldLabel(field)} must be a valid endpoint URL.`
         );
     }
     if (!ENDPOINT_PROTOCOLS.has(endpoint.protocol)) {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} uses an unsupported protocol.`,
+            `${fieldLabel(field)} uses an unsupported protocol.`
         );
     }
     if (endpoint.username || endpoint.password) {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} must not contain credentials.`,
+            `${fieldLabel(field)} must not contain credentials.`
         );
     }
     if (endpoint.search) {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} must not contain a query string.`,
+            `${fieldLabel(field)} must not contain a query string.`
         );
     }
     if (endpoint.hash) {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} must not contain a fragment.`,
+            `${fieldLabel(field)} must not contain a fragment.`
         );
     }
     const serialized = endpoint.toString();
@@ -281,28 +281,32 @@ function endpointValue(
 
 function contextValue(
     value: unknown,
-    field: 'applicationId' | 'workspaceId' | 'groupId',
+    field: 'applicationId' | 'workspaceId' | 'groupId'
 ): string | undefined {
     return optionalString(value, field);
 }
 
 function optionalString(
     value: unknown,
-    field: RecipeConsoleManagedPreferenceField,
+    field: RecipeConsoleManagedPreferenceField
 ): string | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
     if (typeof value !== 'string') {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} must be text.`,
+            `${fieldLabel(field)} must be text.`
         );
     }
     const normalized = value.trim();
-    if (!normalized) return undefined;
+    if (!normalized) {
+        return undefined;
+    }
     if (normalized.length > MAX_CONTEXT_VALUE_LENGTH) {
         throw new RecipeConsolePreferenceValidationError(
             field,
-            `${fieldLabel(field)} must be at most ${MAX_CONTEXT_VALUE_LENGTH} characters.`,
+            `${fieldLabel(field)} must be at most ${MAX_CONTEXT_VALUE_LENGTH} characters.`
         );
     }
     return normalized;
@@ -311,40 +315,45 @@ function optionalString(
 function effectiveValue(
     bootstrapValue: string,
     personalValue: string | undefined,
-    lock: 'url' | 'deployment' | undefined,
+    lock: 'url' | 'deployment' | undefined
 ): string {
     return lock ? bootstrapValue : personalValue ?? bootstrapValue;
 }
 
 function defaultPreferences(): RecipeConsolePreferences {
     return {
-        controlReadTimeoutMs: CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS,
+        controlReadTimeoutMs: CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS
     };
 }
 
 function fieldLabel(field: RecipeConsoleManagedPreferenceField): string {
     switch (field) {
-        case 'controlUrl': return 'Control URL';
-        case 'apiBaseUrl': return 'API URL';
-        case 'applicationId': return 'Application';
-        case 'workspaceId': return 'Workspace';
-        case 'groupId': return 'Group';
+        case 'controlUrl':
+            return 'Control URL';
+        case 'apiBaseUrl':
+            return 'API URL';
+        case 'applicationId':
+            return 'Application';
+        case 'workspaceId':
+            return 'Workspace';
+        case 'groupId':
+            return 'Group';
     }
 }
 
 function hasUnknownKeys(
     value: Record<string, unknown>,
-    allowed: readonly string[],
+    allowed: readonly string[]
 ): boolean {
     const allowedKeys = new Set(allowed);
-    return Object.keys(value).some(key => !allowedKeys.has(key));
+    return Object.keys(value).some((key) => !allowedKeys.has(key));
 }
 
 function removeUndefined(
-    value: RecipeConsolePreferences,
+    value: RecipeConsolePreferences
 ): RecipeConsolePreferences {
     return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined),
+        Object.entries(value).filter(([, entry]) => entry !== undefined)
     ) as RecipeConsolePreferences;
 }
 

@@ -44,22 +44,22 @@ Create fixtures in `source-analysis.test.ts` that import the not-yet-created hel
 
 ```ts
 import {
-  analyzeSource,
-  buildRelativeTypeScriptGraph,
-  findDependencyCycles,
-  resolveRelativeTypeScriptDependency,
+    analyzeSource,
+    buildRelativeTypeScriptGraph,
+    findDependencyCycles,
+    resolveRelativeTypeScriptDependency
 } from './source-analysis';
 ```
 
 The fixture must include all syntax that retained consumers need:
 
 ```ts
-import DefaultThing, { type Config, runtime as renamed } from './mixed';
+import DefaultThing, { runtime as renamed, type Config } from './mixed';
 import type * as Types from './types';
 import './side-effect';
+export * as namespaceExport from './namespace';
 export { type PublicType, runtimeValue as publicValue } from './public';
 export * from './star';
-export * as namespaceExport from './namespace';
 export interface PublicInterface {}
 export const publicConstant = localStorage;
 const lazyLiteral = import('./lazy');
@@ -70,19 +70,19 @@ Assert normalized records rather than Babel node shapes:
 
 ```ts
 expect(analysis.imports).toContainEqual({
-  specifier: './mixed',
-  typeOnly: false,
-  sideEffectOnly: false,
-  defaultImport: 'DefaultThing',
-  namespaceImport: undefined,
-  namedImports: [
-    { imported: 'Config', local: 'Config', typeOnly: true },
-    { imported: 'runtime', local: 'renamed', typeOnly: false },
-  ],
+    specifier: './mixed',
+    typeOnly: false,
+    sideEffectOnly: false,
+    defaultImport: 'DefaultThing',
+    namespaceImport: undefined,
+    namedImports: [
+        { imported: 'Config', local: 'Config', typeOnly: true },
+        { imported: 'runtime', local: 'renamed', typeOnly: false }
+    ]
 });
 expect(analysis.dynamicImports).toEqual([
-  { specifier: './lazy', literal: true },
-  { specifier: undefined, literal: false },
+    { specifier: './lazy', literal: true },
+    { specifier: undefined, literal: false }
 ]);
 expect(analysis.identifierNames).toContain('localStorage');
 ```
@@ -105,54 +105,54 @@ Export plain immutable types and functions:
 
 ```ts
 export type SourceNamedImport = Readonly<{
-  imported: string;
-  local: string;
-  typeOnly: boolean;
+    imported: string;
+    local: string;
+    typeOnly: boolean;
 }>;
 
 export type SourceImport = Readonly<{
-  specifier: string;
-  typeOnly: boolean;
-  sideEffectOnly: boolean;
-  defaultImport?: string;
-  namespaceImport?: string;
-  namedImports: readonly SourceNamedImport[];
+    specifier: string;
+    typeOnly: boolean;
+    sideEffectOnly: boolean;
+    defaultImport?: string;
+    namespaceImport?: string;
+    namedImports: readonly SourceNamedImport[];
 }>;
 
 export type SourceExport = Readonly<{
-  kind: 'named' | 'star' | 'namespace' | 'declaration' | 'default';
-  exportedName?: string;
-  localName?: string;
-  specifier?: string;
-  typeOnly: boolean;
+    kind: 'named' | 'star' | 'namespace' | 'declaration' | 'default';
+    exportedName?: string;
+    localName?: string;
+    specifier?: string;
+    typeOnly: boolean;
 }>;
 
 export type SourceDeclaration = Readonly<{
-  name: string;
-  kind: 'value' | 'type' | 'class';
-  exported: boolean;
-  defaultExport: boolean;
+    name: string;
+    kind: 'value' | 'type' | 'class';
+    exported: boolean;
+    defaultExport: boolean;
 }>;
 
 export type SourceAnalysis = Readonly<{
-  imports: readonly SourceImport[];
-  exports: readonly SourceExport[];
-  dynamicImports: readonly Readonly<{ specifier?: string; literal: boolean }>[];
-  topLevelDeclarations: readonly SourceDeclaration[];
-  identifierNames: readonly string[];
+    imports: readonly SourceImport[];
+    exports: readonly SourceExport[];
+    dynamicImports: readonly Readonly<{ specifier?: string; literal: boolean; }>[];
+    topLevelDeclarations: readonly SourceDeclaration[];
+    identifierNames: readonly string[];
 }>;
 
 export function analyzeSource(source: string, filePath: string): SourceAnalysis;
 export function analyzeSourceFile(filePath: string): SourceAnalysis;
 export function resolveRelativeTypeScriptDependency(
-  importerPath: string,
-  specifier: string,
+    importerPath: string,
+    specifier: string
 ): string | undefined;
 export function buildRelativeTypeScriptGraph(
-  entryPaths: readonly string[],
+    entryPaths: readonly string[]
 ): ReadonlyMap<string, readonly string[]>;
 export function findDependencyCycles(
-  graph: ReadonlyMap<string, readonly string[]>,
+    graph: ReadonlyMap<string, readonly string[]>
 ): readonly (readonly string[])[];
 ```
 
@@ -248,14 +248,14 @@ Keep stable sorting and the existing distinctions:
 
 ```ts
 const namedExports = analysis.exports
-  .filter((entry) => entry.kind === 'named')
-  .map(({ exportedName, localName, specifier, typeOnly }) => ({
-    exportedName,
-    localName,
-    specifier,
-    typeOnly,
-  }))
-  .sort(comparePublicExport);
+    .filter((entry) => entry.kind === 'named')
+    .map(({ exportedName, localName, specifier, typeOnly }) => ({
+        exportedName,
+        localName,
+        specifier,
+        typeOnly
+    }))
+    .sort(comparePublicExport);
 ```
 
 Preserve wildcard, namespace, named, declaration, default, and type-only export representation. Do not rewrite snapshots just to match parser ordering; normalize before comparing.
@@ -291,11 +291,11 @@ Leave all protocol, authorization, abort, validation, and retention behavior tes
 ```ts
 const analysis = analyzeSourceFile(sourcePath);
 const eagerValueTargets = analysis.imports
-  .filter((entry) => !entry.typeOnly)
-  .map((entry) => entry.specifier);
+    .filter((entry) => !entry.typeOnly)
+    .map((entry) => entry.specifier);
 const lazyTargets = analysis.dynamicImports
-  .filter((entry) => entry.literal)
-  .map((entry) => entry.specifier);
+    .filter((entry) => entry.literal)
+    .map((entry) => entry.specifier);
 ```
 
 Keep the same allowed/forbidden module expectations.
@@ -346,25 +346,25 @@ The replacement suite must contain four durable tests:
 
 ```ts
 it('keeps Recipe Console free of static legacy implementation imports', () => {
-  // Enumerate Recipe Console .ts/.tsx sources.
-  // Reject normalized static import targets that enter ../legacy or /legacy/.
+    // Enumerate Recipe Console .ts/.tsx sources.
+    // Reject normalized static import targets that enter ../legacy or /legacy/.
 });
 
 it('loads every registered legacy experience route dynamically', () => {
-  // Reuse the current registered route/module table from app-structure.test.ts.
-  // Require each module in string-literal dynamicImports.
-  // Reject it from eager value imports.
+    // Reuse the current registered route/module table from app-structure.test.ts.
+    // Require each module in string-literal dynamicImports.
+    // Reject it from eager value imports.
 });
 
 it('keeps the reachable legacy TypeScript dependency graph acyclic', () => {
-  const graph = buildRelativeTypeScriptGraph([legacyExperiencePath]);
-  expect(findDependencyCycles(graph)).toEqual([]);
+    const graph = buildRelativeTypeScriptGraph([legacyExperiencePath]);
+    expect(findDependencyCycles(graph)).toEqual([]);
 });
 
 it('keeps application and legacy roots as composition boundaries', () => {
-  // Reject top-level declarations ending Panel/Section in App and legacy root.
-  // Reject direct imported local names ending Panel/Section in the legacy root.
-  // Allow the explicit shell/context/controller composition imports.
+    // Reject top-level declarations ending Panel/Section in App and legacy root.
+    // Reject direct imported local names ending Panel/Section in the legacy root.
+    // Allow the explicit shell/context/controller composition imports.
 });
 ```
 

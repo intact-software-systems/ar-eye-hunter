@@ -3,139 +3,136 @@ import { isKeysEqual } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RtcTopologyPublication } from '../../rtc-topology-publication-contract.ts';
 import { validateRtcTopologyPublication } from '../../rtc-topology-publication-validation.ts';
-import {
-  computeRtcTopologyPublicationOutbox,
-} from '../../services/rtc-topology-ws-outbox-entry.ts';
+import { computeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyDeliveryAppendInput } from './rtc-topology-delivery-contracts.ts';
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const RETRYABLE_UNIQUE_CONSTRAINTS = new Set([
-  'rtc_topology_delivery_log_pkey',
-  'rtc_topology_delivery_log_publication_uq',
+    'rtc_topology_delivery_log_pkey',
+    'rtc_topology_delivery_log_publication_uq'
 ]);
 
 export class RtcTopologyDeliveryCorruptionError extends Error {
-  readonly code = 'rtc-topology-delivery-corruption';
+    readonly code = 'rtc-topology-delivery-corruption';
 
-  constructor(message: string) {
-    super(message);
-    this.name = 'RtcTopologyDeliveryCorruptionError';
-  }
+    constructor(message: string) {
+        super(message);
+        this.name = 'RtcTopologyDeliveryCorruptionError';
+    }
 }
 
 export type RtcTopologyDeliveryBoundaryNumber =
-  | number
-  | string
-  | bigint
-  | null
-  | undefined;
+    | number
+    | string
+    | bigint
+    | null
+    | undefined;
 
 interface RtcTopologyDeliveryDatabaseError extends Error {
-  readonly code?: string;
-  readonly constraint_name?: string;
-  readonly constraint?: string;
+    readonly code?: string;
+    readonly constraint_name?: string;
+    readonly constraint?: string;
 }
 
 export function readRtcTopologyDeliverySafeInteger(
-  value: RtcTopologyDeliveryBoundaryNumber,
-  label: string,
+    value: RtcTopologyDeliveryBoundaryNumber,
+    label: string
 ): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new TypeError(`${label} must be a non-negative safe integer`);
-  }
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+        throw new TypeError(`${label} must be a non-negative safe integer`);
+    }
 
-  return value;
+    return value;
 }
 
 export function isRtcTopologyDeliveryRetryableConflict(error: Error): boolean {
-  const candidate = error as RtcTopologyDeliveryDatabaseError;
-  const constraint = candidate.constraint_name ?? candidate.constraint;
-  return (
-    candidate.code === '23505' &&
-    typeof constraint === 'string' &&
-    RETRYABLE_UNIQUE_CONSTRAINTS.has(constraint)
-  );
+    const candidate = error as RtcTopologyDeliveryDatabaseError;
+    const constraint = candidate.constraint_name ?? candidate.constraint;
+    return (
+        candidate.code === '23505' &&
+        typeof constraint === 'string' &&
+        RETRYABLE_UNIQUE_CONSTRAINTS.has(constraint)
+    );
 }
 
 export function toRtcTopologyDeliveryAppendInput(
-  publisherStreamId: string,
-  publication: RtcTopologyPublication,
-  outbox: ResourceEntry,
+    publisherStreamId: string,
+    publication: RtcTopologyPublication,
+    outbox: ResourceEntry
 ): RtcTopologyDeliveryAppendInput {
-  validateRtcTopologyDeliveryStreamId(publisherStreamId);
-  validateRtcTopologyPublication(publication, publication.groupRef);
-  validateDeliveryGroupRef(publication);
+    validateRtcTopologyDeliveryStreamId(publisherStreamId);
+    validateRtcTopologyPublication(publication, publication.groupRef);
+    validateDeliveryGroupRef(publication);
 
-  const expectedOutbox = computeRtcTopologyPublicationOutbox(publication);
-  if (
-    !isKeysEqual(outbox.key, expectedOutbox.key) ||
-    outbox.resource !== expectedOutbox.resource ||
-    outbox.typeId !== expectedOutbox.typeId ||
-    outbox.audit.expiryTs.epochMilliseconds !== expectedOutbox.audit.expiryTs.epochMilliseconds
-  ) {
-    throw new TypeError('RTC topology delivery outbox differs from its publication');
-  }
+    const expectedOutbox = computeRtcTopologyPublicationOutbox(publication);
+    if (
+        !isKeysEqual(outbox.key, expectedOutbox.key) ||
+        outbox.resource !== expectedOutbox.resource ||
+        outbox.typeId !== expectedOutbox.typeId ||
+        outbox.audit.expiryTs.epochMilliseconds !== expectedOutbox.audit.expiryTs.epochMilliseconds
+    ) {
+        throw new TypeError('RTC topology delivery outbox differs from its publication');
+    }
 
-  return {
-    publisherStreamId,
-    groupRef: {
-      applicationId: publication.groupRef.applicationId,
-      workspaceId: publication.groupRef.workspaceId,
-      groupId: publication.groupRef.groupId,
-    },
-    publicationId: publication.publicationId,
-    outboxKey: {
-      topicId: outbox.key.topicId,
-      resourceId: outbox.key.resourceId,
-      contextId: outbox.key.contextId,
-    },
-    retainUntilEpochMs: readRtcTopologyDeliverySafeInteger(
-      publication.message.constraints?.expiresAtMs,
-      'RTC topology delivery retention timestamp',
-    ),
-  };
+    return {
+        publisherStreamId,
+        groupRef: {
+            applicationId: publication.groupRef.applicationId,
+            workspaceId: publication.groupRef.workspaceId,
+            groupId: publication.groupRef.groupId
+        },
+        publicationId: publication.publicationId,
+        outboxKey: {
+            topicId: outbox.key.topicId,
+            resourceId: outbox.key.resourceId,
+            contextId: outbox.key.contextId
+        },
+        retainUntilEpochMs: readRtcTopologyDeliverySafeInteger(
+            publication.message.constraints?.expiresAtMs,
+            'RTC topology delivery retention timestamp'
+        )
+    };
 }
 
 export function validateRtcTopologyDeliveryAppendInput(
-  input: RtcTopologyDeliveryAppendInput,
+    input: RtcTopologyDeliveryAppendInput
 ): void {
-  validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
-  validateNonEmpty(input.groupRef.applicationId, 'application ID');
-  validateNonEmpty(input.groupRef.workspaceId, 'workspace ID');
-  validateNonEmpty(input.groupRef.groupId, 'group ID');
-  validateNonEmpty(input.publicationId, 'publication ID');
-  validateNonEmpty(input.outboxKey.topicId, 'outbox topic ID');
-  validateNonEmpty(input.outboxKey.resourceId, 'outbox resource ID');
-  validateNonEmpty(input.outboxKey.contextId, 'outbox context ID');
-  readRtcTopologyDeliverySafeInteger(
-    input.retainUntilEpochMs,
-    'RTC topology delivery retention timestamp',
-  );
+    validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
+    validateNonEmpty(input.groupRef.applicationId, 'application ID');
+    validateNonEmpty(input.groupRef.workspaceId, 'workspace ID');
+    validateNonEmpty(input.groupRef.groupId, 'group ID');
+    validateNonEmpty(input.publicationId, 'publication ID');
+    validateNonEmpty(input.outboxKey.topicId, 'outbox topic ID');
+    validateNonEmpty(input.outboxKey.resourceId, 'outbox resource ID');
+    validateNonEmpty(input.outboxKey.contextId, 'outbox context ID');
+    readRtcTopologyDeliverySafeInteger(
+        input.retainUntilEpochMs,
+        'RTC topology delivery retention timestamp'
+    );
 }
 
 export function validateRtcTopologyDeliveryStreamId(streamId: string): void {
-  if (!UUID_PATTERN.test(streamId)) {
-    throw new TypeError('RTC topology publisher stream ID must be a UUID');
-  }
+    if (!UUID_PATTERN.test(streamId)) {
+        throw new TypeError('RTC topology publisher stream ID must be a UUID');
+    }
 }
 
 function validateDeliveryGroupRef(publication: RtcTopologyPublication): void {
-  const { applicationId, workspaceId, groupId } = publication.groupRef;
-  if (
-    typeof applicationId !== 'string' ||
-    applicationId.trim().length === 0 ||
-    typeof workspaceId !== 'string' ||
-    workspaceId.trim().length === 0 ||
-    typeof groupId !== 'string' ||
-    groupId.trim().length === 0
-  ) {
-    throw new TypeError('RTC topology delivery group scope must be complete');
-  }
+    const { applicationId, workspaceId, groupId } = publication.groupRef;
+    if (
+        typeof applicationId !== 'string' ||
+        applicationId.trim().length === 0 ||
+        typeof workspaceId !== 'string' ||
+        workspaceId.trim().length === 0 ||
+        typeof groupId !== 'string' ||
+        groupId.trim().length === 0
+    ) {
+        throw new TypeError('RTC topology delivery group scope must be complete');
+    }
 }
 
 function validateNonEmpty(value: string, label: string): void {
-  if (value.trim().length === 0) {
-    throw new TypeError(`RTC topology delivery ${label} must be non-empty`);
-  }
+    if (value.trim().length === 0) {
+        throw new TypeError(`RTC topology delivery ${label} must be non-empty`);
+    }
 }

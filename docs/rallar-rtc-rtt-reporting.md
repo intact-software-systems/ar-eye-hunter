@@ -31,7 +31,7 @@ Browser callers can set:
 
 ```ts
 rallar.setDefaults({
-  rtc: { rttReportingDegreeLimit: 5 },
+    rtc: { rttReportingDegreeLimit: 5 }
 });
 ```
 

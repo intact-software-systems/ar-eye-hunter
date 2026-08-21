@@ -1,13 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import type {
-    AuditStamp,
-    GroupMember,
-    GroupPresenceSession,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
@@ -29,33 +24,33 @@ describe('WebRtcGroupService', () => {
                 source,
                 joinedPeerIds: diff.joinedPeerIds,
                 leftPeerIds: diff.leftPeerIds,
-                targetPeerIds: state.targetPeerIds,
+                targetPeerIds: state.targetPeerIds
             });
         });
 
         const first = createGroupSnapshot('group-1', 1, [
             'self',
             'peer-a',
-            'peer-b',
+            'peer-b'
         ]);
         const stale = createGroupSnapshot('group-1', 0, ['self', 'peer-c']);
         const second = createGroupSnapshot('group-1', 2, [
             'self',
             'peer-b',
-            'peer-c',
+            'peer-c'
         ]);
 
         await expect(service.acceptGroupUpdate(first)).resolves.toEqual({
             joinedPeerIds: ['peer-a', 'peer-b'],
-            leftPeerIds: [],
+            leftPeerIds: []
         });
         await expect(service.acceptGroupUpdate(stale)).resolves.toEqual({
             joinedPeerIds: [],
-            leftPeerIds: [],
+            leftPeerIds: []
         });
         await expect(service.acceptGroupUpdate(second)).resolves.toEqual({
             joinedPeerIds: ['peer-c'],
-            leftPeerIds: ['peer-a'],
+            leftPeerIds: ['peer-a']
         });
 
         expect(service.targetPeerIds()).toEqual(['peer-b', 'peer-c']);
@@ -65,14 +60,14 @@ describe('WebRtcGroupService', () => {
                 source: 'push',
                 joinedPeerIds: ['peer-a', 'peer-b'],
                 leftPeerIds: [],
-                targetPeerIds: ['peer-a', 'peer-b'],
+                targetPeerIds: ['peer-a', 'peer-b']
             },
             {
                 source: 'push',
                 joinedPeerIds: ['peer-c'],
                 leftPeerIds: ['peer-a'],
-                targetPeerIds: ['peer-b', 'peer-c'],
-            },
+                targetPeerIds: ['peer-b', 'peer-c']
+            }
         ]);
     });
 
@@ -80,24 +75,24 @@ describe('WebRtcGroupService', () => {
         const snapshot = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
         const cache = {
             read: vi.fn(() => undefined),
-            peek: vi.fn(() => snapshot),
+            peek: vi.fn(() => snapshot)
         };
         const rtcQBox = createRtcHarness('self');
         const service = new WebRtcGroupService(
             rtcQBox as never,
             snapshot.group,
-            cache as never,
+            cache as never
         );
         const callback = vi.fn<Parameters<WebRtcGroupService['onStateDo']>[1]>(
             async () => {
-            },
+            }
         );
 
         service.onStateDo('state', callback);
 
         await expect(service.refreshFromCache()).resolves.toEqual({
             joinedPeerIds: ['peer-a'],
-            leftPeerIds: [],
+            leftPeerIds: []
         });
 
         expect(callback).toHaveBeenCalledOnce();
@@ -120,14 +115,14 @@ describe('WebRtcGroupService', () => {
         const service = new WebRtcGroupService(
             rtcQBox as never,
             snapshot.group,
-            groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            groupStateSnapshotsRepository.readableGroupStateSnapshotCache()
         );
 
         expect(service.readGroup()).toEqual(snapshot);
         expect(service.targetPeerIds()).toEqual(['peer-a']);
         await expect(service.refreshFromCache()).resolves.toEqual({
             joinedPeerIds: [],
-            leftPeerIds: [],
+            leftPeerIds: []
         });
     });
 
@@ -139,16 +134,16 @@ describe('WebRtcGroupService', () => {
             1,
             ['self', 'peer-a'],
             {
-                workspaceId: 'workspace-a',
-            },
+                workspaceId: 'workspace-a'
+            }
         );
         const workspaceB = createGroupSnapshot(
             'shared-room',
             1,
             ['self', 'peer-b'],
             {
-                workspaceId: 'workspace-b',
-            },
+                workspaceId: 'workspace-b'
+            }
         );
         groupStateSnapshotsRepository.setGroupStateSnapshots([workspaceA, workspaceB]);
 
@@ -156,7 +151,7 @@ describe('WebRtcGroupService', () => {
         const service = new WebRtcGroupService(
             rtcQBox as never,
             workspaceB.group,
-            groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            groupStateSnapshotsRepository.readableGroupStateSnapshotCache()
         );
 
         expect(service.readGroup()).toEqual(workspaceB);
@@ -169,24 +164,24 @@ describe('WebRtcGroupService', () => {
             1,
             ['self', 'peer-old'],
             {
-                workspaceId: 'workspace-b',
-            },
+                workspaceId: 'workspace-b'
+            }
         );
         const latest = createGroupSnapshot(
             'shared-room',
             3,
             ['self', 'peer-latest'],
             {
-                workspaceId: 'workspace-b',
-            },
+                workspaceId: 'workspace-b'
+            }
         );
         const newerWrongScope = createGroupSnapshot(
             'shared-room',
             99,
             ['self', 'peer-wrong'],
             {
-                workspaceId: 'workspace-a',
-            },
+                workspaceId: 'workspace-a'
+            }
         );
         const cache = {
             read: vi.fn(() => undefined),
@@ -194,14 +189,14 @@ describe('WebRtcGroupService', () => {
             readAllValues: vi.fn(() => [
                 older,
                 newerWrongScope,
-                latest,
-            ]),
+                latest
+            ])
         };
         const rtcQBox = createRtcHarness('self');
         const service = new WebRtcGroupService(
             rtcQBox as never,
             latest.group,
-            cache as never,
+            cache as never
         );
 
         expect(service.readGroup()).toEqual(latest);
@@ -216,9 +211,9 @@ describe('WebRtcGroupService', () => {
         const service = new WebRtcGroupService(rtcQBox as never, snapshot.group, cache);
 
         await expect(
-            service.acceptGroupUpdate(createGroupSnapshot('group-2', 1, ['self'])),
+            service.acceptGroupUpdate(createGroupSnapshot('group-2', 1, ['self']))
         ).rejects.toThrow(
-            'Received update for wrong room group-2, expected group-1',
+            'Received update for wrong room group-2, expected group-1'
         );
     });
 });
@@ -226,8 +221,8 @@ describe('WebRtcGroupService', () => {
 function createRtcHarness(sessionId: string) {
     return {
         input: {
-            sessionId,
-        },
+            sessionId
+        }
     };
 }
 
@@ -238,7 +233,7 @@ function createGroupSnapshot(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
@@ -251,7 +246,7 @@ function createGroupSnapshot(
         stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
-            presenceRevision: membershipVersion,
+            presenceRevision: membershipVersion
         },
         group: createTestGroup({
             applicationId,
@@ -266,7 +261,7 @@ function createGroupSnapshot(
             rosterVersion: membershipVersion,
             presenceVersion: 0,
             created: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
+            updated: createAuditStamp(membershipVersion, ownerPrincipalId)
         }),
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
@@ -281,7 +276,7 @@ function createGroupSnapshot(
             invitationExpiresAtEpochMs: null,
             left: null,
             removed: null,
-            banned: null,
+            banned: null
         })),
         activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId,
@@ -296,10 +291,10 @@ function createGroupSnapshot(
             lastHeartbeatAtEpochMs: membershipVersion,
             expiresAtEpochMs: membershipVersion + 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         })),
         memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length,
+        onlineMemberCount: memberSessionIds.length
     };
 }
 
@@ -309,6 +304,6 @@ function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
         actor: { kind: 'principal', principalId },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

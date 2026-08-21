@@ -30,19 +30,19 @@ export type WsServerLiveSendResult = Readonly<{
 export type WsServerTargetResolver = Readonly<{
     resolvePeerRecipients?: (
         peerId: string,
-        message: ALMessage,
+        message: ALMessage
     ) => readonly WsServerResolvedRecipient[];
     resolveGroupRecipients?: (
         groupId: string,
-        message: ALMessage,
+        message: ALMessage
     ) => readonly WsServerResolvedRecipient[];
     resolveBroadcastRecipients?: (
         scope: 'room' | 'world' | 'all' | 'principal',
-        message: ALMessage,
+        message: ALMessage
     ) => readonly WsServerResolvedRecipient[];
     resolvePeerIdForConnection?: (
         connectionId: string,
-        message: ALMessage,
+        message: ALMessage
     ) => string | undefined;
 }>;
 

@@ -53,7 +53,7 @@ export const AppInboxType = {
     CRDT_SNAPSHOT_COMPACT: 'CRDT_SNAPSHOT_COMPACT',
     CRDT_LIFECYCLE_UPDATE: 'CRDT_LIFECYCLE_UPDATE',
     CRDT_ERASE: 'CRDT_ERASE',
-    ADMIN_PRUNE_EXPIRED: 'ADMIN_PRUNE_EXPIRED',
+    ADMIN_PRUNE_EXPIRED: 'ADMIN_PRUNE_EXPIRED'
 } as const;
 
 export type AppInboxType = (typeof AppInboxType)[keyof typeof AppInboxType];
@@ -85,7 +85,7 @@ export class AppInboxIdempotencyConflictError extends Error {
     constructor(
         resourceId: string,
         existingCommandHash: string,
-        receivedCommandHash: string,
+        receivedCommandHash: string
     ) {
         super(`App inbox idempotency conflict for resource ${resourceId}`);
         this.resourceId = resourceId;

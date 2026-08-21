@@ -1,34 +1,31 @@
 import type {
-    RuntimeStateConditionalDeleteResult,
-    RuntimeStateConditionalWriteResult,
-    RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import {
-    assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import type {
     RuntimeStateGuardedBatch,
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchEffectResult,
     RuntimeStateGuardedBatchGuardResult,
-    RuntimeStateGuardedBatchResult,
+    RuntimeStateGuardedBatchResult
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import {
     validateRuntimeStateGuardedBatch,
-    validateRuntimeStateGuardedBatchResult,
+    validateRuntimeStateGuardedBatchResult
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import type {
     RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector,
+    RuntimeStateReadBatchSelector
 } from '@shared-server/runtime-state/RuntimeStateReadBatch.ts';
+import type {
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
+    RuntimeStateEntry,
+    RuntimeStateOptimisticTransactionalRepositoryLike
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import {
+    assertRuntimeStateExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 import { readPSqlRuntimeStateBatch } from './PSqlRuntimeStateReadBatch.ts';
-import {
-    toExclusivePrefixEnd,
-    toPgDate,
-} from './PSqlRuntimeStateSqlValues.ts';
+import { toExclusivePrefixEnd, toPgDate } from './PSqlRuntimeStateSqlValues.ts';
 
 const RUNTIME_STATE_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
@@ -41,15 +38,17 @@ type RuntimeStateRow = Readonly<{
     revision: number | string;
 }>;
 
-type RuntimeStateSavepointSql = PSqlTransactionSql & Readonly<{
-    savepoint<T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>,
-    ): Promise<T>;
-}>;
+type RuntimeStateSavepointSql =
+    & PSqlTransactionSql
+    & Readonly<{
+        savepoint<T>(
+            fn: (sql: PSqlTransactionSql) => Promise<T>
+        ): Promise<T>;
+    }>;
 
 type RuntimeStateSqlState =
-    | Readonly<{ kind: 'root'; sql: PSqlSql }>
-    | Readonly<{ kind: 'transaction'; sql: RuntimeStateSavepointSql }>;
+    | Readonly<{ kind: 'root'; sql: PSqlSql; }>
+    | Readonly<{ kind: 'transaction'; sql: RuntimeStateSavepointSql; }>;
 
 type RuntimeStateGuardedBatchRow = Readonly<{
     result_kind: unknown;
@@ -60,20 +59,19 @@ type RuntimeStateGuardedBatchRow = Readonly<{
     revision: unknown;
 }>;
 
-export class PSqlRuntimeStateRepository
-    implements RuntimeStateOptimisticTransactionalRepositoryLike {
+export class PSqlRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
     private readonly sqlState: RuntimeStateSqlState;
 
     public readonly sql: PSqlSql;
 
     constructor(
         sql: PSqlSql,
-        sqlState?: RuntimeStateSqlState,
+        sqlState?: RuntimeStateSqlState
     ) {
         this.sql = sql;
         this.sqlState = sqlState ?? {
             kind: 'root',
-            sql,
+            sql
         };
     }
 
@@ -85,44 +83,48 @@ export class PSqlRuntimeStateRepository
     readonly runtimeStateReadBatchConsistency = 'single-database-snapshot' as const;
 
     async readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[],
+        selectors: readonly RuntimeStateReadBatchSelector[]
     ): Promise<readonly RuntimeStateReadBatchSelection[]> {
         return await readPSqlRuntimeStateBatch(this.sql, selectors);
     }
 
     async begin<T>(
         fn: (
-            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        ) => Promise<T>,
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike
+        ) => Promise<T>
     ): Promise<T> {
         if (this.sqlState.kind === 'transaction') {
             return await this.sqlState.sql.savepoint(async (sql) => {
                 const savepointSql = requireSavepointSql(sql);
-                return await fn(new PSqlRuntimeStateRepository(savepointSql, {
-                    kind: 'transaction',
-                    sql: savepointSql,
-                }));
+                return await fn(
+                    new PSqlRuntimeStateRepository(savepointSql, {
+                        kind: 'transaction',
+                        sql: savepointSql
+                    })
+                );
             });
         }
 
         return await this.sqlState.sql.begin(
             async (sql: PSqlTransactionSql) => {
                 const transactionSql = requireSavepointSql(sql);
-                return await fn(new PSqlRuntimeStateRepository(transactionSql, {
-                    kind: 'transaction',
-                    sql: transactionSql,
-                }));
-            },
+                return await fn(
+                    new PSqlRuntimeStateRepository(transactionSql, {
+                        kind: 'transaction',
+                        sql: transactionSql
+                    })
+                );
+            }
         );
     }
 
     async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch,
+        input: RuntimeStateGuardedBatch
     ): Promise<RuntimeStateGuardedBatchResult> {
         const batch = validateRuntimeStateGuardedBatch(input);
         if (this.sqlState.kind !== 'transaction') {
             throw new Error(
-                'Guarded runtime state batches require a transaction-scoped repository.',
+                'Guarded runtime state batches require a transaction-scoped repository.'
             );
         }
 
@@ -391,7 +393,7 @@ export class PSqlRuntimeStateRepository
 
     async findEntriesByPrefix(
         namespace: string,
-        keyPrefix: string,
+        keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         if (keyPrefix.length === 0) {
             return await this.findAllEntries(namespace);
@@ -412,7 +414,7 @@ export class PSqlRuntimeStateRepository
 
     async findEntriesByKeys(
         namespace: string,
-        keys: readonly string[],
+        keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         if (keys.length === 0) {
             return [];
@@ -435,7 +437,7 @@ export class PSqlRuntimeStateRepository
         options: Readonly<{
             afterKey?: string;
             limit: number;
-        }>,
+        }>
     ): Promise<readonly RuntimeStateEntry[]> {
         const limit = Math.max(1, Math.floor(options.limit));
         if (keyPrefix.length === 0) {
@@ -488,7 +490,7 @@ export class PSqlRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<void> {
         await this.sql`
             insert into runtime_state_store (store_namespace,
@@ -515,9 +517,9 @@ export class PSqlRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<RuntimeStateConditionalWriteResult> {
-        const rows = await this.sql<Array<{ revision: number | string }>>`
+        const rows = await this.sql<Array<{ revision: number | string; }>>`
             insert into runtime_state_store (store_namespace,
                                              store_key,
                                              store_value,
@@ -537,7 +539,7 @@ export class PSqlRuntimeStateRepository
         return rows[0]
             ? {
                 status: 'applied',
-                revision: parseRuntimeStateRevision(rows[0].revision),
+                revision: parseRuntimeStateRevision(rows[0].revision)
             }
             : { status: 'conflict' };
     }
@@ -547,10 +549,10 @@ export class PSqlRuntimeStateRepository
         key: string,
         value: string,
         expireAtTimestamp: number,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
-        const rows = await this.sql<Array<{ revision: number | string }>>`
+        const rows = await this.sql<Array<{ revision: number | string; }>>`
             update runtime_state_store
             set store_value = ${value},
                 expire_at_ts = ${toPgDate(expireAtTimestamp)},
@@ -565,7 +567,7 @@ export class PSqlRuntimeStateRepository
         return rows[0]
             ? {
                 status: 'applied',
-                revision: parseRuntimeStateRevision(rows[0].revision),
+                revision: parseRuntimeStateRevision(rows[0].revision)
             }
             : { status: 'conflict' };
     }
@@ -573,10 +575,10 @@ export class PSqlRuntimeStateRepository
     async deleteIfRevision(
         namespace: string,
         key: string,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<RuntimeStateConditionalDeleteResult> {
         assertRuntimeStateExpectedRevision(expectedRevision);
-        const rows = await this.sql<Array<{ revision: number | string }>>`
+        const rows = await this.sql<Array<{ revision: number | string; }>>`
             delete from runtime_state_store
             where store_namespace = ${namespace}
               and store_key = ${key}
@@ -597,7 +599,7 @@ export class PSqlRuntimeStateRepository
     }
 
     async deleteExpired(namespace: string): Promise<number> {
-        const rows = await this.sql<{ store_key: string }[]>`
+        const rows = await this.sql<{ store_key: string; }[]>`
             delete
             from runtime_state_store
             where store_namespace = ${namespace}
@@ -609,16 +611,16 @@ export class PSqlRuntimeStateRepository
     }
 
     async deleteAllExpired(
-        excludedNamespaces: readonly string[] = [],
+        excludedNamespaces: readonly string[] = []
     ): Promise<number> {
         const rows = excludedNamespaces.length === 0
-            ? await this.sql<{ store_namespace: string; store_key: string }[]>`
+            ? await this.sql<{ store_namespace: string; store_key: string; }[]>`
                 delete
                 from runtime_state_store
                 where expire_at_ts <= now()
                 returning store_namespace, store_key
             `
-            : await this.sql<{ store_namespace: string; store_key: string }[]>`
+            : await this.sql<{ store_namespace: string; store_key: string; }[]>`
                 delete
                 from runtime_state_store
                 where expire_at_ts <= now()
@@ -636,10 +638,10 @@ export async function evictExpiredRuntimeStateRows(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
     options: Readonly<{
         excludedNamespaces?: readonly string[];
-    }> = {},
+    }> = {}
 ): Promise<number> {
     const removed = await repository.deleteAllExpired(
-        options.excludedNamespaces ?? [],
+        options.excludedNamespaces ?? []
     );
     if (removed > 0) {
         console.log(`Evicted expired runtime_state_store rows: ${removed}`);
@@ -659,7 +661,7 @@ export type RuntimeStateExpiryEvictionOptions = Readonly<{
     retryIntervalMs?: number;
     schedule?: (
         callback: () => void | Promise<void>,
-        delayMs: number,
+        delayMs: number
     ) => unknown;
     cancel?: (handle: unknown) => void;
     onError?: (error: unknown) => void;
@@ -667,19 +669,19 @@ export type RuntimeStateExpiryEvictionOptions = Readonly<{
 
 export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
-    intervalMs?: number,
+    intervalMs?: number
 ): RuntimeStateExpiryEvictionHandle;
 export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
-    options?: RuntimeStateExpiryEvictionOptions,
+    options?: RuntimeStateExpiryEvictionOptions
 ): RuntimeStateExpiryEvictionHandle;
 export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
-    options?: RuntimeStateExpiryEvictionOptions | number,
+    options?: RuntimeStateExpiryEvictionOptions | number
 ): RuntimeStateExpiryEvictionHandle;
 export function initRuntimeStateExpiryEviction(
     repository: Pick<PSqlRuntimeStateRepository, 'deleteAllExpired'>,
-    optionsOrInterval: RuntimeStateExpiryEvictionOptions | number = {},
+    optionsOrInterval: RuntimeStateExpiryEvictionOptions | number = {}
 ): RuntimeStateExpiryEvictionHandle {
     const options = typeof optionsOrInterval === 'number'
         ? { intervalMs: optionsOrInterval }
@@ -691,7 +693,7 @@ export function initRuntimeStateExpiryEviction(
     validateExpiryWorkerDelay(retryIntervalMs, 'retry interval');
     const schedule = options.schedule ?? ((callback, delayMs) => {
         const handle = setTimeout(() => void callback(), delayMs);
-        (handle as { unref?: () => void }).unref?.();
+        (handle as { unref?: () => void; }).unref?.();
         return handle;
     });
     const cancel = options.cancel ?? ((handle: unknown) => {
@@ -709,29 +711,36 @@ export function initRuntimeStateExpiryEviction(
         rejectFirstRun = reject;
     });
     const scheduleRun = (delayMs: number): void => {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
         let handle: unknown;
         handle = schedule(async () => {
-            if (scheduledHandle === handle) scheduledHandle = undefined;
+            if (scheduledHandle === handle) {
+                scheduledHandle = undefined;
+            }
             await run();
         }, delayMs);
         scheduledHandle = handle;
-        (handle as { unref?: () => void }).unref?.();
+        (handle as { unref?: () => void; }).unref?.();
     };
     const run = async (): Promise<void> => {
-        if (stopped || running) return;
+        if (stopped || running) {
+            return;
+        }
         running = true;
         let failed = false;
         try {
             const removed = await evictExpiredRuntimeStateRows(repository, {
-                excludedNamespaces: options.excludedNamespaces,
+                excludedNamespaces: options.excludedNamespaces
             });
             failureCount = 0;
             if (!firstRunSettled) {
                 firstRunSettled = true;
                 resolveFirstRun(removed);
             }
-        } catch (error) {
+        }
+        catch (error) {
             failed = true;
             failureCount += 1;
             if (!firstRunSettled) {
@@ -740,31 +749,39 @@ export function initRuntimeStateExpiryEviction(
             }
             try {
                 options.onError?.(error);
-            } catch {
+            }
+            catch {
                 // Observability must not disable generic expiry ownership.
             }
-        } finally {
+        }
+        finally {
             running = false;
-            if (stopped) return;
-            scheduleRun(failed
-                ? Math.min(
-                    retryIntervalMs * 2 ** Math.min(failureCount - 1, 1),
-                    20_000,
-                )
-                : intervalMs);
+            if (stopped) {
+                return;
+            }
+            scheduleRun(
+                failed
+                    ? Math.min(
+                        retryIntervalMs * 2 ** Math.min(failureCount - 1, 1),
+                        20_000
+                    )
+                    : intervalMs
+            );
         }
     };
     void run();
     return {
         firstRun,
         stop: () => {
-            if (stopped) return;
+            if (stopped) {
+                return;
+            }
             stopped = true;
             if (scheduledHandle !== undefined) {
                 cancel(scheduledHandle);
                 scheduledHandle = undefined;
             }
-        },
+        }
     };
 }
 
@@ -776,7 +793,7 @@ function validateExpiryWorkerDelay(value: number, label: string): void {
 
 function toRuntimeStateGuardedBatchResult(
     batch: RuntimeStateGuardedBatch,
-    rows: readonly RuntimeStateGuardedBatchRow[],
+    rows: readonly RuntimeStateGuardedBatchRow[]
 ): RuntimeStateGuardedBatchResult {
     requireDenseGuardedBatchRows(rows);
     let guardRow: ParsedRuntimeStateGuardedBatchRow | undefined;
@@ -786,7 +803,7 @@ function toRuntimeStateGuardedBatchResult(
         if (row.resultKind === 'guard') {
             if (row.effectId !== null || guardRow !== undefined) {
                 throw invalidGuardedBatchDatabaseResult(
-                    'expected exactly one unique guard row',
+                    'expected exactly one unique guard row'
                 );
             }
             guardRow = row;
@@ -794,7 +811,7 @@ function toRuntimeStateGuardedBatchResult(
         }
         if (row.effectId === null || effectRows.has(row.effectId)) {
             throw invalidGuardedBatchDatabaseResult(
-                'effect rows require unique effect IDs',
+                'effect rows require unique effect IDs'
             );
         }
         effectRows.set(row.effectId, row);
@@ -803,7 +820,7 @@ function toRuntimeStateGuardedBatchResult(
     if (guardRow === undefined) {
         if (effectRows.size > 0) {
             throw invalidGuardedBatchDatabaseResult(
-                'effects applied without guard authority',
+                'effects applied without guard authority'
             );
         }
         return validateRuntimeStateGuardedBatchResult(batch, {
@@ -812,7 +829,7 @@ function toRuntimeStateGuardedBatchResult(
                 operation: batch.guard.operation,
                 namespace: batch.guard.namespace,
                 key: batch.guard.key,
-                reason: 'condition-not-met',
+                reason: 'condition-not-met'
             },
             effects: batch.effects.map((effect) => ({
                 status: 'skipped',
@@ -820,8 +837,8 @@ function toRuntimeStateGuardedBatchResult(
                 operation: effect.operation,
                 namespace: effect.namespace,
                 key: effect.key,
-                reason: 'guard-conflict',
-            })),
+                reason: 'guard-conflict'
+            }))
         });
     }
 
@@ -831,7 +848,7 @@ function toRuntimeStateGuardedBatchResult(
         if (row === undefined) {
             if (effect.operation === 'put') {
                 throw invalidGuardedBatchDatabaseResult(
-                    `put effect did not return a row: ${effect.effectId}`,
+                    `put effect did not return a row: ${effect.effectId}`
                 );
             }
             return {
@@ -840,7 +857,7 @@ function toRuntimeStateGuardedBatchResult(
                 operation: effect.operation,
                 namespace: effect.namespace,
                 key: effect.key,
-                reason: 'condition-not-met',
+                reason: 'condition-not-met'
             } as const;
         }
         effectRows.delete(effect.effectId);
@@ -852,17 +869,17 @@ function toRuntimeStateGuardedBatchResult(
 
     return validateRuntimeStateGuardedBatchResult(batch, {
         guard: guardResult,
-        effects,
+        effects
     });
 }
 
 function toRuntimeStateGuardedBatchSqlInput(
-    input: RuntimeStateGuardedBatch['guard'] | RuntimeStateGuardedBatchEffect,
+    input: RuntimeStateGuardedBatch['guard'] | RuntimeStateGuardedBatchEffect
 ): Readonly<Record<string, unknown>> {
     return 'expireAtTimestamp' in input
         ? {
             ...input,
-            expireAtTimestamp: new Date(input.expireAtTimestamp).toISOString(),
+            expireAtTimestamp: new Date(input.expireAtTimestamp).toISOString()
         }
         : { ...input };
 }
@@ -877,7 +894,7 @@ type ParsedRuntimeStateGuardedBatchRow = Readonly<{
 }>;
 
 function parseRuntimeStateGuardedBatchRow(
-    row: RuntimeStateGuardedBatchRow,
+    row: RuntimeStateGuardedBatchRow
 ): ParsedRuntimeStateGuardedBatchRow {
     const resultKind = row.result_kind;
     if (resultKind !== 'guard' && resultKind !== 'effect') {
@@ -912,13 +929,13 @@ function parseRuntimeStateGuardedBatchRow(
         operation,
         namespace: row.store_namespace,
         key: row.store_key,
-        revision: parseRuntimeStateRevision(row.revision),
+        revision: parseRuntimeStateRevision(row.revision)
     };
 }
 
 function toAppliedGuardedBatchGuardResult(
     batch: RuntimeStateGuardedBatch,
-    row: ParsedRuntimeStateGuardedBatchRow,
+    row: ParsedRuntimeStateGuardedBatchRow
 ): RuntimeStateGuardedBatchGuardResult {
     requireGuardedBatchRowMatch(batch.guard, row, 'guard');
     return batch.guard.operation === 'delete'
@@ -927,25 +944,25 @@ function toAppliedGuardedBatchGuardResult(
             operation: batch.guard.operation,
             namespace: batch.guard.namespace,
             key: batch.guard.key,
-            matchedRevision: row.revision,
+            matchedRevision: row.revision
         }
         : {
             status: 'applied',
             operation: batch.guard.operation,
             namespace: batch.guard.namespace,
             key: batch.guard.key,
-            resultingRevision: row.revision,
+            resultingRevision: row.revision
         };
 }
 
 function toAppliedGuardedBatchEffectResult(
     effect: RuntimeStateGuardedBatchEffect,
-    row: ParsedRuntimeStateGuardedBatchRow,
+    row: ParsedRuntimeStateGuardedBatchRow
 ): RuntimeStateGuardedBatchEffectResult {
     requireGuardedBatchRowMatch(effect, row, `effect ${effect.effectId}`);
     if (row.effectId !== effect.effectId) {
         throw invalidGuardedBatchDatabaseResult(
-            `effect ID does not match: ${effect.effectId}`,
+            `effect ID does not match: ${effect.effectId}`
         );
     }
     return effect.operation === 'delete'
@@ -955,7 +972,7 @@ function toAppliedGuardedBatchEffectResult(
             operation: effect.operation,
             namespace: effect.namespace,
             key: effect.key,
-            matchedRevision: row.revision,
+            matchedRevision: row.revision
         }
         : {
             status: 'applied',
@@ -963,7 +980,7 @@ function toAppliedGuardedBatchEffectResult(
             operation: effect.operation,
             namespace: effect.namespace,
             key: effect.key,
-            resultingRevision: row.revision,
+            resultingRevision: row.revision
         };
 }
 
@@ -974,7 +991,7 @@ function requireGuardedBatchRowMatch(
         key: string;
     }>,
     row: ParsedRuntimeStateGuardedBatchRow,
-    label: string,
+    label: string
 ): void {
     if (
         row.operation !== expected.operation ||
@@ -982,13 +999,13 @@ function requireGuardedBatchRowMatch(
         row.key !== expected.key
     ) {
         throw invalidGuardedBatchDatabaseResult(
-            `${label} operation or identity does not match`,
+            `${label} operation or identity does not match`
         );
     }
 }
 
 function requireDenseGuardedBatchRows(
-    rows: readonly RuntimeStateGuardedBatchRow[],
+    rows: readonly RuntimeStateGuardedBatchRow[]
 ): void {
     if (!Array.isArray(rows)) {
         throw invalidGuardedBatchDatabaseResult('rows must be an array');
@@ -1007,7 +1024,7 @@ function invalidGuardedBatchDatabaseResult(reason: string): Error {
 function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
     const expireAtTimestamp = toRuntimeStateDriverDate(
         row.expire_at_ts,
-        'expire_at_ts',
+        'expire_at_ts'
     ).getTime();
 
     return {
@@ -1015,7 +1032,7 @@ function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
         value: row.store_value,
         expireAtTimestamp,
         updatedTimestamp: toRuntimeStateUpdatedTimestamp(row.updated_ts),
-        revision: parseRuntimeStateRevision(row.revision),
+        revision: parseRuntimeStateRevision(row.revision)
     };
 }
 
@@ -1058,10 +1075,16 @@ function isValidTimestampMatch(match: RegExpExecArray): boolean {
     }
     const daysInMonth = month === 2
         ? (isLeapYear(year) ? 29 : 28)
-        : [4, 6, 9, 11].includes(month) ? 30 : 31;
-    if (day < 1 || day > daysInMonth) return false;
+        : [4, 6, 9, 11].includes(month)
+        ? 30
+        : 31;
+    if (day < 1 || day > daysInMonth) {
+        return false;
+    }
     const zone = match[8];
-    if (zone === 'Z') return true;
+    if (zone === 'Z') {
+        return true;
+    }
     const zoneDigits = zone.slice(1).replace(':', '');
     const zoneHour = Number(zoneDigits.slice(0, 2));
     const zoneMinute = zoneDigits.length > 2 ? Number(zoneDigits.slice(2)) : 0;
@@ -1090,13 +1113,14 @@ function parseRuntimeStateRevision(value: number | string): number {
 }
 
 function requireSavepointSql(
-    sql: PSqlTransactionSql,
+    sql: PSqlTransactionSql
 ): RuntimeStateSavepointSql {
-    const candidate = sql as PSqlTransactionSql &
-        Readonly<{ savepoint?: unknown }>;
+    const candidate = sql as
+        & PSqlTransactionSql
+        & Readonly<{ savepoint?: unknown; }>;
     if (typeof candidate.savepoint !== 'function') {
         throw new Error(
-            'Runtime state transaction SQL client must provide savepoint().',
+            'Runtime state transaction SQL client must provide savepoint().'
         );
     }
 

@@ -1,8 +1,5 @@
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type {
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { CommandHistoryPanel } from '../advanced/CommandHistoryPanel.tsx';
@@ -19,7 +16,7 @@ export function ManualRallarSection({
     history,
     selectedCommandId,
     onSelectCommand,
-    onGlobalValueChange,
+    onGlobalValueChange
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -32,7 +29,7 @@ export function ManualRallarSection({
     onSelectCommand(commandId: string): void;
     onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
 }) {
     return (

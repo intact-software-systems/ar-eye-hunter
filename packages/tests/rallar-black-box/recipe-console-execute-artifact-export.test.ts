@@ -10,8 +10,8 @@ describe('Recipe Console Execute artifact export', () => {
             files: {
                 'distributed-run.json': '{}',
                 'manifest.json': '{}',
-                'control-run.json': '{}',
-            },
+                'control-run.json': '{}'
+            }
         };
 
         const first = createExecuteArtifactDownload(artifact, 'dist-export-a');

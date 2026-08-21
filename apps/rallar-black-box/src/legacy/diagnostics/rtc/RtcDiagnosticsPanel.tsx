@@ -6,8 +6,8 @@ import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { formatDuration } from '../../shared/time-format.ts';
 import { formatList, stageTone } from './rtc-diagnostics-presentation.ts';
 import {
-    type UseRtcDiagnosticsControllerInput,
     useRtcDiagnosticsController,
+    type UseRtcDiagnosticsControllerInput
 } from './use-rtc-diagnostics-controller.ts';
 
 export function RtcDiagnosticsPanel({
@@ -16,7 +16,7 @@ export function RtcDiagnosticsPanel({
     authSession,
     globalValues,
     busy,
-    onSelectCommand,
+    onSelectCommand
 }: UseRtcDiagnosticsControllerInput) {
     const {
         diagnostics,
@@ -27,14 +27,14 @@ export function RtcDiagnosticsPanel({
         bundleText,
         localError,
         runAction,
-        copyBundle,
+        copyBundle
     } = useRtcDiagnosticsController({
         state,
         bootstrap,
         authSession,
         globalValues,
         busy,
-        onSelectCommand,
+        onSelectCommand
     });
 
     return (
@@ -51,18 +51,14 @@ export function RtcDiagnosticsPanel({
                 <button
                     type="button"
                     disabled={!canRunDirect}
-                    onClick={() =>
-                        void runAction('RTC reconnect check', 'reconnect')
-                    }
+                    onClick={() => void runAction('RTC reconnect check', 'reconnect')}
                 >
                     Reconnect
                 </button>
                 <button
                     type="button"
                     disabled={!canRunDirect}
-                    onClick={() =>
-                        void runAction('RTC rejoin check', 'connect')
-                    }
+                    onClick={() => void runAction('RTC rejoin check', 'connect')}
                 >
                     Rejoin
                 </button>
@@ -109,7 +105,7 @@ export function RtcDiagnosticsPanel({
                 <Metric
                     label="From connect"
                     value={formatDuration(
-                        diagnostics.latency.firstPayloadFromConnectMs,
+                        diagnostics.latency.firstPayloadFromConnectMs
                     )}
                 />
                 <Metric
@@ -227,7 +223,7 @@ export function RtcDiagnosticsPanel({
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(
                         localError,
-                        uiRedactionOptions(state, authSession),
+                        uiRedactionOptions(state, authSession)
                     )}
                 </div>
             )}

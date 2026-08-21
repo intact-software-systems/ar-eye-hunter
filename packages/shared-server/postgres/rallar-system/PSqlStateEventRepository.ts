@@ -1,24 +1,27 @@
+import {
+    normalizePersistedClientEvent
+} from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts';
+import {
+    clientStateWorkspaceStorageKey
+} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import {
+    validatePersistedClientEvent
+} from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
+import type {
+    ClientStateEventStore,
+    GroupStateEventStore
+} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import {
+    normalizePersistedGroupEvent,
+    validatePersistedGroupEvent
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import type { StateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
+import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-event-listing.ts';
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type {
-    ClientStateEventStore,
-    GroupStateEventStore,
-} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import type { StateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
-import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-event-listing.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { groupEventWorkspaceKey } from './group-event-workspace-key.ts';
-import {
-    normalizePersistedGroupEvent,
-    validatePersistedGroupEvent,
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { normalizePersistedClientEvent } from
-    '@shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts';
-import { clientStateWorkspaceStorageKey } from
-    '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import { validatePersistedClientEvent } from
-    '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
 
 type ClientStateEventRow = Readonly<{
     event_id: string;
@@ -30,11 +33,13 @@ type ClientStateEventRow = Readonly<{
     event_json: string;
 }>;
 
-type ClientStateEventCollisionRow = ClientStateEventRow & Readonly<{
-    application_id: string;
-    workspace_key: string;
-    principal_id: string;
-}>;
+type ClientStateEventCollisionRow =
+    & ClientStateEventRow
+    & Readonly<{
+        application_id: string;
+        workspace_key: string;
+        principal_id: string;
+    }>;
 
 type GroupStateEventRow = Readonly<{
     event_id: string;
@@ -44,26 +49,22 @@ type GroupStateEventRow = Readonly<{
     event_json: string;
 }>;
 
-type GroupStateEventCollisionRow = GroupStateEventRow & Readonly<{
-    application_id: string;
-    workspace_key: string;
-    group_id: string;
-}>;
+type GroupStateEventCollisionRow =
+    & GroupStateEventRow
+    & Readonly<{
+        application_id: string;
+        workspace_key: string;
+        group_id: string;
+    }>;
 
 export class GroupStateEventCollisionError extends Error {
     readonly code = 'group-state-event-collision';
     readonly status = 409;
 
-    readonly event: Pick<
-            GroupEvent,
-            'applicationId' | 'workspaceId' | 'groupId' | 'eventId'
-        >;
+    readonly event: Pick<GroupEvent, 'applicationId' | 'workspaceId' | 'groupId' | 'eventId'>;
 
     constructor(
-        event: Pick<
-            GroupEvent,
-            'applicationId' | 'workspaceId' | 'groupId' | 'eventId'
-        >,
+        event: Pick<GroupEvent, 'applicationId' | 'workspaceId' | 'groupId' | 'eventId'>
     ) {
         super(`Group state event already exists: ${event.eventId}`);
         this.event = event;
@@ -75,16 +76,10 @@ export class ClientStateEventCollisionError extends Error {
     readonly code = 'client-state-event-collision';
     readonly status = 409;
 
-    readonly event: Pick<
-            ClientEvent,
-            'applicationId' | 'workspaceId' | 'principalId' | 'eventId'
-        >;
+    readonly event: Pick<ClientEvent, 'applicationId' | 'workspaceId' | 'principalId' | 'eventId'>;
 
     constructor(
-        event: Pick<
-            ClientEvent,
-            'applicationId' | 'workspaceId' | 'principalId' | 'eventId'
-        >,
+        event: Pick<ClientEvent, 'applicationId' | 'workspaceId' | 'principalId' | 'eventId'>
     ) {
         super(`Client state event already exists with divergent content: ${event.eventId}`);
         this.event = event;
@@ -102,7 +97,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
     async appendClientEvent(event: ClientEvent): Promise<void> {
         assertCompleteClientEvent(event, event);
         const eventJson = JSON.stringify(event);
-        const inserted = await this.sql<{ event_id: string }[]>`
+        const inserted = await this.sql<{ event_id: string; }[]>`
             insert into client_state_events (application_id,
                                              workspace_key,
                                              principal_id,
@@ -147,7 +142,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
     }
 
     async listClientEvents(
-        ref: ClientPrincipalRef,
+        ref: ClientPrincipalRef
     ): Promise<readonly ClientEvent[]> {
         const rows = await this.sql<ClientStateEventRow[]>`
             select event_id, event_type, snapshot_version, occurred_at_epoch_ms,
@@ -164,7 +159,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 
     async listRecentClientEvents(
         ref: ClientPrincipalRef,
-        query: StateEventListQuery = {},
+        query: StateEventListQuery = {}
     ): Promise<readonly ClientEvent[]> {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryRecentClientRows(ref, query, limit);
@@ -174,7 +169,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 
     async listClientEventPage(
         ref: ClientPrincipalRef,
-        query: StateEventListQuery = {},
+        query: StateEventListQuery = {}
     ): Promise<StateEventPage<ClientEvent>> {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryClientPageRows(ref, query, limit + 1);
@@ -185,14 +180,14 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
         return {
             events,
             ...(lastEvent ? { nextCursor: toCursor(lastEvent) } : {}),
-            hasMore: eventsPlusOne.length > limit,
+            hasMore: eventsPlusOne.length > limit
         };
     }
 
     private async queryClientPageRows(
         ref: ClientPrincipalRef,
         query: StateEventListQuery,
-        limit: number,
+        limit: number
     ): Promise<ClientStateEventRow[]> {
         const eventTypes = query.eventTypes && query.eventTypes.length > 0
             ? query.eventTypes
@@ -259,7 +254,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
     private async queryRecentClientRows(
         ref: ClientPrincipalRef,
         query: StateEventListQuery,
-        limit: number,
+        limit: number
     ): Promise<ClientStateEventRow[]> {
         const eventTypes = query.eventTypes && query.eventTypes.length > 0
             ? query.eventTypes
@@ -314,7 +309,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
     async appendGroupEvent(event: GroupEvent): Promise<void> {
         assertCompleteGroupEvent(event, event);
         const eventJson = JSON.stringify(event);
-        const inserted = await this.sql<{ event_id: string }[]>`
+        const inserted = await this.sql<{ event_id: string; }[]>`
             insert into group_state_events (application_id,
                                             workspace_key,
                                             group_id,
@@ -369,7 +364,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
     async listRecentGroupEvents(
         ref: GroupRef,
-        query: StateEventListQuery = {},
+        query: StateEventListQuery = {}
     ): Promise<readonly GroupEvent[]> {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryRecentGroupRows(ref, query, limit);
@@ -379,7 +374,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
     async listGroupEventPage(
         ref: GroupRef,
-        query: StateEventListQuery = {},
+        query: StateEventListQuery = {}
     ): Promise<StateEventPage<GroupEvent>> {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryGroupPageRows(ref, query, limit + 1);
@@ -390,14 +385,14 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
         return {
             events,
             ...(lastEvent ? { nextCursor: toCursor(lastEvent) } : {}),
-            hasMore: eventsPlusOne.length > limit,
+            hasMore: eventsPlusOne.length > limit
         };
     }
 
     private async queryGroupPageRows(
         ref: GroupRef,
         query: StateEventListQuery,
-        limit: number,
+        limit: number
     ): Promise<GroupStateEventRow[]> {
         const eventTypes = query.eventTypes && query.eventTypes.length > 0
             ? query.eventTypes
@@ -460,7 +455,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
     private async queryRecentGroupRows(
         ref: GroupRef,
         query: StateEventListQuery,
-        limit: number,
+        limit: number
     ): Promise<GroupStateEventRow[]> {
         const eventTypes = query.eventTypes && query.eventTypes.length > 0
             ? query.eventTypes
@@ -502,7 +497,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 function isExactPersistedGroupEvent(
     row: GroupStateEventCollisionRow,
     event: GroupEvent,
-    eventJson: string,
+    eventJson: string
 ): boolean {
     return row.application_id === event.applicationId &&
         row.workspace_key === groupEventWorkspaceKey(event.workspaceId) &&
@@ -517,7 +512,7 @@ function isExactPersistedGroupEvent(
 function isExactPersistedClientEvent(
     row: ClientStateEventCollisionRow,
     event: ClientEvent,
-    eventJson: string,
+    eventJson: string
 ): boolean {
     return row.application_id === event.applicationId &&
         row.workspace_key === clientStateWorkspaceStorageKey(event.workspaceId) &&
@@ -542,17 +537,18 @@ export class ClientStateEventRepositoryInvariantCorruptionError extends Error {
 
 function toValidatedClientEvent(
     row: ClientStateEventRow,
-    expected: ClientPrincipalRef,
+    expected: ClientPrincipalRef
 ): ClientEvent {
     let event: ClientEvent;
     try {
         event = normalizePersistedClientEvent(
             JSON.parse(row.event_json),
-            expected,
+            expected
         );
-    } catch (error) {
+    }
+    catch (error) {
         throw new ClientStateEventRepositoryInvariantCorruptionError(
-            error instanceof Error ? error.message : 'Stored client event JSON is invalid',
+            error instanceof Error ? error.message : 'Stored client event JSON is invalid'
         );
     }
     if (
@@ -567,7 +563,7 @@ function toValidatedClientEvent(
         event.sessionId !== row.session_id
     ) {
         throw new ClientStateEventRepositoryInvariantCorruptionError(
-            'Stored client event identity differs from its physical columns',
+            'Stored client event identity differs from its physical columns'
         );
     }
     return event;
@@ -584,15 +580,16 @@ export class GroupStateEventRepositoryInvariantCorruptionError extends Error {
 
 function toValidatedGroupEvent(
     row: GroupStateEventRow,
-    expected: GroupRef,
+    expected: GroupRef
 ): GroupEvent {
     let event: GroupEvent;
     try {
         const decoded: unknown = JSON.parse(row.event_json);
         event = normalizePersistedGroupEvent(decoded, expected);
-    } catch (error) {
+    }
+    catch (error) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(
-            error instanceof Error ? error.message : 'Stored group event JSON is invalid',
+            error instanceof Error ? error.message : 'Stored group event JSON is invalid'
         );
     }
     if (
@@ -605,7 +602,7 @@ function toValidatedGroupEvent(
         event.occurredAtEpochMs !== Number(row.occurred_at_epoch_ms)
     ) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(
-            'Stored group event identity differs from the requested group',
+            'Stored group event identity differs from the requested group'
         );
     }
     return event;
@@ -613,13 +610,14 @@ function toValidatedGroupEvent(
 
 function assertCompleteClientEvent(
     event: unknown,
-    expected: ClientPrincipalRef,
+    expected: ClientPrincipalRef
 ): asserts event is ClientEvent {
     try {
         validatePersistedClientEvent(event, expected);
-    } catch (error) {
+    }
+    catch (error) {
         throw new ClientStateEventRepositoryInvariantCorruptionError(
-            error instanceof Error ? error.message : 'Stored client event is invalid',
+            error instanceof Error ? error.message : 'Stored client event is invalid'
         );
     }
 }
@@ -627,9 +625,10 @@ function assertCompleteClientEvent(
 function assertCompleteGroupEvent(event: unknown, expected: GroupRef): asserts event is GroupEvent {
     try {
         validatePersistedGroupEvent(event, expected);
-    } catch (error) {
+    }
+    catch (error) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(
-            error instanceof Error ? error.message : 'Stored group event is invalid',
+            error instanceof Error ? error.message : 'Stored group event is invalid'
         );
     }
 }
@@ -642,6 +641,6 @@ function toCursor(event: {
     return {
         snapshotVersion: event.snapshotVersion,
         occurredAtEpochMs: event.occurredAtEpochMs,
-        eventId: event.eventId,
+        eventId: event.eventId
     };
 }

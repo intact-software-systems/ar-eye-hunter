@@ -18,15 +18,15 @@ export type BlackBoxRallarLifecycleController<TConfig, TSession, TConnect, TClos
     runAuthentication(config: TConfig, effect: (signal: AbortSignal) => Promise<TSession>): Promise<TSession>;
     runConnect(
         key: string,
-        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TConnect>,
+        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TConnect>
     ): Promise<TConnect>;
     runExclusive<TResult>(
         key: string,
-        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TResult>,
+        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TResult>
     ): Promise<TResult>;
     close(
         effect: (context: BlackBoxRallarLifecycleCloseContext<TConfig>) => Promise<TClose>,
-        pending?: readonly Promise<unknown>[],
+        pending?: readonly Promise<unknown>[]
     ): Promise<TClose>;
 }>;
 
@@ -52,7 +52,7 @@ type ConnectInFlight = Readonly<{
 }>;
 
 export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConnect, TClose>(
-    options: CreateBlackBoxRallarLifecycleControllerOptions<TConfig>,
+    options: CreateBlackBoxRallarLifecycleControllerOptions<TConfig>
 ): BlackBoxRallarLifecycleController<TConfig, TSession, TConnect, TClose> {
     let generation = 0;
     let authenticationInFlight: AuthenticationInFlight<TConfig, TSession> | undefined;
@@ -71,7 +71,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
 
     const runAuthentication = (
         config: TConfig,
-        effect: (signal: AbortSignal) => Promise<TSession>,
+        effect: (signal: AbortSignal) => Promise<TSession>
     ): Promise<TSession> => {
         if (closeInFlight || faulted) {
             return Promise.reject(options.authenticationClosedError());
@@ -83,13 +83,13 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
             if (active.key === key) {
                 authenticationInFlight = {
                     ...active,
-                    config: options.mergeAuthenticationConfig(active.config, config),
+                    config: options.mergeAuthenticationConfig(active.config, config)
                 };
                 return active.promise;
             }
             return active.promise.then(
                 () => runAuthentication(config, effect),
-                () => runAuthentication(config, effect),
+                () => runAuthentication(config, effect)
             );
         }
 
@@ -97,7 +97,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
         if (activeConnection) {
             return activeConnection.promise.then(
                 () => runAuthentication(config, effect),
-                () => runAuthentication(config, effect),
+                () => runAuthentication(config, effect)
             );
         }
 
@@ -115,7 +115,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
             config,
             controller,
             generation: operationGeneration,
-            promise,
+            promise
         };
         void promise
             .finally(() => {
@@ -129,7 +129,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
 
     const runExclusive = <TResult>(
         key: string,
-        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TResult>,
+        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TResult>
     ): Promise<TResult> => {
         if (closeInFlight || faulted) {
             return Promise.reject(options.connectionClosedError());
@@ -142,20 +142,20 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
             }
             return active.promise.then(
                 () => runExclusive(key, effect),
-                () => runExclusive(key, effect),
+                () => runExclusive(key, effect)
             );
         }
 
         const operationGeneration = generation;
         const context: BlackBoxRallarLifecycleOperationContext = {
             generation: operationGeneration,
-            assertCurrent: () => assertConnectionCurrent(operationGeneration),
+            assertCurrent: () => assertConnectionCurrent(operationGeneration)
         };
         const promise = effect(context);
         connectInFlight = {
             key,
             generation: operationGeneration,
-            promise,
+            promise
         };
         void promise
             .finally(() => {
@@ -169,12 +169,12 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
 
     const runConnect = (
         key: string,
-        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TConnect>,
+        effect: (context: BlackBoxRallarLifecycleOperationContext) => Promise<TConnect>
     ): Promise<TConnect> => runExclusive(key, effect);
 
     const close = (
         effect: (context: BlackBoxRallarLifecycleCloseContext<TConfig>) => Promise<TClose>,
-        pending: readonly Promise<unknown>[] = [],
+        pending: readonly Promise<unknown>[] = []
     ): Promise<TClose> => {
         if (closeInFlight) {
             return closeInFlight;
@@ -189,7 +189,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
         activeAuthentication?.controller.abort(options.authenticationClosedError());
         const context: BlackBoxRallarLifecycleCloseContext<TConfig> = {
             authenticationConfig: activeAuthentication?.config,
-            generation,
+            generation
         };
 
         let closing!: Promise<TClose>;
@@ -198,15 +198,17 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
                 await Promise.allSettled([
                     ...(activeAuthentication ? [activeAuthentication.promise] : []),
                     ...(activeConnect ? [activeConnect.promise] : []),
-                    ...pending,
+                    ...pending
                 ]);
                 const result = await effect(context);
                 faulted = false;
                 return result;
-            } catch (error) {
+            }
+            catch (error) {
                 faulted = true;
                 throw error;
-            } finally {
+            }
+            finally {
                 if (closeInFlight === closing) {
                     closeInFlight = undefined;
                 }
@@ -219,19 +221,20 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
     return {
         generation: () => generation,
         operationSignal: () => operationController.signal,
-        isCurrent: candidate => candidate === generation && !closeInFlight && !faulted,
+        isCurrent: (candidate) => candidate === generation && !closeInFlight && !faulted,
         isClosing: () => Boolean(closeInFlight),
         authenticationConfig: () => authenticationInFlight?.config,
         waitForAuthentication: async () => {
             try {
                 await authenticationInFlight?.promise;
-            } catch {
+            }
+            catch {
                 // Callers use this only as a serialization barrier.
             }
         },
         runAuthentication,
         runConnect,
         runExclusive,
-        close,
+        close
     };
 }

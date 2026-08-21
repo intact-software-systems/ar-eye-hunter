@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { observeRtt } from '@shared-graph/vivaldi-service.ts';
 import { clearAllNodes, getNodeById } from '@shared-graph/repository/vivaldi-repository.ts';
+import { observeRtt } from '@shared-graph/vivaldi-service.ts';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
 const TARGET_RTT_MS = 50;
@@ -17,7 +17,7 @@ function observePairDistance(samples: number): number {
             sessionIdTo: 'session-b',
             rttMs: TARGET_RTT_MS,
             createdAtEpochMs: 0,
-            version: 1,
+            version: 1
         });
     }
 
@@ -67,7 +67,7 @@ describe('observeRtt pair updates', () => {
     // ordering produces, which ranges from 0.9 to 12.4 after one observation.
     it.each([
         { samples: 1, expected: 11.71875 },
-        { samples: 2, expected: 20.819243499393782 },
+        { samples: 2, expected: 20.819243499393782 }
     ])('separates the pair by $expected after $samples', ({ samples, expected }) => {
         const distances = Array.from({ length: 8 }, () => observePairDistance(samples));
 

@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
 import path from 'node:path';
+import { defineConfig } from 'vite';
 
 export default defineConfig({
     plugins: [react()],
@@ -9,8 +9,8 @@ export default defineConfig({
         alias: {
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
             '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),
-            '@shared': path.resolve(__dirname, '../../packages/shared'),
-        },
+            '@shared': path.resolve(__dirname, '../../packages/shared')
+        }
     },
     server: {
         port: 5174,
@@ -19,13 +19,13 @@ export default defineConfig({
             '/api': {
                 target: 'http://localhost:8080',
                 changeOrigin: true,
-                ws: true,
-            },
-        },
+                ws: true
+            }
+        }
     },
     build: {
         outDir: 'dist',
         emptyOutDir: true,
-        target: 'es2023',
-    },
+        target: 'es2023'
+    }
 });

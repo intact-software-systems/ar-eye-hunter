@@ -1,16 +1,10 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import type { RallarPeopleState, RallarPerson } from '@shared-web/browser/rallar-people-facade.ts';
-import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
-import type {
-  RallarStatePort,
-  RallarStateRuntimePort,
-} from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { RallarStatePort, RallarStateRuntimePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
-import type {
-  RallarStateListener,
-  RallarUnsubscribe,
-} from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarStateListener, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { readActiveClientSessionIds } from '@shared/api/group-client-views.ts';
@@ -20,259 +14,252 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
 export interface CreateRallarStateStoreInput {
-  readonly runtime: RallarStateRuntimePort;
-  readonly roomStateStore: RallarRoomStateStorePort;
-  readonly readSession: () => AuthSession | undefined;
-  readonly readGroupSnapshots?: () => readonly GroupSnapshot[];
-  readonly findGroupSnapshotByRef?: (roomRef: GroupRef) => GroupSnapshot | undefined;
-  readonly findFirstGroupRefForSession?: (sessionId: string) => GroupRef | undefined;
-  readonly readClientSnapshots?: () => readonly ClientSnapshot[];
-  readonly findClientSnapshot?: (principalId: string) => ClientSnapshot | undefined;
+    readonly runtime: RallarStateRuntimePort;
+    readonly roomStateStore: RallarRoomStateStorePort;
+    readonly readSession: () => AuthSession | undefined;
+    readonly readGroupSnapshots?: () => readonly GroupSnapshot[];
+    readonly findGroupSnapshotByRef?: (roomRef: GroupRef) => GroupSnapshot | undefined;
+    readonly findFirstGroupRefForSession?: (sessionId: string) => GroupRef | undefined;
+    readonly readClientSnapshots?: () => readonly ClientSnapshot[];
+    readonly findClientSnapshot?: (principalId: string) => ClientSnapshot | undefined;
 }
 
 export function createRallarStateStore(input: CreateRallarStateStoreInput): RallarStatePort {
-  return new RallarStateStore(input);
+    return new RallarStateStore(input);
 }
 
 class RallarStateStore implements RallarStatePort {
-  readonly #peopleStateListeners = new Set<RallarStateListener<RallarPeopleState>>();
-  readonly #afterEmitListeners = new Set<() => void>();
-  readonly #input: CreateRallarStateStoreInput;
+    readonly #peopleStateListeners = new Set<RallarStateListener<RallarPeopleState>>();
+    readonly #afterEmitListeners = new Set<() => void>();
+    readonly #input: CreateRallarStateStoreInput;
 
-  constructor(input: CreateRallarStateStoreInput) {
-    this.#input = input;
-  }
-
-  attachCache(): void {
-    if (!this.#input.runtime.readStateCacheUnsubscribe()) {
-      this.#input.runtime.setStateCacheUnsubscribe(
-        stateCaches.onStateCacheChange(() => this.emit()),
-      );
+    constructor(input: CreateRallarStateStoreInput) {
+        this.#input = input;
     }
-  }
 
-  detachCache(): void {
-    this.#input.runtime.readStateCacheUnsubscribe()?.();
-    this.#input.runtime.setStateCacheUnsubscribe(undefined);
-  }
-
-  onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
-    return stateCaches.onStateCacheChange(listener);
-  }
-
-  async acceptSnapshots(
-    context: ApiMiddleware,
-    clients: readonly ClientSnapshot[],
-    groups: readonly GroupSnapshot[],
-    scope?: StateScope,
-  ): Promise<void> {
-    await stateCaches.hydrateStateCaches(
-      context.middleware.webRtcGroupManager,
-      toClientInfo(context.session),
-      clients,
-      groups,
-      { scope },
-    );
-    this.emit();
-  }
-
-  emit(): void {
-    const roomState = this.#input.roomStateStore.state();
-    const peopleState = this.peopleState();
-    this.#input.roomStateStore.emit(roomState);
-    for (const listener of this.#peopleStateListeners) {
-      notifyListener(listener, peopleState);
+    attachCache(): void {
+        if (!this.#input.runtime.readStateCacheUnsubscribe()) {
+            this.#input.runtime.setStateCacheUnsubscribe(
+                stateCaches.onStateCacheChange(() => this.emit())
+            );
+        }
     }
-    for (const listener of this.#afterEmitListeners) {
-      listener();
+
+    detachCache(): void {
+        this.#input.runtime.readStateCacheUnsubscribe()?.();
+        this.#input.runtime.setStateCacheUnsubscribe(undefined);
     }
-  }
 
-  onAfterEmit(listener: () => void): RallarUnsubscribe {
-    this.#afterEmitListeners.add(listener);
-    return () => this.#afterEmitListeners.delete(listener);
-  }
-
-  roomState = (): ReturnType<RallarRoomStateStorePort['state']> =>
-    this.#input.roomStateStore.state();
-
-  peopleState(): RallarPeopleState {
-    const clients = this.readClientSnapshots().sort((left, right) =>
-      toPersonName(left).localeCompare(toPersonName(right)),
-    );
-    return { people: clients.map(toPerson), clients };
-  }
-
-  person(principalId: string): RallarPerson | undefined {
-    const snapshot = this.findClientSnapshot(principalId);
-    return snapshot ? toPerson(snapshot) : undefined;
-  }
-
-  onRoomChange = (...args: Parameters<RallarRoomStateStorePort['onChange']>): RallarUnsubscribe =>
-    this.#input.roomStateStore.onChange(...args);
-
-  onPeopleChange(
-    listener: RallarStateListener<RallarPeopleState>,
-    options: Readonly<{ emitCurrent?: boolean }> = {},
-  ): RallarUnsubscribe {
-    this.#peopleStateListeners.add(listener);
-    if (options.emitCurrent ?? true) {
-      notifyListener(listener, this.peopleState());
+    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
+        return stateCaches.onStateCacheChange(listener);
     }
-    return () => this.#peopleStateListeners.delete(listener);
-  }
 
-  resolveCurrentRoomRef = (): GroupRef | undefined =>
-    this.#input.roomStateStore.resolveCurrentRoomRef();
-
-  readGroupSnapshots = (): GroupSnapshot[] => this.#input.roomStateStore.readGroupSnapshots();
-
-  findGroupSnapshot = (room: string | GroupRef | undefined): GroupSnapshot | undefined =>
-    this.#input.roomStateStore.findGroupSnapshot(room);
-
-  resolveRoomMinSnapshotVersion = (
-    room: string | GroupRef | undefined,
-    explicitMinSnapshotVersion?: number,
-  ): number | undefined =>
-    this.#input.roomStateStore.resolveRoomMinSnapshotVersion(room, explicitMinSnapshotVersion);
-
-  setCurrentRoom = (snapshot: GroupSnapshot): void =>
-    this.#input.roomStateStore.setCurrentRoom(snapshot);
-
-  clearCurrentRoomIfMatches = (room: string | GroupRef, clearCurrent: boolean): void =>
-    this.#input.roomStateStore.clearCurrentRoomIfMatches(room, clearCurrent);
-
-  toRoomId = (room: string | GroupRef | undefined): string | undefined =>
-    this.#input.roomStateStore.toRoomId(room);
-
-  resolveRoomRef = (room: string | GroupRef | undefined): GroupRef | undefined =>
-    this.#input.roomStateStore.resolveRoomRef(room);
-
-  resolveGroupRefFromRoomId = (roomId: string, scope?: StateScope): GroupRef | undefined =>
-    this.#input.roomStateStore.resolveGroupRefFromRoomId(roomId, scope);
-
-  readCachedGroupSnapshots(): readonly GroupSnapshot[] {
-    return this.#input.readGroupSnapshots
-      ? this.#input.readGroupSnapshots()
-      : readRallarCacheOrDefault(
-          () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
-          [],
+    async acceptSnapshots(
+        context: ApiMiddleware,
+        clients: readonly ClientSnapshot[],
+        groups: readonly GroupSnapshot[],
+        scope?: StateScope
+    ): Promise<void> {
+        await stateCaches.hydrateStateCaches(
+            context.middleware.webRtcGroupManager,
+            toClientInfo(context.session),
+            clients,
+            groups,
+            { scope }
         );
-  }
+        this.emit();
+    }
 
-  findCachedGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined {
-    return this.#input.findGroupSnapshotByRef
-      ? this.#input.findGroupSnapshotByRef(roomRef)
-      : readRallarCacheOrDefault(
-          () => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
-          undefined,
+    emit(): void {
+        const roomState = this.#input.roomStateStore.state();
+        const peopleState = this.peopleState();
+        this.#input.roomStateStore.emit(roomState);
+        for (const listener of this.#peopleStateListeners) {
+            notifyListener(listener, peopleState);
+        }
+        for (const listener of this.#afterEmitListeners) {
+            listener();
+        }
+    }
+
+    onAfterEmit(listener: () => void): RallarUnsubscribe {
+        this.#afterEmitListeners.add(listener);
+        return () => this.#afterEmitListeners.delete(listener);
+    }
+
+    roomState = (): ReturnType<RallarRoomStateStorePort['state']> => this.#input.roomStateStore.state();
+
+    peopleState(): RallarPeopleState {
+        const clients = this.readClientSnapshots().sort((left, right) =>
+            toPersonName(left).localeCompare(toPersonName(right))
         );
-  }
+        return { people: clients.map(toPerson), clients };
+    }
 
-  findFirstCachedGroupRefForSession(sessionId: string): GroupRef | undefined {
-    return this.#input.findFirstGroupRefForSession
-      ? this.#input.findFirstGroupRefForSession(sessionId)
-      : readRallarCacheOrDefault(
-          () =>
-            groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
-          undefined,
-        );
-  }
+    person(principalId: string): RallarPerson | undefined {
+        const snapshot = this.findClientSnapshot(principalId);
+        return snapshot ? toPerson(snapshot) : undefined;
+    }
 
-  readCachedClientSnapshots(): readonly ClientSnapshot[] {
-    return this.#input.readClientSnapshots
-      ? this.#input.readClientSnapshots()
-      : readRallarCacheOrDefault(
-          () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
-          [],
-        );
-  }
+    onRoomChange = (...args: Parameters<RallarRoomStateStorePort['onChange']>): RallarUnsubscribe =>
+        this.#input.roomStateStore.onChange(...args);
 
-  findCachedClientSnapshot(principalId: string): ClientSnapshot | undefined {
-    return this.#input.findClientSnapshot
-      ? this.#input.findClientSnapshot(principalId)
-      : readRallarCacheOrDefault(
-          () => clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId),
-          undefined,
-        );
-  }
+    onPeopleChange(
+        listener: RallarStateListener<RallarPeopleState>,
+        options: Readonly<{ emitCurrent?: boolean; }> = {}
+    ): RallarUnsubscribe {
+        this.#peopleStateListeners.add(listener);
+        if (options.emitCurrent ?? true) {
+            notifyListener(listener, this.peopleState());
+        }
+        return () => this.#peopleStateListeners.delete(listener);
+    }
 
-  private readClientSnapshots(): ClientSnapshot[] {
-    return [...this.readCachedClientSnapshots()].filter((snapshot) =>
-      this.isInDefaultScope(snapshot.principal),
-    );
-  }
+    resolveCurrentRoomRef = (): GroupRef | undefined => this.#input.roomStateStore.resolveCurrentRoomRef();
 
-  private findClientSnapshot(principalId: string): ClientSnapshot | undefined {
-    const snapshot = this.findCachedClientSnapshot(principalId);
-    return snapshot && this.isInDefaultScope(snapshot.principal) ? snapshot : undefined;
-  }
+    readGroupSnapshots = (): GroupSnapshot[] => this.#input.roomStateStore.readGroupSnapshots();
 
-  private isInDefaultScope(
-    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string },
-  ): boolean {
-    return isSameStateScopeValue(value, this.#input.runtime.readDefaultScope());
-  }
+    findGroupSnapshot = (room: string | GroupRef | undefined): GroupSnapshot | undefined =>
+        this.#input.roomStateStore.findGroupSnapshot(room);
+
+    resolveRoomMinSnapshotVersion = (
+        room: string | GroupRef | undefined,
+        explicitMinSnapshotVersion?: number
+    ): number | undefined => this.#input.roomStateStore.resolveRoomMinSnapshotVersion(room, explicitMinSnapshotVersion);
+
+    setCurrentRoom = (snapshot: GroupSnapshot): void => this.#input.roomStateStore.setCurrentRoom(snapshot);
+
+    clearCurrentRoomIfMatches = (room: string | GroupRef, clearCurrent: boolean): void =>
+        this.#input.roomStateStore.clearCurrentRoomIfMatches(room, clearCurrent);
+
+    toRoomId = (room: string | GroupRef | undefined): string | undefined => this.#input.roomStateStore.toRoomId(room);
+
+    resolveRoomRef = (room: string | GroupRef | undefined): GroupRef | undefined =>
+        this.#input.roomStateStore.resolveRoomRef(room);
+
+    resolveGroupRefFromRoomId = (roomId: string, scope?: StateScope): GroupRef | undefined =>
+        this.#input.roomStateStore.resolveGroupRefFromRoomId(roomId, scope);
+
+    readCachedGroupSnapshots(): readonly GroupSnapshot[] {
+        return this.#input.readGroupSnapshots
+            ? this.#input.readGroupSnapshots()
+            : readRallarCacheOrDefault(
+                () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+                []
+            );
+    }
+
+    findCachedGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined {
+        return this.#input.findGroupSnapshotByRef
+            ? this.#input.findGroupSnapshotByRef(roomRef)
+            : readRallarCacheOrDefault(
+                () => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
+                undefined
+            );
+    }
+
+    findFirstCachedGroupRefForSession(sessionId: string): GroupRef | undefined {
+        return this.#input.findFirstGroupRefForSession
+            ? this.#input.findFirstGroupRefForSession(sessionId)
+            : readRallarCacheOrDefault(
+                () => groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
+                undefined
+            );
+    }
+
+    readCachedClientSnapshots(): readonly ClientSnapshot[] {
+        return this.#input.readClientSnapshots
+            ? this.#input.readClientSnapshots()
+            : readRallarCacheOrDefault(
+                () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
+                []
+            );
+    }
+
+    findCachedClientSnapshot(principalId: string): ClientSnapshot | undefined {
+        return this.#input.findClientSnapshot
+            ? this.#input.findClientSnapshot(principalId)
+            : readRallarCacheOrDefault(
+                () => clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(principalId),
+                undefined
+            );
+    }
+
+    private readClientSnapshots(): ClientSnapshot[] {
+        return [...this.readCachedClientSnapshots()].filter((snapshot) => this.isInDefaultScope(snapshot.principal));
+    }
+
+    private findClientSnapshot(principalId: string): ClientSnapshot | undefined {
+        const snapshot = this.findCachedClientSnapshot(principalId);
+        return snapshot && this.isInDefaultScope(snapshot.principal) ? snapshot : undefined;
+    }
+
+    private isInDefaultScope(
+        value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; }
+    ): boolean {
+        return isSameStateScopeValue(value, this.#input.runtime.readDefaultScope());
+    }
 }
 
 function toClientInfo(session: AuthSession): ClientInfo {
-  return {
-    clientId: session.clientId,
-    sessionId: session.sessionId,
-    isOnline: true,
-  };
+    return {
+        clientId: session.clientId,
+        sessionId: session.sessionId,
+        isOnline: true
+    };
 }
 
 function toPerson(snapshot: ClientSnapshot): RallarPerson {
-  return {
-    principalId: snapshot.principal.principalId,
-    username: snapshot.principal.username,
-    displayName: snapshot.principal.displayName ?? undefined,
-    isOnline: snapshot.isOnline,
-    activeSessionCount: snapshot.activeSessionCount,
-    activeSessionIds: readActiveClientSessionIds(snapshot),
-    snapshot,
-  };
+    return {
+        principalId: snapshot.principal.principalId,
+        username: snapshot.principal.username,
+        displayName: snapshot.principal.displayName ?? undefined,
+        isOnline: snapshot.isOnline,
+        activeSessionCount: snapshot.activeSessionCount,
+        activeSessionIds: readActiveClientSessionIds(snapshot),
+        snapshot
+    };
 }
 
 function toPersonName(snapshot: ClientSnapshot): string {
-  return (
-    snapshot.principal.displayName ?? snapshot.principal.username ?? snapshot.principal.principalId
-  );
+    return (
+        snapshot.principal.displayName ?? snapshot.principal.username ?? snapshot.principal.principalId
+    );
 }
 
 function readRallarCacheOrDefault<T>(supplier: () => T, fallback: T): T {
-  try {
-    return supplier();
-  } catch (error) {
-    if (isUnconfiguredRallarCacheError(error)) {
-      return fallback;
+    try {
+        return supplier();
     }
-    throw error;
-  }
+    catch (error) {
+        if (isUnconfiguredRallarCacheError(error)) {
+            return fallback;
+        }
+        throw error;
+    }
 }
 
 function isUnconfiguredRallarCacheError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes('Repository not found: shared.repository.') ||
-    message.includes('snapshot repository is not configured')
-  );
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+        message.includes('Repository not found: shared.repository.') ||
+        message.includes('snapshot repository is not configured')
+    );
 }
 
 function isSameStateScopeValue(
-  value: Pick<StateScope, 'applicationId'> & { workspaceId?: string },
-  scope?: StateScope,
+    value: Pick<StateScope, 'applicationId'> & { workspaceId?: string; },
+    scope?: StateScope
 ): boolean {
-  if (!scope) {
-    return true;
-  }
-  return (
-    value.applicationId === scope.applicationId &&
-    normalizeStateWorkspaceId(value.workspaceId) === normalizeStateWorkspaceId(scope.workspaceId)
-  );
+    if (!scope) {
+        return true;
+    }
+    return (
+        value.applicationId === scope.applicationId &&
+        normalizeStateWorkspaceId(value.workspaceId) === normalizeStateWorkspaceId(scope.workspaceId)
+    );
 }
 
 function normalizeStateWorkspaceId(workspaceId?: string): string {
-  return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
+    return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
 }

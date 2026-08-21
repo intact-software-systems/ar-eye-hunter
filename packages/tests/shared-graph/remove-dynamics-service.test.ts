@@ -1,18 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
 import { runRemoveAlgorithm } from '@shared-graph/remove/remove-dynamics-service.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 const mockState = vi.hoisted(() => ({
     registry: {} as Record<string, ReturnType<typeof vi.fn>>,
     defaultRemoveAlgorithm: vi.fn(),
-    cleanupRemoveResult: vi.fn(),
+    cleanupRemoveResult: vi.fn()
 }));
 
 vi.mock('@shared-graph/remove/remove-dynamics-registry.ts', () => ({
     removeAlgorithmRegistry: mockState.registry,
     defaultRemoveAlgorithm: mockState.defaultRemoveAlgorithm,
-    cleanupRemoveResult: mockState.cleanupRemoveResult,
+    cleanupRemoveResult: mockState.cleanupRemoveResult
 }));
 
 describe('shared-graph remove dynamics service', () => {
@@ -28,26 +28,26 @@ describe('shared-graph remove dynamics service', () => {
         const initialGraph = createGraph(
             [
                 ['peer-a', VertexState.MEMBER, 4],
-                ['peer-b', VertexState.MEMBER, 4],
+                ['peer-b', VertexState.MEMBER, 4]
             ],
-            [['peer-a', 'peer-b', 1]],
+            [['peer-a', 'peer-b', 1]]
         );
         const resultGraph = createGraph(
             [['peer-a', VertexState.MEMBER, 4]],
-            [],
+            []
         );
         const cleanedGraph = createGraph(
             [['peer-a', VertexState.MEMBER, 4]],
-            [],
+            []
         );
 
         mockState.registry.REMOVE_MINIMUM_COST_EDGE = vi.fn(() => ({
             graph: resultGraph,
-            changed: true,
+            changed: true
         }));
         mockState.cleanupRemoveResult.mockReturnValue({
             graph: cleanedGraph,
-            changed: false,
+            changed: false
         });
 
         const result = runRemoveAlgorithm(
@@ -56,18 +56,18 @@ describe('shared-graph remove dynamics service', () => {
                 groupGraph: initialGraph,
                 actionVertexId: 'peer-b',
                 treeAlgo: 'REMOVE_MINIMUM_COST_EDGE',
-                steinerCandidates: new Set<string>(),
+                steinerCandidates: new Set<string>()
             },
             {},
-            {},
+            {}
         );
 
         expect(mockState.registry.REMOVE_MINIMUM_COST_EDGE).toHaveBeenCalledOnce();
         expect(mockState.cleanupRemoveResult).toHaveBeenCalledWith(
             expect.objectContaining({
                 actionVertexId: 'peer-b',
-                groupGraph: resultGraph,
-            }),
+                groupGraph: resultGraph
+            })
         );
         expect(result.graph).toBe(cleanedGraph);
         expect(result.usedFallback).toBe(false);
@@ -78,13 +78,13 @@ describe('shared-graph remove dynamics service', () => {
         const graph = createGraph(
             [
                 ['peer-a', VertexState.MEMBER, 4],
-                ['peer-b', VertexState.MEMBER, 4],
+                ['peer-b', VertexState.MEMBER, 4]
             ],
-            [['peer-a', 'peer-b', 1]],
+            [['peer-a', 'peer-b', 1]]
         );
         const fallbackGraph = createGraph(
             [['peer-a', VertexState.MEMBER, 4]],
-            [],
+            []
         );
 
         mockState.registry.REMOVE_SEARCH_MINIMUM_COST_EDGE = vi.fn(() => {
@@ -92,7 +92,7 @@ describe('shared-graph remove dynamics service', () => {
         });
         mockState.registry.REMOVE_TRY_REPLACE_MDDL_NAIVE = vi.fn(() => ({
             graph: fallbackGraph,
-            changed: true,
+            changed: true
         }));
 
         const result = runRemoveAlgorithm(
@@ -101,13 +101,13 @@ describe('shared-graph remove dynamics service', () => {
                 groupGraph: graph,
                 actionVertexId: 'peer-b',
                 treeAlgo: 'REMOVE_SEARCH_MINIMUM_COST_EDGE',
-                steinerCandidates: new Set<string>(),
+                steinerCandidates: new Set<string>()
             },
             {},
             {
                 cleanupUnusedSteiner: false,
-                fallbackAlgo: 'REMOVE_TRY_REPLACE_MDDL_NAIVE',
-            },
+                fallbackAlgo: 'REMOVE_TRY_REPLACE_MDDL_NAIVE'
+            }
         );
 
         expect(mockState.registry.REMOVE_SEARCH_MINIMUM_COST_EDGE).toHaveBeenCalledOnce();

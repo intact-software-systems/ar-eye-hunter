@@ -6,7 +6,7 @@ export function tuneSourceIssueKey(issue: TuneSourceIssue): string {
 
 export function tuneOmittedInventoryMessage(
     omittedKnobs: number,
-    omittedLimitations: number,
+    omittedLimitations: number
 ): string {
     return [
         omittedKnobs > 0
@@ -14,7 +14,7 @@ export function tuneOmittedInventoryMessage(
             : undefined,
         omittedLimitations > 0
             ? `${omittedLimitations} tuning ${plural(omittedLimitations, 'limitation')}`
-            : undefined,
+            : undefined
     ].filter((part): part is string => part !== undefined).join(' and ') +
         ' remain worker-windowed.';
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { analyzeOperationOwnsCurrentBoundary } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-operation-boundary.ts';
 import {
     beginAnalyzeWorkspaceOperation,
     clearAnalyzeWorkspaceArtifact,
@@ -7,10 +8,8 @@ import {
     createInitialAnalyzeWorkspaceState,
     failAnalyzeWorkspaceOperation,
     reconcileAnalyzeWorkspaceContext,
-    selectAnalyzeWorkspaceEvidence,
+    selectAnalyzeWorkspaceEvidence
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-state.ts';
-import { analyzeOperationOwnsCurrentBoundary } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-operation-boundary.ts';
 
 type TestArtifact = Readonly<{
     distributedRunId: string;
@@ -21,18 +20,18 @@ type TestArtifact = Readonly<{
 const contextA = createAnalyzeWorkspaceContext({
     baseUrl: 'https://control.test/root///',
     controlRunId: 'control-a',
-    distributedRunId: 'distributed-a',
+    distributedRunId: 'distributed-a'
 });
 const contextB = createAnalyzeWorkspaceContext({
     baseUrl: 'https://control.test/root',
     controlRunId: 'control-b',
-    distributedRunId: 'distributed-b',
+    distributedRunId: 'distributed-b'
 });
 
 function artifact(
     distributedRunId: string,
     label = distributedRunId,
-    controlRunId?: string,
+    controlRunId?: string
 ): TestArtifact {
     return { distributedRunId, label, ...(controlRunId ? { controlRunId } : {}) };
 }
@@ -43,70 +42,70 @@ describe('Recipe Console Analyze workspace state', () => {
         const authority = {
             action: 'load-control' as const,
             contextKey: contextA.key,
-            generation: 1,
+            generation: 1
         };
         expect(analyzeOperationOwnsCurrentBoundary({
             authority,
             operationExecution: execution,
             currentContextKey: contextA.key,
-            currentExecution: execution,
+            currentExecution: execution
         })).toBe(true);
         expect(analyzeOperationOwnsCurrentBoundary({
             authority,
             operationExecution: execution,
             currentContextKey: contextB.key,
-            currentExecution: execution,
+            currentExecution: execution
         })).toBe(false);
         expect(analyzeOperationOwnsCurrentBoundary({
             authority,
             operationExecution: execution,
             currentContextKey: contextA.key,
-            currentExecution: {},
+            currentExecution: {}
         })).toBe(false);
         expect(analyzeOperationOwnsCurrentBoundary({
             authority: { ...authority, action: 'import-local' },
-            currentContextKey: contextB.key,
+            currentContextKey: contextB.key
         })).toBe(true);
     });
 
     it('normalizes control context and completes a local import atomically', () => {
         const initial = reconcileAnalyzeWorkspaceContext(
             createInitialAnalyzeWorkspaceState<TestArtifact>(),
-            contextA,
+            contextA
         );
         const started = beginAnalyzeWorkspaceOperation(initial, {
             action: 'import-local',
-            contextKey: 'local-import',
+            contextKey: 'local-import'
         });
         const completed = completeAnalyzeWorkspaceOperation(
             started.state,
             started.authority,
             {
                 artifact: artifact('distributed-local'),
-                selectedEvidenceId: 'failure:first',
-            },
+                selectedEvidenceId: 'failure:first'
+            }
         );
 
         expect(contextA).toEqual({
             key: JSON.stringify({
                 baseUrl: 'https://control.test/root',
                 controlRunId: 'control-a',
-                distributedRunId: 'distributed-a',
+                distributedRunId: 'distributed-a'
             }),
             baseUrl: 'https://control.test/root',
             controlRunId: 'control-a',
-            distributedRunId: 'distributed-a',
+            distributedRunId: 'distributed-a'
         });
         expect(started.state).toMatchObject({
             activeOperation: started.authority,
-            operationGeneration: 1,
+            operationGeneration: 1
         });
         expect(completed).toMatchObject({
             artifact: artifact('distributed-local'),
             artifactStatus: 'ready',
             selectedEvidenceId: 'failure:first',
             activeOperation: undefined,
-            operationError: undefined,
+            operationError: undefined
         });
     });
 
@@ -115,17 +114,17 @@ describe('Recipe Console Analyze workspace state', () => {
             ...createInitialAnalyzeWorkspaceState<TestArtifact>(),
             artifact: artifact('distributed-good'),
             artifactStatus: 'ready' as const,
-            selectedEvidenceId: 'event:good',
+            selectedEvidenceId: 'event:good'
         };
         const started = beginAnalyzeWorkspaceOperation(initial, {
             action: 'import-local',
-            contextKey: 'local-import',
+            contextKey: 'local-import'
         });
         const error = new Error('events.jsonl line 4 is malformed.');
         const failed = failAnalyzeWorkspaceOperation(
             started.state,
             started.authority,
-            error,
+            error
         );
 
         expect(failed).toMatchObject({
@@ -133,7 +132,7 @@ describe('Recipe Console Analyze workspace state', () => {
             artifactStatus: 'error',
             selectedEvidenceId: 'event:good',
             activeOperation: undefined,
-            operationError: error,
+            operationError: error
         });
     });
 
@@ -141,30 +140,30 @@ describe('Recipe Console Analyze workspace state', () => {
         const previous = {
             ...reconcileAnalyzeWorkspaceContext(
                 createInitialAnalyzeWorkspaceState<TestArtifact>(),
-                contextA,
+                contextA
             ),
             artifact: artifact('distributed-local'),
-            artifactStatus: 'ready' as const,
+            artifactStatus: 'ready' as const
         };
         const started = beginAnalyzeWorkspaceOperation(previous, {
             action: 'load-control',
             contextKey: contextA.key,
-            expectedDistributedRunId: 'distributed-a',
+            expectedDistributedRunId: 'distributed-a'
         });
         const changed = reconcileAnalyzeWorkspaceContext(
             started.state,
-            contextB,
+            contextB
         );
         const late = completeAnalyzeWorkspaceOperation(
             changed,
             started.authority,
-            { artifact: artifact('distributed-a') },
+            { artifact: artifact('distributed-a') }
         );
 
         expect(changed.contextKey).toBe(contextB.key);
         expect(changed.activeOperation).toBeUndefined();
         expect(changed.operationGeneration).toBeGreaterThan(
-            started.authority.generation,
+            started.authority.generation
         );
         expect(changed.artifact).toEqual(artifact('distributed-local'));
         expect(changed.operationError).toMatchObject({ name: 'AbortError' });
@@ -174,24 +173,24 @@ describe('Recipe Console Analyze workspace state', () => {
     it('rejects an artifact response for another distributed run', () => {
         const initial = reconcileAnalyzeWorkspaceContext(
             createInitialAnalyzeWorkspaceState<TestArtifact>(),
-            contextA,
+            contextA
         );
         const started = beginAnalyzeWorkspaceOperation(initial, {
             action: 'load-control',
             contextKey: contextA.key,
-            expectedDistributedRunId: 'distributed-a',
+            expectedDistributedRunId: 'distributed-a'
         });
         const completed = completeAnalyzeWorkspaceOperation(
             started.state,
             started.authority,
-            { artifact: artifact('distributed-other') },
+            { artifact: artifact('distributed-other') }
         );
 
         expect(completed.artifact).toBeUndefined();
         expect(completed.artifactStatus).toBe('error');
         expect(completed.activeOperation).toBeUndefined();
         expect(completed.operationError).toMatchObject({
-            message: 'Artifact response belongs to distributed-other, not distributed-a.',
+            message: 'Artifact response belongs to distributed-other, not distributed-a.'
         });
     });
 
@@ -199,10 +198,10 @@ describe('Recipe Console Analyze workspace state', () => {
         const loaded = {
             ...reconcileAnalyzeWorkspaceContext(
                 createInitialAnalyzeWorkspaceState<TestArtifact>(),
-                contextA,
+                contextA
             ),
             artifact: artifact('distributed-a', 'Run A', 'control-a'),
-            artifactStatus: 'ready' as const,
+            artifactStatus: 'ready' as const
         };
 
         const changed = reconcileAnalyzeWorkspaceContext(loaded, contextB);
@@ -211,77 +210,77 @@ describe('Recipe Console Analyze workspace state', () => {
             artifact: loaded.artifact,
             artifactStatus: 'error',
             operationError: {
-                message: expect.stringMatching(/distributed-a.*distributed-b/),
-            },
+                message: expect.stringMatching(/distributed-a.*distributed-b/)
+            }
         });
 
         const returned = reconcileAnalyzeWorkspaceContext(changed, contextA);
         expect(returned).toMatchObject({
             artifact: loaded.artifact,
             artifactStatus: 'ready',
-            operationError: undefined,
+            operationError: undefined
         });
 
         const clearedSelection = reconcileAnalyzeWorkspaceContext(loaded, undefined);
         expect(clearedSelection.artifact).toBe(loaded.artifact);
         expect(clearedSelection.artifactStatus).toBe('error');
         expect(clearedSelection.operationError).toMatchObject({
-            message: expect.stringContaining('no distributed run is selected'),
+            message: expect.stringContaining('no distributed run is selected')
         });
     });
 
     it('rejects a matching distributed artifact owned by another control run', () => {
         const initial = reconcileAnalyzeWorkspaceContext(
             createInitialAnalyzeWorkspaceState<TestArtifact>(),
-            contextA,
+            contextA
         );
         const started = beginAnalyzeWorkspaceOperation(initial, {
             action: 'load-control',
             contextKey: contextA.key,
             expectedControlRunId: 'control-a',
-            expectedDistributedRunId: 'distributed-a',
+            expectedDistributedRunId: 'distributed-a'
         });
         const completed = completeAnalyzeWorkspaceOperation(
             started.state,
             started.authority,
-            { artifact: artifact('distributed-a', 'Wrong owner', 'control-b') },
+            { artifact: artifact('distributed-a', 'Wrong owner', 'control-b') }
         );
 
         expect(completed.artifact).toBeUndefined();
         expect(completed.artifactStatus).toBe('error');
         expect(completed.operationError).toMatchObject({
-            message: 'Artifact response belongs to control run control-b, not control-a.',
+            message: 'Artifact response belongs to control run control-b, not control-a.'
         });
     });
 
     it('promotes a digest-validated Control artifact independently of bounded display identity', () => {
         const initial = reconcileAnalyzeWorkspaceContext(
             createInitialAnalyzeWorkspaceState<TestArtifact>(),
-            contextA,
+            contextA
         );
         const started = beginAnalyzeWorkspaceOperation(initial, {
             action: 'load-control',
             contextKey: contextA.key,
             expectedControlRunId: contextA.controlRunId,
-            expectedDistributedRunId: contextA.distributedRunId,
+            expectedDistributedRunId: contextA.distributedRunId
         });
         const projected = artifact(
             'opaque-id:1800:0123456789abcdef0123456789abcdef',
             'Bounded display',
-            'opaque-id:1200:fedcba9876543210fedcba9876543210',
+            'opaque-id:1200:fedcba9876543210fedcba9876543210'
         );
 
         const completed = completeAnalyzeWorkspaceOperation(
             started.state,
             started.authority,
-            { artifact: projected, controlIdentityValidated: true },
+            { artifact: projected, controlIdentityValidated: true }
         );
         const reconciled = reconcileAnalyzeWorkspaceContext(completed, contextA);
 
         expect(completed).toMatchObject({
             artifact: projected,
             artifactStatus: 'ready',
-            artifactContextKey: contextA.key,
+            artifactContextKey: contextA.key
         });
         expect(reconciled).toBe(completed);
     });
@@ -290,17 +289,17 @@ describe('Recipe Console Analyze workspace state', () => {
         const initial = createInitialAnalyzeWorkspaceState<TestArtifact>();
         const first = beginAnalyzeWorkspaceOperation(initial, {
             action: 'import-local',
-            contextKey: 'local-import',
+            contextKey: 'local-import'
         }, 7);
         const cleared = clearAnalyzeWorkspaceArtifact(first.state);
         const second = beginAnalyzeWorkspaceOperation(cleared, {
             action: 'import-local',
-            contextKey: 'local-import',
+            contextKey: 'local-import'
         }, 2);
         const late = completeAnalyzeWorkspaceOperation(
             second.state,
             first.authority,
-            { artifact: artifact('late') },
+            { artifact: artifact('late') }
         );
 
         expect(first.authority.generation).toBe(7);
@@ -313,13 +312,15 @@ describe('Recipe Console Analyze workspace state', () => {
         const state = {
             ...createInitialAnalyzeWorkspaceState<TestArtifact>(),
             artifact: artifact('distributed-a'),
-            artifactStatus: 'ready' as const,
+            artifactStatus: 'ready' as const
         };
         const selected = selectAnalyzeWorkspaceEvidence(state, 'result:command-a');
 
         expect(selected.artifact).toBe(state.artifact);
         expect(selected.selectedEvidenceId).toBe('result:command-a');
-        expect(selectAnalyzeWorkspaceEvidence(selected, undefined)
-            .selectedEvidenceId).toBeUndefined();
+        expect(
+            selectAnalyzeWorkspaceEvidence(selected, undefined)
+                .selectedEvidenceId
+        ).toBeUndefined();
     });
 });

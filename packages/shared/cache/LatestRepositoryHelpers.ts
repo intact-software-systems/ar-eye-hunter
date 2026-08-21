@@ -1,37 +1,37 @@
 import { defaultRepositoryManager } from './defaultRepositoryManager.ts';
 import { LatestRepository, type LatestRepositoryOptions } from './LatestRepository.ts';
-import { ObservableLatestRepository, type ObservableLatestRepositoryOptions, } from './ObservableLatestRepository.ts';
+import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from './ObservableLatestRepository.ts';
 import type { RepositoryManager } from './RepositoryManager.ts';
-import { type DisposableRepository, RepositoryToken } from './RepositoryToken.ts';
+import { RepositoryToken, type DisposableRepository } from './RepositoryToken.ts';
 
 export function newLatestRepositoryToken<K, V>(
     id: string,
-    missingMessage: string,
+    missingMessage: string
 ): RepositoryToken<LatestRepository<K, V>> {
     return new RepositoryToken<LatestRepository<K, V>>(
         id,
         () => {
             throw new Error(missingMessage);
-        },
+        }
     );
 }
 
 export function newObservableLatestRepositoryToken<K, V>(
     id: string,
-    missingMessage: string,
+    missingMessage: string
 ): RepositoryToken<ObservableLatestRepository<K, V>> {
     return new RepositoryToken<ObservableLatestRepository<K, V>>(
         id,
         () => {
             throw new Error(missingMessage);
-        },
+        }
     );
 }
 
 export function configureLatestRepository<K, V>(
     token: RepositoryToken<LatestRepository<K, V>>,
     options: LatestRepositoryOptions<V>,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): LatestRepository<K, V> {
     const previous = manager.get(token) as DisposableRepository | undefined;
     const repository = new LatestRepository<K, V>(options);
@@ -43,7 +43,7 @@ export function configureLatestRepository<K, V>(
 export function configureObservableLatestRepository<K, V>(
     token: RepositoryToken<ObservableLatestRepository<K, V>>,
     options: ObservableLatestRepositoryOptions<K, V>,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): ObservableLatestRepository<K, V> {
     const previous = manager.get(token) as DisposableRepository | undefined;
     const repository = new ObservableLatestRepository<K, V>(options);
@@ -54,14 +54,14 @@ export function configureObservableLatestRepository<K, V>(
 
 export function requireLatestRepository<K, V>(
     token: RepositoryToken<LatestRepository<K, V>>,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): LatestRepository<K, V> {
     return manager.require(token);
 }
 
 export function requireObservableLatestRepository<K, V>(
     token: RepositoryToken<ObservableLatestRepository<K, V>>,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): ObservableLatestRepository<K, V> {
     return manager.require(token);
 }
@@ -69,7 +69,7 @@ export function requireObservableLatestRepository<K, V>(
 export function readLatestRepositoryValue<K, V>(
     token: RepositoryToken<LatestRepository<K, V>>,
     key: K,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): V | undefined {
     return requireLatestRepository(token, manager).read(key);
 }
@@ -77,28 +77,28 @@ export function readLatestRepositoryValue<K, V>(
 export function readObservableLatestRepositoryValue<K, V>(
     token: RepositoryToken<ObservableLatestRepository<K, V>>,
     key: K,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): V | undefined {
     return requireObservableLatestRepository(token, manager).read(key);
 }
 
 export function readAllLatestRepository<K, V>(
     token: RepositoryToken<LatestRepository<K, V>>,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): V[] {
     return requireLatestRepository(token, manager).readAllValues();
 }
 
 export function readAllObservableLatestRepository<K, V>(
     token: RepositoryToken<ObservableLatestRepository<K, V>>,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): V[] {
     return requireObservableLatestRepository(token, manager).readAllValues();
 }
 
 function disposePreviousRepository(
     repository: DisposableRepository | undefined,
-    id: string,
+    id: string
 ): void {
     const disposal = repository?.dispose?.();
     if (disposal) {

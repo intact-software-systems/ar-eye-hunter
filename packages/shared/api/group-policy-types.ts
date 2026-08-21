@@ -19,11 +19,10 @@ export const GROUP_POLICY_REASON_CODES = [
     'group-admission-closed',
     'group-admission-deadline-passed',
     'group-admission-capacity-reached',
-    'group-data-blocked-until-active',
+    'group-data-blocked-until-active'
 ] as const;
 
-export type GroupPolicyReasonCode =
-    typeof GROUP_POLICY_REASON_CODES[number];
+export type GroupPolicyReasonCode = typeof GROUP_POLICY_REASON_CODES[number];
 
 export type GroupPolicyDenied = Readonly<{
     allowed: false;
@@ -33,5 +32,5 @@ export type GroupPolicyDenied = Readonly<{
 }>;
 
 export type GroupPolicyResult =
-    | Readonly<{ allowed: true }>
+    | Readonly<{ allowed: true; }>
     | GroupPolicyDenied;

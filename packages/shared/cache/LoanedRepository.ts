@@ -1,9 +1,9 @@
-import { LoanedValue, LoanedValueOptions, LoanedValueValidityChecker, } from './LoanedValue.ts';
+import { LoanedValue, LoanedValueOptions, LoanedValueValidityChecker } from './LoanedValue.ts';
 import { PullKeyedValues } from './RepositoryInterfaces.ts';
 
 export type CachedRepositoryRefresh<K, V> = (
     key: K,
-    current: V | undefined,
+    current: V | undefined
 ) => V | Promise<V>;
 
 export interface CachedRepositoryOptions<V> {
@@ -19,7 +19,7 @@ export class LoanedRepository<K, V> implements PullKeyedValues<K, V> {
 
     public constructor(
         refresher: CachedRepositoryRefresh<K, V>,
-        options: CachedRepositoryOptions<V> = {},
+        options: CachedRepositoryOptions<V> = {}
     ) {
         this.refresher = refresher;
         this.options = options;
@@ -80,7 +80,7 @@ export class LoanedRepository<K, V> implements PullKeyedValues<K, V> {
 
     public async getWith(
         key: K,
-        refresher: CachedRepositoryRefresh<K, V>,
+        refresher: CachedRepositoryRefresh<K, V>
     ): Promise<V> {
         return this.getOrCreate(key).getWith((current) => refresher(key, current));
     }
@@ -91,7 +91,7 @@ export class LoanedRepository<K, V> implements PullKeyedValues<K, V> {
 
     public async refreshWith(
         key: K,
-        refresher: CachedRepositoryRefresh<K, V>,
+        refresher: CachedRepositoryRefresh<K, V>
     ): Promise<V> {
         return this.getOrCreate(key).refreshWith((current) => refresher(key, current));
     }
@@ -192,12 +192,12 @@ export class LoanedRepository<K, V> implements PullKeyedValues<K, V> {
         if (!entry) {
             const loanOptions: LoanedValueOptions<V> = {
                 ttlMs: this.options.ttlMs,
-                isValid: this.options.isValid,
+                isValid: this.options.isValid
             };
 
             entry = new LoanedValue<V>(
                 (current) => this.refresher(key, current),
-                loanOptions,
+                loanOptions
             );
 
             this.entries.set(key, entry);

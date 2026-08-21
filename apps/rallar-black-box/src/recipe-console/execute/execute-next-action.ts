@@ -1,9 +1,5 @@
-import type { RallarBlackBoxDistributedRunState } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
-import type {
-    ExecuteActionPolicy,
-    ExecuteConnectionTruth,
-} from './execute-action-policy.ts';
+import type { RallarBlackBoxDistributedRunState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ExecuteActionPolicy, ExecuteConnectionTruth } from './execute-action-policy.ts';
 
 export type ExecuteNextStep =
     | 'refresh-control'
@@ -39,7 +35,7 @@ export type ExecuteNextActionInput = Readonly<{
 }>;
 
 export function deriveExecuteNextAction(
-    input: ExecuteNextActionInput,
+    input: ExecuteNextActionInput
 ): ExecuteNextAction {
     if (!['live', 'partial'].includes(input.connection)) {
         return action(
@@ -47,7 +43,7 @@ export function deriveExecuteNextAction(
             'Refresh control data',
             input.policy.refresh.enabled,
             input.policy.refresh.reason,
-            input.targetCount,
+            input.targetCount
         );
     }
     if (input.runState === 'waiting-for-ack' || input.runState === 'waiting-for-barrier') {
@@ -58,12 +54,17 @@ export function deriveExecuteNextAction(
             `${ready} of ${expected} agents acknowledged staging`,
             false,
             'Acknowledgement advances automatically from current control polling.',
-            input.targetCount,
+            input.targetCount
         );
     }
     if (input.runState === 'ready') {
-        return action('review-start', 'Review and start', input.policy.start.enabled,
-            input.policy.start.reason, input.targetCount);
+        return action(
+            'review-start',
+            'Review and start',
+            input.policy.start.enabled,
+            input.policy.start.reason,
+            input.targetCount
+        );
     }
     if (input.runState === 'draft') {
         if (
@@ -76,11 +77,16 @@ export function deriveExecuteNextAction(
                 `Resolve ${input.targetCount} targets`,
                 true,
                 undefined,
-                input.targetCount,
+                input.targetCount
             );
         }
-        return action('stage', `Stage ${input.targetCount} ${agentLabel(input.targetCount)}`,
-            input.policy.stage.enabled, input.policy.stage.reason, input.targetCount);
+        return action(
+            'stage',
+            `Stage ${input.targetCount} ${agentLabel(input.targetCount)}`,
+            input.policy.stage.enabled,
+            input.policy.stage.reason,
+            input.targetCount
+        );
     }
     if (input.runState !== undefined) {
         return action('monitor', 'Monitor run', true, undefined, input.targetCount);
@@ -88,10 +94,10 @@ export function deriveExecuteNextAction(
     const cohortSelectionPending = input.launchedCohortSelectionPending === true;
     if (
         input.launchPreparationPending || input.launchedExpectedCount > 0 &&
-        (
-            input.launchedReadyCount < input.launchedExpectedCount ||
-            cohortSelectionPending
-        )
+            (
+                input.launchedReadyCount < input.launchedExpectedCount ||
+                cohortSelectionPending
+            )
     ) {
         return action(
             'registering',
@@ -102,7 +108,7 @@ export function deriveExecuteNextAction(
                 : cohortSelectionPending
                 ? 'The exact launched cohort is being selected as the target set.'
                 : 'Registration advances automatically from current control polling.',
-            input.targetCount,
+            input.targetCount
         );
     }
     if (input.targetableCount === 0) {
@@ -111,7 +117,7 @@ export function deriveExecuteNextAction(
             'Connect agents to continue.',
             false,
             input.policy.resolve.reason,
-            input.targetCount,
+            input.targetCount
         );
     }
     if (input.policy.create.enabled) {
@@ -123,11 +129,16 @@ export function deriveExecuteNextAction(
             'Create draft',
             false,
             input.policy.create.reason,
-            input.targetCount,
+            input.targetCount
         );
     }
-    return action('resolve', `Resolve ${input.targetCount} targets`,
-        input.policy.resolve.enabled, input.policy.resolve.reason, input.targetCount);
+    return action(
+        'resolve',
+        `Resolve ${input.targetCount} targets`,
+        input.policy.resolve.enabled,
+        input.policy.resolve.reason,
+        input.targetCount
+    );
 }
 
 function action(
@@ -135,7 +146,7 @@ function action(
     label: string,
     enabled: boolean,
     reason: string | undefined,
-    targetCount: number,
+    targetCount: number
 ): ExecuteNextAction {
     return reason
         ? { step, label, enabled, reason, targetCount }

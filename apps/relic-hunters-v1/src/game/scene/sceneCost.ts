@@ -8,7 +8,7 @@ export function selectActiveEffectRoomIds({
     selectedRoomId,
     objectiveTargetRoomId,
     focusRoomId,
-    maxRooms = MAX_ACTIVE_EFFECT_ROOMS,
+    maxRooms = MAX_ACTIVE_EFFECT_ROOMS
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -24,7 +24,9 @@ export function selectActiveEffectRoomIds({
     const roomById = new Map(snapshot.map.map((room) => [room.id, room]));
     const scored = new Map<string, number>();
     const add = (roomId: string | undefined, score: number) => {
-        if (!roomId || !roomById.has(roomId)) return;
+        if (!roomId || !roomById.has(roomId)) {
+            return;
+        }
         scored.set(roomId, Math.min(scored.get(roomId) ?? Number.POSITIVE_INFINITY, score));
     };
 
@@ -36,7 +38,9 @@ export function selectActiveEffectRoomIds({
     add(focusRoomId, 2);
 
     for (const player of snapshot.players) {
-        if (player.escaped || player.defeated) continue;
+        if (player.escaped || player.defeated) {
+            continue;
+        }
         add(player.roomId, player.playerId === localPlayerId ? 0 : 3);
     }
 
@@ -55,10 +59,14 @@ export function selectActiveEffectRoomIds({
     return [...scored.entries()]
         .sort(([roomA, scoreA], [roomB, scoreB]) => {
             const priority = scoreA - scoreB;
-            if (priority !== 0) return priority;
+            if (priority !== 0) {
+                return priority;
+            }
             const distance = roomDistance(roomById.get(roomA), origin) -
                 roomDistance(roomById.get(roomB), origin);
-            if (distance !== 0) return distance;
+            if (distance !== 0) {
+                return distance;
+            }
             return roomA.localeCompare(roomB);
         })
         .slice(0, maxRooms)
@@ -66,6 +74,8 @@ export function selectActiveEffectRoomIds({
 }
 
 function roomDistance(room: RelicRoom | undefined, origin: RelicRoom | undefined): number {
-    if (!room || !origin) return 0;
+    if (!room || !origin) {
+        return 0;
+    }
     return Math.abs(room.x - origin.x) + Math.abs(room.z - origin.z);
 }

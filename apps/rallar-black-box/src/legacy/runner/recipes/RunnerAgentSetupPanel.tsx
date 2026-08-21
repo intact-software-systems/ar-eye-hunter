@@ -20,7 +20,7 @@ export function RunnerAgentSetupPanel({
     onAgentCountChange,
     onRestoreSessionChange,
     onOpenAgents,
-    onCopyLinks,
+    onCopyLinks
 }: {
     runId: string;
     agentPrefix: string;
@@ -41,8 +41,7 @@ export function RunnerAgentSetupPanel({
     onOpenAgents(): void;
     onCopyLinks(): void;
 }) {
-    const canOpenAgents =
-        runId.trim().length > 0 &&
+    const canOpenAgents = runId.trim().length > 0 &&
         groupId.trim().length > 0 &&
         agentPrefix.trim().length > 0 &&
         agentIds.length > 0;
@@ -75,9 +74,7 @@ export function RunnerAgentSetupPanel({
                     <span>Agent Prefix</span>
                     <input
                         value={agentPrefix}
-                        onChange={(event) =>
-                            onAgentPrefixChange(event.target.value)
-                        }
+                        onChange={(event) => onAgentPrefixChange(event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -91,19 +88,16 @@ export function RunnerAgentSetupPanel({
                             onAgentCountChange(
                                 Math.min(
                                     6,
-                                    Math.max(1, Number(event.target.value) || 1),
-                                ),
-                            )
-                        }
+                                    Math.max(1, Number(event.target.value) || 1)
+                                )
+                            )}
                     />
                 </label>
                 <label className="toggle-field runner-agent-restore">
                     <input
                         type="checkbox"
                         checked={restoreSession}
-                        onChange={(event) =>
-                            onRestoreSessionChange(event.target.checked)
-                        }
+                        onChange={(event) => onRestoreSessionChange(event.target.checked)}
                     />
                     <span>Mint fresh per-tab sessions from current login</span>
                 </label>
@@ -112,11 +106,9 @@ export function RunnerAgentSetupPanel({
                 <button
                     type="button"
                     disabled={!canOpenAgents}
-                    title={
-                        canOpenAgents
-                            ? undefined
-                            : 'Set run ID, group, and agent prefix first.'
-                    }
+                    title={canOpenAgents
+                        ? undefined
+                        : 'Set run ID, group, and agent prefix first.'}
                     onClick={onOpenAgents}
                 >
                     Open agent tabs
@@ -154,42 +146,47 @@ export function RunnerAgentSetupPanel({
                         {authSession
                             ? `${authSession.username} fresh per-tab sessions`
                             : restoreSession
-                              ? 'fresh per-tab sessions requested'
-                              : 'agent signs in'}
+                            ? 'fresh per-tab sessions requested'
+                            : 'agent signs in'}
                     </dd>
                 </div>
             </dl>
-            {showConnectedAgents && activeAgents.length > 0 ? (
-                <div className="runner-agent-list" aria-label="Connected agents">
-                    {activeAgents.map((agent) => (
-                        <article
-                            className="runner-agent-row"
-                            key={agent.agentId}
-                        >
-                            <span>
-                                <strong>{agent.agentId}</strong>
-                                <small>
-                                    {agent.identity?.principalId ??
-                                        agent.identity?.sessionId ??
-                                        'no identity'}
-                                </small>
-                            </span>
-                            <span
-                                className={`pill ${agent.connected ? 'good' : 'bad'}`}
+            {showConnectedAgents && activeAgents.length > 0
+                ? (
+                    <div className="runner-agent-list" aria-label="Connected agents">
+                        {activeAgents.map((agent) => (
+                            <article
+                                className="runner-agent-row"
+                                key={agent.agentId}
                             >
-                                {agent.connected ? 'connected' : 'offline'}
-                            </span>
-                        </article>
-                    ))}
-                </div>
-            ) : showConnectedAgents ? (
-                <div className="empty-state">
-                    Open an agent tab with a one-time link, then Refresh.
-                </div>
-            ) : undefined}
+                                <span>
+                                    <strong>{agent.agentId}</strong>
+                                    <small>
+                                        {agent.identity?.principalId ??
+                                            agent.identity?.sessionId ??
+                                            'no identity'}
+                                    </small>
+                                </span>
+                                <span
+                                    className={`pill ${agent.connected ? 'good' : 'bad'}`}
+                                >
+                                    {agent.connected ? 'connected' : 'offline'}
+                                </span>
+                            </article>
+                        ))}
+                    </div>
+                )
+                : showConnectedAgents
+                ? (
+                    <div className="empty-state">
+                        Open an agent tab with a one-time link, then Refresh.
+                    </div>
+                )
+                : undefined}
             {showConnectedAgents && connectedAgents.length > activeAgents.length && (
                 <small className="runner-agent-offline-note">
-                    {connectedAgents.length - activeAgents.length} offline agent{connectedAgents.length - activeAgents.length === 1 ? '' : 's'} hidden
+                    {connectedAgents.length - activeAgents.length}{' '}
+                    offline agent{connectedAgents.length - activeAgents.length === 1 ? '' : 's'} hidden
                 </small>
             )}
             {launchMessage && (

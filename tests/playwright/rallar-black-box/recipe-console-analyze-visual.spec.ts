@@ -1,18 +1,7 @@
-import {
-    expect,
-    test,
-    type Locator,
-    type Page,
-    type TestInfo,
-} from '@playwright/test';
-import {
-    createAnalyzeLooseFiles,
-} from './recipe-console-analyze-artifacts.ts';
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { createAnalyzeLooseFiles } from './recipe-console-analyze-artifacts.ts';
 import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
-import {
-    ANALYZE_FAILURE_MESSAGE,
-    ANALYZE_ROUTE,
-} from './recipe-console-analyze-run-data.ts';
+import { ANALYZE_FAILURE_MESSAGE, ANALYZE_ROUTE } from './recipe-console-analyze-run-data.ts';
 
 const LEGACY_ROUTE = '/?provider=simulated&experience=legacy&tab=auth';
 const SECTION_ORDER = [
@@ -21,7 +10,7 @@ const SECTION_ORDER = [
     'quality',
     'performance',
     'search',
-    'markdown',
+    'markdown'
 ] as const;
 
 async function importArtifact(page: Page): Promise<void> {
@@ -32,7 +21,7 @@ async function importArtifact(page: Page): Promise<void> {
 }
 
 async function navigateInApp(page: Page, href: string): Promise<void> {
-    await page.evaluate(nextHref => {
+    await page.evaluate((nextHref) => {
         history.pushState({}, '', nextHref);
         dispatchEvent(new PopStateEvent('popstate'));
     }, href);
@@ -42,14 +31,15 @@ async function expectResponsiveArtifact(page: Page): Promise<void> {
     const workspace = page.locator('[data-analyze-workspace]');
     const sections = workspace.locator('[data-analyze-section]');
     await expect(sections).toHaveCount(SECTION_ORDER.length);
-    expect(await sections.evaluateAll(nodes => nodes.map(node =>
-        node.getAttribute('data-analyze-section')
-    ))).toEqual(SECTION_ORDER);
+    expect(await sections.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-analyze-section'))))
+        .toEqual(SECTION_ORDER);
 
-    expect(await page.evaluate(() => ({
-        body: document.body.scrollWidth - window.innerWidth,
-        root: document.documentElement.scrollWidth - window.innerWidth,
-    }))).toEqual({ body: 0, root: 0 });
+    expect(
+        await page.evaluate(() => ({
+            body: document.body.scrollWidth - window.innerWidth,
+            root: document.documentElement.scrollWidth - window.innerWidth
+        }))
+    ).toEqual({ body: 0, root: 0 });
 
     const verdict = workspace.locator('[data-analyze-section="verdict"]');
     const failure = verdict.locator('[data-first-actionable-failure]');
@@ -59,27 +49,31 @@ async function expectResponsiveArtifact(page: Page): Promise<void> {
     await expect(failure).toBeInViewport({ ratio: .99 });
 
     const undersized = await workspace.locator(
-        'button, input:not([type="file"]), select, summary, label[for]',
-    ).evaluateAll(elements => elements.flatMap(element => {
-        const node = element as HTMLElement;
-        const style = getComputedStyle(node);
-        if (style.display === 'none' || style.visibility === 'hidden') return [];
-        const bounds = node.getBoundingClientRect();
-        return bounds.width + .5 < 44 || bounds.height + .5 < 44
-            ? [{
-                label: node.getAttribute('aria-label') ?? node.textContent?.trim(),
-                width: bounds.width,
-                height: bounds.height,
-            }]
-            : [];
-    }));
+        'button, input:not([type="file"]), select, summary, label[for]'
+    ).evaluateAll((elements) =>
+        elements.flatMap((element) => {
+            const node = element as HTMLElement;
+            const style = getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden') {
+                return [];
+            }
+            const bounds = node.getBoundingClientRect();
+            return bounds.width + .5 < 44 || bounds.height + .5 < 44
+                ? [{
+                    label: node.getAttribute('aria-label') ?? node.textContent?.trim(),
+                    width: bounds.width,
+                    height: bounds.height
+                }]
+                : [];
+        })
+    );
     expect(undersized).toEqual([]);
 }
 
 async function attachViewportScreenshot(
     page: Page,
     testInfo: TestInfo,
-    name: string,
+    name: string
 ): Promise<void> {
     const path = testInfo.outputPath(`${name}.png`);
     await page.screenshot({ path });
@@ -93,25 +87,28 @@ async function captureAnalyzeStyles(page: Page) {
         dropzone: '[data-analyze-dropzone]',
         verdict: '[data-analyze-section="verdict"]',
         action: '[data-first-actionable-failure] button',
-        evidence: '[data-evidence-result]',
+        evidence: '[data-evidence-result]'
     } as const;
-    return page.evaluate(entries => Object.fromEntries(
-        Object.entries(entries).map(([name, selector]) => {
-            const node = document.querySelector(selector);
-            if (!(node instanceof HTMLElement)) throw new Error(`Missing ${selector}`);
-            const style = getComputedStyle(node);
-            return [name, {
-                backgroundColor: style.backgroundColor,
-                borderLeftColor: style.borderLeftColor,
-                borderRadius: style.borderRadius,
-                color: style.color,
-                display: style.display,
-                fontSize: style.fontSize,
-                minHeight: style.minHeight,
-                padding: style.padding,
-            }];
-        }),
-    ), selectors);
+    return page.evaluate((entries) =>
+        Object.fromEntries(
+            Object.entries(entries).map(([name, selector]) => {
+                const node = document.querySelector(selector);
+                if (!(node instanceof HTMLElement)) {
+                    throw new Error(`Missing ${selector}`);
+                }
+                const style = getComputedStyle(node);
+                return [name, {
+                    backgroundColor: style.backgroundColor,
+                    borderLeftColor: style.borderLeftColor,
+                    borderRadius: style.borderRadius,
+                    color: style.color,
+                    display: style.display,
+                    fontSize: style.fontSize,
+                    minHeight: style.minHeight,
+                    padding: style.padding
+                }];
+            })
+        ), selectors);
 }
 
 async function expectAnalyzeOnly(page: Page): Promise<void> {
@@ -121,13 +118,15 @@ async function expectAnalyzeOnly(page: Page): Promise<void> {
 
 test('keeps imported Analyze evidence usable at tablet and portrait sizes', async ({
     context,
-    page,
+    page
 }, testInfo) => {
     await installRecipeConsoleAnalyzeFixture(context);
-    for (const contract of [
-        { name: 'analyze-tablet-900x900', width: 900, height: 900 },
-        { name: 'analyze-portrait-430x932', width: 430, height: 932 },
-    ] as const) {
+    for (
+        const contract of [
+            { name: 'analyze-tablet-900x900', width: 900, height: 900 },
+            { name: 'analyze-portrait-430x932', width: 430, height: 932 }
+        ] as const
+    ) {
         await page.setViewportSize(contract);
         await page.goto(ANALYZE_ROUTE);
         await importArtifact(page);
@@ -148,16 +147,14 @@ test('keeps imported Analyze evidence usable at tablet and portrait sizes', asyn
             await page.keyboard.press('Escape');
             await expect(inspector).toHaveCount(0);
             await expect(inspect).toBeFocused();
-        } else {
+        }
+        else {
             await attachViewportScreenshot(page, testInfo, contract.name);
         }
     }
 });
 
-test('suppresses Analyze motion when reduced motion is requested', async ({
-    context,
-    page,
-}) => {
+test('suppresses Analyze motion when reduced motion is requested', async ({ context, page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 430, height: 932 });
     await installRecipeConsoleAnalyzeFixture(context);
@@ -167,31 +164,35 @@ test('suppresses Analyze motion when reduced motion is requested', async ({
         .getByRole('button', { name: 'Inspect' }).click();
     await expect(page.getByRole('dialog', { name: 'Inspector' })).toBeVisible();
 
-    expect(await page.evaluate(() => matchMedia(
-        '(prefers-reduced-motion: reduce)',
-    ).matches)).toBe(true);
+    expect(
+        await page.evaluate(() =>
+            matchMedia(
+                '(prefers-reduced-motion: reduce)'
+            ).matches
+        )
+    ).toBe(true);
     const animated = await page.locator(
-        '[data-analyze-workspace] *, [data-inspector-host]',
-    ).evaluateAll(elements => elements.flatMap(element => {
-        const style = getComputedStyle(element);
-        const hasDuration = (value: string) => value.split(',')
-            .some(part => Number.parseFloat(part) > 0);
-        return hasDuration(style.transitionDuration) ||
-            hasDuration(style.animationDuration)
-            ? [{
-                element: element.tagName,
-                transition: style.transitionDuration,
-                animation: style.animationDuration,
-            }]
-            : [];
-    }));
+        '[data-analyze-workspace] *, [data-inspector-host]'
+    ).evaluateAll((elements) =>
+        elements.flatMap((element) => {
+            const style = getComputedStyle(element);
+            const hasDuration = (value: string) =>
+                value.split(',')
+                    .some((part) => Number.parseFloat(part) > 0);
+            return hasDuration(style.transitionDuration) ||
+                    hasDuration(style.animationDuration)
+                ? [{
+                    element: element.tagName,
+                    transition: style.transitionDuration,
+                    animation: style.animationDuration
+                }]
+                : [];
+        })
+    );
     expect(animated).toEqual([]);
 });
 
-test('isolates Analyze styles across both legacy load orders', async ({
-    context,
-    page,
-}) => {
+test('isolates Analyze styles across both legacy load orders', async ({ context, page }) => {
     await page.setViewportSize({ width: 900, height: 900 });
     await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);

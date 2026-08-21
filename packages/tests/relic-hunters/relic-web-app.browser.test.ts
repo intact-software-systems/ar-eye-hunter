@@ -1,21 +1,21 @@
 // @vitest-environment happy-dom
 
-import { act, createElement, type ReactNode } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicGameState,
-    type RelicPublicSnapshot,
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import { clearSession, writeSession } from '@shared/api/auth.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarWsSendInput } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { clearSession, writeSession } from '@shared/api/auth.ts';
+import { act, createElement, type ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rallarMock = vi.hoisted(() => ({
     session: undefined as AuthSession | undefined,
@@ -41,8 +41,8 @@ const rallarMock = vi.hoisted(() => ({
     wsSend: vi.fn(async (input: RallarWsSendInput<Record<string, unknown>>) => ({
         transport: 'ws',
         status: 'queued',
-        entries: [],
-    })),
+        entries: []
+    }))
 }));
 
 const soundMock = vi.hoisted(() => ({
@@ -51,30 +51,33 @@ const soundMock = vi.hoisted(() => ({
     isAmbientSoundPlaying: vi.fn(() => false),
     playActionSound: vi.fn(),
     playRelicEventSound: vi.fn(),
-    playUiSound: vi.fn(),
+    playUiSound: vi.fn()
 }));
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: {
         auth: {
             restore: () => rallarMock.session,
-            onChange: vi.fn((listener: (state: {
-                authenticated: boolean;
-                reason: 'current';
-                session?: AuthSession;
-            }) => void, options?: { emitCurrent?: boolean }) => {
+            onChange: vi.fn((
+                listener: (state: {
+                    authenticated: boolean;
+                    reason: 'current';
+                    session?: AuthSession;
+                }) => void,
+                options?: { emitCurrent?: boolean; }
+            ) => {
                 if (options?.emitCurrent ?? true) {
                     listener({
                         authenticated: rallarMock.session !== undefined,
                         reason: 'current',
-                        session: rallarMock.session,
+                        session: rallarMock.session
                     });
                 }
                 return () => undefined;
             }),
             login: vi.fn(),
             registerAndLogin: vi.fn(),
-            logout: vi.fn(),
+            logout: vi.fn()
         },
         session: () => rallarMock.session,
         connect: async () => {
@@ -85,14 +88,14 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             return {
                 session: rallarMock.session,
                 connected: !!rallarMock.session,
-                roomState: rallarMock.roomState,
+                roomState: rallarMock.roomState
             };
         },
         subscriptions: () => {
             const scope = {
                 add: () => scope,
                 unsubscribe: () => undefined,
-                size: () => 0,
+                size: () => 0
             };
             return scope;
         },
@@ -104,22 +107,22 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             },
             onChange: () => () => undefined,
             create: vi.fn(),
-            join: vi.fn(),
+            join: vi.fn()
         },
         rtc: {
             onStatus: () => () => undefined,
-            readyPeerIds: () => [],
+            readyPeerIds: () => []
         },
         messages: {
             ws: {
                 onMessage: (
-                    selector: { topicId?: string } | string,
+                    selector: { topicId?: string; } | string,
                     handler: (message: {
                         payload: unknown;
                         senderId: string;
                         roomId?: string;
                         receivedAtEpochMs: number;
-                    }) => void,
+                    }) => void
                 ) => {
                     const topicId = typeof selector === 'string' ? selector : selector.topicId;
                     if (topicId === 'room.relic.ai.planning') {
@@ -136,22 +139,22 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
                         rallarMock.wsMessageHandler = undefined;
                     };
                 },
-                send: rallarMock.wsSend,
+                send: rallarMock.wsSend
             },
             rtc: {
                 onMessage: () => () => undefined,
-                send: vi.fn(async () => ({ status: 'no-route' })),
-            },
+                send: vi.fn(async () => ({ status: 'no-route' }))
+            }
         },
         data: {
             open: vi.fn(async () => ({
-                set: vi.fn(async () => undefined),
-            })),
+                set: vi.fn(async () => undefined)
+            }))
         },
         realtime: {
-            sendJson: vi.fn(async () => []),
-        },
-    },
+            sendJson: vi.fn(async () => [])
+        }
+    }
 }));
 
 async function importReactForSceneMock() {
@@ -161,13 +164,13 @@ async function importReactForSceneMock() {
 function createMockRelicScene(React: typeof import('react')) {
     return ({
         children,
-        onPrimeAction,
+        onPrimeAction
     }: {
         children?: ReactNode;
         onPrimeAction?: (
             action:
-                | { kind: 'move'; targetRoomId: string }
-                | { kind: 'search' }
+                | { kind: 'move'; targetRoomId: string; }
+                | { kind: 'search'; }
         ) => void;
     }) =>
         React.createElement(
@@ -178,44 +181,45 @@ function createMockRelicScene(React: typeof import('react')) {
                 {
                     type: 'button',
                     'data-testid': 'scene-move-hallway',
-                    onClick: () => onPrimeAction?.({
-                        kind: 'move',
-                        targetRoomId: 'hallway',
-                    }),
+                    onClick: () =>
+                        onPrimeAction?.({
+                            kind: 'move',
+                            targetRoomId: 'hallway'
+                        })
                 },
-                'Move to Hallway',
+                'Move to Hallway'
             ),
             React.createElement(
                 'button',
                 {
                     type: 'button',
                     'data-testid': 'scene-search-clue',
-                    onClick: () => onPrimeAction?.({ kind: 'search' }),
+                    onClick: () => onPrimeAction?.({ kind: 'search' })
                 },
-                'Search clue',
+                'Search clue'
             ),
-            children,
+            children
         );
 }
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/RelicScene.tsx', async () => {
     const React = await importReactForSceneMock();
     return {
-        RelicScene: createMockRelicScene(React),
+        RelicScene: createMockRelicScene(React)
     };
 });
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/RelicSceneNext.tsx', async () => {
     const React = await importReactForSceneMock();
     return {
-        RelicSceneNext: createMockRelicScene(React),
+        RelicSceneNext: createMockRelicScene(React)
     };
 });
 
 vi.mock('../../../apps/relic-hunters-v1/src/game/OpeningRelicScene.tsx', async () => {
     const React = await vi.importActual<typeof import('react')>('react');
     return {
-        OpeningRelicScene: () => React.createElement('div', { 'data-testid': 'opening-relic-scene' }),
+        OpeningRelicScene: () => React.createElement('div', { 'data-testid': 'opening-relic-scene' })
     };
 });
 
@@ -228,7 +232,7 @@ describe('Relic Hunters browser app', () => {
     let container: HTMLDivElement;
 
     beforeEach(() => {
-        (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+        (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
         installMemoryLocalStorage();
         clearSession();
         vi.unstubAllGlobals();
@@ -300,11 +304,11 @@ describe('Relic Hunters browser app', () => {
                 payload: {
                     protocolVersion: RELIC_PROTOCOL_VERSION,
                     gameId: updated.gameId,
-                    snapshot: updated,
+                    snapshot: updated
                 },
                 senderId: 'bob-session',
                 roomId: 'room-1',
-                receivedAtEpochMs: Date.now(),
+                receivedAtEpochMs: Date.now()
             });
         });
 
@@ -389,8 +393,8 @@ describe('Relic Hunters browser app', () => {
             expect.objectContaining({
                 topicId: 'room.relic.ai.planning',
                 typeId: 'relic.ai.planning-proposal.v1',
-                roomId: 'room-1',
-            }),
+                roomId: 'room-1'
+            })
         );
     });
 
@@ -458,11 +462,11 @@ describe('Relic Hunters browser app', () => {
                 payload: {
                     ...sent.payload,
                     generationId: 'remote-generation-1',
-                    dedupeKey: 'remote-dedupe-1',
+                    dedupeKey: 'remote-dedupe-1'
                 },
                 senderId: 'bob-session',
                 roomId: 'room-1',
-                receivedAtEpochMs: Date.now(),
+                receivedAtEpochMs: Date.now()
             });
         });
 
@@ -474,7 +478,7 @@ describe('Relic Hunters browser app', () => {
     it('shows an explicit locked-plan waiting state after the local plan is submitted', async () => {
         const snapshot = {
             ...snapshotWithPlayers(2, 'planning'),
-            submittedPlayerIds: ['alice-session'],
+            submittedPlayerIds: ['alice-session']
         };
         writeSession(session());
         rallarMock.roomState = roomState(2);
@@ -497,7 +501,7 @@ describe('Relic Hunters browser app', () => {
         await renderApp();
         await waitFor(() =>
             fetchMock.mock.calls.length >= 2 &&
-            container.textContent?.includes('Plans revealed') === true,
+            container.textContent?.includes('Plans revealed') === true
         );
 
         expect(container.textContent).not.toContain('Resolve Timed-Out Round');
@@ -519,7 +523,7 @@ describe('Relic Hunters browser app', () => {
                     escaped: false,
                     defeated: false,
                     score: 0,
-                    relicIds: [],
+                    relicIds: []
                 },
                 {
                     playerId: 'bob-session',
@@ -530,7 +534,7 @@ describe('Relic Hunters browser app', () => {
                     escaped: false,
                     defeated: false,
                     score: 5,
-                    relicIds: ['sun-disk'],
+                    relicIds: ['sun-disk']
                 },
                 {
                     playerId: 'cara-session',
@@ -541,9 +545,9 @@ describe('Relic Hunters browser app', () => {
                     escaped: false,
                     defeated: false,
                     score: 1,
-                    relicIds: [],
-                },
-            ],
+                    relicIds: []
+                }
+            ]
         } satisfies RelicPublicSnapshot;
 
         const summary = derivePartyCoordination(snapshot, 'alice-session', 'steal');
@@ -557,7 +561,7 @@ describe('Relic Hunters browser app', () => {
             splitLabel: '2 hunters here / 1 elsewhere',
             readinessLabel: '1/3 plans locked',
             relicCarrierCount: 1,
-            actionHint: 'Steal is possible here: Bob carries 1 relic.',
+            actionHint: 'Steal is possible here: Bob carries 1 relic.'
         });
         expect(summary?.roomOccupants.map((player) => player.username)).toEqual(['Alice', 'Bob']);
     });
@@ -610,7 +614,7 @@ function session(): AuthSession {
         accessToken: 'token-1',
         username: 'Alice',
         sessionId: 'alice-session',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
 }
 
@@ -628,10 +632,10 @@ function roomState(onlineMemberCount: number): unknown {
                 onlineMemberCount,
                 isJoined: true,
                 isCurrent: true,
-                snapshot: {},
-            },
+                snapshot: {}
+            }
         ],
-        members: [],
+        members: []
     };
 }
 
@@ -648,20 +652,20 @@ function stubSnapshotFetchSequence(
         index += 1;
         return new Response(JSON.stringify(snapshot), {
             status: 200,
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json' }
         });
     });
 
     vi.stubGlobal(
         'fetch',
-        fetchMock,
+        fetchMock
     );
     return fetchMock;
 }
 
 function snapshotWithPlayers(
     playerCount: 1 | 2,
-    phase: 'lobby' | 'planning' = 'lobby',
+    phase: 'lobby' | 'planning' = 'lobby'
 ): RelicPublicSnapshot {
     let state: RelicGameState = createRelicGame('room-1', 'room-1', 1);
     state = applyRelicCommand(state, {
@@ -669,10 +673,10 @@ function snapshotWithPlayers(
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2,
+        now: () => 2
     }).state;
 
     if (playerCount === 2) {
@@ -681,10 +685,10 @@ function snapshotWithPlayers(
             kind: 'join-expedition',
             gameId: 'room-1',
             username: 'Bob',
-            characterId: 'nyra-vale',
+            characterId: 'nyra-vale'
         }, {
             senderId: 'bob-session',
-            now: () => 3,
+            now: () => 3
         }).state;
     }
 
@@ -693,10 +697,10 @@ function snapshotWithPlayers(
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'start-expedition',
             gameId: 'room-1',
-            username: 'Alice',
+            username: 'Alice'
         }, {
             senderId: 'alice-session',
-            now: () => 4,
+            now: () => 4
         }).state;
     }
 
@@ -709,34 +713,34 @@ function generatedSnapshotWithPlayers(): RelicPublicSnapshot {
         'room-1',
         createProceduralRelicExpeditionBlueprint({
             seed: 'browser-generated',
-            theme: 'Test Keep',
+            theme: 'Test Keep'
         }),
         1,
         {
             source: 'procedural',
             seed: 'browser-generated',
             theme: 'Test Keep',
-            blueprintId: 'browser-generated',
-        },
+            blueprintId: 'browser-generated'
+        }
     );
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2,
+        now: () => 2
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username: 'Alice',
+        username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => 3,
+        now: () => 3
     }).state;
 
     return toPublicRelicSnapshot(state);
@@ -754,51 +758,53 @@ function timedOutRoundSnapshots(): Readonly<{
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => roundStartedAt - 4,
+        now: () => roundStartedAt - 4
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Bob',
-        characterId: 'nyra-vale',
+        characterId: 'nyra-vale'
     }, {
         senderId: 'bob-session',
-        now: () => roundStartedAt - 3,
+        now: () => roundStartedAt - 3
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username: 'Alice',
+        username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => roundStartedAt,
+        now: () => roundStartedAt
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'submit-action',
         gameId: 'room-1',
         username: 'Alice',
-        action: { kind: 'move', targetRoomId: 'hallway' },
+        action: { kind: 'move', targetRoomId: 'hallway' }
     }, {
         senderId: 'alice-session',
-        now: () => roundStartedAt + 1,
+        now: () => roundStartedAt + 1
     }).state;
 
     const timedOut = toPublicRelicSnapshot(state);
-    const resolved = toPublicRelicSnapshot(applyRelicCommand(state, {
-        protocolVersion: RELIC_PROTOCOL_VERSION,
-        kind: 'force-resolve-round',
-        gameId: 'room-1',
-        username: 'Alice',
-    }, {
-        senderId: 'alice-session',
-        now: () => now,
-    }).state);
+    const resolved = toPublicRelicSnapshot(
+        applyRelicCommand(state, {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            kind: 'force-resolve-round',
+            gameId: 'room-1',
+            username: 'Alice'
+        }, {
+            senderId: 'alice-session',
+            now: () => now
+        }).state
+    );
 
     return { timedOut, resolved };
 }
@@ -818,20 +824,23 @@ async function waitFor(assertion: () => boolean, attempts = 20): Promise<void> {
 
 function installMemoryLocalStorage(): void {
     const values = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-        getItem: (key: string) => values.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-            values.set(key, value);
-        },
-        removeItem: (key: string) => {
-            values.delete(key);
-        },
-        clear: () => {
-            values.clear();
-        },
-        key: (index: number) => Array.from(values.keys())[index] ?? null,
-        get length() {
-            return values.size;
-        },
-    } satisfies Storage);
+    vi.stubGlobal(
+        'localStorage',
+        {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => {
+                values.set(key, value);
+            },
+            removeItem: (key: string) => {
+                values.delete(key);
+            },
+            clear: () => {
+                values.clear();
+            },
+            key: (index: number) => Array.from(values.keys())[index] ?? null,
+            get length() {
+                return values.size;
+            }
+        } satisfies Storage
+    );
 }

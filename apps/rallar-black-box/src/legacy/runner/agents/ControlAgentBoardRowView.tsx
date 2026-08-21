@@ -1,7 +1,4 @@
-import type {
-    ControlAgentBoardRow,
-    ControlAgentRunParticipation,
-} from '../../../control-agent-board.ts';
+import type { ControlAgentBoardRow, ControlAgentRunParticipation } from '../../../control-agent-board.ts';
 import { distributedRecipeStateTone } from '../../../distributed-recipes.ts';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
 import { distributedProgressTone } from '../distributed/status-presentation.ts';
@@ -9,44 +6,44 @@ import { shortRunId } from '../shared/run-id-presentation.ts';
 import {
     controlAgentConnectionTone,
     controlAgentTargetTone,
-    controlAgentVisibleParticipations,
+    controlAgentVisibleParticipations
 } from './control-agent-board-presentation.ts';
 
 export function ControlAgentBoardRowView({
     row,
     selected,
     selectionDisabled,
-    onToggleAgent,
+    onToggleAgent
 }: {
     row: ControlAgentBoardRow;
     selected: boolean;
     selectionDisabled: boolean;
     onToggleAgent?(agentId: string): void;
 }) {
-    const identity =
-        row.identitySummary ??
+    const identity = row.identitySummary ??
         row.principalId ??
         row.username ??
         row.sessionId ??
         'no identity';
-    const scope =
-        `${row.applicationId ?? '-'}/${row.workspaceId ?? '-'} group ${row.groupId ?? '-'}`;
+    const scope = `${row.applicationId ?? '-'}/${row.workspaceId ?? '-'} group ${row.groupId ?? '-'}`;
     const browser = [
         row.browserLabel ?? row.browserName,
         row.browserVersion,
-        row.os,
+        row.os
     ].filter(Boolean).join(' ');
     const location = [
         row.region,
         row.provider,
         row.datacenter,
-        row.hostId,
+        row.hostId
     ].filter(Boolean).join(' / ');
     const visibleRuns = controlAgentVisibleParticipations(row);
 
     return (
         <article
-            className={`control-agent-board-row ${onToggleAgent ? 'selectable' : ''} ${selected ? 'selected' : ''} ${row.synthetic ? 'synthetic' : ''}`}
+            className={`control-agent-board-row ${onToggleAgent ? 'selectable' : ''} ${selected ? 'selected' : ''} ${
+                row.synthetic ? 'synthetic' : ''
+            }`}
         >
             {onToggleAgent && (
                 <input
@@ -66,8 +63,8 @@ export function ControlAgentBoardRowView({
                         {row.synthetic
                             ? 'missing'
                             : row.connected
-                              ? 'connected'
-                              : 'offline'}
+                            ? 'connected'
+                            : 'offline'}
                     </span>
                     <span
                         className={`pill ${controlAgentTargetTone(row)}`}
@@ -94,8 +91,7 @@ export function ControlAgentBoardRowView({
             </div>
             <div className="control-agent-board-counters">
                 <span>
-                    heartbeat{' '}
-                    {row.heartbeatAgeMs !== undefined
+                    heartbeat {row.heartbeatAgeMs !== undefined
                         ? formatDuration(row.heartbeatAgeMs)
                         : formatTime(row.lastHeartbeatAtEpochMs)}
                 </span>
@@ -108,20 +104,20 @@ export function ControlAgentBoardRowView({
             <div className="control-agent-board-runs">
                 {visibleRuns.map((participation) => (
                     <ControlAgentRunParticipationChip
-                        key={`${row.agentId}-${participation.distributedRunId}-${participation.selected ? 'selected' : 'active'}`}
+                        key={`${row.agentId}-${participation.distributedRunId}-${
+                            participation.selected ? 'selected' : 'active'
+                        }`}
                         participation={participation}
                     />
                 ))}
-                {visibleRuns.length === 0 && (
-                    <span className="pill muted">no active run</span>
-                )}
+                {visibleRuns.length === 0 && <span className="pill muted">no active run</span>}
             </div>
         </article>
     );
 }
 
 function ControlAgentRunParticipationChip({
-    participation,
+    participation
 }: {
     participation: ControlAgentRunParticipation;
 }) {
@@ -130,15 +126,14 @@ function ControlAgentRunParticipationChip({
             <span
                 className={`pill ${distributedRecipeStateTone(participation.state)}`}
             >
-                {participation.selected ? 'selected' : 'active'}{' '}
-                {participation.state}
+                {participation.selected ? 'selected' : 'active'} {participation.state}
             </span>
             <strong>{shortRunId(participation.distributedRunId)}</strong>
             <small>
                 {[
                     participation.role,
                     participation.commandPhases.join('+') || undefined,
-                    `${participation.commandCount} commands`,
+                    `${participation.commandCount} commands`
                 ].filter(Boolean).join(' - ')}
             </small>
             {(participation.readiness ||
@@ -169,8 +164,7 @@ function ControlAgentRunParticipationChip({
                 </div>
             )}
             <small>
-                {participation.completedCommandCount ?? 0} completed -{' '}
-                {participation.eventCount ?? 0} events
+                {participation.completedCommandCount ?? 0} completed - {participation.eventCount ?? 0} events
                 {participation.blockingFailures > 0
                     ? ` - ${participation.blockingFailures} blocking`
                     : ''}

@@ -1,37 +1,30 @@
-import type {
-    AuditStamp,
-    GroupMember,
-    GroupPresenceSession,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
-import type {
-    ClientInstance,
-    ClientSession,
-    ClientSnapshot,
-} from '@shared/api/client-types.ts';
+import type { ClientInstance, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 export function createAuditStampFixture(
     atEpochMs: number,
-    principalId: string,
+    principalId: string
 ): AuditStamp {
     return {
         atEpochMs,
         actor: { kind: 'principal', principalId },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }
 
-export function createActiveGroupMemberFixture(input: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    groupId: string;
-    principalId: string;
-    role: GroupMember['role'];
-    actorPrincipalId: string;
-}>): GroupMember {
+export function createActiveGroupMemberFixture(
+    input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        groupId: string;
+        principalId: string;
+        role: GroupMember['role'];
+        actorPrincipalId: string;
+    }>
+): GroupMember {
     return {
         applicationId: input.applicationId,
         workspaceId: input.workspaceId,
@@ -45,17 +38,19 @@ export function createActiveGroupMemberFixture(input: Readonly<{
         removed: null,
         banned: null,
         invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
+        invitationExpiresAtEpochMs: null
     };
 }
 
-export function createActiveGroupPresenceSessionFixture(input: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    groupId: string;
-    principalId: string;
-    sessionId: string;
-}>): GroupPresenceSession {
+export function createActiveGroupPresenceSessionFixture(
+    input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        groupId: string;
+        principalId: string;
+        sessionId: string;
+    }>
+): GroupPresenceSession {
     return {
         applicationId: input.applicationId,
         workspaceId: input.workspaceId,
@@ -69,16 +64,18 @@ export function createActiveGroupPresenceSessionFixture(input: Readonly<{
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 60_000,
         disconnectedAtEpochMs: null,
-        disconnectReason: null,
+        disconnectReason: null
     };
 }
 
-export function createGroupSnapshotFixture(input: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    groupId: string;
-    sessionIds: readonly string[];
-}>): GroupSnapshot {
+export function createGroupSnapshotFixture(
+    input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        groupId: string;
+        sessionIds: readonly string[];
+    }>
+): GroupSnapshot {
     const ownerPrincipalId = input.sessionIds.length === 0
         ? 'creator'
         : input.sessionIds[0];
@@ -89,7 +86,7 @@ export function createGroupSnapshotFixture(input: Readonly<{
         stateRevision: 1 + input.sessionIds.length,
         causalRevision: {
             groupRevision: 1,
-            presenceRevision: input.sessionIds.length,
+            presenceRevision: input.sessionIds.length
         },
         group: createTestGroup({
             applicationId: input.applicationId,
@@ -103,7 +100,7 @@ export function createGroupSnapshotFixture(input: Readonly<{
             rosterVersion: 1,
             presenceVersion: input.sessionIds.length,
             created: createAuditStampFixture(1, 'creator'),
-            updated: createAuditStampFixture(1, 'creator'),
+            updated: createAuditStampFixture(1, 'creator')
         }),
         members: memberPrincipalIds.map((principalId) =>
             createActiveGroupMemberFixture({
@@ -112,7 +109,7 @@ export function createGroupSnapshotFixture(input: Readonly<{
                 groupId: input.groupId,
                 principalId,
                 role: principalId === ownerPrincipalId ? 'owner' : 'member',
-                actorPrincipalId: 'creator',
+                actorPrincipalId: 'creator'
             })
         ),
         activeSessions: input.sessionIds.map((sessionId) =>
@@ -121,19 +118,21 @@ export function createGroupSnapshotFixture(input: Readonly<{
                 workspaceId: input.workspaceId,
                 groupId: input.groupId,
                 principalId: sessionId,
-                sessionId,
+                sessionId
             })
         ),
         memberCount: memberPrincipalIds.length,
-        onlineMemberCount: input.sessionIds.length,
+        onlineMemberCount: input.sessionIds.length
     };
 }
 
-export function createClientSnapshotFixture(input: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    principalId: string;
-}>): ClientSnapshot {
+export function createClientSnapshotFixture(
+    input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        principalId: string;
+    }>
+): ClientSnapshot {
     return {
         stateRevision: 1,
         principal: {
@@ -155,22 +154,24 @@ export function createClientSnapshotFixture(input: Readonly<{
             updated: createAuditStampFixture(1, input.principalId),
             disabled: null,
             deleted: null,
-            lastSeenAtEpochMs: 1,
+            lastSeenAtEpochMs: 1
         },
         instances: [],
         activeSessions: [],
         isOnline: false,
         activeSessionCount: 0,
-        lastSeenAtEpochMs: 1,
+        lastSeenAtEpochMs: 1
     };
 }
 
-export function createActiveClientInstanceFixture(input: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    principalId: string;
-    clientInstanceId: string;
-}>): ClientInstance {
+export function createActiveClientInstanceFixture(
+    input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        principalId: string;
+        clientInstanceId: string;
+    }>
+): ClientInstance {
     const audit = createAuditStampFixture(1, input.principalId);
     return {
         applicationId: input.applicationId,
@@ -185,17 +186,19 @@ export function createActiveClientInstanceFixture(input: Readonly<{
         capabilities: [],
         registered: audit,
         updated: audit,
-        revoked: null,
+        revoked: null
     };
 }
 
-export function createActiveClientSessionFixture(input: Readonly<{
-    applicationId: string;
-    workspaceId: string;
-    principalId: string;
-    clientInstanceId: string;
-    sessionId: string;
-}>): ClientSession {
+export function createActiveClientSessionFixture(
+    input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        principalId: string;
+        clientInstanceId: string;
+        sessionId: string;
+    }>
+): ClientSession {
     return {
         applicationId: input.applicationId,
         workspaceId: input.workspaceId,
@@ -213,6 +216,6 @@ export function createActiveClientSessionFixture(input: Readonly<{
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 60_000,
         disconnectedAtEpochMs: null,
-        disconnectReason: null,
+        disconnectReason: null
     };
 }

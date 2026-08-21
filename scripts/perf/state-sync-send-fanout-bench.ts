@@ -1,21 +1,21 @@
+import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ConnectionContext, EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
-import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 
 const CONNECTIONS = Number(
     Deno.args.find((arg) => arg.startsWith('--connections='))?.slice('--connections='.length) ??
-        '10000',
+        '10000'
 );
 const MEMBERS = Number(
     Deno.args.find((arg) => arg.startsWith('--members='))?.slice('--members='.length) ??
-        '100',
+        '100'
 );
 const RUNS = Number(
     Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
-        '5',
+        '5'
 );
 const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/state-sync-send-fanout.json';
@@ -23,32 +23,28 @@ const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.le
 const now = 1_700_000_000_000;
 const liveUntil = now + 60_000;
 async function main(): Promise<void> {
-    const clientSnapshots = Array.from({ length: CONNECTIONS }, (_, index) =>
-        createClientSnapshot(index)
-    );
+    const clientSnapshots = Array.from({ length: CONNECTIONS }, (_, index) => createClientSnapshot(index));
     const memberIds = new Set(
-        Array.from({ length: Math.min(MEMBERS, CONNECTIONS) }, (_, index) =>
-            `principal-${index}`
-        ),
+        Array.from({ length: Math.min(MEMBERS, CONNECTIONS) }, (_, index) => `principal-${index}`)
     );
     const server = new CountingWebSocketServer(
-        clientSnapshots.map((snapshot) => snapshot.activeSessions[0].sessionId),
+        clientSnapshots.map((snapshot) => snapshot.activeSessions[0].sessionId)
     );
     const groupSnapshot = createGroupSnapshot(memberIds);
     const message: ALMessage = {
         id: {
             msgId: 'message-1',
-            senderId: 'server-1',
+            senderId: 'server-1'
         },
         route: {
             path: 'event',
             contextId: groupSnapshot.group.groupId,
-            targetId: groupSnapshot.group.groupId,
+            targetId: groupSnapshot.group.groupId
         },
         payload: {
             typeId: AppTopics.groupStateSnapshot,
-            resource: JSON.stringify(groupSnapshot),
-        },
+            resource: JSON.stringify(groupSnapshot)
+        }
     };
 
     const results = [];
@@ -60,8 +56,8 @@ async function main(): Promise<void> {
             message,
             {
                 readClientSnapshots: () => clientSnapshots,
-                now: () => now,
-            },
+                now: () => now
+            }
         );
         const durationMs = performance.now() - start;
         results.push({
@@ -71,21 +67,27 @@ async function main(): Promise<void> {
             encodeCalls: server.encodeCalls,
             broadcastConnectionChecks: server.broadcastConnectionChecks,
             sendEncodedCalls: server.sendEncodedCalls,
-            socketSendCalls: server.socketSendCalls,
+            socketSendCalls: server.socketSendCalls
         });
     }
 
     await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
     await Deno.writeTextFile(
         OUT,
-        `${JSON.stringify({
-            benchmark: 'state-sync-send-fanout',
-            mode: 'direct-recipients',
-            connections: CONNECTIONS,
-            members: MEMBERS,
-            runs: RUNS,
-            results,
-        }, null, 2)}\n`,
+        `${
+            JSON.stringify(
+                {
+                    benchmark: 'state-sync-send-fanout',
+                    mode: 'direct-recipients',
+                    connections: CONNECTIONS,
+                    members: MEMBERS,
+                    runs: RUNS,
+                    results
+                },
+                null,
+                2
+            )
+        }\n`
     );
 }
 
@@ -106,7 +108,7 @@ function createClientSnapshot(index: number): ClientSnapshot {
             presenceVersion: 1,
             snapshotVersion: 1,
             created: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' },
+            updated: { atEpochMs: 1, byServiceId: 'perf' }
         },
         instances: [],
         activeSessions: [
@@ -122,11 +124,11 @@ function createClientSnapshot(index: number): ClientSnapshot {
                 authenticatedAtEpochMs: now,
                 connectedAtEpochMs: now,
                 lastHeartbeatAtEpochMs: now,
-                expiresAtEpochMs: liveUntil,
-            },
+                expiresAtEpochMs: liveUntil
+            }
         ],
         isOnline: true,
-        activeSessionCount: 1,
+        activeSessionCount: 1
     };
 }
 
@@ -146,7 +148,7 @@ function createGroupSnapshot(memberIds: Set<string>): GroupSnapshot {
             rosterVersion: 1,
             presenceVersion: 1,
             created: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' },
+            updated: { atEpochMs: 1, byServiceId: 'perf' }
         },
         members: [...memberIds].map((principalId) => ({
             applicationId: 'app-1',
@@ -156,7 +158,7 @@ function createGroupSnapshot(memberIds: Set<string>): GroupSnapshot {
             role: 'member',
             status: 'active',
             joined: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' },
+            updated: { atEpochMs: 1, byServiceId: 'perf' }
         })),
         activeSessions: [...memberIds].map((principalId) => ({
             applicationId: 'app-1',
@@ -166,10 +168,10 @@ function createGroupSnapshot(memberIds: Set<string>): GroupSnapshot {
             sessionId: `session-${principalId.slice('principal-'.length)}`,
             connectedAtEpochMs: now,
             lastHeartbeatAtEpochMs: now,
-            expiresAtEpochMs: liveUntil,
+            expiresAtEpochMs: liveUntil
         })),
         memberCount: memberIds.size,
-        onlineMemberCount: memberIds.size,
+        onlineMemberCount: memberIds.size
     };
 }
 
@@ -188,8 +190,8 @@ class CountingWebSocketServer {
                 socket: {
                     send: () => {
                         this.socketSendCalls += 1;
-                    },
-                },
+                    }
+                }
             } as unknown as ConnectionContext);
         }
     }
@@ -210,7 +212,7 @@ class CountingWebSocketServer {
 
     broadcast(
         data: unknown,
-        filter?: (ctx: ConnectionContext) => boolean,
+        filter?: (ctx: ConnectionContext) => boolean
     ): number {
         const encoded = this.encode(data);
         let sent = 0;

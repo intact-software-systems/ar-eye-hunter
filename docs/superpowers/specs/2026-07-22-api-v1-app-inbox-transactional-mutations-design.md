@@ -97,7 +97,7 @@ type MutatingService<Command, Read, Computed, Result> = Readonly<{
     validate(command: Command, read: Read, computed: Computed): void;
     write(
         transaction: PSqlTransactionSql,
-        computed: Computed,
+        computed: Computed
     ): Promise<Result>;
 }>;
 ```
@@ -145,7 +145,7 @@ Add one small shared-server PostgreSQL utility with behavior equivalent to:
 ```ts
 export async function withTransaction<T>(
     database: PSqlSql,
-    operation: (transaction: PSqlTransactionSql) => Promise<T>,
+    operation: (transaction: PSqlTransactionSql) => Promise<T>
 ): Promise<T> {
     return await database.begin(operation);
 }
@@ -291,19 +291,19 @@ The default policy is 20 total processing attempts, including the initial
 attempt:
 
 | Processing attempt | Delay before eligibility |
-| --- | ---: |
-| 1 | immediate |
-| 2 | 1 ms |
-| 3 | 2 ms |
-| 4 | 4 ms |
-| 5 | 8 ms |
-| 6 | 16 ms |
-| 7 | 1 s |
-| 8 | 2 s |
-| 9 | 4 s |
-| 10 | 8 s |
-| 11 | 16 s |
-| 12–20 | 30 s cap |
+| ------------------ | -----------------------: |
+| 1                  |                immediate |
+| 2                  |                     1 ms |
+| 3                  |                     2 ms |
+| 4                  |                     4 ms |
+| 5                  |                     8 ms |
+| 6                  |                    16 ms |
+| 7                  |                      1 s |
+| 8                  |                      2 s |
+| 9                  |                      4 s |
+| 10                 |                      8 s |
+| 11                 |                     16 s |
+| 12–20              |                 30 s cap |
 
 Apply configurable jitter of 20 percent by default. Inject time and jitter
 sources for deterministic tests. `next_ts` is the earliest eligible timestamp;
@@ -354,18 +354,18 @@ evidence shows the existing index is insufficient.
 
 ## Failure and Recovery Semantics
 
-| Failure point | Required result |
-| --- | --- |
-| Before mutation transaction | No domain or outbox change; reservation is retried or recovered by timeout |
-| Aggregate CAS conflict | Entire transaction rolls back; AppInbox schedules a full-command retry |
-| Dependent/event/receipt write fails | Aggregate guard and all writes roll back |
-| `APP_OUTBOX` or `WS_OUTBOX` insert fails | Domain mutation, event, receipt, result, and completion all roll back |
-| Result or completion write fails | Domain mutation and outbound entries roll back |
-| Commit succeeds, process crashes before wake | Queue polling discovers committed outbox rows |
-| WS has no current route | Durable WS entry reaches a no-current-recipient outcome; state refresh/reconnect converges |
-| Worker crashes while reserved | Reserved-timeout lane reclaims it |
-| Retry entry remains overdue | Best-effort fairness lane may reclaim it |
-| Attempt 20 fails retryably | Entry reaches the configured exhausted/failed state with diagnostics |
+| Failure point                                | Required result                                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Before mutation transaction                  | No domain or outbox change; reservation is retried or recovered by timeout                 |
+| Aggregate CAS conflict                       | Entire transaction rolls back; AppInbox schedules a full-command retry                     |
+| Dependent/event/receipt write fails          | Aggregate guard and all writes roll back                                                   |
+| `APP_OUTBOX` or `WS_OUTBOX` insert fails     | Domain mutation, event, receipt, result, and completion all roll back                      |
+| Result or completion write fails             | Domain mutation and outbound entries roll back                                             |
+| Commit succeeds, process crashes before wake | Queue polling discovers committed outbox rows                                              |
+| WS has no current route                      | Durable WS entry reaches a no-current-recipient outcome; state refresh/reconnect converges |
+| Worker crashes while reserved                | Reserved-timeout lane reclaims it                                                          |
+| Retry entry remains overdue                  | Best-effort fairness lane may reclaim it                                                   |
+| Attempt 20 fails retryably                   | Entry reaches the configured exhausted/failed state with diagnostics                       |
 
 ## Contracts and Mandatory Fields
 

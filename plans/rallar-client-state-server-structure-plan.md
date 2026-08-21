@@ -900,21 +900,21 @@ new public surface:
 
 ```ts
 type ClientStateMutationService = Pick<
-  ClientStateService,
-  'read' | 'compute' | 'validate' | 'write'
+    ClientStateService,
+    'read' | 'compute' | 'validate' | 'write'
 >;
 
 interface ClientStateInboxHandlerDependencies {
-  readonly mutationService: ClientStateMutationService;
-  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-  readonly expiryCandidates: Pick<ClientStateService, 'listExpiredSessionCandidates'>;
-  readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
-  readonly transactionWriter: AppInboxMutationTransactionWriter;
-  readonly serviceId: string;
+    readonly mutationService: ClientStateMutationService;
+    readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+    readonly expiryCandidates: Pick<ClientStateService, 'listExpiredSessionCandidates'>;
+    readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
+    readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly serviceId: string;
 }
 
 interface ClientStateInboxAfterCommitResult {
-  readonly committedSnapshots: readonly ClientSnapshot[];
+    readonly committedSnapshots: readonly ClientSnapshot[];
 }
 ```
 

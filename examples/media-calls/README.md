@@ -11,10 +11,11 @@ const unsubscribeInvites = rallar.calls.onInvite(async (invite) => {
     if (shouldAcceptCall(invite)) {
         const call = await invite.accept({
             data: { lanes: ['reliable'] },
-            media: { audio: true, video: true },
+            media: { audio: true, video: true }
         });
         attachCall(call);
-    } else {
+    }
+    else {
         await invite.decline('busy');
     }
 });
@@ -23,26 +24,26 @@ const invite = await rallar.calls.invite({
     peerIds: ['peer-1'],
     data: { lanes: ['reliable'], openTimeoutMs: 1000 },
     media: { audio: true, video: true },
-    message: 'Join the strategy call?',
+    message: 'Join the strategy call?'
 });
 
 const call = await rallar.calls.start({
     peerIds: invite.peerIds,
     data: { lanes: ['reliable'], openTimeoutMs: 1000 },
-    media: { audio: true, video: true },
+    media: { audio: true, video: true }
 });
 
 await call.wait({ timeoutMs: 1000 });
 
 const microphone = await call.sources.microphone.start({
-    audio: true,
+    audio: true
 });
 const camera = await call.sources.camera.start({
-    video: true,
+    video: true
 });
 
-const chat = call.channel<{ text: string }>({
-    laneId: 'reliable',
+const chat = call.channel<{ text: string; }>({
+    laneId: 'reliable'
 });
 await chat.send({ text: 'ready' });
 

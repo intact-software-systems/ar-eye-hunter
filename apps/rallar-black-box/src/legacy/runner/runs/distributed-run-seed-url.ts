@@ -1,7 +1,4 @@
-import {
-    distributedRunSeedIdFromValue,
-    type DistributedRunSeedId,
-} from '../../../distributed-run-seeds.ts';
+import { distributedRunSeedIdFromValue, type DistributedRunSeedId } from '../../../distributed-run-seeds.ts';
 
 export function readDistributedRunSeedFromUrl(): DistributedRunSeedId | undefined {
     if (typeof window === 'undefined') {
@@ -18,7 +15,8 @@ export function writeDistributedRunSeedToUrl(seedId: DistributedRunSeedId | unde
     const url = new URL(window.location.href);
     if (seedId) {
         url.searchParams.set('distributedRunSeed', seedId);
-    } else {
+    }
+    else {
         url.searchParams.delete('distributedRunSeed');
     }
     window.history.replaceState(window.history.state, '', url);

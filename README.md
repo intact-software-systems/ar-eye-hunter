@@ -49,6 +49,6 @@ and `dev:rallar:*` names.
 
 ## Run Environment Notes
 
-- `npm run test:e2e` and `npm run test:full-stack` start local HTTP servers in the Playwright flow (`127.0.0.1` + local ports).  
-- In sandboxed environments that block loopback binds, these commands can fail with `listen EPERM` / `Operation not permitted` even when application code is healthy.  
+- `npm run test:e2e` and `npm run test:full-stack` start local HTTP servers in the Playwright flow (`127.0.0.1` + local ports).
+- In sandboxed environments that block loopback binds, these commands can fail with `listen EPERM` / `Operation not permitted` even when application code is healthy.
 - In normal local or CI environments with loopback bind allowed, both suites pass.

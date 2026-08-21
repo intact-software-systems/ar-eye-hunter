@@ -1,8 +1,5 @@
 import { clampRallarMotionNumber } from './math.ts';
-import type {
-    RallarMotionAdaptiveDelay,
-    RallarMotionAdaptiveDelayOptions,
-} from './types.ts';
+import type { RallarMotionAdaptiveDelay, RallarMotionAdaptiveDelayOptions } from './types.ts';
 
 const DEFAULT_ADAPTIVE_DELAY_OPTIONS = {
     defaultDelayMs: 100,
@@ -10,15 +7,15 @@ const DEFAULT_ADAPTIVE_DELAY_OPTIONS = {
     maxDelayMs: 250,
     smoothingAlpha: 0.2,
     jitterMultiplier: 2,
-    safetyMarginMs: 10,
+    safetyMarginMs: 10
 };
 
 export function createRallarMotionAdaptiveDelay(
-    options: RallarMotionAdaptiveDelayOptions = {},
+    options: RallarMotionAdaptiveDelayOptions = {}
 ): RallarMotionAdaptiveDelay {
     const resolved = {
         ...DEFAULT_ADAPTIVE_DELAY_OPTIONS,
-        ...options,
+        ...options
     };
     const alpha = clampRallarMotionNumber(resolved.smoothingAlpha, 0, 1);
     let previousObservedAtEpochMs: number | undefined;
@@ -47,7 +44,7 @@ export function createRallarMotionAdaptiveDelay(
             return clampRallarMotionNumber(
                 resolved.defaultDelayMs,
                 resolved.minDelayMs,
-                resolved.maxDelayMs,
+                resolved.maxDelayMs
             );
         }
 
@@ -56,7 +53,7 @@ export function createRallarMotionAdaptiveDelay(
                 averageJitterMs * resolved.jitterMultiplier +
                 resolved.safetyMarginMs,
             resolved.minDelayMs,
-            resolved.maxDelayMs,
+            resolved.maxDelayMs
         );
     };
 
@@ -77,6 +74,6 @@ export function createRallarMotionAdaptiveDelay(
             previousObservedAtEpochMs = undefined;
             averageIntervalMs = undefined;
             averageJitterMs = 0;
-        },
+        }
     };
 }

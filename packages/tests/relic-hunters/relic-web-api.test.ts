@@ -1,14 +1,10 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RELIC_PROTOCOL_VERSION, type RelicCommand } from '@relic-hunters/mod.ts';
-import { clearSession, writeSession } from '@shared/api/auth.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    fetchRelicSnapshot,
-    resetRelicGame,
-    sendRelicCommand,
-} from '../../../apps/relic-hunters-v1/src/game/api.ts';
+import { clearSession, writeSession } from '@shared/api/auth.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from '../../../apps/relic-hunters-v1/src/game/api.ts';
 
 describe('Relic Hunters web API client', () => {
     beforeEach(() => {
@@ -33,7 +29,7 @@ describe('Relic Hunters web API client', () => {
         const fetch = vi.fn<typeof globalThis.fetch>(async () =>
             new Response(JSON.stringify({ gameId: 'room/1' }), {
                 status: 200,
-                headers: { 'content-type': 'application/json' },
+                headers: { 'content-type': 'application/json' }
             })
         );
         vi.stubGlobal('fetch', fetch);
@@ -48,7 +44,7 @@ describe('Relic Hunters web API client', () => {
         expect(init.headers).toMatchObject({
             authorization: 'Bearer token-1',
             'content-type': 'application/json',
-            'x-client-id': 'client-1',
+            'x-client-id': 'client-1'
         });
         expect(JSON.parse(String(init.body))).toEqual(command);
     });
@@ -57,11 +53,11 @@ describe('Relic Hunters web API client', () => {
         writeSession(session());
         vi.stubGlobal(
             'fetch',
-            vi.fn(async () => new Response('invalid command', { status: 400 })),
+            vi.fn(async () => new Response('invalid command', { status: 400 }))
         );
 
         await expect(sendRelicCommand('room-1', joinCommand())).rejects.toThrow(
-            'Failed to send expedition command: 400 invalid command',
+            'Failed to send expedition command: 400 invalid command'
         );
     });
 });
@@ -72,7 +68,7 @@ function session(): AuthSession {
         accessToken: 'token-1',
         username: 'alice',
         sessionId: 'alice-session',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
 }
 
@@ -82,26 +78,29 @@ function joinCommand(gameId = 'room-1'): RelicCommand {
         kind: 'join-expedition',
         gameId,
         username: 'alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     };
 }
 
 function installMemoryLocalStorage(): void {
     const values = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
-        getItem: (key: string) => values.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-            values.set(key, value);
-        },
-        removeItem: (key: string) => {
-            values.delete(key);
-        },
-        clear: () => {
-            values.clear();
-        },
-        key: (index: number) => Array.from(values.keys())[index] ?? null,
-        get length() {
-            return values.size;
-        },
-    } satisfies Storage);
+    vi.stubGlobal(
+        'localStorage',
+        {
+            getItem: (key: string) => values.get(key) ?? null,
+            setItem: (key: string, value: string) => {
+                values.set(key, value);
+            },
+            removeItem: (key: string) => {
+                values.delete(key);
+            },
+            clear: () => {
+                values.clear();
+            },
+            key: (index: number) => Array.from(values.keys())[index] ?? null,
+            get length() {
+                return values.size;
+            }
+        } satisfies Storage
+    );
 }

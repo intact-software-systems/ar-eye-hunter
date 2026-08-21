@@ -1,3 +1,43 @@
+import { rtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
+import {
+    flattenRallarBlackBoxCompositeResults,
+    summarizeRallarBlackBoxCompositeResults,
+    toRallarBlackBoxCompositeDisplayResults
+} from './composite-results.ts';
+import type {
+    ControlAgentSnapshot,
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlSnapshotBounds
+} from './control-snapshots.ts';
+import type { RallarBlackBoxRuntimeDiagnosticPayload } from './diagnostics.ts';
+import {
+    distributedArtifactPipelineFile,
+    type ParsedDistributedArtifactPipeline
+} from './distributed-artifact-pipeline.ts';
+import { distributedRunRecipeSelectionKey } from './distributed-run-evidence.ts';
+import {
+    createDistributedRunMonitorFailureIndex,
+    createDistributedRunMonitorIndex,
+    distributedRunCorrelatedFailureKeys,
+    distributedRunMonitorAgentEventsForProgress,
+    distributedRunMonitorAgentLinksForProgress,
+    distributedRunMonitorAnalysisReuseFor,
+    distributedRunMonitorFirstPhaseForCommand,
+    distributedRunMonitorReadinessStageLinks,
+    distributedRunMonitorRecipeLinks,
+    recordDistributedRunAnalysisReportDerivation,
+    recordDistributedRunMonitorDerivation,
+    type DistributedRunMonitorFailureIndex,
+    type DistributedRunMonitorIndex
+} from './distributed-run-monitor-index.ts';
+import {
+    distributedRunMonitorAgentRole,
+    distributedRunMonitorExpectedTargetMultiplicity,
+    distributedRunMonitorRecipeTargetCount
+} from './distributed-run-monitor-membership-index.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedGroupAssertion,
@@ -6,71 +46,31 @@ import type {
     RallarBlackBoxDistributedRoleAssignmentPolicy,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
-    RallarBlackBoxDistributedTargetResolution,
     RallarBlackBoxDistributedTargetPolicy,
+    RallarBlackBoxDistributedTargetResolution
 } from './distributed-run.ts';
 import {
     collectDistributedAssertionFeatures,
     validateAgentAssertionCapability,
-    type DistributedAssertionFeatures,
+    type DistributedAssertionFeatures
 } from './distributed/control-agent-capabilities.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema.ts';
-import {
-    flattenRallarBlackBoxCompositeResults,
-    summarizeRallarBlackBoxCompositeResults,
-    toRallarBlackBoxCompositeDisplayResults,
-} from './composite-results.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
     type RallarBlackBoxTestAssertResultValue,
     type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestCrdtTransport,
     type RallarBlackBoxTestCommandKind,
+    type RallarBlackBoxTestCrdtTransport,
     type RallarBlackBoxTestLoopResultValue,
     type RallarBlackBoxTestParallelResultValue,
     type RallarBlackBoxTestRecipe,
     type RallarBlackBoxTestResult,
     type RallarBlackBoxTestSeverity,
     type RallarBlackBoxTestTransport,
-    type RallarBlackBoxTestWaitResultValue,
     type RallarBlackBoxTestWaitCommand,
+    type RallarBlackBoxTestWaitResultValue
 } from './types.ts';
-import type { RallarBlackBoxRuntimeDiagnosticPayload } from './diagnostics.ts';
-import type {
-    ControlAgentSnapshot,
-    ControlDistributedRunArtifactBundle,
-    ControlDistributedRunCommandLink,
-    ControlDistributedRunSnapshot,
-    ControlSnapshotBounds,
-    ControlRunSnapshot,
-} from './control-snapshots.ts';
-import { distributedRunRecipeSelectionKey } from './distributed-run-evidence.ts';
-import {
-    distributedArtifactPipelineFile,
-    type ParsedDistributedArtifactPipeline,
-} from './distributed-artifact-pipeline.ts';
-import {
-    createDistributedRunMonitorFailureIndex,
-    createDistributedRunMonitorIndex,
-    distributedRunMonitorAgentEventsForProgress,
-    distributedRunMonitorAgentLinksForProgress,
-    distributedRunCorrelatedFailureKeys,
-    distributedRunMonitorAnalysisReuseFor,
-    distributedRunMonitorFirstPhaseForCommand,
-    distributedRunMonitorReadinessStageLinks,
-    distributedRunMonitorRecipeLinks,
-    recordDistributedRunAnalysisReportDerivation,
-    recordDistributedRunMonitorDerivation,
-    type DistributedRunMonitorFailureIndex,
-    type DistributedRunMonitorIndex,
-} from './distributed-run-monitor-index.ts';
-import {
-    distributedRunMonitorAgentRole,
-    distributedRunMonitorExpectedTargetMultiplicity,
-    distributedRunMonitorRecipeTargetCount,
-} from './distributed-run-monitor-membership-index.ts';
-import { rtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'
@@ -561,11 +561,10 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES = [
     'rtc-stream-performance',
     'diagnostic',
     'runtime',
-    'unknown',
+    'unknown'
 ] as const;
 
-export type RallarBlackBoxDistributedFailureCategory =
-    typeof RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES[number];
+export type RallarBlackBoxDistributedFailureCategory = typeof RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES[number];
 
 export type DistributedFailureExplanation = Readonly<{
     category: RallarBlackBoxDistributedFailureCategory;
@@ -690,16 +689,20 @@ export type RunVerdictView = Readonly<{
     causalTrail: readonly RunCausalTrailItem[];
 }>;
 
-export function runCausalTrailForFailure(input: Readonly<{
-    causalTrail: readonly RunCausalTrailItem[];
-    failure: DistributedRunFailureRow;
-    runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
-}>): readonly RunCausalTrailItem[] {
-    const directDiagnosticIds = new Set(input.runtimeDiagnostics
-        .filter(row => row.correlatedFailureKeys.includes(input.failure.key))
-        .map(row => row.eventId));
+export function runCausalTrailForFailure(
+    input: Readonly<{
+        causalTrail: readonly RunCausalTrailItem[];
+        failure: DistributedRunFailureRow;
+        runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
+    }>
+): readonly RunCausalTrailItem[] {
+    const directDiagnosticIds = new Set(
+        input.runtimeDiagnostics
+            .filter((row) => row.correlatedFailureKeys.includes(input.failure.key))
+            .map((row) => row.eventId)
+    );
 
-    return input.causalTrail.filter(item => {
+    return input.causalTrail.filter((item) => {
         if (item.kind === 'artifact') {
             return true;
         }
@@ -757,49 +760,51 @@ export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
     {
         value: 'all-agents',
         label: 'All agents same recipe',
-        description: 'Every selected browser receives every selected recipe.',
+        description: 'Every selected browser receives every selected recipe.'
     },
     {
         value: 'sender-receiver',
         label: 'Sender / receiver pair',
-        description: 'First target is sender, second target is receiver.',
+        description: 'First target is sender, second target is receiver.'
     },
     {
         value: 'one-sender-many-receivers',
         label: 'One sender, many receivers',
-        description: 'First target is sender, remaining targets are receivers.',
+        description: 'First target is sender, remaining targets are receivers.'
     },
     {
         value: 'three-browser-matrix',
         label: 'Three-browser matrix',
-        description: 'First target publishes, second relays, third and later observe.',
-    },
+        description: 'First target publishes, second relays, third and later observe.'
+    }
 ];
 
-export function distributedRecipeTargetRows(input: Readonly<{
-    run: ControlRunSnapshot | undefined;
-    group: RallarBlackBoxDistributedGroupRef;
-    requiredCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
-    requiredRecipes?: readonly RallarBlackBoxTestRecipe[];
-    nowEpochMs?: number;
-    staleAfterMs?: number;
-}>): readonly DistributedRecipeTargetRow[] {
+export function distributedRecipeTargetRows(
+    input: Readonly<{
+        run: ControlRunSnapshot | undefined;
+        group: RallarBlackBoxDistributedGroupRef;
+        requiredCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
+        requiredRecipes?: readonly RallarBlackBoxTestRecipe[];
+        nowEpochMs?: number;
+        staleAfterMs?: number;
+    }>
+): readonly DistributedRecipeTargetRow[] {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const staleAfterMs = input.staleAfterMs ?? 30_000;
     const agents = [...(input.run?.agents ?? [])]
         .sort((left, right) => left.agentId.localeCompare(right.agentId));
     const requiredCommandKinds = uniqueValues([
         ...(input.requiredCommandKinds ?? []),
-        ...(input.requiredRecipes ?? []).flatMap(distributedRecipeCommandKinds),
+        ...(input.requiredRecipes ?? []).flatMap(distributedRecipeCommandKinds)
     ]);
     const requiresCrdtRuntime = hasCrdtCommandKind(requiredCommandKinds);
     const requiredCrdtTransports = uniqueValues(
-        (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports),
+        (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports)
     );
     const requiredAssertionFeatures = collectDistributedAssertionFeatures(
-        input.requiredRecipes ?? [],
+        input.requiredRecipes ?? []
     );
-    const rows = agents.map(agent =>
+    const rows = agents.map((agent) =>
         distributedRecipeTargetRow({
             agent,
             group: input.group,
@@ -807,7 +812,7 @@ export function distributedRecipeTargetRows(input: Readonly<{
             staleAfterMs,
             requiresCrdtRuntime,
             requiredCrdtTransports,
-            requiredAssertionFeatures,
+            requiredAssertionFeatures
         })
     );
     const duplicateIdentityCounts = new Map<string, number>();
@@ -820,7 +825,7 @@ export function distributedRecipeTargetRows(input: Readonly<{
         if (identityKey) {
             duplicateIdentityCounts.set(
                 identityKey,
-                (duplicateIdentityCounts.get(identityKey) ?? 0) + 1,
+                (duplicateIdentityCounts.get(identityKey) ?? 0) + 1
             );
         }
     });
@@ -837,8 +842,7 @@ export function distributedRecipeTargetRows(input: Readonly<{
             ...row,
             status: 'duplicate-session',
             targetable: false,
-            reason:
-                'Multiple fresh control agents report the same normalized Rallar identity and session.',
+            reason: 'Multiple fresh control agents report the same normalized Rallar identity and session.'
         };
     });
 }
@@ -849,11 +853,11 @@ export function distributedRecipeTargetRows(input: Readonly<{
  * Rallar session into independently targetable agents.
  */
 export function distributedRecipeTargetIdentityKey(
-    agent: ControlAgentSnapshot,
+    agent: ControlAgentSnapshot
 ): string | undefined {
     const identity = agent.identity;
     const principal = normalizedIdentityPart(
-        identity?.principalId ?? identity?.clientId ?? identity?.username,
+        identity?.principalId ?? identity?.clientId ?? identity?.username
     );
     const session = normalizedIdentityPart(identity?.sessionId);
     const applicationId = normalizedIdentityPart(identity?.applicationId);
@@ -868,16 +872,16 @@ export function distributedRecipeTargetIdentityKey(
 }
 
 export function defaultDistributedRecipeTargetIds(
-    rows: readonly DistributedRecipeTargetRow[],
+    rows: readonly DistributedRecipeTargetRow[]
 ): readonly string[] {
     return rows
-        .filter(row => row.targetable)
-        .map(row => row.agentId);
+        .filter((row) => row.targetable)
+        .map((row) => row.agentId);
 }
 
 export function reconcileDistributedRecipeTargetIds(
     selectedAgentIds: readonly string[],
-    rows: readonly DistributedRecipeTargetRow[],
+    rows: readonly DistributedRecipeTargetRow[]
 ): readonly string[] {
     const defaults = defaultDistributedRecipeTargetIds(rows);
     const targetable = new Set(defaults);
@@ -885,17 +889,18 @@ export function reconcileDistributedRecipeTargetIds(
     return retained.length > 0 ? retained : defaults;
 }
 
-export function deriveDistributedWorldFleetTargetGate(input: Readonly<{
-    usesWorldFleetTargets: boolean;
-    expectedParticipantCount?: number;
-    targetResolutionPreview?: RallarBlackBoxDistributedTargetResolution;
-    selectedDistributedRun?: ControlDistributedRunSnapshot;
-    distributedRunId?: string;
-}>): DistributedWorldFleetTargetGate {
+export function deriveDistributedWorldFleetTargetGate(
+    input: Readonly<{
+        usesWorldFleetTargets: boolean;
+        expectedParticipantCount?: number;
+        targetResolutionPreview?: RallarBlackBoxDistributedTargetResolution;
+        selectedDistributedRun?: ControlDistributedRunSnapshot;
+        distributedRunId?: string;
+    }>
+): DistributedWorldFleetTargetGate {
     const selectedRunUsesWorldFleetTargets =
         input.selectedDistributedRun?.manifest.targetPolicy.mode === 'all-online-group-members';
-    const selectedRunMatchesDraft =
-        input.distributedRunId === undefined ||
+    const selectedRunMatchesDraft = input.distributedRunId === undefined ||
         input.selectedDistributedRun?.distributedRunId === input.distributedRunId;
     const useSelectedRunResolution = selectedRunUsesWorldFleetTargets &&
         (!input.usesWorldFleetTargets || selectedRunMatchesDraft);
@@ -934,25 +939,25 @@ export function deriveDistributedWorldFleetTargetGate(input: Readonly<{
         expectedParticipantCount,
         previewSelected,
         blocked,
-        blockReason,
+        blockReason
     };
 }
 
 export function distributedRecipeCommandPreview(
-    recipe: RallarBlackBoxTestRecipe,
+    recipe: RallarBlackBoxTestRecipe
 ): DistributedRecipeCommandPreview {
     const manifestCommandCount = recipe.commands.length;
     const effectiveCommandCount = recipe.commands.reduce(
         (sum, command) => sum + effectiveCommandCountForCommand(command),
-        0,
+        0
     );
-    const hasStreamFrames = recipe.commands.some(command => commandKindsForCommand(command).includes('rtc.stream'));
+    const hasStreamFrames = recipe.commands.some((command) => commandKindsForCommand(command).includes('rtc.stream'));
     const effectiveFrameCount = firstPositiveInteger(
         asRecord(asRecord(recipe.metadata).realtime).frameCount,
-        asRecord(recipe.metadata).frameCount,
+        asRecord(recipe.metadata).frameCount
     ) ?? firstPositiveIntegerFrom(recipe.commands, effectiveFrameCountForCommand);
     const labelParts = [
-        `${manifestCommandCount} manifest command${manifestCommandCount === 1 ? '' : 's'}`,
+        `${manifestCommandCount} manifest command${manifestCommandCount === 1 ? '' : 's'}`
     ];
     if (effectiveCommandCount !== manifestCommandCount) {
         labelParts.push(`${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`);
@@ -965,36 +970,36 @@ export function distributedRecipeCommandPreview(
         manifestCommandCount,
         effectiveCommandCount,
         effectiveFrameCount,
-        label: labelParts.join(' - '),
+        label: labelParts.join(' - ')
     };
 }
 
 export function distributedRecipeCommandKinds(
-    recipe: RallarBlackBoxTestRecipe,
+    recipe: RallarBlackBoxTestRecipe
 ): readonly RallarBlackBoxTestCommandKind[] {
     return uniqueValues(recipe.commands.flatMap(commandKindsForCommand));
 }
 
 export function distributedRecipePreflight(
-    recipe: RallarBlackBoxTestRecipe,
+    recipe: RallarBlackBoxTestRecipe
 ): DistributedRecipePreflightSummary {
     const analyses = recipe.commands.map((command, index) =>
         analyzeDistributedRecipeCommand(command, `$.commands[${index}]`, 0)
     );
-    const commandKinds = uniqueValues(analyses.flatMap(analysis => analysis.commandKinds));
+    const commandKinds = uniqueValues(analyses.flatMap((analysis) => analysis.commandKinds));
     const capabilities = commandKinds
-        .map(kind => COMMAND_CAPABILITY_BY_KIND.get(kind))
+        .map((kind) => COMMAND_CAPABILITY_BY_KIND.get(kind))
         .filter((capability): capability is CommandCapability => Boolean(capability));
     const liveServiceRequirements = uniqueValues([
-        ...capabilities.flatMap(capability => capability.liveServiceRequirements),
-        ...analyses.flatMap(analysis => analysis.liveServiceRequirements),
-    ].filter(requirement => requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL));
+        ...capabilities.flatMap((capability) => capability.liveServiceRequirements),
+        ...analyses.flatMap((analysis) => analysis.liveServiceRequirements)
+    ].filter((requirement) => requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL));
     const warnings = uniqueValues([
-        ...analyses.flatMap(analysis => analysis.warnings),
+        ...analyses.flatMap((analysis) => analysis.warnings),
         ...rtcReadinessWarnings(recipe),
-        ...compatibilityWarnings(commandKinds, liveServiceRequirements),
+        ...compatibilityWarnings(commandKinds, liveServiceRequirements)
     ]);
-    const errors = uniqueValues(analyses.flatMap(analysis => analysis.errors));
+    const errors = uniqueValues(analyses.flatMap((analysis) => analysis.errors));
 
     return {
         recipeId: recipe.recipeId,
@@ -1002,24 +1007,24 @@ export function distributedRecipePreflight(
         effectiveCommandCount: analyses.reduce((sum, analysis) => sum + analysis.effectiveCommandCount, 0),
         effectiveFrameCount: firstPositiveInteger(
             asRecord(asRecord(recipe.metadata).realtime).frameCount,
-            asRecord(recipe.metadata).frameCount,
-        ) ?? firstPositiveIntegerFrom(analyses, analysis => analysis.effectiveFrameCount),
+            asRecord(recipe.metadata).frameCount
+        ) ?? firstPositiveIntegerFrom(analyses, (analysis) => analysis.effectiveFrameCount),
         maxDepth: analyses.reduce(
             (maxDepth, analysis) => Math.max(maxDepth, analysis.maxDepth),
-            0,
+            0
         ),
         commandKinds,
-        providerModes: uniqueValues(capabilities.flatMap(capability => capability.supportedProviderModes)),
-        runtimeSurfaces: uniqueValues(capabilities.flatMap(capability => capability.runtimeSurfaces)),
+        providerModes: uniqueValues(capabilities.flatMap((capability) => capability.supportedProviderModes)),
+        runtimeSurfaces: uniqueValues(capabilities.flatMap((capability) => capability.runtimeSurfaces)),
         liveServiceRequirements,
         serviceBadges: serviceBadgesForPreflight(commandKinds, liveServiceRequirements),
-        loops: analyses.flatMap(analysis => analysis.loops),
-        parallelGroups: analyses.flatMap(analysis => analysis.parallelGroups),
-        waits: analyses.flatMap(analysis => analysis.waits),
-        asserts: analyses.flatMap(analysis => analysis.asserts),
-        tree: analyses.flatMap(analysis => analysis.tree),
+        loops: analyses.flatMap((analysis) => analysis.loops),
+        parallelGroups: analyses.flatMap((analysis) => analysis.parallelGroups),
+        waits: analyses.flatMap((analysis) => analysis.waits),
+        asserts: analyses.flatMap((analysis) => analysis.asserts),
+        tree: analyses.flatMap((analysis) => analysis.tree),
         warnings,
-        errors,
+        errors
     };
 }
 
@@ -1041,7 +1046,7 @@ type DistributedRecipeCommandAnalysis = Readonly<{
 }>;
 
 const COMMAND_CAPABILITY_BY_KIND = new Map(
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => [capability.kind, capability]),
+    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => [capability.kind, capability])
 );
 const COMPOSITE_CHILD_REQUIREMENTS_LABEL = 'same live requirements as its child commands';
 const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
@@ -1049,12 +1054,14 @@ const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 function analyzeDistributedRecipeCommand(
     command: RallarBlackBoxTestCommand,
     path: string,
-    depth: number,
+    depth: number
 ): DistributedRecipeCommandAnalysis {
     const capability = COMMAND_CAPABILITY_BY_KIND.get(command.kind);
-    const directRequirements = capability?.liveServiceRequirements.filter(requirement =>
-        requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL
-    ) ?? [];
+    const directRequirements =
+        capability?.liveServiceRequirements.filter((requirement) =>
+            requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL
+        ) ??
+            [];
     const commandWarnings: string[] = [];
     const commandErrors: string[] = [];
     const details: string[] = [];
@@ -1068,7 +1075,7 @@ function analyzeDistributedRecipeCommand(
 
     if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
         commandErrors.push(
-            `${path} exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`,
+            `${path} exceeds max composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`
         );
     }
 
@@ -1079,7 +1086,7 @@ function analyzeDistributedRecipeCommand(
         const estimate = estimateLoopIterations(command);
         const childEffectiveCommandCount = childAnalyses.reduce(
             (sum, analysis) => sum + analysis.effectiveCommandCount,
-            0,
+            0
         );
         effectiveCommandCount = childEffectiveCommandCount * estimate.estimatedIterations;
         loops = [{
@@ -1092,12 +1099,12 @@ function analyzeDistributedRecipeCommand(
             durationMs: optionalPositiveIntegerValue(command.durationMs),
             intervalMs: nonNegativeIntegerValue(command.intervalMs ?? command.delayMs),
             maxCommands: optionalPositiveIntegerValue(command.maxCommands),
-            frameCount: effectiveFrameCountForCommand(command),
+            frameCount: effectiveFrameCountForCommand(command)
         }];
         summary = `loop x${estimate.estimatedIterations}`;
         details.push(
             `${command.commands.length} child command${command.commands.length === 1 ? '' : 's'}`,
-            `${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`,
+            `${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`
         );
         if (estimate.intervalMs !== undefined) {
             details.push(`interval ${estimate.intervalMs} ms`);
@@ -1109,25 +1116,26 @@ function analyzeDistributedRecipeCommand(
             commandErrors.push(`${path} has no loop child commands.`);
         }
         if (estimate.limitErrors.length > 0) {
-            commandErrors.push(...estimate.limitErrors.map(error => `${path}: ${error}`));
+            commandErrors.push(...estimate.limitErrors.map((error) => `${path}: ${error}`));
         }
         if (estimate.warnings.length > 0) {
-            commandWarnings.push(...estimate.warnings.map(warning => `${path}: ${warning}`));
+            commandWarnings.push(...estimate.warnings.map((warning) => `${path}: ${warning}`));
         }
-    } else if (command.kind === 'parallel') {
+    }
+    else if (command.kind === 'parallel') {
         const groupAnalyses = command.groups.map((group, groupIndex) =>
             group.commands.map((child, commandIndex) =>
                 analyzeDistributedRecipeCommand(
                     child,
                     `${path}.groups[${groupIndex}].commands[${commandIndex}]`,
-                    depth + 1,
+                    depth + 1
                 )
             )
         );
         childAnalyses = groupAnalyses.flat();
         effectiveCommandCount = childAnalyses.reduce(
             (sum, analysis) => sum + analysis.effectiveCommandCount,
-            0,
+            0
         );
         const maxConcurrency = optionalPositiveIntegerValue(command.maxConcurrency) ?? command.groups.length;
         parallelGroups = [{
@@ -1136,14 +1144,12 @@ function analyzeDistributedRecipeCommand(
             groupCount: command.groups.length,
             maxConcurrency,
             effectiveCommandCount,
-            groups: command.groups.map((group, index) =>
-                group.label ?? group.groupId ?? `group ${index + 1}`
-            ),
+            groups: command.groups.map((group, index) => group.label ?? group.groupId ?? `group ${index + 1}`)
         }];
         summary = `parallel ${command.groups.length} group${command.groups.length === 1 ? '' : 's'}`;
         details.push(
             `max concurrency ${maxConcurrency}`,
-            `${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`,
+            `${effectiveCommandCount} effective operation${effectiveCommandCount === 1 ? '' : 's'}`
         );
         if (command.groups.length === 0) {
             commandErrors.push(`${path} has no parallel groups.`);
@@ -1151,41 +1157,51 @@ function analyzeDistributedRecipeCommand(
         if (maxConcurrency > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency) {
             commandErrors.push(
                 `${path}: parallel maxConcurrency ${maxConcurrency} exceeds ` +
-                `${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency}.`,
+                    `${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency}.`
             );
         }
-    } else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
+    }
+    else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
         const nestedRecipe = command.recipe;
         if (!nestedRecipe) {
             summary = 'run loaded recipe';
-        } else {
+        }
+        else {
             childAnalyses = nestedRecipe.commands.map((child, index) =>
                 analyzeDistributedRecipeCommand(child, `${path}.recipe.commands[${index}]`, depth + 1)
             );
             if (command.kind === 'recipe.run') {
                 effectiveCommandCount = childAnalyses.reduce(
                     (sum, analysis) => sum + analysis.effectiveCommandCount,
-                    0,
+                    0
                 );
-                summary = `runs ${nestedRecipe.commands.length} recipe command${nestedRecipe.commands.length === 1 ? '' : 's'}`;
-            } else {
-                summary = `loads ${nestedRecipe.commands.length} recipe command${nestedRecipe.commands.length === 1 ? '' : 's'}`;
+                summary = `runs ${nestedRecipe.commands.length} recipe command${
+                    nestedRecipe.commands.length === 1 ? '' : 's'
+                }`;
+            }
+            else {
+                summary = `loads ${nestedRecipe.commands.length} recipe command${
+                    nestedRecipe.commands.length === 1 ? '' : 's'
+                }`;
             }
             details.push(nestedRecipe.recipeId);
         }
-    } else if (command.kind === 'rtc.connect') {
+    }
+    else if (command.kind === 'rtc.connect') {
         const readinessDetail = rtcConnectReadinessDetail(command);
         if (readinessDetail) {
             details.push(readinessDetail);
         }
-    } else if (command.kind === 'rtc.stream') {
+    }
+    else if (command.kind === 'rtc.stream') {
         const frameCount = effectiveFrameCountForCommand(command);
         if (frameCount !== undefined) {
             details.push(`${frameCount} frame${frameCount === 1 ? '' : 's'}`);
         }
         if (command.intervalMs !== undefined) {
             details.push(`interval ${command.intervalMs} ms`);
-        } else if (command.rateHz !== undefined) {
+        }
+        else if (command.rateHz !== undefined) {
             details.push(`rate ${command.rateHz} Hz`);
         }
         if (command.maxInFlight !== undefined) {
@@ -1197,27 +1213,29 @@ function analyzeDistributedRecipeCommand(
         if (command.thresholds?.maxDroppedFrames !== undefined) {
             details.push(`max dropped frames ${command.thresholds.maxDroppedFrames}`);
         }
-    } else if (command.kind === 'wait') {
+    }
+    else if (command.kind === 'wait') {
         waits = [waitPreflight(command, path)];
         const timeoutMs = command.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
         summary = `wait up to ${timeoutMs} ms`;
         details.push(waits[0].matchSummary);
         commandWarnings.push(`${path}: wait can time out if matching evidence is not emitted.`);
-    } else if (command.kind === 'assert') {
+    }
+    else if (command.kind === 'assert') {
         asserts = [assertPreflight(command, path)];
         summary = asserts[0].predicate;
         commandWarnings.push(`${path}: assert fails the recipe when its runtime evidence does not match.`);
     }
 
-    const childWarnings = childAnalyses.flatMap(analysis => analysis.warnings);
-    const childErrors = childAnalyses.flatMap(analysis => analysis.errors);
+    const childWarnings = childAnalyses.flatMap((analysis) => analysis.warnings);
+    const childErrors = childAnalyses.flatMap((analysis) => analysis.errors);
     const commandKinds = uniqueValues([
         command.kind,
-        ...childAnalyses.flatMap(analysis => analysis.commandKinds),
+        ...childAnalyses.flatMap((analysis) => analysis.commandKinds)
     ]);
     const liveServiceRequirements = uniqueValues([
         ...directRequirements,
-        ...childAnalyses.flatMap(analysis => analysis.liveServiceRequirements),
+        ...childAnalyses.flatMap((analysis) => analysis.liveServiceRequirements)
     ]);
     const row: DistributedRecipePreflightTreeRow = {
         path,
@@ -1228,45 +1246,45 @@ function analyzeDistributedRecipeCommand(
         summary,
         effectiveCommandCount,
         details,
-        warnings: commandWarnings,
+        warnings: commandWarnings
     };
 
     return {
         effectiveCommandCount,
         effectiveFrameCount: effectiveFrameCountForCommand(command) ??
-            firstPositiveIntegerFrom(childAnalyses, analysis => analysis.effectiveFrameCount),
+            firstPositiveIntegerFrom(childAnalyses, (analysis) => analysis.effectiveFrameCount),
         maxDepth: childAnalyses.reduce(
             (maxDepth, analysis) => Math.max(maxDepth, analysis.maxDepth),
-            depth + 1,
+            depth + 1
         ),
         commandKinds,
         liveServiceRequirements,
         loops: [
             ...loops,
-            ...childAnalyses.flatMap(analysis => analysis.loops),
+            ...childAnalyses.flatMap((analysis) => analysis.loops)
         ],
         parallelGroups: [
             ...parallelGroups,
-            ...childAnalyses.flatMap(analysis => analysis.parallelGroups),
+            ...childAnalyses.flatMap((analysis) => analysis.parallelGroups)
         ],
         waits: [
             ...waits,
-            ...childAnalyses.flatMap(analysis => analysis.waits),
+            ...childAnalyses.flatMap((analysis) => analysis.waits)
         ],
         asserts: [
             ...asserts,
-            ...childAnalyses.flatMap(analysis => analysis.asserts),
+            ...childAnalyses.flatMap((analysis) => analysis.asserts)
         ],
         tree: [
             row,
-            ...childAnalyses.flatMap(analysis => analysis.tree),
+            ...childAnalyses.flatMap((analysis) => analysis.tree)
         ],
         warnings: uniqueValues([...commandWarnings, ...childWarnings]),
-        errors: uniqueValues([...commandErrors, ...childErrors]),
+        errors: uniqueValues([...commandErrors, ...childErrors])
     };
 }
 
-function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { kind: 'loop' }>): Readonly<{
+function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { kind: 'loop'; }>): Readonly<{
     estimatedIterations: number;
     durationMs?: number;
     intervalMs?: number;
@@ -1284,17 +1302,19 @@ function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { ki
 
     if (command.count !== undefined && count === undefined) {
         limitErrors.push('loop count must be a positive integer.');
-    } else if ((count ?? 0) > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount) {
+    }
+    else if ((count ?? 0) > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount) {
         limitErrors.push(
-            `loop count ${count} exceeds ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount}.`,
+            `loop count ${count} exceeds ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount}.`
         );
     }
 
     if (command.durationMs !== undefined && durationMs === undefined) {
         limitErrors.push('loop durationMs must be a positive integer.');
-    } else if ((durationMs ?? 0) > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs) {
+    }
+    else if ((durationMs ?? 0) > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs) {
         limitErrors.push(
-            `loop durationMs ${durationMs} exceeds ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs}.`,
+            `loop durationMs ${durationMs} exceeds ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs}.`
         );
     }
 
@@ -1309,7 +1329,9 @@ function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { ki
     if (count !== undefined) {
         const plannedDirectCommands = count * childCommandCount;
         if (durationMs === undefined && plannedDirectCommands > maxCommands) {
-            limitErrors.push(`loop schedules ${plannedDirectCommands} direct child commands but maxCommands is ${maxCommands}.`);
+            limitErrors.push(
+                `loop schedules ${plannedDirectCommands} direct child commands but maxCommands is ${maxCommands}.`
+            );
         }
         if (count > 100 && intervalMs === 0) {
             warnings.push(`loop schedules ${count} iterations without pacing.`);
@@ -1319,7 +1341,7 @@ function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { ki
             durationMs,
             intervalMs,
             warnings,
-            limitErrors,
+            limitErrors
         };
     }
 
@@ -1331,10 +1353,10 @@ function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { ki
         const estimatedIterations = Math.min(
             RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
             intervalEstimate,
-            maxCommandEstimate,
+            maxCommandEstimate
         );
         warnings.push(
-            'duration-based loop estimate depends on runtime command latency and can finish earlier or later.',
+            'duration-based loop estimate depends on runtime command latency and can finish earlier or later.'
         );
         if (!intervalMs || intervalMs === 0) {
             warnings.push('duration-based loop has no positive pacing interval.');
@@ -1344,7 +1366,7 @@ function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { ki
             durationMs,
             intervalMs,
             warnings,
-            limitErrors,
+            limitErrors
         };
     }
 
@@ -1352,7 +1374,7 @@ function estimateLoopIterations(command: Extract<RallarBlackBoxTestCommand, { ki
         estimatedIterations: 1,
         intervalMs,
         warnings,
-        limitErrors,
+        limitErrors
     };
 }
 
@@ -1370,19 +1392,19 @@ function commandSummary(command: RallarBlackBoxTestCommand): string {
             return [
                 'connect RTC',
                 command.connection,
-                roomLabel(command),
+                roomLabel(command)
             ].filter(Boolean).join(' - ');
         case 'rtc.send':
             return [
                 'send RTC',
                 command.connection,
-                roomLabel(command),
+                roomLabel(command)
             ].filter(Boolean).join(' - ');
         case 'rtc.stream':
             return [
                 'stream RTC',
                 command.transport,
-                roomLabel(command),
+                roomLabel(command)
             ].filter(Boolean).join(' - ');
         case 'ws.open':
             return ['open WebSocket', command.connection].filter(Boolean).join(' - ');
@@ -1391,7 +1413,9 @@ function commandSummary(command: RallarBlackBoxTestCommand): string {
         case 'ws.close':
             return ['close WebSocket', command.connection].filter(Boolean).join(' - ');
         case 'http.request':
-            return `${command.request.method ?? 'GET'} ${command.request.path ?? command.request.url ?? 'HTTP request'}`;
+            return `${command.request.method ?? 'GET'} ${
+                command.request.path ?? command.request.url ?? 'HTTP request'
+            }`;
         case 'health':
             return 'agent health';
         case 'stats':
@@ -1406,7 +1430,7 @@ function commandSummary(command: RallarBlackBoxTestCommand): string {
 }
 
 function roomLabel(
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' | 'rtc.stream' }>,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' | 'rtc.stream'; }>
 ): string | undefined {
     const roomRef = asRecord(command.roomRef);
     const send = command.kind === 'rtc.send' || command.kind === 'rtc.stream'
@@ -1419,7 +1443,7 @@ function roomLabel(
 }
 
 function rtcConnectReadinessDetail(
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' }>,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>
 ): string | undefined {
     if (!command.readiness) {
         return undefined;
@@ -1436,7 +1460,7 @@ function waitPreflight(command: RallarBlackBoxTestWaitCommand, path: string): Di
         path,
         commandId: command.commandId,
         matchSummary: matchSummary(command.match),
-        timeoutMs: command.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS,
+        timeoutMs: command.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS
     };
 }
 
@@ -1444,7 +1468,9 @@ function assertPreflight(command: RallarBlackBoxTestAssertCommand, path: string)
     return {
         path,
         commandId: command.commandId,
-        predicate: `${command.source} ${command.operator}${command.expected === undefined ? '' : ` ${shortValue(command.expected)}`}`,
+        predicate: `${command.source} ${command.operator}${
+            command.expected === undefined ? '' : ` ${shortValue(command.expected)}`
+        }`
     };
 }
 
@@ -1465,7 +1491,7 @@ function shortValue(value: unknown): string {
 
 function compatibilityWarnings(
     commandKinds: readonly RallarBlackBoxTestCommandKind[],
-    liveServiceRequirements: readonly string[],
+    liveServiceRequirements: readonly string[]
 ): readonly string[] {
     const warnings: string[] = [];
     const kinds = new Set(commandKinds);
@@ -1473,28 +1499,34 @@ function compatibilityWarnings(
         warnings.push('Recipe requires live runtime evidence or live services from the selected browser agents.');
     }
     if (kinds.has('rtc.connect') || kinds.has('rtc.send') || kinds.has('rtc.stream')) {
-        warnings.push('RTC recipes require real Rallar signaling, compatible group membership, and at least one peer for delivery checks.');
+        warnings.push(
+            'RTC recipes require real Rallar signaling, compatible group membership, and at least one peer for delivery checks.'
+        );
     }
     if (kinds.has('ws.open') || kinds.has('ws.send')) {
-        warnings.push('WebSocket recipes require an open or openable socket for every target agent that sends WS traffic.');
+        warnings.push(
+            'WebSocket recipes require an open or openable socket for every target agent that sends WS traffic.'
+        );
     }
     if (kinds.has('http.request')) {
         warnings.push('HTTP recipes can require access tokens and reachable Rallar Server endpoints.');
     }
     if (hasCrdtCommandKind(commandKinds)) {
-        warnings.push('CRDT recipes require browser agents with the Rallar CRDT runtime and requested CRDT transport support.');
+        warnings.push(
+            'CRDT recipes require browser agents with the Rallar CRDT runtime and requested CRDT transport support.'
+        );
     }
     return warnings;
 }
 
 function serviceBadgesForPreflight(
     commandKinds: readonly RallarBlackBoxTestCommandKind[],
-    liveServiceRequirements: readonly string[],
+    liveServiceRequirements: readonly string[]
 ): readonly DistributedRecipePreflightServiceBadge[] {
     const kinds = new Set(commandKinds);
     const badges: DistributedRecipePreflightServiceBadge[] = [
         { label: 'control server', tone: 'active' },
-        { label: 'browser agents', tone: 'active' },
+        { label: 'browser agents', tone: 'active' }
     ];
     if (liveServiceRequirements.length > 0) {
         badges.push({ label: 'runtime evidence', tone: 'warn' });
@@ -1524,17 +1556,17 @@ function serviceBadgesForPreflight(
 }
 
 function hasCrdtCommandKind(commandKinds: readonly RallarBlackBoxTestCommandKind[]): boolean {
-    return commandKinds.some(kind => kind.startsWith('crdt.'));
+    return commandKinds.some((kind) => kind.startsWith('crdt.'));
 }
 
 export function distributedRecipeCrdtTransports(
-    recipe: RallarBlackBoxTestRecipe,
+    recipe: RallarBlackBoxTestRecipe
 ): readonly RallarBlackBoxTestCrdtTransport[] {
     return uniqueValues(recipe.commands.flatMap(crdtTransportsForCommand));
 }
 
 function crdtTransportsForCommand(
-    command: RallarBlackBoxTestCommand,
+    command: RallarBlackBoxTestCommand
 ): readonly RallarBlackBoxTestCrdtTransport[] {
     switch (command.kind) {
         case 'crdt.open':
@@ -1547,9 +1579,7 @@ function crdtTransportsForCommand(
         case 'loop':
             return command.commands.flatMap(crdtTransportsForCommand);
         case 'parallel':
-            return command.groups.flatMap(group =>
-                group.commands.flatMap(crdtTransportsForCommand)
-            );
+            return command.groups.flatMap((group) => group.commands.flatMap(crdtTransportsForCommand));
         case 'recipe.load':
         case 'recipe.run':
             return command.recipe?.commands.flatMap(crdtTransportsForCommand) ?? [];
@@ -1564,7 +1594,7 @@ function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly Ra
             case 'loop':
                 return command.commands.flatMap(commandKindsForCommand);
             case 'parallel':
-                return command.groups.flatMap(group => group.commands.flatMap(commandKindsForCommand));
+                return command.groups.flatMap((group) => group.commands.flatMap(commandKindsForCommand));
             case 'recipe.load':
             case 'recipe.run':
                 return command.recipe?.commands.flatMap(commandKindsForCommand) ?? [];
@@ -1580,18 +1610,19 @@ function effectiveCommandCountForCommand(command: RallarBlackBoxTestCommand): nu
     if (command.kind === 'loop') {
         const childCommandCount = command.commands.reduce(
             (sum, childCommand) => sum + effectiveCommandCountForCommand(childCommand),
-            0,
+            0
         );
         return childCommandCount * positiveIntegerValue(command.count, 1);
     }
 
     if (command.kind === 'parallel') {
         return command.groups.reduce(
-            (sum, group) => sum + group.commands.reduce(
-                (groupSum, childCommand) => groupSum + effectiveCommandCountForCommand(childCommand),
-                0,
-            ),
-            0,
+            (sum, group) =>
+                sum + group.commands.reduce(
+                    (groupSum, childCommand) => groupSum + effectiveCommandCountForCommand(childCommand),
+                    0
+                ),
+            0
         );
     }
 
@@ -1642,14 +1673,12 @@ function nonNegativeIntegerValue(value: unknown): number | undefined {
 }
 
 function firstPositiveInteger(...values: readonly unknown[]): number | undefined {
-    return values.find((value): value is number =>
-        typeof value === 'number' && Number.isInteger(value) && value > 0
-    );
+    return values.find((value): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0);
 }
 
 function firstPositiveIntegerFrom<T>(
     values: Iterable<T>,
-    select: (value: T) => unknown,
+    select: (value: T) => unknown
 ): number | undefined {
     for (const value of values) {
         const candidate = select(value);
@@ -1665,21 +1694,21 @@ function uniqueValues<T extends string>(values: readonly T[]): readonly T[] {
 }
 
 export function buildDistributedRunManifest(
-    input: BuildDistributedRunManifestInput,
+    input: BuildDistributedRunManifestInput
 ): RallarBlackBoxDistributedRunManifest {
     const recipeSelections = input.recipes.map((item, index) => ({
         recipeId: item.recipe.recipeId,
         recipe: item.recipe,
         role: recipeRoleForPattern(input.rolePattern, index, input.recipes.length),
         profile: item.profiles[0],
-        required: true,
+        required: true
     } satisfies RallarBlackBoxDistributedRunRecipeSelection));
     const roles = rolesForPattern(input.rolePattern, input.targetAgentIds);
     const targetPolicy = buildTargetPolicy({
         mode: input.targetPolicyMode,
         agentIds: input.targetAgentIds,
         roles,
-        expectedParticipantCount: input.expectedParticipantCount,
+        expectedParticipantCount: input.expectedParticipantCount
     });
     const useOrderedTargetRoles = input.targetPolicyMode === 'all-online-group-members' &&
         input.rolePattern !== 'all-agents';
@@ -1711,13 +1740,13 @@ export function buildDistributedRunManifest(
             includeDistributedMetadata: true,
             includeEventJsonl: true,
             includeResultJsonl: true,
-            includeFailureBundle: true,
+            includeFailureBundle: true
         },
         groupAssertions: input.groupAssertions,
         metadata: {
             createdBy: 'rallar-black-box-spa',
-            rolePattern: input.rolePattern,
-        },
+            rolePattern: input.rolePattern
+        }
     };
 }
 
@@ -1737,32 +1766,34 @@ export function distributedRecipeStateTone(state: string): string {
     return 'muted';
 }
 
-export function deriveDistributedRunMonitor(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    controlRun?: ControlRunSnapshot;
-    artifactBundle?: ControlDistributedRunArtifactBundle;
-    artifactValidation?: DistributedRunArtifactValidation;
-}>): DistributedRunMonitor {
+export function deriveDistributedRunMonitor(
+    input: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        controlRun?: ControlRunSnapshot;
+        artifactBundle?: ControlDistributedRunArtifactBundle;
+        artifactValidation?: DistributedRunArtifactValidation;
+    }>
+): DistributedRunMonitor {
     const index = createDistributedRunMonitorIndex(input);
     const linkedEvents = distributedRunEvents(index.linkedControlEvents);
     const eventsByAgentId = distributedRunEventsByAgent(linkedEvents, index);
     const compositeDrilldowns = distributedRunCompositeDrilldowns(
         index.linkedResults,
         index.commandsById,
-        index.linksByCommandId,
+        index.linksByCommandId
     );
     const failures = [
         ...distributedRunFailures(
             input.distributedRun,
             index.linkedResults,
-            index.commandsById,
+            index.commandsById
         ),
-        ...distributedRunCompositeFailures(compositeDrilldowns),
+        ...distributedRunCompositeFailures(compositeDrilldowns)
     ].sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
     const failureIndex = createDistributedRunMonitorFailureIndex(failures, index);
     const runtimeDiagnostics = correlateDistributedRunRuntimeDiagnostics(
         distributedRunRuntimeDiagnostics(index.linkedControlEvents),
-        failureIndex,
+        failureIndex
     );
     const artifact = input.artifactValidation ??
         validateDistributedRunArtifact(input.artifactBundle);
@@ -1784,47 +1815,48 @@ export function deriveDistributedRunMonitor(input: Readonly<{
             events: linkedEvents,
             runtimeDiagnostics,
             failures,
-            artifact,
+            artifact
         }),
         agentProgress: distributedRunAgentProgress({
             index,
-            eventsByAgentId,
+            eventsByAgentId
         }),
         recipeProgress: distributedRunRecipeProgress({
-            index,
+            index
         }),
         readiness: distributedRunReadiness({
-            index,
+            index
         }),
         failures,
         events: linkedEvents,
         runtimeDiagnostics,
-        compositeDrilldowns,
+        compositeDrilldowns
     };
     recordDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
     return monitor;
 }
 
-export function deriveDistributedRunAnalysisReport(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    controlRun?: ControlRunSnapshot;
-    artifactBundle?: ControlDistributedRunArtifactBundle;
-    snapshotBounds?: ControlSnapshotBounds;
-    monitor?: DistributedRunMonitor;
-}>): DistributedRunAnalysisReport {
+export function deriveDistributedRunAnalysisReport(
+    input: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        controlRun?: ControlRunSnapshot;
+        artifactBundle?: ControlDistributedRunArtifactBundle;
+        snapshotBounds?: ControlSnapshotBounds;
+        monitor?: DistributedRunMonitor;
+    }>
+): DistributedRunAnalysisReport {
     const monitor = input.monitor ?? deriveDistributedRunMonitor(input);
     const analysisReuse = distributedRunMonitorAnalysisReuseFor(
         monitor,
-        input.distributedRun,
+        input.distributedRun
     );
     const reportWork = {
         reportCommandLinkLookupCount: 0,
         reportFallbackCommandLinkIndexPassCount: 0,
         reportFallbackCommandLinkVisitCount: 0,
-        reportFallbackCommandPhaseLookupCount: 0,
+        reportFallbackCommandPhaseLookupCount: 0
     };
-    let fallbackFirstPhasesByCommandId:
-        ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> | undefined;
+    let fallbackFirstPhasesByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> | undefined;
     const firstPhaseForCommand = (commandId: string | undefined) => {
         if (analysisReuse !== undefined) {
             if (commandId !== undefined) {
@@ -1832,13 +1864,15 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
             }
             return distributedRunMonitorFirstPhaseForCommand(analysisReuse, commandId);
         }
-        if (commandId === undefined) return undefined;
+        if (commandId === undefined) {
+            return undefined;
+        }
         reportWork.reportFallbackCommandPhaseLookupCount += 1;
         if (fallbackFirstPhasesByCommandId === undefined) {
             reportWork.reportFallbackCommandLinkIndexPassCount += 1;
             fallbackFirstPhasesByCommandId = firstDistributedRunPhasesByCommandId(
                 input.distributedRun.commandLinks,
-                reportWork,
+                reportWork
             );
         }
         return fallbackFirstPhasesByCommandId.get(commandId);
@@ -1848,14 +1882,14 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
         input.distributedRun,
         monitor,
         firstFailure,
-        firstPhaseForCommand,
+        firstPhaseForCommand
     );
-    const controlAgents = new Map((input.controlRun?.agents ?? []).map(agent => [agent.agentId, agent]));
+    const controlAgents = new Map((input.controlRun?.agents ?? []).map((agent) => [agent.agentId, agent]));
     const snapshotWarnings = distributedSnapshotWarnings(input.controlRun, input.snapshotBounds);
     const correlatedDiagnostics = monitor.runtimeDiagnostics
-        .filter(row => row.correlatedFailureKeys.length > 0);
+        .filter((row) => row.correlatedFailureKeys.length > 0);
     const firstExplanation = firstFailure
-        ? explanations.find(explanation => explanation.evidence.includes(firstFailure.key)) ??
+        ? explanations.find((explanation) => explanation.evidence.includes(firstFailure.key)) ??
             explanations[0]
         : undefined;
 
@@ -1873,7 +1907,7 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
             failedResultCount: monitor.resultCounts.failed,
             artifactStatus: monitor.artifact.status,
             snapshotMayBeTruncated: snapshotWarnings.length > 0,
-            snapshotWarnings,
+            snapshotWarnings
         },
         firstFailure: firstFailure
             ? {
@@ -1885,10 +1919,10 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
                 agentId: firstFailure.agentId,
                 recipeId: firstFailure.recipeId,
                 commandId: firstFailure.commandId,
-                atEpochMs: firstFailure.atEpochMs,
+                atEpochMs: firstFailure.atEpochMs
             }
             : undefined,
-        agents: monitor.agentProgress.map(row => {
+        agents: monitor.agentProgress.map((row) => {
             const agent = controlAgents.get(row.agentId);
             return {
                 agentId: row.agentId,
@@ -1899,7 +1933,7 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
                 eventCount: row.eventCount,
                 failedCommandCount: row.failedCommandCount,
                 reconnectCount: agent?.reconnectCount,
-                lastHeartbeatAtEpochMs: agent?.lastHeartbeatAtEpochMs,
+                lastHeartbeatAtEpochMs: agent?.lastHeartbeatAtEpochMs
             };
         }),
         recipes: monitor.recipeProgress,
@@ -1909,27 +1943,29 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
             errors: monitor.diagnosticCounts.error,
             ws: monitor.diagnosticCounts.ws,
             rtc: monitor.diagnosticCounts.rtc,
-            correlated: correlatedDiagnostics,
+            correlated: correlatedDiagnostics
         },
         nextActions: explanations,
         rawEvidence: {
-            failureKeys: monitor.failures.map(failure => failure.key),
-            diagnosticIds: monitor.runtimeDiagnostics.map(row => row.eventId),
+            failureKeys: monitor.failures.map((failure) => failure.key),
+            diagnosticIds: monitor.runtimeDiagnostics.map((row) => row.eventId),
             artifactStatus: monitor.artifact.status,
-            artifactMessage: monitor.artifact.message,
-        },
+            artifactMessage: monitor.artifact.message
+        }
     };
     recordDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
     return report;
 }
 
-export function deriveRunVerdictView(input: Readonly<{
-    distributedRun?: ControlDistributedRunSnapshot;
-    monitor?: DistributedRunMonitor;
-    report?: DistributedRunAnalysisReport;
-    artifactBundle?: ControlDistributedRunArtifactBundle;
-    refreshedAtEpochMs?: number;
-}>): RunVerdictView {
+export function deriveRunVerdictView(
+    input: Readonly<{
+        distributedRun?: ControlDistributedRunSnapshot;
+        monitor?: DistributedRunMonitor;
+        report?: DistributedRunAnalysisReport;
+        artifactBundle?: ControlDistributedRunArtifactBundle;
+        refreshedAtEpochMs?: number;
+    }>
+): RunVerdictView {
     if (!input.distributedRun) {
         return {
             verdict: 'no-run',
@@ -1940,23 +1976,23 @@ export function deriveRunVerdictView(input: Readonly<{
             artifactMessage: 'No distributed artifact bundle was loaded.',
             refreshedAtEpochMs: input.refreshedAtEpochMs,
             primaryEvidence: [
-                { label: 'Evidence', value: 'No run loaded', tone: 'muted' },
+                { label: 'Evidence', value: 'No run loaded', tone: 'muted' }
             ],
             successSignals: [],
             warningSignals: [],
-            causalTrail: [],
+            causalTrail: []
         };
     }
 
     const monitorWasDerivedForVerdict = input.monitor === undefined;
     const monitor = input.monitor ?? deriveDistributedRunMonitor({
         distributedRun: input.distributedRun,
-        artifactBundle: input.artifactBundle,
+        artifactBundle: input.artifactBundle
     });
     const report = input.report ?? deriveDistributedRunAnalysisReport({
         distributedRun: input.distributedRun,
         artifactBundle: input.artifactBundle,
-        ...(monitorWasDerivedForVerdict ? { monitor } : {}),
+        ...(monitorWasDerivedForVerdict ? { monitor } : {})
     });
     const selectedRecipe = input.distributedRun.manifest.recipes[0];
     const recipeLabel = selectedRecipe
@@ -1971,43 +2007,47 @@ export function deriveRunVerdictView(input: Readonly<{
     const tone = runVerdictTone(verdict, hasWarnings);
     const title = runVerdictTitle(verdict, hasWarnings);
     const linkedFailureCount = report.firstFailure ? 1 : report.rawEvidence.failureKeys.length;
-    const linkedEvidence = `${linkedFailureCount} failure${linkedFailureCount === 1 ? '' : 's'} / ${report.rawEvidence.diagnosticIds.length} diagnostic${report.rawEvidence.diagnosticIds.length === 1 ? '' : 's'} / ${monitor.events.length} event${monitor.events.length === 1 ? '' : 's'}`;
+    const linkedEvidence = `${linkedFailureCount} failure${
+        linkedFailureCount === 1 ? '' : 's'
+    } / ${report.rawEvidence.diagnosticIds.length} diagnostic${
+        report.rawEvidence.diagnosticIds.length === 1 ? '' : 's'
+    } / ${monitor.events.length} event${monitor.events.length === 1 ? '' : 's'}`;
     const evidenceItems: RunVerdictEvidenceItem[] = [
         {
             label: 'Commands',
             value: `${monitor.resultCounts.ok}/${Math.max(monitor.commandCounts.total, monitor.resultCounts.total)} ok`,
             tone: monitor.resultCounts.failed > 0 ? 'warn' : 'good',
-            detail: `${monitor.commandCounts.completed} completed, ${monitor.commandCounts.pending} pending`,
+            detail: `${monitor.commandCounts.completed} completed, ${monitor.commandCounts.pending} pending`
         },
         {
             label: 'Evidence',
             value: `${monitor.resultCounts.total} results / ${monitor.events.length} events`,
             tone: monitor.events.length > 0 || monitor.resultCounts.total > 0 ? 'active' : 'muted',
-            detail: `${monitor.runtimeDiagnostics.length} runtime diagnostics`,
+            detail: `${monitor.runtimeDiagnostics.length} runtime diagnostics`
         },
         {
             label: 'Evidence warnings',
             value: String(warningSignals.length),
-            tone: warningSignals.length > 0 ? 'warn' : 'good',
+            tone: warningSignals.length > 0 ? 'warn' : 'good'
         },
         {
             label: 'Slowest',
             value: monitor.latency.maxMs !== undefined ? `${Math.round(monitor.latency.maxMs)} ms` : '-',
-            tone: monitor.latency.maxMs !== undefined ? 'active' : 'muted',
+            tone: monitor.latency.maxMs !== undefined ? 'active' : 'muted'
         },
         {
             label: 'Artifact',
             value: monitor.artifact.status,
             tone: monitor.artifact.status === 'valid' ? 'good' : 'warn',
-            detail: monitor.artifact.message,
-        },
+            detail: monitor.artifact.message
+        }
     ];
 
     if (baseVerdict === 'failed') {
         evidenceItems.push({
             label: 'Linked evidence',
             value: linkedEvidence,
-            tone: report.rawEvidence.failureKeys.length > 0 ? 'bad' : 'warn',
+            tone: report.rawEvidence.failureKeys.length > 0 ? 'bad' : 'warn'
         });
     }
 
@@ -2034,13 +2074,13 @@ export function deriveRunVerdictView(input: Readonly<{
         primaryEvidence: evidenceItems,
         successSignals,
         warningSignals,
-        causalTrail: runVerdictCausalTrail(report, monitor),
+        causalTrail: runVerdictCausalTrail(report, monitor)
     };
 }
 
 function runVerdictKind(
     run: ControlDistributedRunSnapshot,
-    report: DistributedRunAnalysisReport,
+    report: DistributedRunAnalysisReport
 ): RunVerdictKind {
     if (report.summary.ok || run.state === 'passed') {
         return 'passed';
@@ -2048,17 +2088,28 @@ function runVerdictKind(
     if (run.state === 'failed' || run.state === 'timed-out' || report.firstFailure) {
         return 'failed';
     }
-    if (run.state === 'running' || run.state === 'waiting-for-ack' || run.state === 'waiting-for-barrier' || run.state === 'staging') {
+    if (
+        run.state === 'running' || run.state === 'waiting-for-ack' || run.state === 'waiting-for-barrier' ||
+        run.state === 'staging'
+    ) {
         return 'running';
     }
     return 'attention';
 }
 
 function runVerdictTone(verdict: RunVerdictKind, hasWarnings: boolean): RunVerdictTone {
-    if (verdict === 'failed') return 'bad';
-    if (verdict === 'running') return 'active';
-    if (verdict === 'passed') return hasWarnings ? 'warn' : 'good';
-    if (verdict === 'attention') return 'warn';
+    if (verdict === 'failed') {
+        return 'bad';
+    }
+    if (verdict === 'running') {
+        return 'active';
+    }
+    if (verdict === 'passed') {
+        return hasWarnings ? 'warn' : 'good';
+    }
+    if (verdict === 'attention') {
+        return 'warn';
+    }
     return 'muted';
 }
 
@@ -2066,14 +2117,20 @@ function runVerdictTitle(verdict: RunVerdictKind, hasWarnings: boolean): string 
     if (verdict === 'passed') {
         return hasWarnings ? 'Outcome passed; evidence needs review' : 'Outcome passed';
     }
-    if (verdict === 'failed') return 'Outcome failed';
-    if (verdict === 'running') return 'Outcome still running';
-    if (verdict === 'attention') return 'Outcome needs attention';
+    if (verdict === 'failed') {
+        return 'Outcome failed';
+    }
+    if (verdict === 'running') {
+        return 'Outcome still running';
+    }
+    if (verdict === 'attention') {
+        return 'Outcome needs attention';
+    }
     return 'No run selected';
 }
 
 function verdictCommandFailureNextAction(
-    failure?: DistributedRunAnalysisReport['firstFailure'],
+    failure?: DistributedRunAnalysisReport['firstFailure']
 ): string {
     const command = failure?.commandId ? `Open command ${failure.commandId}` : 'Open the affected command';
     const agent = failure?.agentId ? ` on agent ${failure.agentId}` : '';
@@ -2082,33 +2139,49 @@ function verdictCommandFailureNextAction(
 
 function runVerdictWarnings(
     monitor: DistributedRunMonitor,
-    report: DistributedRunAnalysisReport,
+    report: DistributedRunAnalysisReport
 ): readonly string[] {
     const warnings = [
-        ...report.summary.snapshotWarnings.map(warning => `Evidence warning: snapshot ${warning}`),
+        ...report.summary.snapshotWarnings.map((warning) => `Evidence warning: snapshot ${warning}`),
         ...(monitor.artifact.status === 'valid'
             ? []
-            : [`Evidence warning: artifact ${monitor.artifact.status === 'not-loaded' ? 'not loaded' : monitor.artifact.status}: ${monitor.artifact.message}`]),
-        ...(monitor.resultCounts.failed > 0 ? [`Evidence warning: ${monitor.resultCounts.failed} failed command result${monitor.resultCounts.failed === 1 ? '' : 's'} remained in evidence.`] : []),
-        ...(report.diagnostics.warnings > 0 ? [`Evidence warning: ${report.diagnostics.warnings} runtime warning diagnostic${report.diagnostics.warnings === 1 ? '' : 's'}.`] : []),
-        ...(report.diagnostics.errors > 0 ? [`Evidence warning: ${report.diagnostics.errors} runtime error diagnostic${report.diagnostics.errors === 1 ? '' : 's'}.`] : []),
+            : [`Evidence warning: artifact ${
+                monitor.artifact.status === 'not-loaded' ? 'not loaded' : monitor.artifact.status
+            }: ${monitor.artifact.message}`]),
+        ...(monitor.resultCounts.failed > 0
+            ? [`Evidence warning: ${monitor.resultCounts.failed} failed command result${
+                monitor.resultCounts.failed === 1 ? '' : 's'
+            } remained in evidence.`]
+            : []),
+        ...(report.diagnostics.warnings > 0
+            ? [`Evidence warning: ${report.diagnostics.warnings} runtime warning diagnostic${
+                report.diagnostics.warnings === 1 ? '' : 's'
+            }.`]
+            : []),
+        ...(report.diagnostics.errors > 0
+            ? [`Evidence warning: ${report.diagnostics.errors} runtime error diagnostic${
+                report.diagnostics.errors === 1 ? '' : 's'
+            }.`]
+            : [])
     ];
     return uniqueValues(warnings);
 }
 
 function runVerdictSuccessSignals(
     monitor: DistributedRunMonitor,
-    report: DistributedRunAnalysisReport,
+    report: DistributedRunAnalysisReport
 ): readonly string[] {
     const okResults = monitor.resultCounts.ok;
     const completed = okResults > 0 ? okResults : monitor.commandCounts.completed;
     const signals = [
         completed > 0 ? `${completed} completed command${completed === 1 ? '' : 's'}` : undefined,
-        monitor.events.length > 0 ? `${monitor.events.length} received evidence event${monitor.events.length === 1 ? '' : 's'}` : undefined,
+        monitor.events.length > 0
+            ? `${monitor.events.length} received evidence event${monitor.events.length === 1 ? '' : 's'}`
+            : undefined,
         report.summary.artifactStatus === 'valid' ? 'Artifact bundle is valid.' : undefined,
         report.summary.failedCommandCount === 0 && report.summary.failedResultCount === 0
             ? 'No failed command results in the loaded snapshot.'
-            : undefined,
+            : undefined
     ];
     return compactStrings(signals);
 }
@@ -2116,46 +2189,49 @@ function runVerdictSuccessSignals(
 function runVerdictSummary(
     run: ControlDistributedRunSnapshot,
     report: DistributedRunAnalysisReport,
-    monitor: DistributedRunMonitor,
+    monitor: DistributedRunMonitor
 ): string {
     if (report.firstFailure) {
         return [
             report.firstFailure.category,
             report.firstFailure.agentId ? `agent ${report.firstFailure.agentId}` : undefined,
             report.firstFailure.commandId ? `command ${report.firstFailure.commandId}` : undefined,
-            report.firstFailure.message,
+            report.firstFailure.message
         ].filter(Boolean).join(' - ');
     }
     if (report.summary.ok || run.state === 'passed') {
-        return `${report.summary.completedCommandCount} commands completed across ${report.summary.targetCount} target${report.summary.targetCount === 1 ? '' : 's'}; ${monitor.events.length} event${monitor.events.length === 1 ? '' : 's'} linked.`;
+        return `${report.summary.completedCommandCount} commands completed across ${report.summary.targetCount} target${
+            report.summary.targetCount === 1 ? '' : 's'
+        }; ${monitor.events.length} event${monitor.events.length === 1 ? '' : 's'} linked.`;
     }
-    return `Run state is ${run.state}; ${monitor.commandCounts.pending} command${monitor.commandCounts.pending === 1 ? '' : 's'} still pending.`;
+    return `Run state is ${run.state}; ${monitor.commandCounts.pending} command${
+        monitor.commandCounts.pending === 1 ? '' : 's'
+    } still pending.`;
 }
 
 function runVerdictCausalTrail(
     report: DistributedRunAnalysisReport,
-    monitor: DistributedRunMonitor,
+    monitor: DistributedRunMonitor
 ): readonly RunCausalTrailItem[] {
     if (!report.firstFailure) {
         return [];
     }
 
-    const firstAction = report.nextActions.find(action =>
-        action.evidence.includes(report.firstFailure!.key)
-    ) ?? report.nextActions[0];
-    const correlatedDiagnostics = report.diagnostics.correlated.filter(row =>
+    const firstAction = report.nextActions.find((action) => action.evidence.includes(report.firstFailure!.key)) ??
+        report.nextActions[0];
+    const correlatedDiagnostics = report.diagnostics.correlated.filter((row) =>
         row.correlatedFailureKeys.includes(report.firstFailure!.key)
     );
     const diagnosticEvidence = correlatedDiagnostics.length > 0
-        ? correlatedDiagnostics.map(row => row.eventId)
+        ? correlatedDiagnostics.map((row) => row.eventId)
         : report.rawEvidence.diagnosticIds.slice(0, 3);
     const eventEvidence = monitor.events
-        .filter(event =>
+        .filter((event) =>
             event.commandId === report.firstFailure?.commandId ||
             event.agentId === report.firstFailure?.agentId
         )
-        .map(event => event.eventId);
-    const streamPerformanceEvent = monitor.events.find(event =>
+        .map((event) => event.eventId);
+    const streamPerformanceEvent = monitor.events.find((event) =>
         isRtcStreamPerformanceFailureText(`${event.topic ?? ''} ${event.summary} ${event.payloadSummary}`)
     );
     const isStreamPerformanceFailure = firstAction?.category === 'rtc-stream-performance' ||
@@ -2169,25 +2245,25 @@ function runVerdictCausalTrail(
         : [];
     const streamPerformanceItem: RunCausalTrailItem | undefined = isStreamPerformanceFailure
         ? {
-              kind: 'stream-performance',
-              label: 'Stream pacing evidence',
-              detail:
-                  'Check frame disposition, in-flight drops, max start drift, late frames, and stream P95/P99 before changing RTC routing or recipe thresholds.',
-              tone: 'bad',
-              targetKind: streamCommandId ? 'command' : 'agent',
-              targetId: streamCommandId ?? streamAgentId,
-              actionLabel: 'Inspect stream pacing',
-              agentId: streamAgentId,
-              recipeId: report.firstFailure.recipeId,
-              commandId: streamCommandId,
-              atEpochMs: report.firstFailure.atEpochMs,
-              evidence: compactStrings([
-                  streamCommandId,
-                  streamAgentId,
-                  report.firstFailure.code,
-                  ...streamEventEvidence.slice(0, 3),
-              ]),
-          }
+            kind: 'stream-performance',
+            label: 'Stream pacing evidence',
+            detail:
+                'Check frame disposition, in-flight drops, max start drift, late frames, and stream P95/P99 before changing RTC routing or recipe thresholds.',
+            tone: 'bad',
+            targetKind: streamCommandId ? 'command' : 'agent',
+            targetId: streamCommandId ?? streamAgentId,
+            actionLabel: 'Inspect stream pacing',
+            agentId: streamAgentId,
+            recipeId: report.firstFailure.recipeId,
+            commandId: streamCommandId,
+            atEpochMs: report.firstFailure.atEpochMs,
+            evidence: compactStrings([
+                streamCommandId,
+                streamAgentId,
+                report.firstFailure.code,
+                ...streamEventEvidence.slice(0, 3)
+            ])
+        }
         : undefined;
 
     return [
@@ -2207,7 +2283,7 @@ function runVerdictCausalTrail(
             recipeId: report.firstFailure.recipeId,
             commandId: report.firstFailure.commandId,
             atEpochMs: report.firstFailure.atEpochMs,
-            evidence: compactStrings([report.firstFailure.key, report.firstFailure.code]),
+            evidence: compactStrings([report.firstFailure.key, report.firstFailure.code])
         },
         {
             kind: 'command-result',
@@ -2228,14 +2304,16 @@ function runVerdictCausalTrail(
             evidence: compactStrings([
                 report.firstFailure.commandId,
                 report.firstFailure.agentId,
-                report.firstFailure.recipeId,
-            ]),
+                report.firstFailure.recipeId
+            ])
         },
         ...(streamPerformanceItem ? [streamPerformanceItem] : []),
         {
             kind: 'diagnostic',
             label: correlatedDiagnostics.length > 0
-                ? `${correlatedDiagnostics.length} correlated diagnostic${correlatedDiagnostics.length === 1 ? '' : 's'}`
+                ? `${correlatedDiagnostics.length} correlated diagnostic${
+                    correlatedDiagnostics.length === 1 ? '' : 's'
+                }`
                 : 'No correlated diagnostics',
             detail: correlatedDiagnostics[0]?.summary ??
                 'No runtime diagnostic was directly correlated to the first failure in the loaded snapshot.',
@@ -2248,7 +2326,7 @@ function runVerdictCausalTrail(
             agentId: correlatedDiagnostics[0]?.agentId ?? report.firstFailure.agentId,
             commandId: correlatedDiagnostics[0]?.commandId ?? report.firstFailure.commandId,
             atEpochMs: correlatedDiagnostics[0]?.atEpochMs,
-            evidence: diagnosticEvidence,
+            evidence: diagnosticEvidence
         },
         {
             kind: 'artifact',
@@ -2258,7 +2336,7 @@ function runVerdictCausalTrail(
             targetKind: 'artifact',
             targetId: report.rawEvidence.artifactStatus,
             actionLabel: 'Inspect artifact evidence',
-            evidence: [report.rawEvidence.artifactStatus],
+            evidence: [report.rawEvidence.artifactStatus]
         },
         {
             kind: 'events',
@@ -2274,14 +2352,14 @@ function runVerdictCausalTrail(
                 : 'Review event filters',
             agentId: report.firstFailure.agentId,
             commandId: report.firstFailure.commandId,
-            evidence: eventEvidence,
-        },
+            evidence: eventEvidence
+        }
     ];
 }
 
 export function filterDistributedRuns(
     runs: readonly ControlDistributedRunSnapshot[],
-    filter: DistributedRunHistoryFilter,
+    filter: DistributedRunHistoryFilter
 ): readonly ControlDistributedRunSnapshot[] {
     const query = normalizeFilterText(filter.query);
     const groupId = normalizeFilterText(filter.groupId);
@@ -2293,7 +2371,7 @@ export function filterDistributedRuns(
     const failureCategory = normalizeFilterText(filter.failureCategory);
 
     return [...runs]
-        .filter(run => {
+        .filter((run) => {
             const manifest = distributedRunHistoryManifest(run);
             if (status && normalizeFilterText(run.state) !== status) {
                 return false;
@@ -2304,14 +2382,20 @@ export function filterDistributedRuns(
             ) {
                 return false;
             }
-            if (recipeId && !manifest.recipes.some(({ selection, index }) =>
-                normalizeFilterText(recipeSelectionId(selection, index)).includes(recipeId)
-            )) {
+            if (
+                recipeId &&
+                !manifest.recipes.some(({ selection, index }) =>
+                    normalizeFilterText(recipeSelectionId(selection, index)).includes(recipeId)
+                )
+            ) {
                 return false;
             }
-            if (profile && !manifest.recipes.some(({ selection }) =>
-                normalizeFilterText(historyManifestString(selection.profile)).includes(profile)
-            )) {
+            if (
+                profile &&
+                !manifest.recipes.some(({ selection }) =>
+                    normalizeFilterText(historyManifestString(selection.profile)).includes(profile)
+                )
+            ) {
                 return false;
             }
             if (
@@ -2344,7 +2428,7 @@ export function filterDistributedRuns(
 }
 
 export function projectDistributedRunHistoryLabels(
-    run: ControlDistributedRunSnapshot,
+    run: ControlDistributedRunSnapshot
 ): DistributedRunHistoryLabels {
     const manifest = distributedRunHistoryManifest(run);
     const applicationId = optionalHistoryLabel(manifest.group.applicationId);
@@ -2358,22 +2442,22 @@ export function projectDistributedRunHistoryLabels(
             recipeId,
             profile,
             role,
-            label: profile ? `${recipeId} · ${profile}` : recipeId,
+            label: profile ? `${recipeId} · ${profile}` : recipeId
         };
     });
-    const failures = distributedRunRecordedFailures(run).map(failure => {
+    const failures = distributedRunRecordedFailures(run).map((failure) => {
         const code = optionalHistoryLabel(failure.code);
         const message = optionalHistoryLabel(failure.message) ?? 'Recorded failure';
         const category = explanationForFailure({
             ...failure,
             code,
-            message,
+            message
         }).category;
         return {
             category,
             code,
             message,
-            label: code ? `${code}: ${message}` : message,
+            label: code ? `${code}: ${message}` : message
         };
     });
     return {
@@ -2383,19 +2467,21 @@ export function projectDistributedRunHistoryLabels(
             workspaceId,
             groupId,
             label: [applicationId, workspaceId, groupId].filter(Boolean).join(' / ') ||
-                'Unknown group',
+                'Unknown group'
         },
         recipes,
-        failures,
+        failures
     };
 }
 
-export function compareDistributedRuns(input: Readonly<{
-    left: ControlDistributedRunSnapshot;
-    right: ControlDistributedRunSnapshot;
-    leftControlRun?: ControlRunSnapshot;
-    rightControlRun?: ControlRunSnapshot;
-}>): DistributedRunCompareSummary {
+export function compareDistributedRuns(
+    input: Readonly<{
+        left: ControlDistributedRunSnapshot;
+        right: ControlDistributedRunSnapshot;
+        leftControlRun?: ControlRunSnapshot;
+        rightControlRun?: ControlRunSnapshot;
+    }>
+): DistributedRunCompareSummary {
     const leftRecipes = recipeCompareMap(input.left);
     const rightRecipes = recipeCompareMap(input.right);
     const leftParticipants = new Set(input.left.targetAgentIds);
@@ -2417,20 +2503,22 @@ export function compareDistributedRuns(input: Readonly<{
                 .filter(([recipeId, leftProfile]) =>
                     rightRecipes.has(recipeId) && rightRecipes.get(recipeId) !== leftProfile
                 )
-                .map(([recipeId, leftProfile]) => `${recipeId}: ${leftProfile || '-'} -> ${rightRecipes.get(recipeId) || '-'}`),
+                .map(([recipeId, leftProfile]) =>
+                    `${recipeId}: ${leftProfile || '-'} -> ${rightRecipes.get(recipeId) || '-'}`
+                )
         },
         participantDelta: {
             leftOnly: setDifference([...leftParticipants], rightParticipants),
             rightOnly: setDifference([...rightParticipants], leftParticipants),
             shared: [...leftParticipants]
-                .filter(agentId => rightParticipants.has(agentId))
-                .sort(),
+                .filter((agentId) => rightParticipants.has(agentId))
+                .sort()
         },
         failureDelta: {
             leftCount: leftFailures.length,
             rightCount: rightFailures.length,
             leftOnly: setDifference(leftFailures, new Set(rightFailures)),
-            rightOnly: setDifference(rightFailures, new Set(leftFailures)),
+            rightOnly: setDifference(rightFailures, new Set(leftFailures))
         },
         timingDelta: {
             leftDurationMs,
@@ -2441,26 +2529,29 @@ export function compareDistributedRuns(input: Readonly<{
             startedDeltaMs: input.left.startedAtEpochMs !== undefined && input.right.startedAtEpochMs !== undefined
                 ? input.right.startedAtEpochMs - input.left.startedAtEpochMs
                 : undefined,
-            completedDeltaMs: input.left.completedAtEpochMs !== undefined && input.right.completedAtEpochMs !== undefined
-                ? input.right.completedAtEpochMs - input.left.completedAtEpochMs
-                : undefined,
+            completedDeltaMs:
+                input.left.completedAtEpochMs !== undefined && input.right.completedAtEpochMs !== undefined
+                    ? input.right.completedAtEpochMs - input.left.completedAtEpochMs
+                    : undefined
         },
         receivedMessageDelta: {
             leftCount: leftMessages.length,
             rightCount: rightMessages.length,
             delta: rightMessages.length - leftMessages.length,
             leftOnly: setDifference(leftMessages, new Set(rightMessages)),
-            rightOnly: setDifference(rightMessages, new Set(leftMessages)),
-        },
+            rightOnly: setDifference(rightMessages, new Set(leftMessages))
+        }
     };
 }
 
-export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    controlRun?: ControlRunSnapshot;
-    artifactBundle?: ControlDistributedRunArtifactBundle;
-    expectation?: DistributedRunWarningRegressionExpectation;
-}>): DistributedRunWarningRegressionReport {
+export function deriveDistributedRunWarningRegressionReport(
+    input: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        controlRun?: ControlRunSnapshot;
+        artifactBundle?: ControlDistributedRunArtifactBundle;
+        expectation?: DistributedRunWarningRegressionExpectation;
+    }>
+): DistributedRunWarningRegressionReport {
     const monitor = deriveDistributedRunMonitor(input);
     const expectation = input.expectation ?? {};
     const expectedMessageEvidence = expectation.messageEvidence ?? [];
@@ -2472,46 +2563,52 @@ export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
         ? Object.values(input.artifactBundle.files).join('\n')
         : '';
     const artifactHasEmbeddedEvidence = Boolean(
-        input.artifactBundle?.files['events.jsonl'] || input.artifactBundle?.files['results.jsonl'],
+        input.artifactBundle?.files['events.jsonl'] || input.artifactBundle?.files['results.jsonl']
     );
     const monitorMessageEvidence = expectedMessageEvidence
-        .filter(value => monitorEvidenceText.includes(value));
+        .filter((value) => monitorEvidenceText.includes(value));
     const artifactMessageEvidence = expectedMessageEvidence
-        .filter(value => artifactEvidenceText.includes(value));
-    const diagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics.map(row => row.diagnosticTypeId));
-    const warningDiagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics
-        .filter(row => row.severity === 'warning')
-        .map(row => row.diagnosticTypeId));
-    const highSeverityDiagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics
-        .filter(row => failOnDiagnosticSeverities.includes(row.severity))
-        .map(row => row.diagnosticTypeId));
-    const compositeRecipeIds = uniqueValues(monitor.compositeDrilldowns
-        .map(row => row.recipeId ?? row.commandId)
-        .filter((value): value is string => Boolean(value)));
+        .filter((value) => artifactEvidenceText.includes(value));
+    const diagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics.map((row) => row.diagnosticTypeId));
+    const warningDiagnosticTypeIds = uniqueValues(
+        monitor.runtimeDiagnostics
+            .filter((row) => row.severity === 'warning')
+            .map((row) => row.diagnosticTypeId)
+    );
+    const highSeverityDiagnosticTypeIds = uniqueValues(
+        monitor.runtimeDiagnostics
+            .filter((row) => failOnDiagnosticSeverities.includes(row.severity))
+            .map((row) => row.diagnosticTypeId)
+    );
+    const compositeRecipeIds = uniqueValues(
+        monitor.compositeDrilldowns
+            .map((row) => row.recipeId ?? row.commandId)
+            .filter((value): value is string => Boolean(value))
+    );
     const failures = [
         ...expectedMessageEvidence
-            .filter(value => !monitorMessageEvidence.includes(value))
-            .map(value => `Monitor evidence is missing expected message payload token: ${value}`),
+            .filter((value) => !monitorMessageEvidence.includes(value))
+            .map((value) => `Monitor evidence is missing expected message payload token: ${value}`),
         ...(
             input.artifactBundle && artifactHasEmbeddedEvidence
                 ? expectedMessageEvidence
-                    .filter(value => !artifactMessageEvidence.includes(value))
-                    .map(value => `Artifact evidence is missing expected message payload token: ${value}`)
+                    .filter((value) => !artifactMessageEvidence.includes(value))
+                    .map((value) => `Artifact evidence is missing expected message payload token: ${value}`)
                 : []
         ),
         ...expectedDiagnosticTypeIds
-            .filter(value => !diagnosticTypeIds.includes(value))
-            .map(value => `Monitor diagnostics are missing expected diagnostic type: ${value}`),
+            .filter((value) => !diagnosticTypeIds.includes(value))
+            .map((value) => `Monitor diagnostics are missing expected diagnostic type: ${value}`),
         ...expectedCompositeRecipeIds
-            .filter(value => !compositeRecipeIds.includes(value))
-            .map(value => `Monitor composite drilldowns are missing expected recipe: ${value}`),
+            .filter((value) => !compositeRecipeIds.includes(value))
+            .map((value) => `Monitor composite drilldowns are missing expected recipe: ${value}`),
         ...highSeverityDiagnosticTypeIds
-            .map(value => `High-severity runtime diagnostic observed: ${value}`),
+            .map((value) => `High-severity runtime diagnostic observed: ${value}`),
         ...(
             input.artifactBundle && monitor.artifact.status !== 'valid'
                 ? [`Distributed artifact is ${monitor.artifact.status}: ${monitor.artifact.message}`]
                 : []
-        ),
+        )
     ];
 
     return {
@@ -2522,7 +2619,7 @@ export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
             messageEvidence: expectedMessageEvidence,
             diagnosticTypeIds: expectedDiagnosticTypeIds,
             compositeRecipeIds: expectedCompositeRecipeIds,
-            failOnDiagnosticSeverities,
+            failOnDiagnosticSeverities
         },
         observed: {
             monitorMessageEvidence,
@@ -2531,9 +2628,9 @@ export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
             warningDiagnosticTypeIds,
             highSeverityDiagnosticTypeIds,
             compositeRecipeIds,
-            artifactStatus: monitor.artifact.status,
+            artifactStatus: monitor.artifact.status
         },
-        failures,
+        failures
     };
 }
 
@@ -2548,10 +2645,9 @@ interface DistributedRecipeTargetRowInput {
 }
 
 function distributedRecipeTargetRow(
-    input: DistributedRecipeTargetRowInput,
+    input: DistributedRecipeTargetRowInput
 ): DistributedRecipeTargetRow {
-    const { agent, group, nowEpochMs, staleAfterMs, requiresCrdtRuntime, requiredCrdtTransports } =
-        input;
+    const { agent, group, nowEpochMs, staleAfterMs, requiresCrdtRuntime, requiredCrdtTransports } = input;
     const identity = agent.identity;
     const crdt = identity?.capabilities?.crdt;
     const crdtTransports = crdt?.transports ?? [];
@@ -2568,7 +2664,7 @@ function distributedRecipeTargetRow(
         crdtSupported: crdt?.supported,
         crdtTransports,
         lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
-        lastSeenAtEpochMs: agent.lastSeenAtEpochMs,
+        lastSeenAtEpochMs: agent.lastSeenAtEpochMs
     };
 
     if (!identity?.applicationId || !identity.workspaceId || !identity.groupId) {
@@ -2576,7 +2672,7 @@ function distributedRecipeTargetRow(
             ...base,
             status: 'missing-identity',
             targetable: false,
-            reason: 'Agent has not reported enough Rallar identity metadata.',
+            reason: 'Agent has not reported enough Rallar identity metadata.'
         };
     }
 
@@ -2589,7 +2685,7 @@ function distributedRecipeTargetRow(
             ...base,
             status: 'different-group',
             targetable: false,
-            reason: 'Agent identity does not match the selected global group.',
+            reason: 'Agent identity does not match the selected global group.'
         };
     }
 
@@ -2598,7 +2694,7 @@ function distributedRecipeTargetRow(
             ...base,
             status: 'offline',
             targetable: false,
-            reason: 'Agent matches the group but is disconnected from the control server.',
+            reason: 'Agent matches the group but is disconnected from the control server.'
         };
     }
 
@@ -2607,7 +2703,7 @@ function distributedRecipeTargetRow(
             ...base,
             status: 'stale',
             targetable: false,
-            reason: 'Agent matches the group but the last heartbeat is stale.',
+            reason: 'Agent matches the group but the last heartbeat is stale.'
         };
     }
 
@@ -2616,31 +2712,31 @@ function distributedRecipeTargetRow(
             ...base,
             status: 'missing-crdt-runtime',
             targetable: false,
-            reason: 'Agent matches the group but has not reported a CRDT runtime.',
+            reason: 'Agent matches the group but has not reported a CRDT runtime.'
         };
     }
 
     const missingCrdtTransport = requiredCrdtTransports
-        .find(transport => !crdtTransports.includes(transport));
+        .find((transport) => !crdtTransports.includes(transport));
     if (missingCrdtTransport) {
         return {
             ...base,
             status: 'missing-crdt-transport',
             targetable: false,
-            reason: `Agent CRDT runtime does not report ${missingCrdtTransport} transport support.`,
+            reason: `Agent CRDT runtime does not report ${missingCrdtTransport} transport support.`
         };
     }
 
     const unmetAssertionReason = validateAgentAssertionCapability(
         input.requiredAssertionFeatures,
-        identity?.capabilities,
+        identity?.capabilities
     );
     if (unmetAssertionReason) {
         return {
             ...base,
             status: 'missing-assertion-capability',
             targetable: false,
-            reason: unmetAssertionReason,
+            reason: unmetAssertionReason
         };
     }
 
@@ -2648,7 +2744,7 @@ function distributedRecipeTargetRow(
         ...base,
         status: 'matched',
         targetable: true,
-        reason: 'Agent is connected and reports the selected global group.',
+        reason: 'Agent is connected and reports the selected global group.'
     };
 }
 
@@ -2664,63 +2760,65 @@ function normalizedIdentityPart(value: unknown): string | undefined {
         : undefined;
 }
 
-function buildTargetPolicy(input: Readonly<{
-    mode: DistributedRecipeTargetPolicyMode;
-    agentIds: readonly string[];
-    roles: Readonly<Record<string, readonly string[]>>;
-    expectedParticipantCount?: number;
-}>): RallarBlackBoxDistributedTargetPolicy {
+function buildTargetPolicy(
+    input: Readonly<{
+        mode: DistributedRecipeTargetPolicyMode;
+        agentIds: readonly string[];
+        roles: Readonly<Record<string, readonly string[]>>;
+        expectedParticipantCount?: number;
+    }>
+): RallarBlackBoxDistributedTargetPolicy {
     const expected = input.expectedParticipantCount && input.expectedParticipantCount > 0
         ? { expectedParticipantCount: Math.floor(input.expectedParticipantCount) }
         : {};
     if (input.mode === 'all-online-group-members') {
         return {
             mode: input.mode,
-            ...expected,
+            ...expected
         };
     }
     if (input.mode === 'role-map') {
         return {
             mode: input.mode,
             roles: input.roles,
-            ...expected,
+            ...expected
         };
     }
     return {
         mode: input.mode,
         agentIds: input.agentIds,
-        ...expected,
+        ...expected
     };
 }
 
 function roleAssignmentsForPattern(
     pattern: DistributedRecipeRolePattern,
-    agentIds: readonly string[],
+    agentIds: readonly string[]
 ): readonly RallarBlackBoxDistributedRoleAssignment[] | undefined {
     const roles = rolesForPattern(pattern, agentIds);
     const assignments = Object.entries(roles).flatMap(([role, ids]) =>
-        ids.map(agentId => ({
+        ids.map((agentId) => ({
             role,
             agentId,
-            required: true,
+            required: true
         }))
     );
     return assignments.length > 0 ? assignments : undefined;
 }
 
 function orderedTargetRoleAssignmentPolicy(
-    pattern: DistributedRecipeRolePattern,
+    pattern: DistributedRecipeRolePattern
 ): RallarBlackBoxDistributedRoleAssignmentPolicy {
     return {
         mode: 'ordered-targets',
         pattern,
-        orderBy: 'agent-id',
+        orderBy: 'agent-id'
     };
 }
 
 function rolesForPattern(
     pattern: DistributedRecipeRolePattern,
-    agentIds: readonly string[],
+    agentIds: readonly string[]
 ): Readonly<Record<string, readonly string[]>> {
     if (pattern === 'all-agents') {
         return {};
@@ -2728,26 +2826,26 @@ function rolesForPattern(
     if (pattern === 'sender-receiver') {
         return {
             sender: agentIds.slice(0, 1),
-            receiver: agentIds.slice(1, 2),
+            receiver: agentIds.slice(1, 2)
         };
     }
     if (pattern === 'one-sender-many-receivers') {
         return {
             sender: agentIds.slice(0, 1),
-            receiver: agentIds.slice(1),
+            receiver: agentIds.slice(1)
         };
     }
     return {
         publisher: agentIds.slice(0, 1),
         relay: agentIds.slice(1, 2),
-        observer: agentIds.slice(2),
+        observer: agentIds.slice(2)
     };
 }
 
 function recipeRoleForPattern(
     pattern: DistributedRecipeRolePattern,
     recipeIndex: number,
-    recipeCount: number,
+    recipeCount: number
 ): string | undefined {
     if (pattern === 'all-agents' || recipeCount < 2) {
         return undefined;
@@ -2766,9 +2864,9 @@ type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 function distributedRunCompositeDrilldowns(
     results: readonly ControlResultSnapshot[],
     commands: ReadonlyMap<string, ControlCommandSnapshot>,
-    linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>,
+    linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>
 ): readonly DistributedRunCompositeDrilldown[] {
-    return results.flatMap(result => {
+    return results.flatMap((result) => {
         const roots = distributedRunCompositeRoots(result.result);
         if (roots.length === 0) {
             return [];
@@ -2783,13 +2881,13 @@ function distributedRunCompositeDrilldowns(
 
         const summary = summarizeRallarBlackBoxCompositeResults(roots);
         const failedRows = [...rows]
-            .filter(row => !row.ok)
+            .filter((row) => !row.ok)
             .sort((left, right) =>
                 left.startedAtEpochMs - right.startedAtEpochMs ||
                 left.endedAtEpochMs - right.endedAtEpochMs ||
                 left.path.localeCompare(right.path)
             );
-        const firstFailure = failedRows.find(row => row.depth > 0) ?? failedRows[0];
+        const firstFailure = failedRows.find((row) => row.depth > 0) ?? failedRows[0];
 
         return [{
             key: `${result.agentId}:${result.commandId}`,
@@ -2807,30 +2905,30 @@ function distributedRunCompositeDrilldowns(
                 cancelled: summary.cancelled,
                 skipped: summary.skipped,
                 composite: summary.composite,
-                leaf: summary.leaf,
+                leaf: summary.leaf
             },
             firstFailure,
             groupSummaries: distributedRunCompositeGroupSummaries(roots),
-            rows,
+            rows
         }];
     });
 }
 
 function distributedRunCompositeCounts(
-    drilldowns: readonly DistributedRunCompositeDrilldown[],
+    drilldowns: readonly DistributedRunCompositeDrilldown[]
 ): DistributedRunCompositeCounts {
     return {
         total: drilldowns.length,
-        passed: drilldowns.filter(drilldown => drilldown.summary.failed === 0).length,
-        failed: drilldowns.filter(drilldown => drilldown.summary.failed > 0).length,
+        passed: drilldowns.filter((drilldown) => drilldown.summary.failed === 0).length,
+        failed: drilldowns.filter((drilldown) => drilldown.summary.failed > 0).length,
         childResults: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.total, 0),
         composite: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.composite, 0),
-        leaf: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.leaf, 0),
+        leaf: drilldowns.reduce((sum, drilldown) => sum + drilldown.summary.leaf, 0)
     };
 }
 
 function distributedRunCompositeFailures(
-    drilldowns: readonly DistributedRunCompositeDrilldown[],
+    drilldowns: readonly DistributedRunCompositeDrilldown[]
 ): readonly DistributedRunFailureRow[] {
     return drilldowns.flatMap((drilldown): DistributedRunFailureRow[] => {
         if (!drilldown.firstFailure) {
@@ -2845,13 +2943,13 @@ function distributedRunCompositeFailures(
             code: drilldown.firstFailure.errorSummary ? undefined : drilldown.firstFailure.status,
             message: drilldown.firstFailure.errorSummary ??
                 `${drilldown.firstFailure.kind} ${drilldown.firstFailure.status} at ${drilldown.firstFailure.path}.`,
-            atEpochMs: drilldown.firstFailure.endedAtEpochMs,
+            atEpochMs: drilldown.firstFailure.endedAtEpochMs
         }];
     });
 }
 
 function distributedRunCompositeRoots(
-    result: RallarBlackBoxTestResult | undefined,
+    result: RallarBlackBoxTestResult | undefined
 ): readonly RallarBlackBoxTestResult[] {
     if (!result) {
         return [];
@@ -2899,13 +2997,15 @@ function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTest
 }
 
 function distributedRunCompositeRows(
-    roots: readonly RallarBlackBoxTestResult[],
+    roots: readonly RallarBlackBoxTestResult[]
 ): readonly DistributedRunCompositeRow[] {
     const entries = flattenRallarBlackBoxCompositeResults(roots);
-    const displayByPath = new Map(toRallarBlackBoxCompositeDisplayResults(roots)
-        .map(row => [row.path, row]));
+    const displayByPath = new Map(
+        toRallarBlackBoxCompositeDisplayResults(roots)
+            .map((row) => [row.path, row])
+    );
 
-    return entries.map(entry => {
+    return entries.map((entry) => {
         const display = displayByPath.get(entry.path);
         const errorSummary = compositeErrorSummary(display?.error ?? entry.result.error);
         return {
@@ -2930,16 +3030,16 @@ function distributedRunCompositeRows(
             summary: compositeResultSummary(entry.result, display?.value),
             detail: compositeResultDetail(entry.result, display?.value, errorSummary),
             errorSummary,
-            valueSummary: compositeValueSummary(display?.value),
+            valueSummary: compositeValueSummary(display?.value)
         };
     });
 }
 
 function distributedRunCompositeGroupSummaries(
-    roots: readonly RallarBlackBoxTestResult[],
+    roots: readonly RallarBlackBoxTestResult[]
 ): readonly DistributedRunCompositeGroupSummary[] {
     return flattenRallarBlackBoxCompositeResults(roots)
-        .flatMap(entry => {
+        .flatMap((entry) => {
             const value = compositeParallelResultValue(entry.result.value);
             if (!value) {
                 return [];
@@ -2954,7 +3054,7 @@ function distributedRunCompositeGroupSummaries(
                 failed: group.failed,
                 cancelled: group.cancelled,
                 durationMs: group.durationMs,
-                status: compositeGroupStatus(group),
+                status: compositeGroupStatus(group)
             }));
         });
 }
@@ -2972,7 +3072,7 @@ function compositeResultSummary(result: RallarBlackBoxTestResult, displayValue: 
                 `${value.passed} passed`,
                 `${value.failed} failed`,
                 value.cancelled ? 'cancelled' : undefined,
-                averageCadenceMs !== undefined ? `avg ${averageCadenceMs}ms/result` : undefined,
+                averageCadenceMs !== undefined ? `avg ${averageCadenceMs}ms/result` : undefined
             ].filter(Boolean).join(' - ');
         }
     }
@@ -2981,15 +3081,15 @@ function compositeResultSummary(result: RallarBlackBoxTestResult, displayValue: 
         const value = compositeParallelResultValue(result.value);
         if (value) {
             const failedGroups = value.groups
-                .filter(group => group.failed > 0)
-                .map(group => group.groupId);
+                .filter((group) => group.failed > 0)
+                .map((group) => group.groupId);
             return [
                 `${value.groupCount} groups`,
                 `max ${value.maxConcurrency}`,
                 `${value.passed} passed`,
                 `${value.failed} failed`,
                 value.cancelled ? 'cancelled' : undefined,
-                failedGroups.length > 0 ? `failed groups ${failedGroups.join(', ')}` : undefined,
+                failedGroups.length > 0 ? `failed groups ${failedGroups.join(', ')}` : undefined
             ].filter(Boolean).join(' - ');
         }
     }
@@ -2999,7 +3099,7 @@ function compositeResultSummary(result: RallarBlackBoxTestResult, displayValue: 
         if (value) {
             return [
                 value.matched ? 'matched' : value.timedOut ? 'timed out' : value.cancelled ? 'cancelled' : 'pending',
-                waitMatchSummary(value.match),
+                waitMatchSummary(value.match)
             ].filter(Boolean).join(' - ');
         }
     }
@@ -3010,7 +3110,7 @@ function compositeResultSummary(result: RallarBlackBoxTestResult, displayValue: 
             return [
                 value.passed ? 'passed' : 'failed',
                 `${value.source} ${value.operator}`,
-                value.expected !== undefined ? `expected ${safePayloadSummary(value.expected)}` : undefined,
+                value.expected !== undefined ? `expected ${safePayloadSummary(value.expected)}` : undefined
             ].filter(Boolean).join(' - ');
         }
     }
@@ -3021,7 +3121,7 @@ function compositeResultSummary(result: RallarBlackBoxTestResult, displayValue: 
 function compositeResultDetail(
     result: RallarBlackBoxTestResult,
     displayValue: unknown,
-    errorSummary: string | undefined,
+    errorSummary: string | undefined
 ): string | undefined {
     if (errorSummary) {
         return errorSummary;
@@ -3032,7 +3132,7 @@ function compositeResultDetail(
         if (value) {
             return [
                 `actual ${safePayloadSummary(value.actual)}`,
-                `exists ${value.exists}`,
+                `exists ${value.exists}`
             ].join(' - ');
         }
     }
@@ -3083,12 +3183,12 @@ function waitMatchSummary(value: unknown): string | undefined {
         firstString(match.payloadPath),
         match.equals !== undefined ? `equals ${safePayloadSummary(match.equals)}` : undefined,
         firstString(match.contains) ? `contains ${firstString(match.contains)}` : undefined,
-        typeof match.exists === 'boolean' ? `exists ${match.exists}` : undefined,
+        typeof match.exists === 'boolean' ? `exists ${match.exists}` : undefined
     ].filter(Boolean).join(', ') || undefined;
 }
 
 function compositeGroupStatus(
-    group: Readonly<{ commandCount: number; passed: number; failed: number; cancelled: boolean }>,
+    group: Readonly<{ commandCount: number; passed: number; failed: number; cancelled: boolean; }>
 ): DistributedRunCompositeGroupSummary['status'] {
     if (group.cancelled) {
         return 'cancelled';
@@ -3105,8 +3205,8 @@ function compositeGroupStatus(
 function compositeLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultValue | undefined {
     const candidate = asRecord(value) as Partial<RallarBlackBoxTestLoopResultValue>;
     return Array.isArray(candidate.results) &&
-        typeof candidate.iterations === 'number' &&
-        typeof candidate.childResultCount === 'number'
+            typeof candidate.iterations === 'number' &&
+            typeof candidate.childResultCount === 'number'
         ? candidate as RallarBlackBoxTestLoopResultValue
         : undefined;
 }
@@ -3114,8 +3214,8 @@ function compositeLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultV
 function compositeParallelResultValue(value: unknown): RallarBlackBoxTestParallelResultValue | undefined {
     const candidate = asRecord(value) as Partial<RallarBlackBoxTestParallelResultValue>;
     return Array.isArray(candidate.groups) &&
-        typeof candidate.groupCount === 'number' &&
-        typeof candidate.maxConcurrency === 'number'
+            typeof candidate.groupCount === 'number' &&
+            typeof candidate.maxConcurrency === 'number'
         ? candidate as RallarBlackBoxTestParallelResultValue
         : undefined;
 }
@@ -3130,9 +3230,9 @@ function compositeWaitResultValue(value: unknown): RallarBlackBoxTestWaitResultV
 function compositeAssertResultValue(value: unknown): RallarBlackBoxTestAssertResultValue | undefined {
     const candidate = asRecord(value) as Partial<RallarBlackBoxTestAssertResultValue>;
     return typeof candidate.source === 'string' &&
-        typeof candidate.operator === 'string' &&
-        typeof candidate.exists === 'boolean' &&
-        typeof candidate.passed === 'boolean'
+            typeof candidate.operator === 'string' &&
+            typeof candidate.exists === 'boolean' &&
+            typeof candidate.passed === 'boolean'
         ? candidate as RallarBlackBoxTestAssertResultValue
         : undefined;
 }
@@ -3147,7 +3247,7 @@ function commandRecipeId(command: ControlCommandSnapshot | undefined): string | 
 }
 
 function distributedRunEvents(
-    events: readonly ControlEventSnapshot[],
+    events: readonly ControlEventSnapshot[]
 ): readonly DistributedRunEventRow[] {
     return [...events]
         .sort((left, right) => left.atEpochMs - right.atEpochMs)
@@ -3159,16 +3259,16 @@ function distributedRunEvents(
             commandId: event.commandId,
             topic: payloadTopic(event.payload),
             summary: eventSummary(event),
-            payloadSummary: distributedRunEventPayloadSummary(event.payload),
+            payloadSummary: distributedRunEventPayloadSummary(event.payload)
         }));
 }
 
 function distributedRunEventsByAgent(
     events: readonly DistributedRunEventRow[],
-    index: DistributedRunMonitorIndex,
+    index: DistributedRunMonitorIndex
 ): ReadonlyMap<string, readonly DistributedRunEventRow[]> {
     const eventsByAgentId = new Map<string, DistributedRunEventRow[]>();
-    events.forEach(event => {
+    events.forEach((event) => {
         index.work.linkedEventAgentIndexVisitCount += 1;
         const agentEvents = eventsByAgentId.get(event.agentId) ?? [];
         if (!eventsByAgentId.has(event.agentId)) {
@@ -3180,19 +3280,17 @@ function distributedRunEventsByAgent(
 }
 
 function distributedRunRuntimeDiagnostics(
-    events: readonly ControlEventSnapshot[],
+    events: readonly ControlEventSnapshot[]
 ): readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[] {
     return events
         .map((event, index) => distributedRunRuntimeDiagnostic(event, index))
-        .filter((row): row is Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> =>
-            row !== undefined
-        )
+        .filter((row): row is Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> => row !== undefined)
         .sort((left, right) => left.atEpochMs - right.atEpochMs || left.eventId.localeCompare(right.eventId));
 }
 
 function distributedRunRuntimeDiagnostic(
     event: ControlEventSnapshot,
-    index: number,
+    index: number
 ): Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> | undefined {
     const runtimeEvent = asRecord(event.payload);
     const normalizedPayload = normalizedRuntimeDiagnosticPayload(event.payload);
@@ -3207,7 +3305,7 @@ function distributedRunRuntimeDiagnostic(
         runtimeEvent.topic,
         payload.diagnosticTypeId,
         payloadTopic(event.payload),
-        event.kind,
+        event.kind
     ) ?? 'runtime.diagnostic';
     const diagnosticTypeId = firstString(payload.diagnosticTypeId, topic) ?? topic;
     const transport = diagnosticTransport(firstString(payload.transport, runtimeEvent.transport));
@@ -3222,7 +3320,7 @@ function distributedRunRuntimeDiagnostic(
         payload.reason,
         data.message,
         data.reason,
-        eventSummary(event),
+        eventSummary(event)
     ) ?? topic;
     const payloadSummary = safePayloadSummary(payload.data ?? payload.payload ?? runtimeEvent.payload ?? event.payload);
     const expectedLaneId = firstString(
@@ -3232,7 +3330,7 @@ function distributedRunRuntimeDiagnostic(
         payload.expectedChannelLabel,
         data.expectedLaneId,
         data.expectedChannel,
-        data.expectedChannelLabel,
+        data.expectedChannelLabel
     );
     const observedLaneId = firstString(
         payload.observedLaneId,
@@ -3243,7 +3341,7 @@ function distributedRunRuntimeDiagnostic(
         data.observedLaneId,
         data.observedChannel,
         data.observedChannelLabel,
-        data.actualChannel,
+        data.actualChannel
     );
 
     return {
@@ -3265,7 +3363,7 @@ function distributedRunRuntimeDiagnostic(
             resourceId: firstString(payload.resourceId, data.resourceId),
             expectedLaneId,
             observedLaneId,
-            payloadSummary,
+            payloadSummary
         }),
         payloadSummary,
         connection: firstString(payload.connection, runtimeEvent.connection),
@@ -3283,47 +3381,47 @@ function distributedRunRuntimeDiagnostic(
         topicId: firstString(payload.topicId, data.topicId),
         contextId: firstString(payload.contextId, data.contextId),
         resourceId: firstString(payload.resourceId, data.resourceId),
-        source: firstString(payload.source, runtimeEvent.source),
+        source: firstString(payload.source, runtimeEvent.source)
     };
 }
 
 function correlateDistributedRunRuntimeDiagnostics(
     diagnostics: readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[],
-    failureIndex: DistributedRunMonitorFailureIndex,
+    failureIndex: DistributedRunMonitorFailureIndex
 ): readonly DistributedRunRuntimeDiagnosticRow[] {
-    return diagnostics.map(diagnostic => ({
+    return diagnostics.map((diagnostic) => ({
         ...diagnostic,
         correlatedFailureKeys: distributedRunCorrelatedFailureKeys(
             diagnostic,
-            failureIndex,
-        ),
+            failureIndex
+        )
     }));
 }
 
 function distributedRunRuntimeDiagnosticCounts(
-    diagnostics: readonly DistributedRunRuntimeDiagnosticRow[],
+    diagnostics: readonly DistributedRunRuntimeDiagnosticRow[]
 ): DistributedRunRuntimeDiagnosticCounts {
     return {
         total: diagnostics.length,
-        info: diagnostics.filter(row => row.severity === 'info' || row.severity === 'debug').length,
-        warning: diagnostics.filter(row => row.severity === 'warning').length,
-        error: diagnostics.filter(row => row.severity === 'error').length,
-        ws: diagnostics.filter(row => row.transport === 'ws').length,
-        rtc: diagnostics.filter(row => row.transport === 'realtime' || row.transport === 'messages.rtc').length,
-        http: diagnostics.filter(row => row.transport === 'http').length,
-        runtime: diagnostics.filter(row => row.transport === undefined).length,
+        info: diagnostics.filter((row) => row.severity === 'info' || row.severity === 'debug').length,
+        warning: diagnostics.filter((row) => row.severity === 'warning').length,
+        error: diagnostics.filter((row) => row.severity === 'error').length,
+        ws: diagnostics.filter((row) => row.transport === 'ws').length,
+        rtc: diagnostics.filter((row) => row.transport === 'realtime' || row.transport === 'messages.rtc').length,
+        http: diagnostics.filter((row) => row.transport === 'http').length,
+        runtime: diagnostics.filter((row) => row.transport === undefined).length
     };
 }
 
 function distributedRunFailures(
     distributedRun: ControlDistributedRunSnapshot,
     results: readonly ControlResultSnapshot[],
-    commands: ReadonlyMap<string, ControlCommandSnapshot>,
+    commands: ReadonlyMap<string, ControlCommandSnapshot>
 ): readonly DistributedRunFailureRow[] {
     const rows = [...distributedRunRecordedFailures(distributedRun)];
     results
-        .filter(result => !result.ok)
-        .forEach(result => {
+        .filter((result) => !result.ok)
+        .forEach((result) => {
             const command = commands.get(result.commandId);
             rows.push({
                 kind: 'command',
@@ -3335,7 +3433,7 @@ function distributedRunFailures(
                     : undefined,
                 code: result.error?.code ?? result.result?.error?.code,
                 message: result.error?.message ?? result.result?.error?.message ?? 'Command failed.',
-                atEpochMs: result.result?.endedAtEpochMs ?? command?.completedAtEpochMs,
+                atEpochMs: result.result?.endedAtEpochMs ?? command?.completedAtEpochMs
             });
         });
 
@@ -3343,7 +3441,7 @@ function distributedRunFailures(
 }
 
 function distributedRunRecordedFailures(
-    distributedRun: ControlDistributedRunSnapshot,
+    distributedRun: ControlDistributedRunSnapshot
 ): DistributedRunFailureRow[] {
     const rows: DistributedRunFailureRow[] = [];
     if (distributedRun.error) {
@@ -3352,11 +3450,11 @@ function distributedRunRecordedFailures(
             key: distributedRun.distributedRunId,
             code: distributedRun.error.code,
             message: distributedRun.error.message,
-            atEpochMs: distributedRun.updatedAtEpochMs,
+            atEpochMs: distributedRun.updatedAtEpochMs
         });
     }
 
-    distributedRun.rollup.failures.forEach(failure => {
+    distributedRun.rollup.failures.forEach((failure) => {
         rows.push({
             kind: failure.kind,
             key: failure.key,
@@ -3364,35 +3462,32 @@ function distributedRunRecordedFailures(
             message: failure.error?.message ?? failure.state,
             atEpochMs: distributedRun.updatedAtEpochMs,
             agentId: failure.kind === 'participant' ? failure.key : undefined,
-            recipeId: failure.kind === 'recipe' ? failure.key : undefined,
+            recipeId: failure.kind === 'recipe' ? failure.key : undefined
         });
     });
     return rows;
 }
 
 function firstDistributedFailure(
-    failures: readonly DistributedRunFailureRow[],
+    failures: readonly DistributedRunFailureRow[]
 ): DistributedRunFailureRow | undefined {
     return [...failures]
         .sort((left, right) =>
             (left.atEpochMs ?? Number.MAX_SAFE_INTEGER) -
                 (right.atEpochMs ?? Number.MAX_SAFE_INTEGER) ||
             left.key.localeCompare(right.key)
-    )[0] ?? failures[0];
+        )[0] ?? failures[0];
 }
 
 type FirstDistributedRunPhaseForCommand = (
-    commandId: string | undefined,
+    commandId: string | undefined
 ) => ControlDistributedRunCommandLink['phase'] | undefined;
 
 function firstDistributedRunPhasesByCommandId(
     links: readonly ControlDistributedRunCommandLink[],
-    work: { reportFallbackCommandLinkVisitCount: number },
+    work: { reportFallbackCommandLinkVisitCount: number; }
 ): ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> {
-    const firstPhasesByCommandId = new Map<
-        string,
-        ControlDistributedRunCommandLink['phase']
-    >();
+    const firstPhasesByCommandId = new Map<string, ControlDistributedRunCommandLink['phase']>();
     for (const link of links) {
         work.reportFallbackCommandLinkVisitCount += 1;
         if (!firstPhasesByCommandId.has(link.commandId)) {
@@ -3406,31 +3501,31 @@ function distributedFailureExplanations(
     distributedRun: ControlDistributedRunSnapshot,
     monitor: DistributedRunMonitor,
     firstFailure: DistributedRunFailureRow | undefined,
-    firstPhaseForCommand: FirstDistributedRunPhaseForCommand,
+    firstPhaseForCommand: FirstDistributedRunPhaseForCommand
 ): readonly DistributedFailureExplanation[] {
     const explanations: DistributedFailureExplanation[] = [];
     const orderedFailures = firstFailure
         ? [
             firstFailure,
-            ...monitor.failures.filter(failure => failure.key !== firstFailure.key),
+            ...monitor.failures.filter((failure) => failure.key !== firstFailure.key)
         ]
         : monitor.failures;
 
-    orderedFailures.slice(0, 6).forEach(failure => {
+    orderedFailures.slice(0, 6).forEach((failure) => {
         explanations.push(explanationForFailure(
             failure,
-            firstPhaseForCommand,
+            firstPhaseForCommand
         ));
     });
 
     const highSignalDiagnostics = monitor.runtimeDiagnostics
-        .filter(row =>
+        .filter((row) =>
             row.severity === 'error' ||
             row.severity === 'warning' ||
             row.correlatedFailureKeys.length > 0
         )
         .slice(0, 3);
-    highSignalDiagnostics.forEach(diagnostic => {
+    highSignalDiagnostics.forEach((diagnostic) => {
         explanations.push({
             category: 'diagnostic',
             title: `${diagnostic.transport ?? 'Runtime'} diagnostic`,
@@ -3444,8 +3539,8 @@ function distributedFailureExplanations(
                 diagnostic.eventId,
                 diagnostic.commandId,
                 diagnostic.agentId,
-                ...diagnostic.correlatedFailureKeys,
-            ]),
+                ...diagnostic.correlatedFailureKeys
+            ])
         });
     });
 
@@ -3453,9 +3548,11 @@ function distributedFailureExplanations(
         explanations.push({
             category: 'unknown',
             title: 'Run ended without linked failure evidence',
-            likelyCause: 'The distributed rollup is not OK, but no command result or diagnostic was available in the loaded snapshot.',
-            nextAction: 'Load the distributed artifact, refresh the control run with larger bounds, or inspect the raw control-run snapshot.',
-            evidence: [distributedRun.distributedRunId],
+            likelyCause:
+                'The distributed rollup is not OK, but no command result or diagnostic was available in the loaded snapshot.',
+            nextAction:
+                'Load the distributed artifact, refresh the control run with larger bounds, or inspect the raw control-run snapshot.',
+            evidence: [distributedRun.distributedRunId]
         });
     }
 
@@ -3465,7 +3562,7 @@ function distributedFailureExplanations(
             title: 'Run is still collecting evidence',
             likelyCause: 'At least one distributed command is still queued, running, or waiting for agent results.',
             nextAction: 'Keep the agents connected and wait for the live monitor to reach a terminal state.',
-            evidence: [distributedRun.distributedRunId],
+            evidence: [distributedRun.distributedRunId]
         });
     }
 
@@ -3474,7 +3571,7 @@ function distributedFailureExplanations(
 
 function explanationForFailure(
     failure: DistributedRunFailureRow,
-    firstPhaseForCommand: FirstDistributedRunPhaseForCommand = () => undefined,
+    firstPhaseForCommand: FirstDistributedRunPhaseForCommand = () => undefined
 ): DistributedFailureExplanation {
     const code = failure.code ?? '';
     const text = `${code} ${failure.message}`.toLowerCase();
@@ -3483,15 +3580,17 @@ function explanationForFailure(
         failure.code,
         failure.agentId,
         failure.recipeId,
-        failure.commandId,
+        failure.commandId
     ]);
     if (code === 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS' || text.includes('no target')) {
         return {
             category: 'targeting',
             title: 'No target agents resolved',
-            likelyCause: 'The selected control run has no connected agents matching the current application, workspace, and group.',
-            nextAction: 'Open or restart agents for this group, then refresh target resolution before launching the recipe again.',
-            evidence,
+            likelyCause:
+                'The selected control run has no connected agents matching the current application, workspace, and group.',
+            nextAction:
+                'Open or restart agents for this group, then refresh target resolution before launching the recipe again.',
+            evidence
         };
     }
     if (code === 'RALLAR_BB_DISTRIBUTED_TARGET_COUNT_MISMATCH' || text.includes('target count')) {
@@ -3499,8 +3598,9 @@ function explanationForFailure(
             category: 'targeting',
             title: 'Target count mismatch',
             likelyCause: 'The recipe expected a fixed participant count, but the resolved agent count was different.',
-            nextAction: 'Adjust the expected participant count or connect exactly the intended number of agents before staging.',
-            evidence,
+            nextAction:
+                'Adjust the expected participant count or connect exactly the intended number of agents before staging.',
+            evidence
         };
     }
     if (code === 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT' || text.includes('ack') && text.includes('timeout')) {
@@ -3508,8 +3608,9 @@ function explanationForFailure(
             category: 'readiness',
             title: 'Agent did not ACK staging',
             likelyCause: 'An agent did not load or acknowledge the recipe before ackTimeoutMs expired.',
-            nextAction: 'Check that the agent tab is still connected, logged in, and not blocked by a recipe-load error.',
-            evidence,
+            nextAction:
+                'Check that the agent tab is still connected, logged in, and not blocked by a recipe-load error.',
+            evidence
         };
     }
     if (code === 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT' || text.includes('barrier') && text.includes('timeout')) {
@@ -3517,8 +3618,9 @@ function explanationForFailure(
             category: 'barrier',
             title: 'Barrier timed out',
             likelyCause: 'One or more agents never reported barrier.ready after staging.',
-            nextAction: 'Inspect ACK readiness and per-agent execution; the missing agent usually failed before the synchronized start point.',
-            evidence,
+            nextAction:
+                'Inspect ACK readiness and per-agent execution; the missing agent usually failed before the synchronized start point.',
+            evidence
         };
     }
     if (code === 'RALLAR_BB_DISTRIBUTED_BARRIER_DISCONNECTED' || text.includes('disconnected')) {
@@ -3526,8 +3628,9 @@ function explanationForFailure(
             category: 'barrier',
             title: 'Agent disconnected during barrier',
             likelyCause: 'An agent left the control run while the distributed run waited at the barrier.',
-            nextAction: 'Restart the disconnected agent with the same control run and a unique agent ID, then rerun the recipe.',
-            evidence,
+            nextAction:
+                'Restart the disconnected agent with the same control run and a unique agent ID, then rerun the recipe.',
+            evidence
         };
     }
     if (code.startsWith('RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_')) {
@@ -3543,17 +3646,18 @@ function explanationForFailure(
                     'participant set.',
             nextAction: 'Read the redacted per-agent value table in failures.json; it names ' +
                 'missing and violating agents for the typed source address.',
-            evidence,
+            evidence
         };
     }
     if (isRtcStreamPerformanceFailureText(text)) {
         return {
             category: 'rtc-stream-performance',
             title: 'RTC stream pacing/backlog threshold failed',
-            likelyCause: failure.message || 'The RTC stream command exceeded pacing, backlog, or frame-drop thresholds.',
+            likelyCause: failure.message ||
+                'The RTC stream command exceeded pacing, backlog, or frame-drop thresholds.',
             nextAction:
                 'Inspect frame disposition, in-flight drops, max start drift, late frames, stream duration percentiles, and slowest stream agents before changing RTC routing or thresholds.',
-            evidence,
+            evidence
         };
     }
     if (failure.kind === 'command' || failure.commandId) {
@@ -3562,7 +3666,7 @@ function explanationForFailure(
             title: 'Distributed command failed',
             likelyCause: failure.message || 'The browser agent returned a failed command result.',
             nextAction: commandFailureNextAction(failure, firstPhaseForCommand),
-            evidence,
+            evidence
         };
     }
     return {
@@ -3570,13 +3674,13 @@ function explanationForFailure(
         title: 'Distributed run failure',
         likelyCause: failure.message || 'The distributed rollup reported a blocking failure.',
         nextAction: 'Inspect the linked recipe, agent, and raw failure payload for the exact failing stage.',
-        evidence,
+        evidence
     };
 }
 
 function commandFailureNextAction(
     failure: DistributedRunFailureRow,
-    firstPhaseForCommand: FirstDistributedRunPhaseForCommand,
+    firstPhaseForCommand: FirstDistributedRunPhaseForCommand
 ): string {
     const phase = firstPhaseForCommand(failure.commandId);
     if (phase === 'stage') {
@@ -3631,7 +3735,7 @@ function failureCategory(failure: DistributedRunFailureRow): DistributedFailureE
 
 function distributedSnapshotWarnings(
     controlRun: ControlRunSnapshot | undefined,
-    bounds: ControlSnapshotBounds | undefined,
+    bounds: ControlSnapshotBounds | undefined
 ): readonly string[] {
     if (!controlRun || !bounds) {
         return [];
@@ -3642,7 +3746,7 @@ function distributedSnapshotWarnings(
         ['events', controlRun.events.length],
         ['stats', controlRun.stats.length],
         ['reports', controlRun.reports.length],
-        ['heartbeats', controlRun.heartbeats.length],
+        ['heartbeats', controlRun.heartbeats.length]
     ];
     return checks.flatMap(([key, count]) => {
         const bound = bounds[key];
@@ -3661,10 +3765,10 @@ function compactStrings(values: readonly (string | undefined)[]): readonly strin
 }
 
 function uniqueExplanations(
-    explanations: readonly DistributedFailureExplanation[],
+    explanations: readonly DistributedFailureExplanation[]
 ): readonly DistributedFailureExplanation[] {
     const seen = new Set<string>();
-    return explanations.filter(explanation => {
+    return explanations.filter((explanation) => {
         const key = `${explanation.category}:${explanation.title}:${explanation.evidence.join(',')}`;
         if (seen.has(key)) {
             return false;
@@ -3674,68 +3778,70 @@ function uniqueExplanations(
     });
 }
 
-function distributedRunTimeline(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    index: DistributedRunMonitorIndex;
-    commands: ReadonlyMap<string, ControlCommandSnapshot>;
-    results: readonly ControlResultSnapshot[];
-    events: readonly DistributedRunEventRow[];
-    runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
-    failures: readonly DistributedRunFailureRow[];
-    artifact: DistributedRunArtifactValidation;
-}>): readonly DistributedRunTimelineItem[] {
+function distributedRunTimeline(
+    input: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        index: DistributedRunMonitorIndex;
+        commands: ReadonlyMap<string, ControlCommandSnapshot>;
+        results: readonly ControlResultSnapshot[];
+        events: readonly DistributedRunEventRow[];
+        runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
+        failures: readonly DistributedRunFailureRow[];
+        artifact: DistributedRunArtifactValidation;
+    }>
+): readonly DistributedRunTimelineItem[] {
     const items: DistributedRunTimelineItem[] = [];
     addTimeline(items, {
         id: 'created',
         atEpochMs: input.distributedRun.createdAtEpochMs,
         kind: 'lifecycle',
         label: 'created',
-        tone: 'muted',
+        tone: 'muted'
     });
     addTimeline(items, {
         id: 'staged',
         atEpochMs: input.distributedRun.stagedAtEpochMs,
         kind: 'lifecycle',
         label: 'staged',
-        tone: 'active',
+        tone: 'active'
     });
     addTimeline(items, {
         id: 'barrier-started',
         atEpochMs: input.distributedRun.barrierStartedAtEpochMs,
         kind: 'lifecycle',
         label: 'barrier started',
-        tone: 'active',
+        tone: 'active'
     });
     addTimeline(items, {
         id: 'barrier-completed',
         atEpochMs: input.distributedRun.barrierCompletedAtEpochMs,
         kind: 'lifecycle',
         label: 'barrier ready',
-        tone: 'good',
+        tone: 'good'
     });
     addTimeline(items, {
         id: 'started',
         atEpochMs: input.distributedRun.startedAtEpochMs,
         kind: 'lifecycle',
         label: 'started',
-        tone: 'active',
+        tone: 'active'
     });
     addTimeline(items, {
         id: 'cancelled',
         atEpochMs: input.distributedRun.cancelledAtEpochMs,
         kind: 'lifecycle',
         label: 'cancelled',
-        tone: 'warn',
+        tone: 'warn'
     });
     addTimeline(items, {
         id: 'completed',
         atEpochMs: input.distributedRun.completedAtEpochMs,
         kind: 'lifecycle',
         label: 'completed',
-        tone: distributedRecipeStateTone(input.distributedRun.state),
+        tone: distributedRecipeStateTone(input.distributedRun.state)
     });
 
-    input.index.commandLinks.forEach(link => {
+    input.index.commandLinks.forEach((link) => {
         input.index.work.timelineCommandLinkProjectionVisitCount += 1;
         const command = input.commands.get(link.commandId);
         addTimeline(items, {
@@ -3748,7 +3854,7 @@ function distributedRunTimeline(input: Readonly<{
             agentId: link.agentId,
             recipeId: link.recipeId,
             commandId: link.commandId,
-            phase: link.phase,
+            phase: link.phase
         });
         addTimeline(items, {
             id: `dispatched-${link.commandId}`,
@@ -3760,7 +3866,7 @@ function distributedRunTimeline(input: Readonly<{
             agentId: link.agentId,
             recipeId: link.recipeId,
             commandId: link.commandId,
-            phase: link.phase,
+            phase: link.phase
         });
         addTimeline(items, {
             id: `completed-${link.commandId}`,
@@ -3772,11 +3878,11 @@ function distributedRunTimeline(input: Readonly<{
             agentId: link.agentId,
             recipeId: link.recipeId,
             commandId: link.commandId,
-            phase: link.phase,
+            phase: link.phase
         });
     });
 
-    input.results.forEach(result => {
+    input.results.forEach((result) => {
         addTimeline(items, {
             id: `result-${result.commandId}`,
             atEpochMs: result.result?.endedAtEpochMs,
@@ -3785,7 +3891,7 @@ function distributedRunTimeline(input: Readonly<{
             detail: result.result?.kind,
             tone: result.ok ? 'good' : 'bad',
             agentId: result.agentId,
-            commandId: result.commandId,
+            commandId: result.commandId
         });
     });
 
@@ -3799,11 +3905,11 @@ function distributedRunTimeline(input: Readonly<{
             tone: 'bad',
             agentId: failure.agentId,
             recipeId: failure.recipeId,
-            commandId: failure.commandId,
+            commandId: failure.commandId
         });
     });
 
-    input.events.forEach(event => {
+    input.events.forEach((event) => {
         addTimeline(items, {
             id: `event-${event.eventId}`,
             atEpochMs: event.atEpochMs,
@@ -3812,11 +3918,11 @@ function distributedRunTimeline(input: Readonly<{
             detail: event.summary,
             tone: 'muted',
             agentId: event.agentId,
-            commandId: event.commandId,
+            commandId: event.commandId
         });
     });
 
-    input.runtimeDiagnostics.forEach(diagnostic => {
+    input.runtimeDiagnostics.forEach((diagnostic) => {
         addTimeline(items, {
             id: `diagnostic-${diagnostic.eventId}`,
             atEpochMs: diagnostic.atEpochMs,
@@ -3825,7 +3931,7 @@ function distributedRunTimeline(input: Readonly<{
             detail: diagnostic.message,
             tone: diagnosticSeverityTone(diagnostic.severity),
             agentId: diagnostic.agentId,
-            commandId: diagnostic.commandId,
+            commandId: diagnostic.commandId
         });
     });
 
@@ -3834,7 +3940,7 @@ function distributedRunTimeline(input: Readonly<{
 
 function addTimeline(
     items: DistributedRunTimelineItem[],
-    item: Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number },
+    item: Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number; }
 ): void {
     if (item.atEpochMs === undefined) {
         return;
@@ -3842,21 +3948,23 @@ function addTimeline(
     items.push(item as DistributedRunTimelineItem);
 }
 
-function distributedRunAgentProgress(input: Readonly<{
-    index: DistributedRunMonitorIndex;
-    eventsByAgentId: ReadonlyMap<string, readonly DistributedRunEventRow[]>;
-}>): readonly DistributedRunAgentProgressRow[] {
-    return input.index.agentIds.map(agentId => {
+function distributedRunAgentProgress(
+    input: Readonly<{
+        index: DistributedRunMonitorIndex;
+        eventsByAgentId: ReadonlyMap<string, readonly DistributedRunEventRow[]>;
+    }>
+): readonly DistributedRunAgentProgressRow[] {
+    return input.index.agentIds.map((agentId) => {
         const links = distributedRunMonitorAgentLinksForProgress(input.index, agentId);
         const linkedEvents = distributedRunMonitorAgentEventsForProgress(
             input.index,
             input.eventsByAgentId,
-            agentId,
+            agentId
         );
         const phaseProgress = {
             stage: emptyLinkProgressSummary(),
             barrier: emptyLinkProgressSummary(),
-            start: emptyLinkProgressSummary(),
+            start: emptyLinkProgressSummary()
         };
         const latencies: number[] = [];
         let resultCount = 0;
@@ -3872,13 +3980,17 @@ function distributedRunAgentProgress(input: Readonly<{
                 link.queuedAtEpochMs,
                 command?.dispatchedAtEpochMs,
                 command?.completedAtEpochMs,
-                result?.result?.endedAtEpochMs,
+                result?.result?.endedAtEpochMs
             ]);
             if (result !== undefined) {
                 resultCount += 1;
-                if (!result.ok) failedCommandCount += 1;
+                if (!result.ok) {
+                    failedCommandCount += 1;
+                }
                 const durationMs = result.result?.durationMs;
-                if (isFiniteNumber(durationMs)) latencies.push(durationMs);
+                if (isFiniteNumber(durationMs)) {
+                    latencies.push(durationMs);
+                }
             }
             if (
                 result !== undefined ||
@@ -3890,7 +4002,7 @@ function distributedRunAgentProgress(input: Readonly<{
                 updateLinkProgressSummary(
                     phaseProgress[link.phase],
                     command,
-                    result,
+                    result
                 );
             }
         }
@@ -3898,7 +4010,7 @@ function distributedRunAgentProgress(input: Readonly<{
             input.index.work.agentEventProjectionVisitCount += 1;
             lastActivityAtEpochMs = maxNumber([
                 lastActivityAtEpochMs,
-                event.atEpochMs,
+                event.atEpochMs
             ]);
         }
 
@@ -3907,19 +4019,19 @@ function distributedRunAgentProgress(input: Readonly<{
             role: distributedRunMonitorAgentRole(
                 input.index.membership,
                 agentId,
-                input.index.work,
+                input.index.work
             ),
             readiness: linkProgressStatusFromSummary(
                 phaseProgress.stage,
-                'ready',
+                'ready'
             ),
             barrier: linkProgressStatusFromSummary(
                 phaseProgress.barrier,
-                'ready',
+                'ready'
             ),
             execution: linkProgressStatusFromSummary(
                 phaseProgress.start,
-                'passed',
+                'passed'
             ),
             stageCommandCount: links.stage.length,
             barrierCommandCount: links.barrier.length,
@@ -3929,20 +4041,22 @@ function distributedRunAgentProgress(input: Readonly<{
             resultCount,
             eventCount: linkedEvents.length,
             averageLatencyMs: average(latencies),
-            lastActivityAtEpochMs,
+            lastActivityAtEpochMs
         };
     });
 }
 
-function distributedRunRecipeProgress(input: Readonly<{
-    index: DistributedRunMonitorIndex;
-}>): readonly DistributedRunRecipeProgressRow[] {
+function distributedRunRecipeProgress(
+    input: Readonly<{
+        index: DistributedRunMonitorIndex;
+    }>
+): readonly DistributedRunRecipeProgressRow[] {
     return input.index.membership.recipeSelections.map((selection, recipeIndex) => {
         const recipeId = input.index.membership.recipeIds[recipeIndex]!;
         const targetCount = distributedRunMonitorRecipeTargetCount(
             input.index.membership,
             recipeIndex,
-            input.index.work,
+            input.index.work
         );
         const progressLinks = distributedRunMonitorRecipeLinks(input.index, recipeId);
         const targetAgentsWithLinks = new Set<string>();
@@ -3957,14 +4071,24 @@ function distributedRunRecipeProgress(input: Readonly<{
             const command = input.index.commandsById.get(link.commandId);
             const result = input.index.resultsByCommandId.get(link.commandId);
             if (result === undefined) {
-                if (command?.dispatchedAtEpochMs === undefined) queuedCount += 1;
-                else runningCount += 1;
+                if (command?.dispatchedAtEpochMs === undefined) {
+                    queuedCount += 1;
+                }
+                else {
+                    runningCount += 1;
+                }
                 continue;
             }
-            if (result.ok) passedCount += 1;
-            else failedCount += 1;
+            if (result.ok) {
+                passedCount += 1;
+            }
+            else {
+                failedCount += 1;
+            }
             const durationMs = result.result?.durationMs;
-            if (isFiniteNumber(durationMs)) latencies.push(durationMs);
+            if (isFiniteNumber(durationMs)) {
+                latencies.push(durationMs);
+            }
         }
         let missingCount = targetCount;
         for (const agentId of targetAgentsWithLinks) {
@@ -3972,7 +4096,7 @@ function distributedRunRecipeProgress(input: Readonly<{
                 input.index.membership,
                 recipeIndex,
                 agentId,
-                input.index.work,
+                input.index.work
             );
         }
 
@@ -3987,30 +4111,32 @@ function distributedRunRecipeProgress(input: Readonly<{
             passedCount,
             failedCount,
             missingCount,
-            averageLatencyMs: average(latencies),
+            averageLatencyMs: average(latencies)
         };
     });
 }
 
-function distributedRunReadiness(input: Readonly<{
-    index: DistributedRunMonitorIndex;
-}>): readonly DistributedRunReadinessRow[] {
-    return input.index.membership.targetAgentIds.map(agentId => {
+function distributedRunReadiness(
+    input: Readonly<{
+        index: DistributedRunMonitorIndex;
+    }>
+): readonly DistributedRunReadinessRow[] {
+    return input.index.membership.targetAgentIds.map((agentId) => {
         const stageLinks = distributedRunMonitorReadinessStageLinks(
             input.index,
-            agentId,
+            agentId
         );
         const role = distributedRunMonitorAgentRole(
             input.index.membership,
             agentId,
-            input.index.work,
+            input.index.work
         );
         if (stageLinks.length === 0) {
             return {
                 agentId,
                 role,
                 status: 'missing',
-                error: 'No stage command was queued for this target.',
+                error: 'No stage command was queued for this target.'
             };
         }
         let failedLink: ControlDistributedRunCommandLink | undefined;
@@ -4018,8 +4144,12 @@ function distributedRunReadiness(input: Readonly<{
         for (const link of stageLinks) {
             input.index.work.readinessStageLinkProjectionVisitCount += 1;
             const result = input.index.resultsByCommandId.get(link.commandId);
-            if (failedLink === undefined && result?.ok === false) failedLink = link;
-            if (pendingLink === undefined && result === undefined) pendingLink = link;
+            if (failedLink === undefined && result?.ok === false) {
+                failedLink = link;
+            }
+            if (pendingLink === undefined && result === undefined) {
+                pendingLink = link;
+            }
         }
         const representative = failedLink ?? pendingLink ?? stageLinks[stageLinks.length - 1];
         const result = input.index.resultsByCommandId.get(representative.commandId);
@@ -4039,7 +4169,7 @@ function distributedRunReadiness(input: Readonly<{
             queuedAtEpochMs: representative.queuedAtEpochMs,
             completedAtEpochMs: result?.result?.endedAtEpochMs ?? command?.completedAtEpochMs,
             latencyMs,
-            error: result?.error?.message ?? result?.result?.error?.message,
+            error: result?.error?.message ?? result?.result?.error?.message
         };
     });
 }
@@ -4058,7 +4188,7 @@ function emptyLinkProgressSummary(): LinkProgressSummary {
 function updateLinkProgressSummary(
     summary: LinkProgressSummary,
     command: ControlCommandSnapshot | undefined,
-    result: ControlResultSnapshot | undefined,
+    result: ControlResultSnapshot | undefined
 ): void {
     summary.count += 1;
     summary.failed ||= result?.ok === false;
@@ -4068,7 +4198,7 @@ function updateLinkProgressSummary(
 
 function linkProgressStatusFromSummary(
     summary: LinkProgressSummary,
-    successStatus: DistributedRunProgressStatus,
+    successStatus: DistributedRunProgressStatus
 ): DistributedRunProgressStatus {
     if (summary.count === 0) {
         return 'missing';
@@ -4096,53 +4226,57 @@ function summarizeLatencies(values: readonly number[]): DistributedRunLatencySum
         p50Ms: percentile(sorted, 0.5),
         p95Ms: percentile(sorted, 0.95),
         maxMs: sorted[sorted.length - 1],
-        averageMs: average(sorted),
+        averageMs: average(sorted)
     };
 }
 
 export function validateDistributedRunArtifact(
-    bundle: ControlDistributedRunArtifactBundle | undefined,
+    bundle: ControlDistributedRunArtifactBundle | undefined
 ): DistributedRunArtifactValidation {
     if (!bundle) {
         return {
             status: 'not-loaded',
             fileCount: 0,
-            message: 'Artifact bundle has not been loaded.',
+            message: 'Artifact bundle has not been loaded.'
         };
     }
 
     const baseRequiredFiles: ReadonlyArray<keyof ControlDistributedRunArtifactBundle['files']> = [
         'distributed-run.json',
         'manifest.json',
-        'control-run.json',
+        'control-run.json'
     ];
     const v2RequiredFiles: ReadonlyArray<keyof ControlDistributedRunArtifactBundle['files']> = [
         'report.json',
         'failures.json',
-        'metadata.json',
+        'metadata.json'
     ];
     const requiredFiles = bundle.artifactSchemaVersion >= 2
         ? [...baseRequiredFiles, ...v2RequiredFiles]
         : baseRequiredFiles;
-    const missing = requiredFiles.filter(fileName => bundle.files[fileName] === undefined);
+    const missing = requiredFiles.filter((fileName) => bundle.files[fileName] === undefined);
     if (missing.length > 0) {
         return {
             status: 'missing-file',
             fileCount: Object.keys(bundle.files).length,
-            message: `Missing ${missing.join(', ')}.`,
+            message: `Missing ${missing.join(', ')}.`
         };
     }
     try {
-        [...baseRequiredFiles, ...(
-            bundle.artifactSchemaVersion >= 2
-                ? ['report.json', 'failures.json', 'metadata.json'] as const
-                : []
-        )].forEach(fileName => JSON.parse(bundle.files[fileName] ?? ''));
-    } catch (caught) {
+        [
+            ...baseRequiredFiles,
+            ...(
+                bundle.artifactSchemaVersion >= 2
+                    ? ['report.json', 'failures.json', 'metadata.json'] as const
+                    : []
+            )
+        ].forEach((fileName) => JSON.parse(bundle.files[fileName] ?? ''));
+    }
+    catch (caught) {
         return {
             status: 'invalid-json',
             fileCount: Object.keys(bundle.files).length,
-            message: caught instanceof Error ? caught.message : String(caught),
+            message: caught instanceof Error ? caught.message : String(caught)
         };
     }
     return {
@@ -4150,40 +4284,40 @@ export function validateDistributedRunArtifact(
         fileCount: Object.keys(bundle.files).length,
         message: bundle.artifactSchemaVersion >= 2
             ? 'Distributed artifact v2 analysis files are present and valid.'
-            : 'Distributed artifact v1 snapshot files are present and valid JSON.',
+            : 'Distributed artifact v1 snapshot files are present and valid JSON.'
     };
 }
 
 export function validateDistributedRunArtifactFromParsed(
     bundle: ControlDistributedRunArtifactBundle | undefined,
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): DistributedRunArtifactValidation {
     if (!bundle) {
         return {
             status: 'not-loaded',
             fileCount: 0,
-            message: 'Artifact bundle has not been loaded.',
+            message: 'Artifact bundle has not been loaded.'
         };
     }
     const baseRequiredFiles = [
         'distributed-run.json',
         'manifest.json',
-        'control-run.json',
+        'control-run.json'
     ] as const;
     const v2RequiredFiles = [
         'report.json',
         'failures.json',
-        'metadata.json',
+        'metadata.json'
     ] as const;
     const requiredFiles = bundle.artifactSchemaVersion >= 2
         ? [...baseRequiredFiles, ...v2RequiredFiles]
         : [...baseRequiredFiles];
-    const missing = requiredFiles.filter(fileName => bundle.files[fileName] === undefined);
+    const missing = requiredFiles.filter((fileName) => bundle.files[fileName] === undefined);
     if (missing.length > 0) {
         return {
             status: 'missing-file',
             fileCount: Object.keys(bundle.files).length,
-            message: `Missing ${missing.join(', ')}.`,
+            message: `Missing ${missing.join(', ')}.`
         };
     }
     for (const fileName of requiredFiles) {
@@ -4200,7 +4334,7 @@ export function validateDistributedRunArtifactFromParsed(
             return {
                 status: 'invalid-json',
                 fileCount: Object.keys(bundle.files).length,
-                message,
+                message
             };
         }
     }
@@ -4209,13 +4343,13 @@ export function validateDistributedRunArtifactFromParsed(
         fileCount: Object.keys(bundle.files).length,
         message: bundle.artifactSchemaVersion >= 2
             ? 'Distributed artifact v2 analysis files are present and valid.'
-            : 'Distributed artifact v1 snapshot files are present and valid JSON.',
+            : 'Distributed artifact v1 snapshot files are present and valid JSON.'
     };
 }
 
 function recipeSelectionId(
     selection: RallarBlackBoxDistributedRunRecipeSelection,
-    index = 0,
+    index = 0
 ): string {
     return distributedRunRecipeSelectionKey(selection) ?? `recipe-${index + 1}`;
 }
@@ -4223,12 +4357,12 @@ function recipeSelectionId(
 function recipeCompareMap(run: ControlDistributedRunSnapshot): ReadonlyMap<string, string> {
     return new Map(run.manifest.recipes.map((selection, index) => [
         recipeSelectionId(selection, index),
-        selection.profile ?? '',
+        selection.profile ?? ''
     ]));
 }
 
 function distributedRunFailureSignatures(run: ControlDistributedRunSnapshot): readonly string[] {
-    const signatures = run.rollup.failures.map(failure =>
+    const signatures = run.rollup.failures.map((failure) =>
         `${failure.kind}:${failure.key}:${failure.state}:${failure.error?.code ?? ''}:${failure.error?.message ?? ''}`
     );
     if (run.error) {
@@ -4239,21 +4373,21 @@ function distributedRunFailureSignatures(run: ControlDistributedRunSnapshot): re
 
 function distributedRunReceivedMessageSignatures(
     distributedRun: ControlDistributedRunSnapshot,
-    controlRun: ControlRunSnapshot | undefined,
+    controlRun: ControlRunSnapshot | undefined
 ): readonly string[] {
     const linkedCommandIds = new Set(
-        distributedRun.commandLinks.map(link => link.commandId),
+        distributedRun.commandLinks.map((link) => link.commandId)
     );
-    const events = (controlRun?.events ?? []).filter(event =>
+    const events = (controlRun?.events ?? []).filter((event) =>
         (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
         payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
     );
     return distributedRunEvents(events)
-        .filter(event => {
+        .filter((event) => {
             const text = `${event.kind} ${event.topic ?? ''} ${event.summary}`.toLowerCase();
             return text.includes('message') || text.includes('received') || text.includes('payload');
         })
-        .map(event => `${event.agentId}:${event.commandId ?? event.eventId}:${event.summary}`)
+        .map((event) => `${event.agentId}:${event.commandId ?? event.eventId}:${event.summary}`)
         .sort();
 }
 
@@ -4261,16 +4395,16 @@ function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): stri
     return [
         monitor.distributedRunId,
         monitor.state,
-        ...monitor.events.flatMap(event => [
+        ...monitor.events.flatMap((event) => [
             event.eventId,
             event.kind,
             event.agentId,
             event.commandId,
             event.topic,
             event.summary,
-            event.payloadSummary,
+            event.payloadSummary
         ]),
-        ...monitor.runtimeDiagnostics.flatMap(diagnostic => [
+        ...monitor.runtimeDiagnostics.flatMap((diagnostic) => [
             diagnostic.eventId,
             diagnostic.agentId,
             diagnostic.commandId,
@@ -4294,9 +4428,9 @@ function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): stri
             diagnostic.contextId,
             diagnostic.resourceId,
             diagnostic.source,
-            ...diagnostic.correlatedFailureKeys,
+            ...diagnostic.correlatedFailureKeys
         ]),
-        ...monitor.compositeDrilldowns.flatMap(drilldown => [
+        ...monitor.compositeDrilldowns.flatMap((drilldown) => [
             drilldown.key,
             drilldown.commandId,
             drilldown.agentId,
@@ -4305,7 +4439,7 @@ function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): stri
             drilldown.phase,
             drilldown.commandKind,
             drilldown.artifactRef,
-            ...drilldown.rows.flatMap(row => [
+            ...drilldown.rows.flatMap((row) => [
                 row.path,
                 row.sourceRecipePath,
                 row.commandId,
@@ -4316,10 +4450,10 @@ function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): stri
                 row.detail,
                 row.errorSummary,
                 row.valueSummary,
-                row.groupId,
-            ]),
+                row.groupId
+            ])
         ]),
-        ...monitor.timeline.flatMap(item => [
+        ...monitor.timeline.flatMap((item) => [
             item.id,
             item.kind,
             item.label,
@@ -4327,8 +4461,8 @@ function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): stri
             item.agentId,
             item.recipeId,
             item.commandId,
-            item.phase,
-        ]),
+            item.phase
+        ])
     ].filter((value): value is string => typeof value === 'string' && value.length > 0)
         .join('\n');
 }
@@ -4341,13 +4475,13 @@ function distributedRunDuration(run: ControlDistributedRunSnapshot): number | un
 
 function distributedRunMatchesFailureType(
     run: ControlDistributedRunSnapshot,
-    failureType: string,
+    failureType: string
 ): boolean {
     const failures = [
-        ...run.rollup.failures.map(failure =>
+        ...run.rollup.failures.map((failure) =>
             `${failure.kind} ${failure.state} ${failure.error?.code ?? ''} ${failure.error?.message ?? ''}`
         ),
-        run.error ? `run ${run.error.code} ${run.error.message}` : '',
+        run.error ? `run ${run.error.code} ${run.error.message}` : ''
     ].join(' ').toLowerCase();
     if (failureType === 'any') {
         return failures.trim().length > 0;
@@ -4357,15 +4491,13 @@ function distributedRunMatchesFailureType(
 
 function distributedRunMatchesFailureCategory(
     run: ControlDistributedRunSnapshot,
-    category: string,
+    category: string
 ): boolean {
     const failures = distributedRunRecordedFailures(run);
     if (category === 'any') {
         return failures.length > 0;
     }
-    return failures.some(failure =>
-        explanationForFailure(failure).category === category
-    );
+    return failures.some((failure) => explanationForFailure(failure).category === category);
 }
 
 function distributedRunHistoryManifest(run: ControlDistributedRunSnapshot): Readonly<{
@@ -4379,18 +4511,20 @@ function distributedRunHistoryManifest(run: ControlDistributedRunSnapshot): Read
 }> {
     const record = asRecord(run.manifest);
     const recipes = Array.isArray(record.recipes)
-        ? record.recipes.flatMap((selection, index) => isRecord(selection)
-            ? [{
-                selection: selection as RallarBlackBoxDistributedRunRecipeSelection,
-                index,
-            }]
-            : [])
+        ? record.recipes.flatMap((selection, index) =>
+            isRecord(selection)
+                ? [{
+                    selection: selection as RallarBlackBoxDistributedRunRecipeSelection,
+                    index
+                }]
+                : []
+        )
         : [];
     return {
         record,
         group: asRecord(record.group),
         metadata: asRecord(record.metadata),
-        recipes,
+        recipes
     };
 }
 
@@ -4419,9 +4553,9 @@ function distributedRunSearchText(run: ControlDistributedRunSnapshot): string {
         ...manifest.recipes.flatMap(({ selection, index }) => [
             recipeSelectionId(selection, index),
             historyManifestString(selection.profile),
-            historyManifestString(selection.role),
+            historyManifestString(selection.role)
         ]),
-        ...distributedRunFailureSignatures(run),
+        ...distributedRunFailureSignatures(run)
     ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -4431,13 +4565,14 @@ function payloadReferencesDistributedRun(payload: unknown, distributedRunId: str
     }
     try {
         return JSON.stringify(payload).includes(distributedRunId);
-    } catch (_caught) {
+    }
+    catch (_caught) {
         return false;
     }
 }
 
 function normalizedRuntimeDiagnosticPayload(
-    payload: unknown,
+    payload: unknown
 ): (RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>) | undefined {
     const envelope = asRecord(payload);
     const nested = asRecord(envelope.payload);
@@ -4458,7 +4593,7 @@ function isRuntimeDiagnosticPayload(value: Record<string, unknown>): boolean {
 function looksLikeTransportDiagnostic(
     topic: string,
     transport: RallarBlackBoxTestTransport | undefined,
-    payload: Record<string, unknown>,
+    payload: Record<string, unknown>
 ): boolean {
     const data = asRecord(payload.data);
     const text = [
@@ -4467,7 +4602,7 @@ function looksLikeTransportDiagnostic(
         payload.message,
         payload.reason,
         data.message,
-        data.reason,
+        data.reason
     ].filter(Boolean).join(' ').toLowerCase();
     return transport === 'ws' ||
         transport === 'realtime' ||
@@ -4482,7 +4617,7 @@ function looksLikeTransportDiagnostic(
 
 function diagnosticSeverity(
     value: string | undefined,
-    eventKind: string,
+    eventKind: string
 ): RallarBlackBoxTestSeverity {
     if (value === 'debug' || value === 'info' || value === 'warning' || value === 'error') {
         return value;
@@ -4507,22 +4642,24 @@ function diagnosticTransport(value: string | undefined): RallarBlackBoxTestTrans
     return undefined;
 }
 
-function diagnosticSummary(input: Readonly<{
-    message: string;
-    transport?: RallarBlackBoxTestTransport;
-    typeId?: string;
-    topicId?: string;
-    contextId?: string;
-    resourceId?: string;
-    expectedLaneId?: string;
-    observedLaneId?: string;
-    payloadSummary: string;
-}>): string {
+function diagnosticSummary(
+    input: Readonly<{
+        message: string;
+        transport?: RallarBlackBoxTestTransport;
+        typeId?: string;
+        topicId?: string;
+        contextId?: string;
+        resourceId?: string;
+        expectedLaneId?: string;
+        observedLaneId?: string;
+        payloadSummary: string;
+    }>
+): string {
     const selector = [
         input.typeId ? `type ${input.typeId}` : undefined,
         input.topicId ? `topic ${input.topicId}` : undefined,
         input.contextId ? `context ${input.contextId}` : undefined,
-        input.resourceId ? `resource ${input.resourceId}` : undefined,
+        input.resourceId ? `resource ${input.resourceId}` : undefined
     ].filter(Boolean).join(' / ');
     const lane = input.expectedLaneId || input.observedLaneId
         ? `lane ${input.expectedLaneId ?? '-'} -> ${input.observedLaneId ?? '-'}`
@@ -4532,7 +4669,7 @@ function diagnosticSummary(input: Readonly<{
         input.message,
         selector,
         lane,
-        input.payloadSummary,
+        input.payloadSummary
     ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ');
 }
 
@@ -4569,17 +4706,20 @@ function distributedRunEventPayloadSummary(payload: unknown): string {
         ['topic', firstString(event.topic, nestedPayload.topic, nestedData.topic, payloadTopic(payload))],
         ['transport', firstString(event.transport, nestedPayload.transport)],
         ['messageId', firstString(event.messageId, nestedPayload.messageId, nestedData.messageId)],
-        ['distributedRunId', firstString(event.distributedRunId, nestedPayload.distributedRunId, nestedData.distributedRunId)],
+        [
+            'distributedRunId',
+            firstString(event.distributedRunId, nestedPayload.distributedRunId, nestedData.distributedRunId)
+        ],
         ['groupId', firstString(event.groupId, nestedPayload.groupId, nestedData.groupId)],
         ['roomId', firstString(event.roomId, nestedPayload.roomId, nestedData.roomId)],
         ['typeId', firstString(event.typeId, nestedPayload.typeId, nestedData.typeId)],
         ['topicId', firstString(event.topicId, nestedPayload.topicId, nestedData.topicId)],
         ['contextId', firstString(event.contextId, nestedPayload.contextId, nestedData.contextId)],
         ['resourceId', firstString(event.resourceId, nestedPayload.resourceId, nestedData.resourceId)],
-        ['status', firstString(event.status, nestedPayload.status, nestedData.status)],
+        ['status', firstString(event.status, nestedPayload.status, nestedData.status)]
     ] as const;
     return fields
-        .filter(entry => Boolean(entry[1]))
+        .filter((entry) => Boolean(entry[1]))
         .map(([key, value]) => `${key}=${value}`)
         .join(', ');
 }
@@ -4594,7 +4734,8 @@ function safePayloadSummary(value: unknown): string {
     try {
         const text = JSON.stringify(value);
         return text.length > 180 ? `${text.slice(0, 177)}...` : text;
-    } catch (_caught) {
+    }
+    catch (_caught) {
         return String(value);
     }
 }
@@ -4604,7 +4745,7 @@ function normalizeFilterText(value: unknown): string {
 }
 
 function setDifference(values: readonly string[], right: ReadonlySet<string>): readonly string[] {
-    return values.filter(value => !right.has(value)).sort();
+    return values.filter((value) => !right.has(value)).sort();
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -4624,7 +4765,7 @@ function percentile(sortedValues: readonly number[], quantile: number): number |
     }
     const index = Math.min(
         sortedValues.length - 1,
-        Math.max(0, Math.ceil(sortedValues.length * quantile) - 1),
+        Math.max(0, Math.ceil(sortedValues.length * quantile) - 1)
     );
     return sortedValues[index];
 }

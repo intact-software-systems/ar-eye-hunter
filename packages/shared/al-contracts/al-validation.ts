@@ -1,15 +1,15 @@
-import type { ALRoute } from './al-contract.ts';
 import {
-    type RallarJsonPayloadValidationResult,
-    type RallarValidationIssue,
-    type RallarValidationResult,
-    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     failRallarValidation,
     okRallarValidation,
+    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     throwRallarValidation,
     validateRallarJsonPayload,
     validateRallarRouteId,
+    type RallarJsonPayloadValidationResult,
+    type RallarValidationIssue,
+    type RallarValidationResult
 } from '../api/rallar-validation.ts';
+import type { ALRoute } from './al-contract.ts';
 
 export type ALMessageInputValidation = Readonly<{
     senderId: unknown;
@@ -19,32 +19,34 @@ export type ALMessageInputValidation = Readonly<{
     maxPayloadBytes?: number;
 }>;
 
-export type ALMessageInputValidationResult = RallarValidationResult & Readonly<{
-    payload?: RallarJsonPayloadValidationResult;
-}>;
+export type ALMessageInputValidationResult =
+    & RallarValidationResult
+    & Readonly<{
+        payload?: RallarJsonPayloadValidationResult;
+    }>;
 
 export function validateALMessageInput(
-    input: ALMessageInputValidation,
+    input: ALMessageInputValidation
 ): ALMessageInputValidationResult {
     const issues: RallarValidationIssue[] = [];
     appendIssues(validateRallarRouteId(input.senderId, '$.senderId', 'Sender ID'), issues);
     appendIssues(
         validateRallarRouteId(input.route.topicId, '$.route.topicId', 'Topic ID'),
-        issues,
+        issues
     );
     appendIssues(
         validateRallarRouteId(input.route.contextId, '$.route.contextId', 'Context ID'),
-        issues,
+        issues
     );
     appendIssues(
         validateRallarRouteId(input.route.resourceId, '$.route.resourceId', 'Resource ID'),
-        issues,
+        issues
     );
     appendIssues(validateRallarRouteId(input.typeId, '$.typeId', 'Type ID'), issues);
 
     const payload = validateRallarJsonPayload(input.payload, {
         path: '$.payload',
-        maxBytes: input.maxPayloadBytes ?? RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+        maxBytes: input.maxPayloadBytes ?? RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES
     });
     appendIssues(payload, issues);
 
@@ -54,8 +56,8 @@ export function validateALMessageInput(
 }
 
 export function assertValidALMessageInput(
-    input: ALMessageInputValidation,
-): Readonly<{ payload: { serialized: string; byteLength: number } }> {
+    input: ALMessageInputValidation
+): Readonly<{ payload: { serialized: string; byteLength: number; }; }> {
     const result = validateALMessageInput(input);
     if (!result.ok) {
         throwRallarValidation(result.issues);
@@ -64,14 +66,14 @@ export function assertValidALMessageInput(
     return {
         payload: {
             serialized: result.payload?.serialized ?? JSON.stringify(input.payload),
-            byteLength: result.payload?.byteLength ?? 0,
-        },
+            byteLength: result.payload?.byteLength ?? 0
+        }
     };
 }
 
 function appendIssues(
     result: RallarValidationResult,
-    issues: RallarValidationIssue[],
+    issues: RallarValidationIssue[]
 ): void {
     issues.push(...result.issues);
 }

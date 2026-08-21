@@ -2,14 +2,14 @@ import type { UndirectedGraph } from 'graphology';
 
 export const VertexType = {
     CLIENT: 'CLIENT',
-    CORE: 'CORE',
+    CORE: 'CORE'
 } as const;
 
 export type VertexType = (typeof VertexType)[keyof typeof VertexType];
 
 export const VertexState = {
     MEMBER: 'MEMBER',
-    STEINER: 'STEINER',
+    STEINER: 'STEINER'
 } as const;
 
 export type VertexState = (typeof VertexState)[keyof typeof VertexState];

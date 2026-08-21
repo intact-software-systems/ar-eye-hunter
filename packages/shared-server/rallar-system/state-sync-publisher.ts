@@ -1,40 +1,25 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
-import type {
-    ClientEvent,
-    ClientPrincipalRef,
-    ClientSnapshot,
-} from '@shared/api/client-types.ts';
-import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import type {
-    GroupEvent,
-    GroupRef,
-    GroupSnapshot,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
-import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
+import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import type { GroupEvent, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { PSqlTransactionSql } from '../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../postgres/resource-inbox/ResourceInboxRepository.ts';
-import {
-    recordRallarTiming,
-    type RallarTimingSink,
-} from './services/timing.ts';
-import {
-    toAppQueueCreatedBy,
-    toAppQueueKey,
-} from './services/app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from './services/app-inbox-queue-key.ts';
+import { recordRallarTiming, type RallarTimingSink } from './services/timing.ts';
 import {
     isValidGroupCausalRevision,
     validateClientStateSyncEffect,
     validateComputedStateSyncFacts,
-    validateGroupStateSyncEffect,
+    validateGroupStateSyncEffect
 } from './state-sync/validate-state-sync.ts';
 
 export type StateSyncAudience = Readonly<{
@@ -91,7 +76,7 @@ export type ComputedGroupStateSync = Readonly<{
 export function computeClientStateSyncEntries(
     computed: ComputedClientStateSync,
     senderId: string,
-    principalAudienceScope: 'principal' | 'world',
+    principalAudienceScope: 'principal' | 'world'
 ): readonly ResourceEntry[] {
     validateComputedStateSyncFacts(computed, senderId);
     if (
@@ -108,19 +93,21 @@ export function computeClientStateSyncEntries(
             computed,
             effect,
             senderId,
-            topicId: AppTopics[effect.payloadKind === 'snapshot'
-                ? 'clientStateSnapshot'
-                : 'clientStateEvent'],
+            topicId: AppTopics[
+                effect.payloadKind === 'snapshot'
+                    ? 'clientStateSnapshot'
+                    : 'clientStateEvent'
+            ],
             sequence: computed.acceptedCausalRevision,
             epoch: 0,
-            principalAudienceScope,
+            principalAudienceScope
         })
     );
 }
 
 export function computeGroupStateSyncEntries(
     computed: ComputedGroupStateSync,
-    senderId: string,
+    senderId: string
 ): readonly ResourceEntry[] {
     validateComputedStateSyncFacts(computed, senderId);
     if (!isValidGroupCausalRevision(computed.acceptedCausalRevision)) {
@@ -142,7 +129,7 @@ export function computeGroupStateSyncEntries(
             topicId,
             sequence: computed.acceptedCausalRevision.presenceRevision,
             epoch: computed.acceptedCausalRevision.groupRevision,
-            principalAudienceScope: 'world',
+            principalAudienceScope: 'world'
         });
     });
 }
@@ -153,12 +140,12 @@ export async function writeClientStateSync(
     write: Readonly<{
         senderId: string;
         principalAudienceScope: 'principal' | 'world';
-    }>,
+    }>
 ): Promise<readonly ResourceEntry[]> {
     const entries = computeClientStateSyncEntries(
         computed,
         write.senderId,
-        write.principalAudienceScope,
+        write.principalAudienceScope
     );
     await writeStateSyncEntries(transaction, entries);
     return entries;
@@ -167,7 +154,7 @@ export async function writeClientStateSync(
 export async function writeGroupStateSync(
     transaction: PSqlTransactionSql,
     computed: ComputedGroupStateSync,
-    senderId: string,
+    senderId: string
 ): Promise<readonly ResourceEntry[]> {
     const entries = computeGroupStateSyncEntries(computed, senderId);
     await writeStateSyncEntries(transaction, entries);
@@ -176,7 +163,7 @@ export async function writeGroupStateSync(
 
 async function writeStateSyncEntries(
     transaction: PSqlTransactionSql,
-    entries: readonly ResourceEntry[],
+    entries: readonly ResourceEntry[]
 ): Promise<void> {
     const repository = new ResourceInboxRepository(transaction);
     for (const entry of entries) {
@@ -211,7 +198,7 @@ function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
         computed.commandId,
         effect.effectKind,
         effect.payloadKind,
-        causalIdentity,
+        causalIdentity
     ].join(':');
     const key = toAppQueueKey({
         topicId,
@@ -220,8 +207,8 @@ function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
             computed.audience.kind,
             computed.audience.applicationId,
             computed.audience.workspaceId,
-            computed.audience.resourceId,
-        ]),
+            computed.audience.resourceId
+        ])
     });
     const isGroup = computed.audience.kind === 'group';
     const message: ALMessage = {
@@ -229,7 +216,7 @@ function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
             v: 2,
             msgId: messageId,
             ts: computed.createdAtEpochMs,
-            senderId,
+            senderId
         },
         route: key,
         targets: isGroup
@@ -239,8 +226,8 @@ function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
                 groupRef: {
                     applicationId: computed.audience.applicationId,
                     workspaceId: computed.audience.workspaceId,
-                    groupId: computed.audience.resourceId,
-                },
+                    groupId: computed.audience.resourceId
+                }
             }
             : input.principalAudienceScope === 'principal'
             ? {
@@ -249,35 +236,35 @@ function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
                 principalRef: {
                     applicationId: computed.audience.applicationId,
                     workspaceId: computed.audience.workspaceId,
-                    principalId: computed.audience.resourceId,
-                },
+                    principalId: computed.audience.resourceId
+                }
             }
             : {
                 mode: 'broadcast',
-                scope: 'world',
+                scope: 'world'
             },
         constraints: {
-            expiresAtMs: computed.expireAtEpochMs,
+            expiresAtMs: computed.expireAtEpochMs
         },
         ordering: {
             orderingKey: key.contextId,
             epoch,
-            seq: sequence,
+            seq: sequence
         },
         delivery: {
             ownership: 'shared',
             reliability: 'at-least-once',
-            ack: 'none',
+            ack: 'none'
         },
         payload: {
             typeId: topicId,
             contentType: 'application/json',
-            resource: JSON.stringify(effect.payload),
+            resource: JSON.stringify(effect.payload)
         },
         audit: {
             createdBy: senderId,
-            createdTs: computed.createdAtEpochMs,
-        },
+            createdTs: computed.createdAtEpochMs
+        }
     };
     const createdTs = Temporal.Instant
         .fromEpochMilliseconds(computed.createdAtEpochMs)
@@ -293,10 +280,10 @@ function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
             createdBy: toAppQueueCreatedBy(senderId),
             createdTs,
             expiryTs: Temporal.Instant.fromEpochMilliseconds(
-                computed.expireAtEpochMs,
-            ),
+                computed.expireAtEpochMs
+            )
         },
-        dequeueAudit: { attempts: 0 },
+        dequeueAudit: { attempts: 0 }
     };
 }
 
@@ -304,22 +291,22 @@ export type StateSyncPublisher = Readonly<{
     publishClientSnapshot(
         snapshot: ClientSnapshot,
         senderId?: string,
-        deliveryId?: string,
+        deliveryId?: string
     ): Promise<void | StateSyncSnapshotPublishResult>;
     publishClientEvent(
         event: ClientEvent,
         senderId?: string,
-        deliveryId?: string,
+        deliveryId?: string
     ): Promise<void>;
     publishGroupSnapshot(
         snapshot: GroupSnapshot,
         senderId?: string,
-        deliveryId?: string,
+        deliveryId?: string
     ): Promise<void | StateSyncSnapshotPublishResult>;
     publishGroupEvent(
         event: GroupEvent,
         senderId?: string,
-        deliveryId?: string,
+        deliveryId?: string
     ): Promise<void>;
 }>;
 
@@ -334,7 +321,7 @@ export type CreateWsStateSyncPublisherOptions = Readonly<{
 
 export function createWsStateSyncPublisher(
     wsQBoxServerService: WsQueueBoxServerService,
-    options: CreateWsStateSyncPublisherOptions,
+    options: CreateWsStateSyncPublisherOptions
 ): StateSyncPublisher {
     return {
         publishClientSnapshot: async (snapshot, senderId, deliveryId) => {
@@ -348,8 +335,8 @@ export function createWsStateSyncPublisher(
                 {
                     requireLiveRoute: hasActiveClientSessions(snapshot),
                     timing: options.timing,
-                    deliveryId,
-                },
+                    deliveryId
+                }
             );
             return readStateSyncSnapshotPublishResult(result);
         },
@@ -368,8 +355,8 @@ export function createWsStateSyncPublisher(
                         ? hasActiveClientSessions(snapshot)
                         : false,
                     timing: options.timing,
-                    deliveryId,
-                },
+                    deliveryId
+                }
             );
         },
         publishGroupSnapshot: async (snapshot, senderId, deliveryId) => {
@@ -383,8 +370,8 @@ export function createWsStateSyncPublisher(
                 {
                     requireLiveRoute: hasActiveGroupSessions(snapshot),
                     timing: options.timing,
-                    deliveryId,
-                },
+                    deliveryId
+                }
             );
             const directoryResult = await enqueueBroadcast(
                 wsQBoxServerService,
@@ -395,12 +382,12 @@ export function createWsStateSyncPublisher(
                 snapshot,
                 {
                     timing: options.timing,
-                    deliveryId,
-                },
+                    deliveryId
+                }
             );
             return combineStateSyncSnapshotPublishResults(
                 readStateSyncSnapshotPublishResult(stateResult),
-                readStateSyncSnapshotPublishResult(directoryResult),
+                readStateSyncSnapshotPublishResult(directoryResult)
             );
         },
         publishGroupEvent: async (event, senderId, deliveryId) => {
@@ -408,8 +395,8 @@ export function createWsStateSyncPublisher(
                 {
                     applicationId: event.applicationId,
                     workspaceId: event.workspaceId,
-                    groupId: event.groupId,
-                },
+                    groupId: event.groupId
+                }
             );
             await enqueueBroadcast(
                 wsQBoxServerService,
@@ -423,10 +410,10 @@ export function createWsStateSyncPublisher(
                         ? hasActiveGroupSessions(snapshot)
                         : false,
                     timing: options.timing,
-                    deliveryId,
-                },
+                    deliveryId
+                }
             );
-        },
+        }
     };
 }
 
@@ -441,7 +428,7 @@ async function enqueueBroadcast<T>(
         requireLiveRoute?: boolean;
         timing?: RallarTimingSink;
         deliveryId?: string;
-    }> = {},
+    }> = {}
 ): Promise<ALOutboundEnqueueResult> {
     const message = newALBroadcastMessage<T>(
         senderId,
@@ -451,8 +438,8 @@ async function enqueueBroadcast<T>(
         payload,
         {
             reliability: 'at-least-once',
-            ack: 'none',
-        },
+            ack: 'none'
+        }
     );
     const result = await wsQBoxServerService.enqueueOutboxIfAbsent(
         options.deliveryId
@@ -460,30 +447,30 @@ async function enqueueBroadcast<T>(
                 ...message,
                 id: {
                     ...message.id,
-                    msgId: toStateSyncMessageId(options.deliveryId, topicId),
-                },
+                    msgId: toStateSyncMessageId(options.deliveryId, topicId)
+                }
             }
-            : message,
+            : message
     );
 
     assertStateSyncPublishResult(result, {
         topicId,
         resourceId,
         requireLiveRoute: options.requireLiveRoute ?? false,
-        timing: options.timing,
+        timing: options.timing
     });
     return result;
 }
 
 export function toStateSyncMessageId(
     deliveryId: string,
-    topicId: string,
+    topicId: string
 ): string {
     return `state-sync-${fnv1a64(`${deliveryId}\u0000${topicId}`)}`;
 }
 
 function readStateSyncSnapshotPublishResult(
-    result: ALOutboundEnqueueResult,
+    result: ALOutboundEnqueueResult
 ): StateSyncSnapshotPublishResult | undefined {
     // The current AL duplicate result can reconstruct entry.resource from the
     // retry candidate while retaining only the persisted winner's key. Until
@@ -502,7 +489,7 @@ function readStateSyncSnapshotPublishResult(
     }
     const revisions = entries.map((entry) => {
         const message = JSON.parse(entry.resource) as {
-            payload?: { resource?: string };
+            payload?: { resource?: string; };
         };
         const snapshot = JSON.parse(message.payload?.resource ?? 'null') as {
             stateRevision?: unknown;
@@ -510,13 +497,13 @@ function readStateSyncSnapshotPublishResult(
         const revision = snapshot?.stateRevision;
         if (!Number.isSafeInteger(revision) || (revision as number) < 0) {
             throw new TypeError(
-                'State sync durable winner has an invalid snapshot revision',
+                'State sync durable winner has an invalid snapshot revision'
             );
         }
         return revision as number;
     });
     return {
-        effectiveSnapshotRevision: Math.min(...revisions),
+        effectiveSnapshotRevision: Math.min(...revisions)
     };
 }
 
@@ -528,8 +515,8 @@ function combineStateSyncSnapshotPublishResults(
     }
     return {
         effectiveSnapshotRevision: Math.min(
-            ...results.map((result) => result!.effectiveSnapshotRevision),
-        ),
+            ...results.map((result) => result!.effectiveSnapshotRevision)
+        )
     };
 }
 
@@ -540,7 +527,7 @@ function assertStateSyncPublishResult(
         resourceId: string;
         requireLiveRoute: boolean;
         timing?: RallarTimingSink;
-    }>,
+    }>
 ): void {
     switch (result.status) {
         case 'enqueued':
@@ -560,7 +547,7 @@ function assertStateSyncPublishResult(
                     topicId: input.topicId,
                     resourceId: input.resourceId,
                     status: result.status,
-                    reason: result.reason,
+                    reason: result.reason
                 });
                 recordRallarTiming(
                     input.timing,
@@ -570,11 +557,11 @@ function assertStateSyncPublishResult(
                         details: {
                             topicId: input.topicId,
                             resourceId: input.resourceId,
-                            reason: result.reason,
-                        },
+                            reason: result.reason
+                        }
                     },
                     'ok',
-                    0,
+                    0
                 );
             }
             return;
@@ -586,7 +573,7 @@ function assertStateSyncPublishResult(
 
     throw new Error(
         `State sync publish failed for ${input.topicId}/${input.resourceId}: ${result.status}` +
-        (result.reason ? ` (${result.reason})` : ''),
+            (result.reason ? ` (${result.reason})` : '')
     );
 }
 

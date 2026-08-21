@@ -1,14 +1,12 @@
+import type { ControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     analyzeDistributedRunArtifactFiles,
     distributedArtifactBundleFromFiles,
     distributedArtifactSnapshotsFromFiles,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
-    type DistributedRunArtifactSnapshots,
+    type DistributedRunArtifactSnapshots
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type {
-    ControlDistributedRunArtifactBundle,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 export interface ReadDistributedArtifactFilesOutput {
     readonly artifactFiles: DistributedRunArtifactFiles;
@@ -19,7 +17,7 @@ export interface ReadDistributedArtifactFilesOutput {
 
 export async function readDistributedArtifactFiles(
     selectedFiles: readonly File[],
-    generatedAtEpochMs: number,
+    generatedAtEpochMs: number
 ): Promise<ReadDistributedArtifactFilesOutput> {
     const fileContents: Record<string, string> = {};
     await Promise.all(selectedFiles.map(async (file) => {
@@ -28,21 +26,21 @@ export async function readDistributedArtifactFiles(
     const artifactFiles: DistributedRunArtifactFiles = fileContents;
     const analysis = analyzeDistributedRunArtifactFiles({
         files: artifactFiles,
-        generatedAtEpochMs,
+        generatedAtEpochMs
     });
     const snapshots = distributedArtifactSnapshotsFromFiles(
         artifactFiles,
-        generatedAtEpochMs,
+        generatedAtEpochMs
     );
     const artifactBundle = distributedArtifactBundleFromFiles(
         artifactFiles,
         generatedAtEpochMs,
-        analysis.distributedRunId,
+        analysis.distributedRunId
     );
     return {
         artifactFiles,
         analysis,
         snapshots,
-        artifactBundle,
+        artifactBundle
     };
 }

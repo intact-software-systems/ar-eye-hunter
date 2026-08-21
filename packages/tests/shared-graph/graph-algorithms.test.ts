@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { UndirectedGraph } from 'graphology';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
+import {
+    dijkstraDistances,
+    eccentricityDistance,
+    kBestLocatedNodesFromGraphAverage,
+    kBestLocatedNodesFromGraphMedian,
+    kBestLocatedNodesFromVertexSubsetAverage,
+    kCenterNodes
+} from '@shared-graph/graph/core-node-algorithms.ts';
 import {
     canAcceptChild,
     cloneTree,
@@ -15,34 +21,21 @@ import {
     mergeGraphs,
     neighborsOf,
     pruneNonTerminalLeaves,
-    worstCaseDist,
+    worstCaseDist
 } from '@shared-graph/graph/graph-algs.ts';
-import {
-    dijkstraDistances,
-    eccentricityDistance,
-    kBestLocatedNodesFromGraphAverage,
-    kBestLocatedNodesFromGraphMedian,
-    kBestLocatedNodesFromVertexSubsetAverage,
-    kCenterNodes,
-} from '@shared-graph/graph/core-node-algorithms.ts';
-import {
-    type EdgeProp,
-    type GraphProp,
-    type VertexProp,
-    VertexState,
-    VertexType,
-    type WeightedGraph,
-} from '@shared-graph/graph/graph-props.ts';
+import { VertexState, VertexType, type EdgeProp, type GraphProp, type VertexProp, type WeightedGraph } from '@shared-graph/graph/graph-props.ts';
+import { UndirectedGraph } from 'graphology';
+import { describe, expect, it } from 'vitest';
 
 describe('shared-graph core algorithms', () => {
     it('computes shortest paths, eccentricity, and diameter on weighted trees', () => {
         const tree = createGraph([
             ['a', VertexState.MEMBER, 3],
             ['b', VertexState.MEMBER, 2],
-            ['c', VertexState.MEMBER, 2],
+            ['c', VertexState.MEMBER, 2]
         ], [
             ['a', 'b', 2],
-            ['b', 'c', 3],
+            ['b', 'c', 3]
         ]);
 
         expect(getEdgeWeight(tree, 'a', 'b')).toBe(2);
@@ -53,8 +46,8 @@ describe('shared-graph core algorithms', () => {
             new Map([
                 ['a', 0],
                 ['b', 2],
-                ['c', 5],
-            ]),
+                ['c', 5]
+            ])
         );
         expect(diameterDistance(tree)).toBe(5);
         expect(eccentricity(tree, 'b')).toBe(3);
@@ -72,14 +65,14 @@ describe('shared-graph core algorithms', () => {
             ['a', VertexState.MEMBER, 4],
             ['b', VertexState.MEMBER, 4],
             ['c', VertexState.MEMBER, 4],
-            ['d', VertexState.MEMBER, 4],
+            ['d', VertexState.MEMBER, 4]
         ], [
             ['a', 'b', 4],
             ['a', 'c', 2],
             ['a', 'd', 6],
             ['b', 'c', 3],
             ['b', 'd', 5],
-            ['c', 'd', 1],
+            ['c', 'd', 1]
         ]);
 
         expect(kBestLocatedNodesFromGraphAverage(fullMesh, 2)).toEqual(['c', 'a']);
@@ -88,23 +81,23 @@ describe('shared-graph core algorithms', () => {
             kBestLocatedNodesFromVertexSubsetAverage(
                 fullMesh,
                 new Set(['a', 'b', 'c']),
-                2,
-            ),
+                2
+            )
         ).toEqual(['c', 'a']);
         expect(kCenterNodes(fullMesh, new Set(['a', 'b', 'c', 'd']), 2)).toEqual([
             'c',
-            'b',
+            'b'
         ]);
 
         const sparse = createGraph([
             ['a', VertexState.MEMBER, 4],
             ['b', VertexState.MEMBER, 4],
             ['c', VertexState.MEMBER, 4],
-            ['d', VertexState.MEMBER, 4],
+            ['d', VertexState.MEMBER, 4]
         ], [
             ['a', 'b', 1],
             ['b', 'c', 1],
-            ['c', 'd', 2],
+            ['c', 'd', 2]
         ]);
 
         expect(dijkstraDistances(sparse, new Set(['a', 'b', 'c', 'd']), 'a')).toEqual(
@@ -112,13 +105,13 @@ describe('shared-graph core algorithms', () => {
                 ['a', 0],
                 ['b', 1],
                 ['c', 2],
-                ['d', 4],
-            ]),
+                ['d', 4]
+            ])
         );
         expect(eccentricityDistance(sparse, new Set(['a', 'b', 'c', 'd']), 'b')).toBe(3);
         expect(kCenterNodes(sparse, new Set(['a', 'b', 'c', 'd']), 2)).toEqual([
             'c',
-            'b',
+            'b'
         ]);
     });
 
@@ -127,17 +120,17 @@ describe('shared-graph core algorithms', () => {
             ['member-a', VertexState.MEMBER, 3],
             ['steiner-1', VertexState.STEINER, 8],
             ['steiner-2', VertexState.STEINER, 8],
-            ['member-b', VertexState.MEMBER, 3],
+            ['member-b', VertexState.MEMBER, 3]
         ], [
             ['member-a', 'steiner-1', 1],
             ['steiner-1', 'steiner-2', 1],
-            ['steiner-2', 'member-b', 1],
+            ['steiner-2', 'member-b', 1]
         ]);
         const removeGraph = createGraph([
             ['steiner-1', VertexState.STEINER, 8],
-            ['steiner-2', VertexState.STEINER, 8],
+            ['steiner-2', VertexState.STEINER, 8]
         ], [
-            ['steiner-1', 'steiner-2', 1],
+            ['steiner-1', 'steiner-2', 1]
         ]);
 
         diffGraphs(base, removeGraph);
@@ -151,13 +144,13 @@ describe('shared-graph core algorithms', () => {
         expect(isValidMesh(base)).toBe(false);
 
         const target = createGraph([
-            ['member-a', VertexState.MEMBER, 3],
+            ['member-a', VertexState.MEMBER, 3]
         ], []);
         const source = createGraph([
             ['member-a', VertexState.MEMBER, 3],
-            ['member-b', VertexState.MEMBER, 3],
+            ['member-b', VertexState.MEMBER, 3]
         ], [
-            ['member-a', 'member-b', 7],
+            ['member-a', 'member-b', 7]
         ]);
 
         mergeGraphs(target, source);
@@ -170,7 +163,7 @@ describe('shared-graph core algorithms', () => {
 
 function createGraph(
     nodes: ReadonlyArray<readonly [string, VertexState, number]>,
-    edges: ReadonlyArray<readonly [string, string, number]>,
+    edges: ReadonlyArray<readonly [string, string, number]>
 ): WeightedGraph {
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
     graph.replaceAttributes(DEFAULT_GRAPH_PROP);
@@ -180,7 +173,7 @@ function createGraph(
             id,
             type: VertexType.CLIENT,
             state,
-            degreeLimit,
+            degreeLimit
         });
     }
 
@@ -188,7 +181,7 @@ function createGraph(
         graph.addEdge(from, to, {
             from,
             to,
-            weight,
+            weight
         });
     }
 

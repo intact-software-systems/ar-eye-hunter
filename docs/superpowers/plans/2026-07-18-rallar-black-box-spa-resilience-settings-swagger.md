@@ -26,6 +26,7 @@
 ### Task 1: Index-first snapshot reader and evidence provenance
 
 **Files:**
+
 - Create: `apps/rallar-black-box/src/recipe-console/control/control-detail-run-ids.ts`
 - Modify: `apps/rallar-black-box/src/control-run-manager.ts`
 - Modify: `apps/rallar-black-box/src/recipe-console/control/control-api.ts`
@@ -37,6 +38,7 @@
 - Test: `packages/tests/rallar-black-box/recipe-console-control-api.test.ts`
 
 **Interfaces:**
+
 - Consumes: `fetchControlServerSnapshot`, `fetchControlRunSnapshot`, `ControlServerSnapshot`, `RecipeConsoleUrlState`, and the existing `ControlAuthorizedTransport`.
 - Produces: `recipeConsoleDetailRunIds(input): readonly string[]`, `mergeControlRunDetails(index, details): ControlServerSnapshot`, `RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS`, and `RecipeConsoleControlRunEvidenceProvenance`.
 
@@ -46,24 +48,24 @@ Create `recipe-console-control-detail-run-ids.test.ts` with fixtures proving sta
 
 ```ts
 expect(recipeConsoleDetailRunIds({
-  snapshot,
-  bootstrapRunId: 'bootstrap-run',
-  urlState: {
-    v: 1,
-    experience: 'recipe-console',
-    view: 'tune',
-    controlRunId: 'explicit-run',
-    distributedRunId: 'selected-distributed',
-    compareLeft: 'left-distributed',
-    compareRight: 'right-distributed',
-  },
+    snapshot,
+    bootstrapRunId: 'bootstrap-run',
+    urlState: {
+        v: 1,
+        experience: 'recipe-console',
+        view: 'tune',
+        controlRunId: 'explicit-run',
+        distributedRunId: 'selected-distributed',
+        compareLeft: 'left-distributed',
+        compareRight: 'right-distributed'
+    }
 })).toEqual([
-  'explicit-run',
-  'bootstrap-run',
-  'selected-owner',
-  'left-owner',
-  'right-owner',
-  'active-owner',
+    'explicit-run',
+    'bootstrap-run',
+    'selected-owner',
+    'left-owner',
+    'right-owner',
+    'active-owner'
 ]);
 ```
 
@@ -84,38 +86,48 @@ Expected: FAIL because `control-detail-run-ids.ts` does not exist.
 Implement stable, data-in/data-out helpers:
 
 ```ts
-export function recipeConsoleDetailRunIds(input: Readonly<{
-  snapshot: ControlServerSnapshot;
-  bootstrapRunId?: string;
-  urlState: RecipeConsoleUrlState;
-}>): readonly string[] {
-  const available = new Set(input.snapshot.runs.map(run => run.runId));
-  const distributedById = new Map(
-    (input.snapshot.distributedRuns ?? []).map(run => [run.distributedRunId, run]),
-  );
-  const ids: string[] = [];
-  const add = (runId: string | undefined) => {
-    if (runId && available.has(runId) && !ids.includes(runId)) ids.push(runId);
-  };
-  add(input.urlState.controlRunId);
-  add(input.bootstrapRunId);
-  for (const distributedRunId of [
-    input.urlState.distributedRunId,
-    input.urlState.compareLeft,
-    input.urlState.compareRight,
-  ]) add(distributedRunId ? distributedById.get(distributedRunId)?.controlRunId : undefined);
-  for (const run of input.snapshot.distributedRuns ?? []) {
-    if (!isDistributedRunTerminalState(run.state)) add(run.controlRunId);
-  }
-  return ids;
+export function recipeConsoleDetailRunIds(
+    input: Readonly<{
+        snapshot: ControlServerSnapshot;
+        bootstrapRunId?: string;
+        urlState: RecipeConsoleUrlState;
+    }>
+): readonly string[] {
+    const available = new Set(input.snapshot.runs.map((run) => run.runId));
+    const distributedById = new Map(
+        (input.snapshot.distributedRuns ?? []).map((run) => [run.distributedRunId, run])
+    );
+    const ids: string[] = [];
+    const add = (runId: string | undefined) => {
+        if (runId && available.has(runId) && !ids.includes(runId)) {
+            ids.push(runId);
+        }
+    };
+    add(input.urlState.controlRunId);
+    add(input.bootstrapRunId);
+    for (
+        const distributedRunId of [
+            input.urlState.distributedRunId,
+            input.urlState.compareLeft,
+            input.urlState.compareRight
+        ]
+    ) {
+        add(distributedRunId ? distributedById.get(distributedRunId)?.controlRunId : undefined);
+    }
+    for (const run of input.snapshot.distributedRuns ?? []) {
+        if (!isDistributedRunTerminalState(run.state)) {
+            add(run.controlRunId);
+        }
+    }
+    return ids;
 }
 
 export function mergeControlRunDetails(
-  index: ControlServerSnapshot,
-  details: readonly ControlRunSnapshot[],
+    index: ControlServerSnapshot,
+    details: readonly ControlRunSnapshot[]
 ): ControlServerSnapshot {
-  const byId = new Map(details.map(run => [run.runId, run]));
-  return { ...index, runs: index.runs.map(run => byId.get(run.runId) ?? run) };
+    const byId = new Map(details.map((run) => [run.runId, run]));
+    return { ...index, runs: index.runs.map((run) => byId.get(run.runId) ?? run) };
 }
 ```
 
@@ -137,8 +149,8 @@ Configure `detailRunIds: () => ['run-a']`, return an index run with empty eviden
 ```ts
 expect(result.snapshot.runs[0].events).toHaveLength(1);
 expect(result.runEvidence).toEqual({
-  detailedRunIds: ['run-a'],
-  indexOnlyRunIds: ['run-b'],
+    detailedRunIds: ['run-a'],
+    indexOnlyRunIds: ['run-b']
 });
 ```
 
@@ -158,23 +170,33 @@ In `control-api.ts`, split bounds and extend config:
 
 ```ts
 export const RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS = {
-  commands: 0, results: 0, events: 0, stats: 0, reports: 0, heartbeats: 0,
+    commands: 0,
+    results: 0,
+    events: 0,
+    stats: 0,
+    reports: 0,
+    heartbeats: 0
 } as const satisfies ControlSnapshotBounds;
 
 export const RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS = {
-  commands: 120, results: 120, events: 160, stats: 60, reports: 40, heartbeats: 80,
+    commands: 120,
+    results: 120,
+    events: 160,
+    stats: 60,
+    reports: 40,
+    heartbeats: 80
 } as const satisfies ControlSnapshotBounds;
 
 export type RecipeConsoleControlApiConfig = Readonly<{
-  controlUrl?: string;
-  manualToken?: string;
-  apiBaseUrl: string;
-  authSession?: AuthSession;
-  indexBounds?: ControlSnapshotBounds;
-  bounds?: ControlSnapshotBounds;
-  fetchFn?: ControlRunManagerFetch;
-  credentialPolicy: RecipeConsoleControlCredentialPolicy;
-  detailRunIds?(snapshot: ControlServerSnapshot): readonly string[];
+    controlUrl?: string;
+    manualToken?: string;
+    apiBaseUrl: string;
+    authSession?: AuthSession;
+    indexBounds?: ControlSnapshotBounds;
+    bounds?: ControlSnapshotBounds;
+    fetchFn?: ControlRunManagerFetch;
+    credentialPolicy: RecipeConsoleControlCredentialPolicy;
+    detailRunIds?(snapshot: ControlServerSnapshot): readonly string[];
 }>;
 ```
 
@@ -204,12 +226,14 @@ git commit -m "fix: scale recipe console control reads"
 ### Task 2: Configurable timeout and visible diagnostic
 
 **Files:**
+
 - Modify: `apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx`
 - Modify: `apps/rallar-black-box/src/recipe-console/control/ControlCommandContext.tsx`
 - Test: `packages/tests/rallar-black-box/recipe-console-control-query.test.ts`
 - Test: `packages/tests/rallar-black-box/recipe-console-control-command-context.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ControlQuerySnapshot.lastError` and a `controlReadTimeoutMs` provider prop.
 - Produces: `CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS = 20_000` and timeout-specific status copy.
 
@@ -219,12 +243,12 @@ Assert the exported default is `20_000`, that provider source passes its prop to
 
 ```ts
 expect(controlCommandStatus({
-  ...offlineQuery,
-  reachability: 'unreachable',
-  lastError: { kind: 'timeout', message: 'Control request timed out after 20000 ms.' },
+    ...offlineQuery,
+    reachability: 'unreachable',
+    lastError: { kind: 'timeout', message: 'Control request timed out after 20000 ms.' }
 })).toEqual({
-  status: 'failed',
-  label: 'Timed out after 20 s · unreachable',
+    status: 'failed',
+    label: 'Timed out after 20 s · unreachable'
 });
 ```
 
@@ -241,7 +265,7 @@ Expected: FAIL on the old `4_000` default and generic offline label.
 Rename the constant to `CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS`, accept optional `controlReadTimeoutMs`, and pass:
 
 ```ts
-requestTimeoutMs: controlReadTimeoutMs ?? CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS
+requestTimeoutMs: controlReadTimeoutMs ?? CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS;
 ```
 
 Add a pure timeout label parser that uses the structured error message's millisecond value and formats whole seconds without changing other status branches.
@@ -262,11 +286,13 @@ git commit -m "fix: expose recipe console read timeouts"
 ### Task 3: Versioned non-secret Recipe Console preferences
 
 **Files:**
+
 - Create: `apps/rallar-black-box/src/recipe-console/app/recipe-console-preferences.ts`
 - Modify: `apps/rallar-black-box/src/recipe-console/app/RecipeConsoleApp.tsx`
 - Test: `packages/tests/rallar-black-box/recipe-console-preferences.test.ts`
 
 **Interfaces:**
+
 - Consumes: `RecipeConsoleControlBootstrap`, browser `Storage`, URL search, and Vite environment values.
 - Produces: `readRecipeConsolePreferences`, `writeRecipeConsolePreferences`, `resetRecipeConsolePreferences`, `resolveRecipeConsolePreferenceState`, and `RECIPE_CONSOLE_PREFERENCES_STORAGE_KEY`.
 
@@ -276,12 +302,12 @@ Use a memory `Storage` adapter and prove:
 
 ```ts
 expect(readRecipeConsolePreferences(storage)).toEqual({
-  controlUrl: 'wss://personal.test/control',
-  apiBaseUrl: 'https://api.personal.test',
-  applicationId: 'personal-app',
-  workspaceId: 'personal-workspace',
-  groupId: 'personal-group',
-  controlReadTimeoutMs: 20_000,
+    controlUrl: 'wss://personal.test/control',
+    apiBaseUrl: 'https://api.personal.test',
+    applicationId: 'personal-app',
+    workspaceId: 'personal-workspace',
+    groupId: 'personal-group',
+    controlReadTimeoutMs: 20_000
 });
 ```
 
@@ -301,18 +327,20 @@ Use the storage document:
 
 ```ts
 type StoredRecipeConsolePreferences = Readonly<{
-  version: 1;
-  values: RecipeConsolePreferences;
+    version: 1;
+    values: RecipeConsolePreferences;
 }>;
 ```
 
 Parse every field explicitly. Endpoint parsing must accept only `http:`, `https:`, `ws:`, or `wss:`, reject username/password/search/hash, and normalize trailing slash consistently. Return field-specific locks:
 
 ```ts
-type RecipeConsolePreferenceLocks = Readonly<Record<
-  'controlUrl' | 'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId',
-  'url' | 'deployment' | undefined
->>;
+type RecipeConsolePreferenceLocks = Readonly<
+    Record<
+        'controlUrl' | 'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId',
+        'url' | 'deployment' | undefined
+    >
+>;
 ```
 
 Map `groupId` to URL `roomId` and environment `VITE_RALLAR_ROOM_ID`. Keep `controlReadTimeoutMs` personal because there is no existing URL/deployment contract for it.
@@ -342,6 +370,7 @@ git commit -m "feat: persist recipe console personal defaults"
 ### Task 4: Account, settings, and logout UI
 
 **Files:**
+
 - Create: `apps/rallar-black-box/src/recipe-console/shell/AccountSettingsPanel.tsx`
 - Create: `apps/rallar-black-box/src/recipe-console/shell/AccountSettingsPanel.module.css`
 - Modify: `apps/rallar-black-box/src/recipe-console/app/RecipeConsoleApp.tsx`
@@ -353,6 +382,7 @@ git commit -m "feat: persist recipe console personal defaults"
 - Test: `tests/playwright/rallar-black-box/recipe-console-settings.spec.ts`
 
 **Interfaces:**
+
 - Consumes: preference values/locks/save/reset, `AuthSession`, `authBusy`, `authError`, `onLogout`, and `query.lastError`.
 - Produces: visible `Open account and settings`, `Save defaults`, `Reset defaults`, and `Logout` controls.
 
@@ -374,12 +404,12 @@ The panel owns only form/open state. Render:
 
 ```tsx
 <IconButton
-  aria-expanded={open}
-  aria-label="Open account and settings"
-  icon="sliders"
-  onClick={() => setOpen(true)}
-  ref={triggerRef}
-/>
+    aria-expanded={open}
+    aria-label="Open account and settings"
+    icon="sliders"
+    onClick={() => setOpen(true)}
+    ref={triggerRef}
+/>;
 ```
 
 The conditional panel uses `role="dialog"`, `aria-modal="true"`, a close button, a backdrop, Escape handling, initial focus, focus cycling, and trigger-focus restoration. Use labeled inputs for Control URL, API URL, Application, Workspace, Group, and Control read timeout (ms). Managed fields are disabled with `Managed by URL` or `Managed by deployment`. Account copy shows username or `No authenticated account`, shows only `Session active`/`No active session`, and never prints the session/client IDs.
@@ -418,12 +448,14 @@ git commit -m "feat: add recipe console account settings"
 ### Task 5: Same-origin Swagger execution and compact runtime JSON
 
 **Files:**
+
 - Modify: `apps/rallar-black-box-control-server/src/routes/swagger-routes.ts`
 - Modify: `apps/rallar-black-box-control-server/src/main.ts`
 - Test: `apps/rallar-black-box-control-server/test/swagger-routes.test.ts`
 - Test: `apps/rallar-black-box-control-server/test/api-black-box.test.ts`
 
 **Interfaces:**
+
 - Consumes: OpenAPI 3.1 relative server URL resolution.
 - Produces: `servers: [{ url: '/', description: 'Current control server' }]` and compact runtime JSON.
 
@@ -433,11 +465,11 @@ Update the first Swagger test and route response test to expect `/` even when th
 
 ```ts
 const spec = controlOpenApiSpec(
-  new Request('http://control.internal/api/openapi.json'),
-) as { servers?: readonly { url: string; description: string }[] };
+    new Request('http://control.internal/api/openapi.json')
+) as { servers?: readonly { url: string; description: string; }[]; };
 assertEquals(spec.servers, [{
-  url: '/',
-  description: 'Current control server',
+    url: '/',
+    description: 'Current control server'
 }]);
 ```
 
@@ -457,10 +489,10 @@ Remove request-origin derivation and return the constant relative server URL:
 
 ```ts
 export function controlOpenApiSpec(_request: Request): JsonRecord {
-  return {
-    ...CONTROL_OPENAPI_SPEC,
-    servers: [{ url: '/', description: 'Current control server' }],
-  };
+    return {
+        ...CONTROL_OPENAPI_SPEC,
+        servers: [{ url: '/', description: 'Current control server' }]
+    };
 }
 ```
 
@@ -490,10 +522,12 @@ git commit -m "fix: keep swagger requests on the current origin"
 ### Task 6: Integrated verification and rendered evidence
 
 **Files:**
+
 - Verify all files changed by Tasks 1-5.
 - Save temporary screenshots outside the repository under `/Users/knut-helgevik/.codex/visualizations/2026/07/18/019f74d8-03e8-7c70-927a-be37bd067923/`.
 
 **Interfaces:**
+
 - Consumes: the completed app, local control server, approved design, and before screenshots.
 - Produces: fresh test/build evidence and desktop/mobile/Swagger after screenshots.
 

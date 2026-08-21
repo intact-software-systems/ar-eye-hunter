@@ -1,15 +1,13 @@
 // deno-lint-ignore-file no-explicit-any
 import { flattenRallarBlackBoxCompositeResults } from '../composite-results.ts';
-import { lookupPayloadPath } from '../wait/wait-event-match.ts';
-import type { RallarBlackBoxTestResult } from '../types.ts';
-import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type { ControlResultEnvelope } from '../control-protocol.ts';
-import type {
-    RallarBlackBoxDistributedTargetResolution,
-} from '../distributed-run.ts';
+import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
+import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
+import type { RallarBlackBoxTestResult } from '../types.ts';
+import { lookupPayloadPath } from '../wait/wait-event-match.ts';
 import type {
     RallarBlackBoxGroupAssertionEvidenceStatus,
-    RallarBlackBoxGroupAssertionSource,
+    RallarBlackBoxGroupAssertionSource
 } from './group-assertions.ts';
 
 export interface DistributedGroupAssertionParticipant {
@@ -36,16 +34,16 @@ export interface GroupAssertionEvidenceRow {
 // recorded snapshot, never the live agent board, so late joins and drops
 // cannot change the assertion denominator after staging.
 export function toDistributedGroupAssertionParticipants(
-    targetResolution: RallarBlackBoxDistributedTargetResolution | undefined,
+    targetResolution: RallarBlackBoxDistributedTargetResolution | undefined
 ): readonly DistributedGroupAssertionParticipant[] {
     if (!targetResolution) {
         return [];
     }
-    return targetResolution.targetAgentIds.map(agentId => ({
+    return targetResolution.targetAgentIds.map((agentId) => ({
         agentId,
         roles: targetResolution.roleAssignments
-            .filter(assignment => assignment.agentId === agentId)
-            .map(assignment => assignment.role),
+            .filter((assignment) => assignment.agentId === agentId)
+            .map((assignment) => assignment.role)
     }));
 }
 
@@ -55,18 +53,18 @@ export interface ToDistributedGroupAssertionRecipeEvidenceInput {
 }
 
 export function toDistributedGroupAssertionRecipeEvidence(
-    input: ToDistributedGroupAssertionRecipeEvidenceInput,
+    input: ToDistributedGroupAssertionRecipeEvidenceInput
 ): readonly DistributedGroupAssertionRecipeEvidence[] {
     return input.commandLinks
-        .filter(link => link.phase === 'start')
-        .map(link => {
+        .filter((link) => link.phase === 'start')
+        .map((link) => {
             const result = input.resultByCommandId.get(link.commandId);
             return {
                 agentId: link.agentId,
                 recipeId: link.recipeId,
                 role: link.role,
                 hasResult: result !== undefined,
-                resultValue: result?.result?.value,
+                resultValue: result?.result?.value
             };
         });
 }
@@ -78,9 +76,9 @@ export interface CollectGroupAssertionEvidenceInput {
 }
 
 export function collectGroupAssertionEvidence(
-    input: CollectGroupAssertionEvidenceInput,
+    input: CollectGroupAssertionEvidenceInput
 ): readonly GroupAssertionEvidenceRow[] {
-    return input.participants.map(participant =>
+    return input.participants.map((participant) =>
         toGroupAssertionEvidenceRow(participant, input.source, input.recipeEvidence)
     );
 }
@@ -88,10 +86,10 @@ export function collectGroupAssertionEvidence(
 function toGroupAssertionEvidenceRow(
     participant: DistributedGroupAssertionParticipant,
     source: RallarBlackBoxGroupAssertionSource,
-    recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[],
+    recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[]
 ): GroupAssertionEvidenceRow {
     const role = participant.roles[0];
-    const recipeRows = recipeEvidence.filter(evidence =>
+    const recipeRows = recipeEvidence.filter((evidence) =>
         evidence.agentId === participant.agentId && evidence.recipeId === source.recipeId
     );
     if (recipeRows.length === 0) {
@@ -107,7 +105,7 @@ function toGroupAssertionEvidenceRow(
     }
 
     const commandResults = toRecipeCommandResults(recipeRow.resultValue);
-    const matches = commandResults.filter(entry =>
+    const matches = commandResults.filter((entry) =>
         entry.commandId === source.commandId || entry.originalCommandId === source.commandId
     );
     if (matches.length === 0) {
@@ -125,7 +123,7 @@ function toGroupAssertionEvidenceRow(
         agentId: participant.agentId,
         role,
         status: 'resolved',
-        value: lookup.value,
+        value: lookup.value
     };
 }
 
@@ -136,10 +134,10 @@ function toRecipeCommandResults(resultValue: any): readonly Readonly<{
 }>[] {
     const results = Array.isArray(resultValue?.results) ? resultValue.results : [];
     const rootResults = results.filter(isCommandResult);
-    return flattenRallarBlackBoxCompositeResults(rootResults).map(entry => ({
+    return flattenRallarBlackBoxCompositeResults(rootResults).map((entry) => ({
         commandId: entry.commandId,
         originalCommandId: entry.originalCommandId,
-        result: entry.result,
+        result: entry.result
     }));
 }
 

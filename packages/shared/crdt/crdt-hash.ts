@@ -2,14 +2,14 @@ import type {
     RallarCrdtJsonValue,
     RallarCrdtSnapshotEnvelope,
     RallarCrdtUpdateEnvelope,
-    RallarCrdtValidationIssue,
+    RallarCrdtValidationIssue
 } from './crdt-types.ts';
 
 export function canonicalRallarCrdtJson(value: unknown): string {
     const issues = validateRallarCrdtJsonValue(value);
     if (issues.length > 0) {
         throw new Error(
-            `Value is not CRDT JSON-compatible: ${issues[0]?.message}`,
+            `Value is not CRDT JSON-compatible: ${issues[0]?.message}`
         );
     }
 
@@ -18,7 +18,7 @@ export function canonicalRallarCrdtJson(value: unknown): string {
 
 export function validateRallarCrdtJsonValue(
     value: unknown,
-    path = '$',
+    path = '$'
 ): RallarCrdtValidationIssue[] {
     const issues: RallarCrdtValidationIssue[] = [];
     collectJsonIssues(value, path, issues, new Set<object>());
@@ -42,11 +42,11 @@ export function hashRallarCrdtCanonicalJson(canonicalJson: string): string {
 }
 
 export async function hashRallarCrdtCanonicalJsonSha256(
-    canonicalJson: string,
+    canonicalJson: string
 ): Promise<string> {
     const digest = await globalThis.crypto.subtle.digest(
         'SHA-256',
-        new TextEncoder().encode(canonicalJson),
+        new TextEncoder().encode(canonicalJson)
     );
     const hex = Array.from(new Uint8Array(digest))
         .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -55,21 +55,21 @@ export async function hashRallarCrdtCanonicalJsonSha256(
 }
 
 export async function hashRallarCrdtJsonSha256(
-    value: unknown,
+    value: unknown
 ): Promise<string> {
     return await hashRallarCrdtCanonicalJsonSha256(
-        canonicalRallarCrdtJson(value),
+        canonicalRallarCrdtJson(value)
     );
 }
 
 export function hashRallarCrdtUpdateEnvelope(
-    envelope: RallarCrdtUpdateEnvelope,
+    envelope: RallarCrdtUpdateEnvelope
 ): string {
     return hashRallarCrdtJson(toHashableUpdateEnvelope(envelope));
 }
 
 export function hashRallarCrdtSnapshotEnvelope(
-    envelope: RallarCrdtSnapshotEnvelope,
+    envelope: RallarCrdtSnapshotEnvelope
 ): string {
     return hashRallarCrdtJson(toHashableSnapshotEnvelope(envelope));
 }
@@ -91,19 +91,20 @@ function serializeCanonicalJson(value: RallarCrdtJsonValue): string {
         .filter(([, entryValue]) => entryValue !== undefined)
         .sort(([left], [right]) => left.localeCompare(right));
 
-    return `{${entries
-        .map(
-            ([key, entryValue]) =>
-                `${JSON.stringify(key)}:${serializeCanonicalJson(entryValue)}`,
-        )
-        .join(',')}}`;
+    return `{${
+        entries
+            .map(
+                ([key, entryValue]) => `${JSON.stringify(key)}:${serializeCanonicalJson(entryValue)}`
+            )
+            .join(',')
+    }}`;
 }
 
 function collectJsonIssues(
     value: unknown,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    seenObjects: Set<object>,
+    seenObjects: Set<object>
 ): void {
     if (
         value === null ||
@@ -118,8 +119,7 @@ function collectJsonIssues(
             issues.push({
                 path,
                 code: 'non-finite-number',
-                message:
-                    'CRDT JSON values must not contain non-finite numbers.',
+                message: 'CRDT JSON values must not contain non-finite numbers.'
             });
         }
         return;
@@ -129,7 +129,7 @@ function collectJsonIssues(
         issues.push({
             path,
             code: 'unsupported-json-value',
-            message: `CRDT JSON values must not contain ${typeof value}.`,
+            message: `CRDT JSON values must not contain ${typeof value}.`
         });
         return;
     }
@@ -138,16 +138,14 @@ function collectJsonIssues(
         issues.push({
             path,
             code: 'cyclic-json-value',
-            message: 'CRDT JSON values must not contain cycles.',
+            message: 'CRDT JSON values must not contain cycles.'
         });
         return;
     }
     seenObjects.add(value);
 
     if (Array.isArray(value)) {
-        value.forEach((entry, index) =>
-            collectJsonIssues(entry, `${path}[${index}]`, issues, seenObjects),
-        );
+        value.forEach((entry, index) => collectJsonIssues(entry, `${path}[${index}]`, issues, seenObjects));
         seenObjects.delete(value);
         return;
     }
@@ -157,8 +155,7 @@ function collectJsonIssues(
         issues.push({
             path,
             code: 'unsupported-json-object',
-            message:
-                'CRDT JSON values must use plain objects, arrays, and primitives.',
+            message: 'CRDT JSON values must use plain objects, arrays, and primitives.'
         });
         seenObjects.delete(value);
         return;
@@ -169,7 +166,7 @@ function collectJsonIssues(
             issues.push({
                 path: `${path}.${key}`,
                 code: 'undefined-json-value',
-                message: 'CRDT JSON object properties must not be undefined.',
+                message: 'CRDT JSON object properties must not be undefined.'
             });
             continue;
         }
@@ -180,7 +177,7 @@ function collectJsonIssues(
 }
 
 function toHashableUpdateEnvelope(
-    envelope: RallarCrdtUpdateEnvelope,
+    envelope: RallarCrdtUpdateEnvelope
 ): Record<string, unknown> {
     return omitUndefinedProperties({
         protocolVersion: envelope.protocolVersion,
@@ -195,12 +192,12 @@ function toHashableUpdateEnvelope(
         operationVersion: envelope.operationVersion,
         createdAtEpochMs: envelope.createdAtEpochMs,
         causalFrontier: envelope.causalFrontier,
-        payload: envelope.payload,
+        payload: envelope.payload
     });
 }
 
 function toHashableSnapshotEnvelope(
-    envelope: RallarCrdtSnapshotEnvelope,
+    envelope: RallarCrdtSnapshotEnvelope
 ): Record<string, unknown> {
     return omitUndefinedProperties({
         protocolVersion: envelope.protocolVersion,
@@ -212,14 +209,14 @@ function toHashableSnapshotEnvelope(
         includedUpdateIds: envelope.includedUpdateIds,
         updateClock: envelope.updateClock,
         value: envelope.value,
-        metadata: envelope.metadata,
+        metadata: envelope.metadata
     });
 }
 
 function omitUndefinedProperties(
-    value: Record<string, unknown>,
+    value: Record<string, unknown>
 ): Record<string, unknown> {
     return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined),
+        Object.entries(value).filter(([, entry]) => entry !== undefined)
     );
 }

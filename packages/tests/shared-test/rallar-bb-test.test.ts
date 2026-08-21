@@ -1,15 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { normalizeBlackBoxResponseHeaders } from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxRtcProvider,
     createRallarBlackBoxTestRuntime,
-    type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestAssertResultValue,
-    type RallarBlackBoxTestLoopResultValue,
-    type RallarBlackBoxTestParallelResultValue,
-    type RallarBlackBoxTestRecipe,
-    type RallarBlackBoxTestRtcStreamResultValue,
-    type RallarBlackBoxTestWaitResultValue,
     redactRallarBlackBoxValue,
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
@@ -20,11 +15,14 @@ import {
     selectRallarBlackBoxFirstFailure,
     selectRallarBlackBoxLatestStats,
     selectRallarBlackBoxMessages,
+    type RallarBlackBoxTestAssertResultValue,
+    type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestLoopResultValue,
+    type RallarBlackBoxTestParallelResultValue,
+    type RallarBlackBoxTestRecipe,
+    type RallarBlackBoxTestRtcStreamResultValue,
+    type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
-import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
-import {
-    normalizeBlackBoxResponseHeaders,
-} from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
 
 describe('black-box HTTP response evidence', () => {
     it('retains only allow-listed response headers with lowercase names', () => {
@@ -33,13 +31,13 @@ describe('black-box HTTP response evidence', () => {
             'Rallar-State-Source': 'durable',
             'Rallar-State-Revision': '8',
             Authorization: 'Bearer secret',
-            'Set-Cookie': 'session=secret',
+            'Set-Cookie': 'session=secret'
         });
 
         expect(normalizeBlackBoxResponseHeaders(headers)).toEqual({
             'cache-control': 'no-store',
             'rallar-state-revision': '8',
-            'rallar-state-source': 'durable',
+            'rallar-state-source': 'durable'
         });
     });
 });
@@ -49,12 +47,12 @@ function createDeterministicRuntime() {
     let sequence = 1;
     return createRallarBlackBoxTestRuntime({
         now: () => now++,
-        idFactory: (prefix) => `${prefix}-${sequence++}`,
+        idFactory: (prefix) => `${prefix}-${sequence++}`
     });
 }
 
 function sleepMs(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('rallar-bb-test', () => {
@@ -67,15 +65,15 @@ describe('rallar-bb-test', () => {
                 ticket: 'ticket-123',
                 headers: {
                     authorization: 'Bearer token-123',
-                    traceId: 'trace-1',
+                    traceId: 'trace-1'
                 },
                 nested: {
-                    message: 'this includes deploy-secret',
-                },
+                    message: 'this includes deploy-secret'
+                }
             },
             {
-                secretValues: ['deploy-secret'],
-            },
+                secretValues: ['deploy-secret']
+            }
         );
 
         expect(redacted).toEqual({
@@ -85,11 +83,11 @@ describe('rallar-bb-test', () => {
             ticket: '<redacted>',
             headers: {
                 authorization: '<redacted>',
-                traceId: 'trace-1',
+                traceId: 'trace-1'
             },
             nested: {
-                message: '<redacted>',
-            },
+                message: '<redacted>'
+            }
         });
     });
 
@@ -99,18 +97,18 @@ describe('rallar-bb-test', () => {
                 sessionId: 'session-1',
                 clientId: 'client-1',
                 nested: {
-                    sessionId: 'session-2',
-                },
+                    sessionId: 'session-2'
+                }
             },
             {
-                keys: ['sessionId', 'clientId'],
-            },
+                keys: ['sessionId', 'clientId']
+            }
         )).toEqual({
             sessionId: '<redacted>',
             clientId: '<redacted>',
             nested: {
-                sessionId: '<redacted>',
-            },
+                sessionId: '<redacted>'
+            }
         });
     });
 
@@ -129,9 +127,9 @@ describe('rallar-bb-test', () => {
                 transport: 'realtime',
                 rallar: {
                     username: 'alice',
-                    password: 'secret',
-                },
-            },
+                    password: 'secret'
+                }
+            }
         });
 
         const state = runtime.state();
@@ -146,29 +144,27 @@ describe('rallar-bb-test', () => {
             transport: 'realtime',
             rallar: {
                 username: 'alice',
-                password: '<redacted>',
-            },
+                password: '<redacted>'
+            }
         });
         expect(selectRallarBlackBoxActiveCommand(state)).toBeUndefined();
-        expect(selectRallarBlackBoxDiagnostics(state).some((event) =>
-            event.topic === 'rallar.bb.configured'
-        )).toBe(true);
+        expect(selectRallarBlackBoxDiagnostics(state).some((event) => event.topic === 'rallar.bb.configured')).toBe(true);
     });
 
     it('passes raw config to command executors while keeping runtime state redacted', async () => {
         let capturedPassword: unknown;
         const runtime = createRallarBlackBoxTestRuntime({
             commandExecutor: (_command, context) => {
-                const rallarConfig = context.config()?.rallar as { password?: unknown } | undefined;
+                const rallarConfig = context.config()?.rallar as { password?: unknown; } | undefined;
                 capturedPassword = rallarConfig?.password;
                 return {
                     status: 'ok',
                     value: {
-                        password: capturedPassword,
+                        password: capturedPassword
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         await runtime.execute({
@@ -177,22 +173,22 @@ describe('rallar-bb-test', () => {
             config: {
                 rallar: {
                     username: 'alice',
-                    password: 'secret',
-                },
-            },
+                    password: 'secret'
+                }
+            }
         });
         const result = await runtime.execute({
             kind: 'health',
-            commandId: 'health-raw-executor-config',
+            commandId: 'health-raw-executor-config'
         });
 
         expect(capturedPassword).toBe('secret');
         expect(result.value).toEqual({
-            password: '<redacted>',
+            password: '<redacted>'
         });
         expect(selectRallarBlackBoxCurrentConfig(runtime.state())?.rallar).toEqual({
             username: 'alice',
-            password: '<redacted>',
+            password: '<redacted>'
         });
     });
 
@@ -204,18 +200,18 @@ describe('rallar-bb-test', () => {
             commandId: 'configure-redaction',
             config: {
                 redaction: {
-                    secretValues: ['message-secret'],
-                },
-            },
+                    secretValues: ['message-secret']
+                }
+            }
         });
         await runtime.execute({
             kind: 'rtc.send',
             commandId: 'send-secret',
             send: {
                 data: {
-                    text: 'contains message-secret',
-                },
-            },
+                    text: 'contains message-secret'
+                }
+            }
         });
 
         const sendDiagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
@@ -227,10 +223,10 @@ describe('rallar-bb-test', () => {
                 commandId: 'send-secret',
                 send: {
                     data: {
-                        text: '<redacted>',
-                    },
-                },
-            },
+                        text: '<redacted>'
+                    }
+                }
+            }
         });
     });
 
@@ -245,8 +241,8 @@ describe('rallar-bb-test', () => {
                     config: {
                         runId: 'run-1',
                         agentId: 'agent-1',
-                        actor: 'alice',
-                    },
+                        actor: 'alice'
+                    }
                 },
                 {
                     kind: 'rtc.connect',
@@ -254,23 +250,23 @@ describe('rallar-bb-test', () => {
                     connection: 'aliceRtc',
                     actor: 'alice',
                     roomId: 'room-1',
-                    transport: 'realtime',
+                    transport: 'realtime'
                 },
                 {
                     kind: 'stats',
-                    commandId: 'stats-1',
-                },
-            ],
+                    commandId: 'stats-1'
+                }
+            ]
         };
 
         const loadResult = await runtime.execute({
             kind: 'recipe.load',
             commandId: 'load-1',
-            recipe,
+            recipe
         });
         const runResult = await runtime.execute({
             kind: 'recipe.run',
-            commandId: 'run-1',
+            commandId: 'run-1'
         });
 
         const state = runtime.state();
@@ -291,8 +287,8 @@ describe('rallar-bb-test', () => {
             commandId: 'load-invalid',
             recipe: {
                 recipeId: 'invalid',
-                commands: [],
-            },
+                commands: []
+            }
         });
 
         const state = runtime.state();
@@ -314,9 +310,9 @@ describe('rallar-bb-test', () => {
             payload: {
                 data: {
                     topic: 'room.position',
-                    x: 10,
-                },
-            },
+                    x: 10
+                }
+            }
         });
 
         const result = await runtime.execute({
@@ -330,8 +326,8 @@ describe('rallar-bb-test', () => {
                 transport: 'realtime',
                 payloadPath: 'data.topic',
                 equals: 'room.position',
-                exists: true,
-            },
+                exists: true
+            }
         });
         const value = result.value as RallarBlackBoxTestWaitResultValue;
 
@@ -341,8 +337,8 @@ describe('rallar-bb-test', () => {
         expect(value.event?.payload).toEqual({
             data: {
                 topic: 'room.position',
-                x: 10,
-            },
+                x: 10
+            }
         });
     });
 
@@ -356,8 +352,8 @@ describe('rallar-bb-test', () => {
                 kind: 'message',
                 topic: 'rallar.browser.realtime.message',
                 payloadPath: 'data.text',
-                contains: 'future-position',
-            },
+                contains: 'future-position'
+            }
         });
 
         await sleepMs(10);
@@ -367,9 +363,9 @@ describe('rallar-bb-test', () => {
             transport: 'realtime',
             payload: {
                 data: {
-                    text: 'hello future-position payload',
-                },
-            },
+                    text: 'hello future-position payload'
+                }
+            }
         });
         const result = await wait;
         const value = result.value as RallarBlackBoxTestWaitResultValue;
@@ -378,8 +374,8 @@ describe('rallar-bb-test', () => {
         expect(value.matched).toBe(true);
         expect(value.event?.payload).toEqual({
             data: {
-                text: 'hello future-position payload',
-            },
+                text: 'hello future-position payload'
+            }
         });
     });
 
@@ -392,8 +388,8 @@ describe('rallar-bb-test', () => {
             timeoutMs: 5,
             match: {
                 kind: 'message',
-                topic: 'missing-message',
-            },
+                topic: 'missing-message'
+            }
         });
         const value = result.value as RallarBlackBoxTestWaitResultValue;
 
@@ -411,15 +407,15 @@ describe('rallar-bb-test', () => {
             timeoutMs: 200,
             match: {
                 kind: 'message',
-                topic: 'never-delivered',
-            },
+                topic: 'never-delivered'
+            }
         });
 
         await sleepMs(10);
         await runtime.execute({
             kind: 'recipe.cancel',
             commandId: 'cancel-wait',
-            reason: 'operator requested stop',
+            reason: 'operator requested stop'
         });
         const result = await wait;
         const value = result.value as RallarBlackBoxTestWaitResultValue;
@@ -437,9 +433,9 @@ describe('rallar-bb-test', () => {
             commandId: 'configure-wait-redaction',
             config: {
                 redaction: {
-                    secretValues: ['event-secret'],
-                },
-            },
+                    secretValues: ['event-secret']
+                }
+            }
         });
         runtime.recordEvent({
             kind: 'message',
@@ -447,9 +443,9 @@ describe('rallar-bb-test', () => {
             payload: {
                 data: {
                     topic: 'secure',
-                    token: 'event-secret',
-                },
-            },
+                    token: 'event-secret'
+                }
+            }
         });
         const result = await runtime.execute({
             kind: 'wait',
@@ -458,8 +454,8 @@ describe('rallar-bb-test', () => {
                 kind: 'message',
                 topic: 'secure-message',
                 payloadPath: 'data.topic',
-                equals: 'secure',
-            },
+                equals: 'secure'
+            }
         });
         const value = result.value as RallarBlackBoxTestWaitResultValue;
 
@@ -467,8 +463,8 @@ describe('rallar-bb-test', () => {
         expect(value.event?.payload).toEqual({
             data: {
                 topic: 'secure',
-                token: '<redacted>',
-            },
+                token: '<redacted>'
+            }
         });
     });
 
@@ -479,9 +475,9 @@ describe('rallar-bb-test', () => {
             topic: 'rallar.browser.realtime.message',
             payload: {
                 data: {
-                    topic: 'room.position',
-                },
-            },
+                    topic: 'room.position'
+                }
+            }
         });
 
         const result = await runtime.execute({
@@ -489,7 +485,7 @@ describe('rallar-bb-test', () => {
             commandId: 'assert-message-count',
             source: 'state.messages.length',
             operator: 'gte',
-            expected: 1,
+            expected: 1
         });
         const value = result.value as RallarBlackBoxTestAssertResultValue;
 
@@ -501,7 +497,7 @@ describe('rallar-bb-test', () => {
             expected: 1,
             actual: 1,
             exists: true,
-            passed: true,
+            passed: true
         });
     });
 
@@ -513,18 +509,18 @@ describe('rallar-bb-test', () => {
             commandId: 'configure-assert-redaction',
             config: {
                 redaction: {
-                    secretValues: ['assert-secret'],
-                },
-            },
+                    secretValues: ['assert-secret']
+                }
+            }
         });
         runtime.recordEvent({
             kind: 'message',
             topic: 'secure-message',
             payload: {
                 data: {
-                    text: 'assert-secret',
-                },
-            },
+                    text: 'assert-secret'
+                }
+            }
         });
 
         const result = await runtime.execute({
@@ -532,7 +528,7 @@ describe('rallar-bb-test', () => {
             commandId: 'assert-secret-message',
             source: 'messages.0.payload.data.text',
             operator: 'equals',
-            expected: 'different assert-secret',
+            expected: 'different assert-secret'
         });
         const value = result.value as RallarBlackBoxTestAssertResultValue;
 
@@ -542,11 +538,11 @@ describe('rallar-bb-test', () => {
             actual: '<redacted>',
             expected: '<redacted>',
             exists: true,
-            passed: false,
+            passed: false
         });
         expect(result.error?.details).toMatchObject({
             actual: '<redacted>',
-            expected: '<redacted>',
+            expected: '<redacted>'
         });
     });
 
@@ -558,14 +554,14 @@ describe('rallar-bb-test', () => {
             commandId: 'assert-missing-path',
             source: 'config.rallar.missingToken',
             operator: 'exists',
-            expected: false,
+            expected: false
         });
         const value = result.value as RallarBlackBoxTestAssertResultValue;
 
         expect(result.ok).toBe(true);
         expect(value).toMatchObject({
             exists: false,
-            passed: true,
+            passed: true
         });
     });
 
@@ -577,7 +573,7 @@ describe('rallar-bb-test', () => {
             commandId: 'assert-missing-equals',
             source: 'state.messages.0.payload.data.topic',
             operator: 'equals',
-            expected: 'room.position',
+            expected: 'room.position'
         });
         const value = result.value as RallarBlackBoxTestAssertResultValue;
 
@@ -596,32 +592,32 @@ describe('rallar-bb-test', () => {
             payload: {
                 data: {
                     position: {
-                        x: 4,
+                        x: 4
                     },
-                    tags: ['position', 'live'],
-                },
-            },
+                    tags: ['position', 'live']
+                }
+            }
         });
         const nestedResult = await runtime.execute({
             kind: 'assert',
             commandId: 'assert-nested-position',
             source: 'recentMessages.0.payload.data.position.x',
             operator: 'lte',
-            expected: 5,
+            expected: 5
         });
         const lastResult = await runtime.execute({
             kind: 'assert',
             commandId: 'assert-last-result',
             source: 'lastResult.value.actual',
             operator: 'equals',
-            expected: 4,
+            expected: 4
         });
         const containsResult = await runtime.execute({
             kind: 'assert',
             commandId: 'assert-tag-contains',
             source: 'messages.0.payload.data.tags',
             operator: 'contains',
-            expected: 'live',
+            expected: 'live'
         });
 
         expect(nestedResult.ok).toBe(true);
@@ -639,7 +635,7 @@ describe('rallar-bb-test', () => {
                     return undefined;
                 }
 
-                const parallel = command.metadata?.parallel as { groupId?: string } | undefined;
+                const parallel = command.metadata?.parallel as { groupId?: string; } | undefined;
                 const groupId = parallel?.groupId ?? 'unknown';
                 activeCommands += 1;
                 maxActiveCommands = Math.max(maxActiveCommands, activeCommands);
@@ -650,11 +646,11 @@ describe('rallar-bb-test', () => {
                     status: 'ok',
                     value: {
                         groupId,
-                        metadata: command.metadata,
+                        metadata: command.metadata
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -664,17 +660,17 @@ describe('rallar-bb-test', () => {
             groups: [
                 {
                     groupId: 'left',
-                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }],
+                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }]
                 },
                 {
                     groupId: 'middle',
-                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }],
+                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }]
                 },
                 {
                     groupId: 'right',
-                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }],
-                },
-            ],
+                    commands: [{ kind: 'rtc.send', commandId: 'send-shared' }]
+                }
+            ]
         });
         const value = result.value as RallarBlackBoxTestParallelResultValue;
 
@@ -687,13 +683,13 @@ describe('rallar-bb-test', () => {
             maxConcurrency: 2,
             passed: 3,
             failed: 0,
-            cancelled: false,
+            cancelled: false
         });
-        expect(value.groups.map(group => group.groupId)).toEqual(['left', 'middle', 'right']);
-        expect(value.groups.map(group => group.results[0]?.commandId)).toEqual([
+        expect(value.groups.map((group) => group.groupId)).toEqual(['left', 'middle', 'right']);
+        expect(value.groups.map((group) => group.results[0]?.commandId)).toEqual([
             'parallel-room-traffic:g1:left:c1:send-shared',
             'parallel-room-traffic:g2:middle:c1:send-shared',
-            'parallel-room-traffic:g3:right:c1:send-shared',
+            'parallel-room-traffic:g3:right:c1:send-shared'
         ]);
         expect(value.groups[0].results[0]?.result.value).toMatchObject({
             metadata: {
@@ -702,9 +698,9 @@ describe('rallar-bb-test', () => {
                     groupId: 'left',
                     groupIndex: 0,
                     commandIndex: 0,
-                    originalCommandId: 'send-shared',
-                },
-            },
+                    originalCommandId: 'send-shared'
+                }
+            }
         });
         expect(selectRallarBlackBoxCommandHistory(runtime.state()).at(-1)?.commandId).toBe('parallel-room-traffic');
     });
@@ -723,20 +719,20 @@ describe('rallar-bb-test', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED',
-                            message: 'Synthetic send failure.',
+                            message: 'Synthetic send failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     };
                 }
 
                 return {
                     status: 'ok',
                     value: {
-                        sent: true,
+                        sent: true
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -747,13 +743,13 @@ describe('rallar-bb-test', () => {
             groups: [
                 {
                     groupId: 'left',
-                    commands: [{ kind: 'rtc.send', commandId: 'fail-send' }],
+                    commands: [{ kind: 'rtc.send', commandId: 'fail-send' }]
                 },
                 {
                     groupId: 'right',
-                    commands: [{ kind: 'rtc.send', commandId: 'ok-send' }],
-                },
-            ],
+                    commands: [{ kind: 'rtc.send', commandId: 'ok-send' }]
+                }
+            ]
         });
         const value = result.value as RallarBlackBoxTestParallelResultValue;
 
@@ -761,10 +757,10 @@ describe('rallar-bb-test', () => {
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_PARALLEL_CHILD_FAILED');
         expect(value.failed).toBe(1);
         expect(value.passed).toBe(1);
-        expect(value.groups.map(group => group.commandCount)).toEqual([1, 1]);
+        expect(value.groups.map((group) => group.commandCount)).toEqual([1, 1]);
         expect(executedCommandIds).toEqual([
             'fail-slow-parallel:g1:left:c1:fail-send',
-            'fail-slow-parallel:g2:right:c1:ok-send',
+            'fail-slow-parallel:g2:right:c1:ok-send'
         ]);
     });
 
@@ -782,18 +778,18 @@ describe('rallar-bb-test', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED',
-                            message: 'Synthetic send failure.',
+                            message: 'Synthetic send failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     }
                     : {
                         status: 'ok',
                         value: {
-                            sent: true,
+                            sent: true
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -803,20 +799,20 @@ describe('rallar-bb-test', () => {
             groups: [
                 {
                     groupId: 'left',
-                    commands: [{ kind: 'rtc.send', commandId: 'fail-send' }],
+                    commands: [{ kind: 'rtc.send', commandId: 'fail-send' }]
                 },
                 {
                     groupId: 'right',
-                    commands: [{ kind: 'rtc.send', commandId: 'should-not-run' }],
-                },
-            ],
+                    commands: [{ kind: 'rtc.send', commandId: 'should-not-run' }]
+                }
+            ]
         });
         const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('failed');
-        expect(value.groups.map(group => group.commandCount)).toEqual([1, 0]);
+        expect(value.groups.map((group) => group.commandCount)).toEqual([1, 0]);
         expect(executedCommandIds).toEqual([
-            'fail-fast-parallel:g1:left:c1:fail-send',
+            'fail-fast-parallel:g1:left:c1:fail-send'
         ]);
     });
 
@@ -834,18 +830,18 @@ describe('rallar-bb-test', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED',
-                            message: 'Synthetic send failure.',
+                            message: 'Synthetic send failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     }
                     : {
                         status: 'ok',
                         value: {
-                            sent: true,
+                            sent: true
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -858,25 +854,25 @@ describe('rallar-bb-test', () => {
                     groupId: 'left',
                     commands: [
                         { kind: 'rtc.send', commandId: 'fail-send' },
-                        { kind: 'rtc.send', commandId: 'after-failure' },
-                    ],
+                        { kind: 'rtc.send', commandId: 'after-failure' }
+                    ]
                 },
                 {
                     groupId: 'right',
-                    commands: [{ kind: 'rtc.send', commandId: 'right-send' }],
-                },
-            ],
+                    commands: [{ kind: 'rtc.send', commandId: 'right-send' }]
+                }
+            ]
         });
         const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('ok');
         expect(value.passed).toBe(2);
         expect(value.failed).toBe(1);
-        expect(value.groups.map(group => group.commandCount)).toEqual([2, 1]);
+        expect(value.groups.map((group) => group.commandCount)).toEqual([2, 1]);
         expect(executedCommandIds).toEqual([
             'continue-parallel:g1:left:c1:fail-send',
             'continue-parallel:g1:left:c2:after-failure',
-            'continue-parallel:g2:right:c1:right-send',
+            'continue-parallel:g2:right:c1:right-send'
         ]);
     });
 
@@ -893,27 +889,27 @@ describe('rallar-bb-test', () => {
                     commands: [
                         { kind: 'health', commandId: 'before-cancel' },
                         { kind: 'recipe.cancel', commandId: 'request-cancel', reason: 'operator requested stop' },
-                        { kind: 'health', commandId: 'after-cancel' },
-                    ],
+                        { kind: 'health', commandId: 'after-cancel' }
+                    ]
                 },
                 {
                     groupId: 'right',
-                    commands: [{ kind: 'health', commandId: 'should-not-run' }],
-                },
-            ],
+                    commands: [{ kind: 'health', commandId: 'should-not-run' }]
+                }
+            ]
         });
         const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('cancelled');
         expect(value.cancelled).toBe(true);
-        expect(value.groups.map(group => [group.groupId, group.commandCount, group.cancelled])).toEqual([
+        expect(value.groups.map((group) => [group.groupId, group.commandCount, group.cancelled])).toEqual([
             ['left', 2, true],
-            ['right', 0, true],
+            ['right', 0, true]
         ]);
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId)).toEqual([
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId)).toEqual([
             'cancel-parallel:g1:left:c1:before-cancel',
             'cancel-parallel:g1:left:c2:request-cancel',
-            'cancel-parallel',
+            'cancel-parallel'
         ]);
     });
 
@@ -930,11 +926,11 @@ describe('rallar-bb-test', () => {
                 return {
                     status: 'ok',
                     value: {
-                        sent: true,
+                        sent: true
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -945,21 +941,21 @@ describe('rallar-bb-test', () => {
             groups: [
                 {
                     groupId: 'left',
-                    commands: [{ kind: 'rtc.send', commandId: 'slow-send' }],
+                    commands: [{ kind: 'rtc.send', commandId: 'slow-send' }]
                 },
                 {
                     groupId: 'right',
-                    commands: [{ kind: 'rtc.send', commandId: 'should-not-run' }],
-                },
-            ],
+                    commands: [{ kind: 'rtc.send', commandId: 'should-not-run' }]
+                }
+            ]
         });
         const value = result.value as RallarBlackBoxTestParallelResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_PARALLEL_TIMEOUT');
-        expect(value.groups.map(group => group.commandCount)).toEqual([1, 0]);
+        expect(value.groups.map((group) => group.commandCount)).toEqual([1, 0]);
         expect(executedCommandIds).toEqual([
-            'timeout-parallel:g1:left:c1:slow-send',
+            'timeout-parallel:g1:left:c1:slow-send'
         ]);
     });
 
@@ -984,11 +980,11 @@ describe('rallar-bb-test', () => {
                     status: 'ok',
                     value: {
                         sent: command.send,
-                        metadata: command.metadata,
+                        metadata: command.metadata
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -1005,16 +1001,16 @@ describe('rallar-bb-test', () => {
                             iteration: '{loop.iteration}',
                             label: 'frame-{loop.index}',
                             elapsedMs: '{loop.elapsedMs}',
-                            commandIndex: '{loop.commandIndex}',
-                        },
-                    },
-                },
-            ],
+                            commandIndex: '{loop.commandIndex}'
+                        }
+                    }
+                }
+            ]
         });
 
         const value = result.value as RallarBlackBoxTestLoopResultValue;
-        const sentPayloads = capturedCommands.map(command =>
-            ((command as Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }>).send as {
+        const sentPayloads = capturedCommands.map((command) =>
+            ((command as Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>).send as {
                 data: Record<string, unknown>;
             }).data
         );
@@ -1026,60 +1022,60 @@ describe('rallar-bb-test', () => {
             childResultCount: 3,
             passed: 3,
             failed: 0,
-            cancelled: false,
+            cancelled: false
         });
-        expect(capturedCommands.map(command => command.commandId)).toEqual([
+        expect(capturedCommands.map((command) => command.commandId)).toEqual([
             'position-loop:i1:c1:position-send',
             'position-loop:i2:c1:position-send',
-            'position-loop:i3:c1:position-send',
+            'position-loop:i3:c1:position-send'
         ]);
-        expect(sentPayloads.map(payload => payload.seq)).toEqual([0, 1, 2]);
-        expect(sentPayloads.map(payload => payload.iteration)).toEqual([1, 2, 3]);
-        expect(sentPayloads.map(payload => payload.label)).toEqual(['frame-0', 'frame-1', 'frame-2']);
-        expect(sentPayloads.map(payload => payload.commandIndex)).toEqual([0, 0, 0]);
+        expect(sentPayloads.map((payload) => payload.seq)).toEqual([0, 1, 2]);
+        expect(sentPayloads.map((payload) => payload.iteration)).toEqual([1, 2, 3]);
+        expect(sentPayloads.map((payload) => payload.label)).toEqual(['frame-0', 'frame-1', 'frame-2']);
+        expect(sentPayloads.map((payload) => payload.commandIndex)).toEqual([0, 0, 0]);
         expect(capturedCommands[0].metadata).toMatchObject({
             loop: {
                 commandId: 'position-loop',
                 index: 0,
                 iteration: 1,
                 commandIndex: 0,
-                originalCommandId: 'position-send',
-            },
+                originalCommandId: 'position-send'
+            }
         });
-        expect(value.results.map(child => ({
+        expect(value.results.map((child) => ({
             commandId: child.commandId,
             originalCommandId: child.originalCommandId,
             commandIndex: child.commandIndex,
             iteration: child.iteration,
-            status: child.result.status,
+            status: child.result.status
         }))).toEqual([
             {
                 commandId: 'position-loop:i1:c1:position-send',
                 originalCommandId: 'position-send',
                 commandIndex: 0,
                 iteration: 1,
-                status: 'ok',
+                status: 'ok'
             },
             {
                 commandId: 'position-loop:i2:c1:position-send',
                 originalCommandId: 'position-send',
                 commandIndex: 0,
                 iteration: 2,
-                status: 'ok',
+                status: 'ok'
             },
             {
                 commandId: 'position-loop:i3:c1:position-send',
                 originalCommandId: 'position-send',
                 commandIndex: 0,
                 iteration: 3,
-                status: 'ok',
-            },
+                status: 'ok'
+            }
         ]);
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId)).toEqual([
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId)).toEqual([
             'position-loop:i1:c1:position-send',
             'position-loop:i2:c1:position-send',
             'position-loop:i3:c1:position-send',
-            'position-loop',
+            'position-loop'
         ]);
     });
 
@@ -1097,27 +1093,27 @@ describe('rallar-bb-test', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED',
-                            message: 'Synthetic send failure.',
+                            message: 'Synthetic send failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     };
                 }
 
                 return {
                     status: 'ok',
                     value: {
-                        sendCount,
+                        sendCount
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
             kind: 'loop',
             commandId: 'fail-fast-loop',
             count: 4,
-            commands: [{ kind: 'rtc.send', commandId: 'send-once' }],
+            commands: [{ kind: 'rtc.send', commandId: 'send-once' }]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
 
@@ -1143,18 +1139,18 @@ describe('rallar-bb-test', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED',
-                            message: 'Synthetic send failure.',
+                            message: 'Synthetic send failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     }
                     : {
                         status: 'ok',
                         value: {
-                            sendCount,
+                            sendCount
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -1162,7 +1158,7 @@ describe('rallar-bb-test', () => {
             commandId: 'continue-loop',
             count: 3,
             continueOnFailure: true,
-            commands: [{ kind: 'rtc.send', commandId: 'send-once' }],
+            commands: [{ kind: 'rtc.send', commandId: 'send-once' }]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
 
@@ -1183,18 +1179,18 @@ describe('rallar-bb-test', () => {
             commands: [
                 { kind: 'health', commandId: 'before-cancel' },
                 { kind: 'recipe.cancel', commandId: 'request-cancel', reason: 'operator requested stop' },
-                { kind: 'health', commandId: 'after-cancel' },
-            ],
+                { kind: 'health', commandId: 'after-cancel' }
+            ]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('cancelled');
         expect(value.cancelled).toBe(true);
         expect(value.childResultCount).toBe(2);
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId)).toEqual([
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId)).toEqual([
             'cancel-loop:i1:c1:before-cancel',
             'cancel-loop:i1:c2:request-cancel',
-            'cancel-loop',
+            'cancel-loop'
         ]);
     });
 
@@ -1210,11 +1206,11 @@ describe('rallar-bb-test', () => {
                 return {
                     status: 'ok',
                     value: {
-                        sent: true,
+                        sent: true
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -1222,7 +1218,7 @@ describe('rallar-bb-test', () => {
             commandId: 'timed-loop',
             count: 2,
             intervalMs: 25,
-            commands: [{ kind: 'rtc.send', commandId: 'timed-send' }],
+            commands: [{ kind: 'rtc.send', commandId: 'timed-send' }]
         });
 
         expect(result.ok).toBe(true);
@@ -1235,7 +1231,7 @@ describe('rallar-bb-test', () => {
         let sendCount = 0;
         const runtime = createRallarBlackBoxTestRuntime({
             now: () => now,
-            sleep: async ms => {
+            sleep: async (ms) => {
                 now += ms;
             },
             commandExecutor: (command, context) => {
@@ -1256,12 +1252,12 @@ describe('rallar-bb-test', () => {
                             durationMs,
                             ok: true,
                             status: sendCount === 2 ? 'rate-limited' : 'sent',
-                            backpressured: sendCount === 2,
-                        },
+                            backpressured: sendCount === 2
+                        }
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -1269,7 +1265,7 @@ describe('rallar-bb-test', () => {
             commandId: 'paced-loop',
             count: 3,
             intervalMs: 10,
-            commands: [{ kind: 'rtc.send', commandId: 'paced-send', transport: 'realtime' }],
+            commands: [{ kind: 'rtc.send', commandId: 'paced-send', transport: 'realtime' }]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
         const statsResult = await runtime.execute({ kind: 'stats', commandId: 'paced-stats' });
@@ -1286,9 +1282,9 @@ describe('rallar-bb-test', () => {
             averageStartDriftMs: 8,
             maxJitterMs: 15,
             averageJitterMs: 10,
-            lateIterationCount: 1,
+            lateIterationCount: 1
         });
-        expect(value.pacing?.iterations.map(iteration => iteration.startDriftMs)).toEqual([0, 5, 20]);
+        expect(value.pacing?.iterations.map((iteration) => iteration.startDriftMs)).toEqual([0, 5, 20]);
         expect(value.sends).toMatchObject({
             sendCount: 3,
             succeeded: 3,
@@ -1299,18 +1295,18 @@ describe('rallar-bb-test', () => {
                 minMs: 5,
                 maxMs: 15,
                 averageMs: 8,
-                totalMs: 25,
-            },
+                totalMs: 25
+            }
         });
         expect(stats?.load?.latestLoopCommandId).toBe('paced-loop');
         expect(stats?.load?.latestPacing).toMatchObject({
             completedIterations: 3,
-            maxStartDriftMs: 20,
+            maxStartDriftMs: 20
         });
         expect('iterations' in (stats?.load?.latestPacing ?? {})).toBe(false);
         expect(stats?.load?.latestSends).toMatchObject({
             sendCount: 3,
-            backpressureCount: 1,
+            backpressureCount: 1
         });
         expect('observations' in (stats?.load?.latestSends ?? {})).toBe(false);
     });
@@ -1319,7 +1315,7 @@ describe('rallar-bb-test', () => {
         let now = 2_000;
         const runtime = createRallarBlackBoxTestRuntime({
             now: () => now,
-            sleep: async ms => {
+            sleep: async (ms) => {
                 now += ms;
             },
             commandExecutor: (command, context) => {
@@ -1338,12 +1334,12 @@ describe('rallar-bb-test', () => {
                             durationMs: 15,
                             ok: true,
                             status: 'rate-limited',
-                            backpressured: true,
-                        },
+                            backpressured: true
+                        }
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -1353,18 +1349,18 @@ describe('rallar-bb-test', () => {
             intervalMs: 10,
             thresholds: {
                 minAchievedRateHz: 50,
-                failOnBackpressure: true,
+                failOnBackpressure: true
             },
-            commands: [{ kind: 'rtc.send', commandId: 'threshold-send', transport: 'realtime' }],
+            commands: [{ kind: 'rtc.send', commandId: 'threshold-send', transport: 'realtime' }]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED');
         expect(value.failed).toBe(0);
-        expect(value.thresholdFailures?.map(failure => failure.category)).toEqual([
+        expect(value.thresholdFailures?.map((failure) => failure.category)).toEqual([
             'pacing',
-            'backpressure',
+            'backpressure'
         ]);
         expect(value.sends?.backpressureCount).toBe(2);
     });
@@ -1384,18 +1380,18 @@ describe('rallar-bb-test', () => {
                 return {
                     status: 'ok',
                     value: {
-                        sendCount,
+                        sendCount
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
             kind: 'loop',
             commandId: 'duration-loop',
             durationMs: 25,
-            commands: [{ kind: 'rtc.send', commandId: 'duration-send' }],
+            commands: [{ kind: 'rtc.send', commandId: 'duration-send' }]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
 
@@ -1417,11 +1413,11 @@ describe('rallar-bb-test', () => {
                 return {
                     status: 'ok',
                     value: {
-                        sent: true,
+                        sent: true
                     },
-                    nextStatus: context.state().status,
+                    nextStatus: context.state().status
                 };
-            },
+            }
         });
 
         const result = await runtime.execute({
@@ -1431,8 +1427,8 @@ describe('rallar-bb-test', () => {
             maxCommands: 5,
             commands: [
                 { kind: 'rtc.send', commandId: 'send-a' },
-                { kind: 'rtc.send', commandId: 'send-b' },
-            ],
+                { kind: 'rtc.send', commandId: 'send-b' }
+            ]
         });
         const value = result.value as RallarBlackBoxTestLoopResultValue;
 
@@ -1446,7 +1442,7 @@ describe('rallar-bb-test', () => {
         const runtime = createDeterministicRuntime();
         const command: RallarBlackBoxTestCommand = {
             kind: 'health',
-            commandId: 'health-1',
+            commandId: 'health-1'
         };
 
         const first = await runtime.execute(command);
@@ -1474,18 +1470,18 @@ describe('rallar-bb-test', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED_ONCE',
-                            message: 'Synthetic first-run failure.',
+                            message: 'Synthetic first-run failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     }
                     : {
                         status: 'ok',
                         value: {
-                            sendCount,
+                            sendCount
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
-            },
+            }
         });
         const recipe: RallarBlackBoxTestRecipe = {
             recipeId: 'repeatable-recipe',
@@ -1494,31 +1490,31 @@ describe('rallar-bb-test', () => {
                     kind: 'rtc.send',
                     commandId: 'shared-send-id',
                     send: {
-                        text: 'same command id',
-                    },
-                },
-            ],
+                        text: 'same command id'
+                    }
+                }
+            ]
         };
 
         const first = await runtime.execute({
             kind: 'recipe.run',
             commandId: 'run-repeatable-1',
-            recipe,
+            recipe
         });
         const second = await runtime.execute({
             kind: 'recipe.run',
             commandId: 'run-repeatable-2',
-            recipe,
+            recipe
         });
 
         expect(first.status).toBe('failed');
         expect(second.status).toBe('ok');
         expect(sendCount).toBe(2);
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(result => result.commandId)).toEqual([
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.commandId)).toEqual([
             'shared-send-id',
             'run-repeatable-1',
             'shared-send-id',
-            'run-repeatable-2',
+            'run-repeatable-2'
         ]);
     });
 
@@ -1534,16 +1530,16 @@ describe('rallar-bb-test', () => {
                 commands: [
                     {
                         kind: 'health',
-                        commandId: 'interval-health',
-                    },
-                ],
+                        commandId: 'interval-health'
+                    }
+                ]
             });
 
             await Promise.resolve();
             await runtime.execute({
                 kind: 'recipe.cancel',
                 commandId: 'cancel-interval',
-                reason: 'operator stopped interval loop',
+                reason: 'operator stopped interval loop'
             });
             await Promise.resolve();
 
@@ -1553,14 +1549,15 @@ describe('rallar-bb-test', () => {
             expect(result.status).toBe('cancelled');
             expect(value.cancelled).toBe(true);
             expect(value.childResultCount).toBe(1);
-            const commandIds = selectRallarBlackBoxCommandHistory(runtime.state()).map(command => command.commandId);
+            const commandIds = selectRallarBlackBoxCommandHistory(runtime.state()).map((command) => command.commandId);
             expect(commandIds).toEqual(expect.arrayContaining([
                 'cancel-during-interval:i1:c1:interval-health',
                 'cancel-interval',
-                'cancel-during-interval',
+                'cancel-during-interval'
             ]));
             expect(commandIds.at(-1)).toBe('cancel-during-interval');
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -1572,8 +1569,8 @@ describe('rallar-bb-test', () => {
             commandId: 'configure-json',
             config: {
                 runId: 'run-json',
-                agentId: 'agent-json',
-            },
+                agentId: 'agent-json'
+            }
         };
 
         const parsedCommand = JSON.parse(JSON.stringify(command)) as RallarBlackBoxTestCommand;
@@ -1585,7 +1582,7 @@ describe('rallar-bb-test', () => {
     });
 
     it('delegates RTC commands to the browser Rallar runtime adapter', async () => {
-        const calls: Array<{ name: string; value?: unknown }> = [];
+        const calls: Array<{ name: string; value?: unknown; }> = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             now: (() => {
                 let now = 2_000;
@@ -1596,33 +1593,33 @@ describe('rallar-bb-test', () => {
                 return (prefix: string) => `${prefix}-${sequence++}`;
             })(),
             rallarRuntime: {
-                connect: async config => {
+                connect: async (config) => {
                     calls.push({ name: 'connect', value: config });
                     return {
                         connected: true,
-                        sessionId: 'session-1',
+                        sessionId: 'session-1'
                     };
                 },
-                send: async input => {
+                send: async (input) => {
                     calls.push({ name: 'send', value: input });
                     return {
-                        sent: true,
+                        sent: true
                     };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => {
                     calls.push({ name: 'close' });
                     return {
-                        closed: true,
+                        closed: true
                     };
                 },
                 health: async () => {
                     calls.push({ name: 'health' });
                     return {
-                        connected: true,
+                        connected: true
                     };
-                },
-            },
+                }
+            }
         });
 
         await runtime.execute({
@@ -1634,14 +1631,14 @@ describe('rallar-bb-test', () => {
                 roomId: 'room-1',
                 transport: 'messages.rtc',
                 rallar: {
-                    typeId: 'chat.message',
-                },
-            },
+                    typeId: 'chat.message'
+                }
+            }
         });
         const connectResult = await runtime.execute({
             kind: 'rtc.connect',
             commandId: 'connect-browser',
-            connection: 'aliceRtc',
+            connection: 'aliceRtc'
         });
         const sendResult = await runtime.execute({
             kind: 'rtc.send',
@@ -1649,9 +1646,9 @@ describe('rallar-bb-test', () => {
             connection: 'aliceRtc',
             send: {
                 payload: {
-                    text: 'hello',
-                },
-            },
+                    text: 'hello'
+                }
+            }
         });
         runtime.receiveRallarBrowserEvent({
             kind: 'message',
@@ -1661,27 +1658,27 @@ describe('rallar-bb-test', () => {
             transport: 'messages.rtc',
             data: {
                 password: 'secret',
-                text: 'from browser',
-            },
+                text: 'from browser'
+            }
         });
         const healthResult = await runtime.execute({
             kind: 'health',
-            commandId: 'health-browser',
+            commandId: 'health-browser'
         });
         const closeResult = await runtime.execute({
             kind: 'close',
-            commandId: 'close-browser',
+            commandId: 'close-browser'
         });
 
         expect(connectResult.ok).toBe(true);
         expect(sendResult.ok).toBe(true);
         expect(healthResult.ok).toBe(true);
         expect(closeResult.ok).toBe(true);
-        expect(calls.map(call => call.name)).toEqual([
+        expect(calls.map((call) => call.name)).toEqual([
             'connect',
             'send',
             'health',
-            'close',
+            'close'
         ]);
         expect(calls[0].value).toEqual({
             connection: 'aliceRtc',
@@ -1690,13 +1687,13 @@ describe('rallar-bb-test', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
                 typeId: 'chat.message',
-                transport: 'messages.rtc',
-            },
+                transport: 'messages.rtc'
+            }
         });
         expect(calls[1].value).toEqual({
             payload: {
-                text: 'hello',
-            },
+                text: 'hello'
+            }
         });
         expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
             roomId: undefined,
@@ -1710,29 +1707,29 @@ describe('rallar-bb-test', () => {
             resourceId: undefined,
             data: {
                 password: '<redacted>',
-                text: 'from browser',
+                text: 'from browser'
             },
-            error: undefined,
+            error: undefined
         });
     });
 
     it('delegates CRDT commands to the browser Rallar runtime adapter', async () => {
-        const calls: Array<{ name: string; value?: unknown }> = [];
+        const calls: Array<{ name: string; value?: unknown; }> = [];
         const crdt = Object.fromEntries(
             ['open', 'apply', 'read', 'sync', 'health', 'wait', 'undo', 'redo', 'close', 'destroy']
-                .map(name => [
+                .map((name) => [
                     name,
                     async (input: unknown) => {
                         calls.push({ name, value: input });
                         return {
                             status: name,
-                            handle: (input as { handle?: string }).handle,
+                            handle: (input as { handle?: string; }).handle,
                             health: {
-                                pendingUpdateCount: 0,
-                            },
+                                pendingUpdateCount: 0
+                            }
                         };
-                    },
-                ]),
+                    }
+                ])
         ) as Record<string, (input: unknown) => Promise<unknown>>;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -1741,8 +1738,8 @@ describe('rallar-bb-test', () => {
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
-                crdt: crdt as any,
-            },
+                crdt: crdt as any
+            }
         });
 
         await runtime.execute({
@@ -1754,9 +1751,9 @@ describe('rallar-bb-test', () => {
                 roomId: 'room-1',
                 rallar: {
                     applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                },
-            },
+                    workspaceId: 'default'
+                }
+            }
         });
         await runtime.execute({
             kind: 'crdt.open',
@@ -1764,7 +1761,7 @@ describe('rallar-bb-test', () => {
             handle: 'doc',
             name: 'checklist',
             transport: 'ws',
-            durableCatchUp: 'http',
+            durableCatchUp: 'http'
         });
         await runtime.execute({
             kind: 'crdt.apply',
@@ -1776,10 +1773,10 @@ describe('rallar-bb-test', () => {
                     {
                         kind: 'counter.add',
                         path: ['count'],
-                        delta: 1,
-                    },
-                ],
-            },
+                        delta: 1
+                    }
+                ]
+            }
         });
         await runtime.execute({ kind: 'crdt.read', commandId: 'read-crdt', handle: 'doc' });
         await runtime.execute({ kind: 'crdt.sync', commandId: 'sync-crdt', handle: 'doc', transport: 'ws' });
@@ -1792,22 +1789,22 @@ describe('rallar-bb-test', () => {
             intervalMs: 50,
             sync: {
                 reason: 'unit-test',
-                transport: 'ws',
+                transport: 'ws'
             },
             conditions: [
                 {
                     source: 'value',
                     path: 'title',
                     operator: 'equals',
-                    expected: 'Ready',
+                    expected: 'Ready'
                 },
                 {
                     source: 'health',
                     path: 'pendingUpdateCount',
                     operator: 'equals',
-                    expected: 0,
-                },
-            ],
+                    expected: 0
+                }
+            ]
         });
         await runtime.execute({
             kind: 'crdt.undo',
@@ -1818,9 +1815,9 @@ describe('rallar-bb-test', () => {
                 {
                     kind: 'counter.add',
                     path: ['count'],
-                    delta: -1,
-                },
-            ],
+                    delta: -1
+                }
+            ]
         });
         await runtime.execute({
             kind: 'crdt.redo',
@@ -1831,14 +1828,14 @@ describe('rallar-bb-test', () => {
                 {
                     kind: 'counter.add',
                     path: ['count'],
-                    delta: 1,
-                },
-            ],
+                    delta: 1
+                }
+            ]
         });
         await runtime.execute({ kind: 'crdt.close', commandId: 'close-crdt', handle: 'doc' });
         await runtime.execute({ kind: 'crdt.destroy', commandId: 'destroy-crdt', handle: 'doc' });
 
-        expect(calls.map(call => call.name)).toEqual([
+        expect(calls.map((call) => call.name)).toEqual([
             'open',
             'apply',
             'read',
@@ -1848,7 +1845,7 @@ describe('rallar-bb-test', () => {
             'undo',
             'redo',
             'close',
-            'destroy',
+            'destroy'
         ]);
         expect(calls[0].value).toMatchObject({
             handle: 'doc',
@@ -1858,10 +1855,10 @@ describe('rallar-bb-test', () => {
             roomId: 'room-1',
             rallar: {
                 applicationId: 'rallar-server',
-                workspaceId: 'default',
-            },
+                workspaceId: 'default'
+            }
         });
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toEqual(expect.arrayContaining([
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
             'rallar.bb.crdt.opened',
             'rallar.bb.crdt.applied',
             'rallar.bb.crdt.read',
@@ -1872,26 +1869,26 @@ describe('rallar-bb-test', () => {
             'rallar.bb.crdt.undone',
             'rallar.bb.crdt.redone',
             'rallar.bb.crdt.closed',
-            'rallar.bb.crdt.destroyed',
+            'rallar.bb.crdt.destroyed'
         ]));
     });
 
     it('delegates director commands to the browser Rallar runtime adapter', async () => {
-        const calls: Array<{ name: string; value?: unknown }> = [];
+        const calls: Array<{ name: string; value?: unknown; }> = [];
         const director = Object.fromEntries(
             ['appoint', 'resign', 'status', 'relayStart', 'intent', 'syncRequest', 'relayStop']
-                .map(name => [
+                .map((name) => [
                     name,
                     async (input: unknown) => {
                         calls.push({ name, value: input });
                         return {
                             status: name,
-                            handle: (input as { handle?: string }).handle,
+                            handle: (input as { handle?: string; }).handle,
                             role: name === 'appoint' || name === 'relayStart' ? 'director' : 'client',
-                            state: 'fresh',
+                            state: 'fresh'
                         };
-                    },
-                ]),
+                    }
+                ])
         ) as Record<string, (input: unknown) => Promise<unknown>>;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -1900,8 +1897,8 @@ describe('rallar-bb-test', () => {
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
-                director: director as any,
-            },
+                director: director as any
+            }
         });
 
         await runtime.execute({
@@ -1913,22 +1910,22 @@ describe('rallar-bb-test', () => {
                 roomId: 'room-1',
                 rallar: {
                     applicationId: 'rallar-server',
-                    workspaceId: 'default',
+                    workspaceId: 'default'
                 },
                 defaults: {
-                    groupId: 'room-1',
-                },
-            },
+                    groupId: 'room-1'
+                }
+            }
         });
         await runtime.execute({
             kind: 'director.appoint',
             commandId: 'appoint-director',
-            heartbeatTtlMs: 1_200,
+            heartbeatTtlMs: 1_200
         });
         await runtime.execute({
             kind: 'director.status',
             commandId: 'status-director',
-            refresh: true,
+            refresh: true
         });
         await runtime.execute({
             kind: 'director.relay.start',
@@ -1938,63 +1935,63 @@ describe('rallar-bb-test', () => {
             intentTypeId: 'app.test.director.intent',
             outputTypeId: 'app.test.director.output',
             heartbeatIntervalMs: 300,
-            snapshotIntervalMs: 500,
+            snapshotIntervalMs: 500
         });
         await runtime.execute({
             kind: 'director.intent',
             commandId: 'intent-director',
             handle: 'relay-1',
             intent: {
-                intentId: 'intent-1',
-            },
+                intentId: 'intent-1'
+            }
         });
         await runtime.execute({
             kind: 'director.sync.request',
             commandId: 'sync-director',
             handle: 'relay-1',
             payload: {
-                reason: 'unit-test',
-            },
+                reason: 'unit-test'
+            }
         });
         await runtime.execute({
             kind: 'director.relay.stop',
             commandId: 'stop-director',
-            handle: 'relay-1',
+            handle: 'relay-1'
         });
         await runtime.execute({
             kind: 'director.resign',
-            commandId: 'resign-director',
+            commandId: 'resign-director'
         });
 
-        expect(calls.map(call => call.name)).toEqual([
+        expect(calls.map((call) => call.name)).toEqual([
             'appoint',
             'status',
             'relayStart',
             'intent',
             'syncRequest',
             'relayStop',
-            'resign',
+            'resign'
         ]);
         expect(calls[0].value).toMatchObject({
             roomId: 'room-1',
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            heartbeatTtlMs: 1_200,
+            heartbeatTtlMs: 1_200
         });
         expect(calls[2].value).toMatchObject({
             handle: 'relay-1',
             topicId: 'app.test.director',
             intentTypeId: 'app.test.director.intent',
-            outputTypeId: 'app.test.director.output',
+            outputTypeId: 'app.test.director.output'
         });
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toEqual(expect.arrayContaining([
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
             'rallar.bb.director.appointed',
             'rallar.bb.director.status',
             'rallar.bb.director.relay_started',
             'rallar.bb.director.intent_sent',
             'rallar.bb.director.sync_requested',
             'rallar.bb.director.relay_stopped',
-            'rallar.bb.director.resigned',
+            'rallar.bb.director.resigned'
         ]));
     });
 
@@ -2005,20 +2002,20 @@ describe('rallar-bb-test', () => {
                 send: async () => ({ sent: true }),
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
             kind: 'crdt.read',
             commandId: 'read-crdt-unsupported',
-            handle: 'missing',
+            handle: 'missing'
         });
 
         expect(result.ok).toBe(false);
         expect(result.error?.message).toContain('does not support CRDT commands');
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toContain(
-            'rallar.bb.crdt.failed',
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toContain(
+            'rallar.bb.crdt.failed'
         );
     });
 
@@ -2029,20 +2026,20 @@ describe('rallar-bb-test', () => {
                 send: async () => ({ sent: true }),
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
             kind: 'director.status',
             commandId: 'director-status-unsupported',
-            roomId: 'room-1',
+            roomId: 'room-1'
         });
 
         expect(result.ok).toBe(false);
         expect(result.error?.message).toContain('does not support director commands');
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toContain(
-            'rallar.bb.director.failed',
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toContain(
+            'rallar.bb.director.failed'
         );
     });
 
@@ -2057,8 +2054,8 @@ describe('rallar-bb-test', () => {
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const startedAtEpochMs = Date.now();
@@ -2066,13 +2063,13 @@ describe('rallar-bb-test', () => {
             kind: 'rtc.send',
             commandId: 'delayed-send',
             metadata: {
-                localDelayMs: 25,
+                localDelayMs: 25
             },
             send: {
                 data: {
-                    text: 'delayed',
-                },
-            },
+                    text: 'delayed'
+                }
+            }
         });
 
         expect(result.ok).toBe(true);
@@ -2089,13 +2086,13 @@ describe('rallar-bb-test', () => {
                     await sleepMs(80);
                     return {
                         status: 'sent',
-                        input,
+                        input
                     };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
@@ -2110,12 +2107,12 @@ describe('rallar-bb-test', () => {
             send: {
                 data: {
                     seq: '{stream.index}',
-                    frame: '{stream.iteration}',
-                },
-            },
+                    frame: '{stream.iteration}'
+                }
+            }
         });
         const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
-        const topics = selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic);
+        const topics = selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic);
 
         expect(result.ok).toBe(true);
         expect(sendStarts).toHaveLength(5);
@@ -2127,12 +2124,12 @@ describe('rallar-bb-test', () => {
             attemptedFrames: 5,
             completedFrames: 5,
             failedFrames: 0,
-            droppedFrames: 0,
+            droppedFrames: 0
         });
         expect(value.duration.p95Ms).toBeGreaterThanOrEqual(70);
         expect(topics).toEqual(expect.arrayContaining([
             'rallar.bb.rtc.stream_started',
-            'rallar.bb.rtc.stream_completed',
+            'rallar.bb.rtc.stream_completed'
         ]));
     });
 
@@ -2143,13 +2140,13 @@ describe('rallar-bb-test', () => {
                 send: async () => {
                     await sleepMs(60);
                     return {
-                        status: 'sent',
+                        status: 'sent'
                     };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
@@ -2161,16 +2158,16 @@ describe('rallar-bb-test', () => {
             drainTimeoutMs: 500,
             send: {
                 data: {
-                    seq: '{stream.index}',
-                },
+                    seq: '{stream.index}'
+                }
             },
             thresholds: {
-                maxDroppedFrames: 0,
-            },
+                maxDroppedFrames: 0
+            }
         });
         const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
         const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
-            .find(event => event.topic === 'rallar.bb.rtc.stream_failed');
+            .find((event) => event.topic === 'rallar.bb.rtc.stream_failed');
 
         expect(result.ok).toBe(false);
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED');
@@ -2179,14 +2176,14 @@ describe('rallar-bb-test', () => {
             value: {
                 commandId: 'stream-saturated',
                 plannedFrames: 5,
-                droppedFrames: value.droppedFrames,
-            },
+                droppedFrames: value.droppedFrames
+            }
         });
-        expect(value.thresholdFailures.map(failure => failure.name)).toContain('maxDroppedFrames');
+        expect(value.thresholdFailures.map((failure) => failure.name)).toContain('maxDroppedFrames');
         expect(diagnostic?.payload).toMatchObject({
             diagnosticTypeId: 'rallar.bb.rtc.stream_failed',
             severity: 'error',
-            commandId: 'stream-saturated',
+            commandId: 'stream-saturated'
         });
     });
 
@@ -2197,8 +2194,8 @@ describe('rallar-bb-test', () => {
                 send: async () => ({ status: 'sent' }),
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
@@ -2209,9 +2206,9 @@ describe('rallar-bb-test', () => {
             sampleEvery: 3,
             send: {
                 data: {
-                    seq: '{stream.index}',
-                },
-            },
+                    seq: '{stream.index}'
+                }
+            }
         });
         const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
 
@@ -2222,9 +2219,9 @@ describe('rallar-bb-test', () => {
             attemptedFrames: 6,
             completedFrames: 6,
             failedFrames: 0,
-            droppedFrames: 0,
+            droppedFrames: 0
         });
-        expect(value.observations.map(observation => observation.index)).toEqual([0, 2, 5]);
+        expect(value.observations.map((observation) => observation.index)).toEqual([0, 2, 5]);
     });
 
     it('executes browser-native HTTP requests through the adapter', async () => {
@@ -2232,26 +2229,29 @@ describe('rallar-bb-test', () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: (async (input, init) => {
                 fetchCalls.push({ input, init });
-                return new Response(JSON.stringify({
-                    received: true,
-                    token: 'response-token',
-                }), {
-                    status: 201,
-                    statusText: 'Created',
-                    headers: {
-                        authorization: 'Bearer response-token',
-                        'content-type': 'application/json',
-                    },
-                });
-            }) as typeof fetch,
+                return new Response(
+                    JSON.stringify({
+                        received: true,
+                        token: 'response-token'
+                    }),
+                    {
+                        status: 201,
+                        statusText: 'Created',
+                        headers: {
+                            authorization: 'Bearer response-token',
+                            'content-type': 'application/json'
+                        }
+                    }
+                );
+            }) as typeof fetch
         });
 
         await runtime.execute({
             kind: 'configure',
             commandId: 'configure-http',
             config: {
-                apiBaseUrl: 'https://api.example.test/root/',
-            },
+                apiBaseUrl: 'https://api.example.test/root/'
+            }
         });
         const result = await runtime.execute({
             kind: 'http.request',
@@ -2261,15 +2261,15 @@ describe('rallar-bb-test', () => {
                 method: 'POST',
                 headers: {
                     authorization: 'Bearer request-token',
-                    'content-type': 'application/json',
+                    'content-type': 'application/json'
                 },
                 body: {
-                    name: 'item-1',
-                },
+                    name: 'item-1'
+                }
             },
             response: {
-                body: 'json',
-            },
+                body: 'json'
+            }
         });
 
         expect(fetchCalls).toEqual([
@@ -2279,14 +2279,14 @@ describe('rallar-bb-test', () => {
                     method: 'POST',
                     headers: {
                         authorization: 'Bearer request-token',
-                        'content-type': 'application/json',
+                        'content-type': 'application/json'
                     },
                     body: '{"name":"item-1"}',
                     credentials: undefined,
                     mode: undefined,
-                    signal: expect.any(AbortSignal),
-                },
-            },
+                    signal: expect.any(AbortSignal)
+                }
+            }
         ]);
         expect(result.ok).toBe(true);
         expect(result.value).toEqual({
@@ -2296,16 +2296,14 @@ describe('rallar-bb-test', () => {
             ok: true,
             headers: {
                 authorization: '<redacted>',
-                'content-type': 'application/json',
+                'content-type': 'application/json'
             },
             body: {
                 received: true,
-                token: '<redacted>',
-            },
+                token: '<redacted>'
+            }
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
-            event.topic === 'rallar.bb.http.response'
-        )).toBe(true);
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.http.response')).toBe(true);
     });
 
     it('executes browser-native WebSocket commands through the adapter', async () => {
@@ -2328,14 +2326,14 @@ describe('rallar-bb-test', () => {
             addEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(type, [
                     ...(this.listeners.get(type) ?? []),
-                    listener,
+                    listener
                 ]);
             }
 
             removeEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(
                     type,
-                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                    (this.listeners.get(type) ?? []).filter((entry) => entry !== listener)
                 );
             }
 
@@ -2343,7 +2341,7 @@ describe('rallar-bb-test', () => {
                 this.sent.push(data);
                 this.bufferedAmount = 42;
                 this.emit('message', {
-                    data,
+                    data
                 });
             }
 
@@ -2352,12 +2350,12 @@ describe('rallar-bb-test', () => {
                 this.emit('close', {
                     code,
                     reason,
-                    wasClean: true,
+                    wasClean: true
                 });
             }
 
             private emit(type: string, event: unknown): void {
-                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+                (this.listeners.get(type) ?? []).forEach((listener) => listener(event));
             }
         }
 
@@ -2367,29 +2365,29 @@ describe('rallar-bb-test', () => {
                 const socket = new FakeSocket(url);
                 sockets.push(socket);
                 return socket;
-            },
+            }
         });
 
         const openResult = await runtime.execute({
             kind: 'ws.open',
             commandId: 'ws-open',
             connection: 'control',
-            url: 'wss://control.example.test/ws',
+            url: 'wss://control.example.test/ws'
         });
         const sendResult = await runtime.execute({
             kind: 'ws.send',
             commandId: 'ws-send',
             connection: 'control',
             data: {
-                text: 'hello',
-            },
+                text: 'hello'
+            }
         });
         const closeResult = await runtime.execute({
             kind: 'ws.close',
             commandId: 'ws-close',
             connection: 'control',
             code: 1000,
-            reason: 'done',
+            reason: 'done'
         });
 
         expect(openResult.ok).toBe(true);
@@ -2400,16 +2398,14 @@ describe('rallar-bb-test', () => {
                 kind: 'ws.send',
                 transport: 'ws',
                 status: 'queued',
-                queued: true,
-            },
+                queued: true
+            }
         });
         expect(sockets[0].sent).toEqual(['{"text":"hello"}']);
         expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
-            data: '{"text":"hello"}',
+            data: '{"text":"hello"}'
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
-            event.topic === 'rallar.bb.ws.closed'
-        )).toBe(true);
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.closed')).toBe(true);
     });
 
     it('keeps ws.send on an open raw socket in browser Rallar provider mode', async () => {
@@ -2432,21 +2428,21 @@ describe('rallar-bb-test', () => {
             addEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(type, [
                     ...(this.listeners.get(type) ?? []),
-                    listener,
+                    listener
                 ]);
             }
 
             removeEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(
                     type,
-                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                    (this.listeners.get(type) ?? []).filter((entry) => entry !== listener)
                 );
             }
 
             send(data: unknown): void {
                 this.sent.push(data);
                 this.emit('message', {
-                    data,
+                    data
                 });
             }
 
@@ -2455,12 +2451,12 @@ describe('rallar-bb-test', () => {
                 this.emit('close', {
                     code,
                     reason,
-                    wasClean: true,
+                    wasClean: true
                 });
             }
 
             private emit(type: string, event: unknown): void {
-                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+                (this.listeners.get(type) ?? []).forEach((listener) => listener(event));
             }
         }
 
@@ -2479,8 +2475,8 @@ describe('rallar-bb-test', () => {
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         await runtime.execute({
@@ -2488,15 +2484,15 @@ describe('rallar-bb-test', () => {
             commandId: 'configure-browser-rallar-raw-ws',
             config: {
                 control: {
-                    providerMode: 'browser-rallar',
-                },
-            },
+                    providerMode: 'browser-rallar'
+                }
+            }
         });
         await runtime.execute({
             kind: 'ws.open',
             commandId: 'open-browser-rallar-raw-ws',
             connection: 'control',
-            url: 'wss://control.example.test/ws',
+            url: 'wss://control.example.test/ws'
         });
         const sendResult = await runtime.execute({
             kind: 'ws.send',
@@ -2505,13 +2501,13 @@ describe('rallar-bb-test', () => {
             data: {
                 groupId: 'room-1',
                 topic: 'rallar.black-box.live-three-browser.ws',
-                text: 'raw socket payload',
-            },
+                text: 'raw socket payload'
+            }
         });
 
         expect(sendResult.ok).toBe(true);
         expect(sockets[0].sent).toEqual([
-            '{"groupId":"room-1","topic":"rallar.black-box.live-three-browser.ws","text":"raw socket payload"}',
+            '{"groupId":"room-1","topic":"rallar.black-box.live-three-browser.ws","text":"raw socket payload"}'
         ]);
     });
 
@@ -2534,14 +2530,14 @@ describe('rallar-bb-test', () => {
             addEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(type, [
                     ...(this.listeners.get(type) ?? []),
-                    listener,
+                    listener
                 ]);
             }
 
             removeEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(
                     type,
-                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                    (this.listeners.get(type) ?? []).filter((entry) => entry !== listener)
                 );
             }
 
@@ -2555,12 +2551,12 @@ describe('rallar-bb-test', () => {
                 this.emit('close', {
                     code,
                     reason,
-                    wasClean: true,
+                    wasClean: true
                 });
             }
 
             private emit(type: string, event: unknown): void {
-                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+                (this.listeners.get(type) ?? []).forEach((listener) => listener(event));
             }
         }
 
@@ -2583,8 +2579,8 @@ describe('rallar-bb-test', () => {
                     rallarCalls.push('close');
                     return { closed: true };
                 },
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
@@ -2598,31 +2594,31 @@ describe('rallar-bb-test', () => {
                         commandId: 'configure-cleanup',
                         config: {
                             actor: 'alice',
-                            roomId: 'room-1',
-                        },
+                            roomId: 'room-1'
+                        }
                     },
                     {
                         kind: 'ws.open',
                         commandId: 'open-cleanup-ws',
                         connection: 'control',
-                        url: 'wss://control.example.test/ws',
+                        url: 'wss://control.example.test/ws'
                     },
                     {
                         kind: 'rtc.connect',
                         commandId: 'connect-cleanup-rtc',
-                        connection: 'aliceRtc',
+                        connection: 'aliceRtc'
                     },
                     {
                         kind: 'recipe.cancel',
                         commandId: 'cancel-cleanup-recipe',
-                        reason: 'cleanup isolation regression',
-                    },
-                ],
-            },
+                        reason: 'cleanup isolation regression'
+                    }
+                ]
+            }
         });
         const health = await runtime.execute({
             kind: 'health',
-            commandId: 'health-after-cleanup',
+            commandId: 'health-after-cleanup'
         });
 
         expect(result.status).toBe('cancelled');
@@ -2630,11 +2626,9 @@ describe('rallar-bb-test', () => {
         expect(sockets[0].closeCount).toBe(1);
         expect(rallarCalls).toEqual(['connect', 'close']);
         expect(health.value).toMatchObject({
-            webSockets: [],
+            webSockets: []
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some(event =>
-            event.topic === 'rallar.bb.cleanup.resources_closed'
-        )).toBe(true);
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.cleanup.resources_closed')).toBe(true);
     });
 
     it('routes ws.send through browser Rallar signaling when no raw socket is open', async () => {
@@ -2647,13 +2641,13 @@ describe('rallar-bb-test', () => {
                     sends.push(input);
                     return {
                         status: 'sent',
-                        transport: 'ws',
+                        transport: 'ws'
                     };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         await runtime.execute({
@@ -2664,9 +2658,9 @@ describe('rallar-bb-test', () => {
                 actor: 'alice',
                 roomId: 'room-1',
                 control: {
-                    providerMode: 'browser-rallar',
-                },
-            },
+                    providerMode: 'browser-rallar'
+                }
+            }
         });
         const sendResult = await runtime.execute({
             kind: 'ws.send',
@@ -2682,9 +2676,9 @@ describe('rallar-bb-test', () => {
                 topicId: 'room.black-box.ws.probe',
                 contextId: 'room-1',
                 payload: {
-                    text: 'hello over signaling',
-                },
-            },
+                    text: 'hello over signaling'
+                }
+            }
         });
 
         expect(sendResult.ok).toBe(true);
@@ -2698,16 +2692,14 @@ describe('rallar-bb-test', () => {
             topicId: 'room.black-box.ws.probe',
             contextId: 'room-1',
             payload: {
-                text: 'hello over signaling',
-            },
+                text: 'hello over signaling'
+            }
         }]);
         expect(sendResult.value).toMatchObject({
             connection: 'rallarApi',
-            via: 'rallar-signaling-websocket',
+            via: 'rallar-signaling-websocket'
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) =>
-            event.topic === 'rallar.bb.ws.sent_via_rallar_signaling'
-        )).toBe(true);
+        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.sent_via_rallar_signaling')).toBe(true);
     });
 
     it('prefers browser Rallar signaling for app WS envelopes even when a raw socket is open', async () => {
@@ -2729,14 +2721,14 @@ describe('rallar-bb-test', () => {
             addEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(type, [
                     ...(this.listeners.get(type) ?? []),
-                    listener,
+                    listener
                 ]);
             }
 
             removeEventListener(type: string, listener: (event: unknown) => void): void {
                 this.listeners.set(
                     type,
-                    (this.listeners.get(type) ?? []).filter(entry => entry !== listener),
+                    (this.listeners.get(type) ?? []).filter((entry) => entry !== listener)
                 );
             }
 
@@ -2749,12 +2741,12 @@ describe('rallar-bb-test', () => {
                 this.emit('close', {
                     code,
                     reason,
-                    wasClean: true,
+                    wasClean: true
                 });
             }
 
             private emit(type: string, event: unknown): void {
-                (this.listeners.get(type) ?? []).forEach(listener => listener(event));
+                (this.listeners.get(type) ?? []).forEach((listener) => listener(event));
             }
         }
 
@@ -2780,13 +2772,13 @@ describe('rallar-bb-test', () => {
                     sends.push(input);
                     return {
                         status: 'sent',
-                        transport: 'ws',
+                        transport: 'ws'
                     };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         await runtime.execute({
@@ -2800,18 +2792,18 @@ describe('rallar-bb-test', () => {
                 rallar: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-a',
-                    restoreSession: true,
+                    restoreSession: true
                 },
                 control: {
-                    providerMode: 'browser-rallar',
-                },
-            },
+                    providerMode: 'browser-rallar'
+                }
+            }
         });
         const openResult = await runtime.execute({
             kind: 'ws.open',
             commandId: 'ws-open-rallar',
             connection: 'rallarApi',
-            url: 'wss://control.example.test/ws',
+            url: 'wss://control.example.test/ws'
         });
         const sendResult = await runtime.execute({
             kind: 'ws.send',
@@ -2827,9 +2819,9 @@ describe('rallar-bb-test', () => {
                 topicId: 'room.manual.message',
                 contextId: 'room-1',
                 payload: {
-                    text: 'hello over app ws',
-                },
-            },
+                    text: 'hello over app ws'
+                }
+            }
         });
 
         expect(openResult.ok).toBe(true);
@@ -2845,8 +2837,8 @@ describe('rallar-bb-test', () => {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-a',
                 restoreSession: true,
-                transport: 'realtime',
-            },
+                transport: 'realtime'
+            }
         });
         expect(sends).toEqual([{
             applicationId: 'app-1',
@@ -2858,8 +2850,8 @@ describe('rallar-bb-test', () => {
             topicId: 'room.manual.message',
             contextId: 'room-1',
             payload: {
-                text: 'hello over app ws',
-            },
+                text: 'hello over app ws'
+            }
         }]);
     });
 
@@ -2871,9 +2863,9 @@ describe('rallar-bb-test', () => {
                         status: 'ok',
                         value: {
                             connected: true,
-                            connection: command.connection,
+                            connection: command.connection
                         },
-                        nextStatus: 'configured',
+                        nextStatus: 'configured'
                     };
                 }
 
@@ -2885,15 +2877,15 @@ describe('rallar-bb-test', () => {
                         connection: command.connection,
                         transport: command.transport,
                         payload: {
-                            data: command.send,
-                        },
+                            data: command.send
+                        }
                     });
                     return {
                         status: 'ok',
                         value: {
-                            sent: command.send,
+                            sent: command.send
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
                 }
 
@@ -2904,29 +2896,29 @@ describe('rallar-bb-test', () => {
                         commandId: command.commandId,
                         connection: String(command.metadata?.connection),
                         payload: {
-                            closed: true,
-                        },
+                            closed: true
+                        }
                     });
                     return {
                         status: 'ok',
                         value: {
-                            closed: true,
+                            closed: true
                         },
-                        nextStatus: 'idle',
+                        nextStatus: 'idle'
                     };
                 }
 
                 return undefined;
-            },
+            }
         });
         const provider = createRallarBlackBoxRtcProvider(runtime, {
-            commandIdPrefix: 'facade',
+            commandIdPrefix: 'facade'
         });
         const payload = {
             topic: 'chat.message',
             payload: {
-                text: 'hello through facade',
-            },
+                text: 'hello through facade'
+            }
         };
 
         const report = await executeBlackBox(
@@ -2940,11 +2932,11 @@ describe('rallar-bb-test', () => {
                             actor: 'alice',
                             roomId: 'room-1',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    connectAlice: {},
+                    connectAlice: {}
                 },
                 {
                     RTC: {
@@ -2956,15 +2948,15 @@ describe('rallar-bb-test', () => {
                             roomId: 'room-1',
                             send: payload,
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
                         response: {
                             connection: 'aliceRtc',
                             withinMs: 1000,
-                            message: payload,
-                        },
+                            message: payload
+                        }
                     },
-                    aliceSendsAndReceivesFacadeEcho: {},
+                    aliceSendsAndReceivesFacadeEcho: {}
                 },
                 {
                     RTC: {
@@ -2975,19 +2967,19 @@ describe('rallar-bb-test', () => {
                             actor: 'alice',
                             roomId: 'room-1',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 3,
+                            interactionExecutionNumber: 3
                         },
-                        response: {},
+                        response: {}
                     },
-                    closeAlice: {},
-                },
+                    closeAlice: {}
+                }
             ],
             0,
             {
                 rtcProviders: {
-                    'rallar-bb': provider,
-                },
-            },
+                    'rallar-bb': provider
+                }
+            }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -2995,7 +2987,7 @@ describe('rallar-bb-test', () => {
         expect(report.resultsByName.aliceSendsAndReceivesFacadeEcho[0].status)
             .toBe('SUCCESS');
         expect(report.resultsByName.closeAlice[0].status).toBe('SUCCESS');
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map(result => result.kind))
+        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.kind))
             .toEqual(['rtc.connect', 'rtc.send', 'close']);
     });
 
@@ -3004,20 +2996,20 @@ describe('rallar-bb-test', () => {
         const expectedScopedPayload = {
             topic: 'chat.scoped',
             payload: {
-                text: 'hello scoped room',
+                text: 'hello scoped room'
             },
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
             scope: {
                 applicationId: 'app-1',
-                workspaceId: 'workspace-a',
+                workspaceId: 'workspace-a'
             },
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-a',
-                groupId: 'group-1',
+                groupId: 'group-1'
             },
-            minSnapshotVersion: 7,
+            minSnapshotVersion: 7
         };
         const runtime = createRallarBlackBoxTestRuntime({
             commandExecutor: (command, context) => {
@@ -3027,9 +3019,9 @@ describe('rallar-bb-test', () => {
                         status: 'ok',
                         value: {
                             connected: true,
-                            command,
+                            command
                         },
-                        nextStatus: 'configured',
+                        nextStatus: 'configured'
                     };
                 }
 
@@ -3041,9 +3033,9 @@ describe('rallar-bb-test', () => {
                         connection: 'otherRtc',
                         payload: {
                             data: {
-                                topic: 'noise',
-                            },
-                        },
+                                topic: 'noise'
+                            }
+                        }
                     });
                     context.recordEvent({
                         kind: 'message',
@@ -3052,23 +3044,23 @@ describe('rallar-bb-test', () => {
                         connection: command.connection,
                         transport: command.transport,
                         payload: {
-                            data: command.send,
-                        },
+                            data: command.send
+                        }
                     });
                     return {
                         status: 'ok',
                         value: {
-                            sent: command.send,
+                            sent: command.send
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
                 }
 
                 return undefined;
-            },
+            }
         });
         const provider = createRallarBlackBoxRtcProvider(runtime, {
-            commandIdPrefix: 'scoped',
+            commandIdPrefix: 'scoped'
         });
 
         const report = await executeBlackBox(
@@ -3086,13 +3078,13 @@ describe('rallar-bb-test', () => {
                                 apiBaseUrl: 'https://api.example.test',
                                 applicationId: 'app-1',
                                 workspaceId: 'workspace-a',
-                                transport: 'messages.rtc',
+                                transport: 'messages.rtc'
                             },
-                            minSnapshotVersion: 7,
+                            minSnapshotVersion: 7
                         },
-                        response: {},
+                        response: {}
                     },
-                    connectScopedAlice: {},
+                    connectScopedAlice: {}
                 },
                 {
                     RTC: {
@@ -3106,37 +3098,37 @@ describe('rallar-bb-test', () => {
                             rallar: {
                                 applicationId: 'app-1',
                                 workspaceId: 'workspace-a',
-                                transport: 'messages.rtc',
+                                transport: 'messages.rtc'
                             },
                             minSnapshotVersion: 7,
                             send: {
                                 topic: 'chat.scoped',
                                 payload: {
-                                    text: 'hello scoped room',
-                                },
-                            },
+                                    text: 'hello scoped room'
+                                }
+                            }
                         },
                         response: {
                             connection: 'aliceRtc',
                             withinMs: 1000,
-                            message: expectedScopedPayload,
-                        },
+                            message: expectedScopedPayload
+                        }
                     },
-                    scopedAliceSend: {},
-                },
+                    scopedAliceSend: {}
+                }
             ],
             0,
             {
                 rtcProviders: {
-                    'rallar-bb': provider,
-                },
-            },
+                    'rallar-bb': provider
+                }
+            }
         );
 
         expect(report.summary.failure).toBe(0);
         expect(report.resultsByName.scopedAliceSend[0].actual.matchedMessage.data)
             .toEqual(expectedScopedPayload);
-        expect(executedCommands.find(command => command.kind === 'rtc.connect'))
+        expect(executedCommands.find((command) => command.kind === 'rtc.connect'))
             .toMatchObject({
                 kind: 'rtc.connect',
                 commandId: 'connect-scoped',
@@ -3147,12 +3139,12 @@ describe('rallar-bb-test', () => {
                 workspaceId: 'workspace-a',
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-a',
+                    workspaceId: 'workspace-a'
                 },
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-a',
-                    groupId: 'group-1',
+                    groupId: 'group-1'
                 },
                 minSnapshotVersion: 7,
                 transport: 'messages.rtc',
@@ -3162,18 +3154,18 @@ describe('rallar-bb-test', () => {
                     workspaceId: 'workspace-a',
                     scope: {
                         applicationId: 'app-1',
-                        workspaceId: 'workspace-a',
+                        workspaceId: 'workspace-a'
                     },
                     roomRef: {
                         applicationId: 'app-1',
                         workspaceId: 'workspace-a',
-                        groupId: 'group-1',
+                        groupId: 'group-1'
                     },
                     minSnapshotVersion: 7,
-                    transport: 'messages.rtc',
-                },
+                    transport: 'messages.rtc'
+                }
             });
-        expect(executedCommands.find(command => command.kind === 'rtc.send'))
+        expect(executedCommands.find((command) => command.kind === 'rtc.send'))
             .toMatchObject({
                 kind: 'rtc.send',
                 commandId: 'send-scoped',
@@ -3182,16 +3174,16 @@ describe('rallar-bb-test', () => {
                 workspaceId: 'workspace-a',
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-a',
+                    workspaceId: 'workspace-a'
                 },
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-a',
-                    groupId: 'group-1',
+                    groupId: 'group-1'
                 },
                 minSnapshotVersion: 7,
                 transport: 'messages.rtc',
-                send: expectedScopedPayload,
+                send: expectedScopedPayload
             });
     });
 });

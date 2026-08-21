@@ -9,7 +9,7 @@ export type RovingNavigationKey =
 export function nextRovingNavigationIndex(
     current: number,
     key: RovingNavigationKey,
-    itemCount: number,
+    itemCount: number
 ): number {
     if (itemCount <= 0) {
         return 0;

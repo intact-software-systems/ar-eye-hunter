@@ -13,7 +13,7 @@ export type StateSnapshotObservation =
     | 'incomparable';
 
 export function toStateSnapshotObservation(
-    decision: StateSnapshotRevisionDecision,
+    decision: StateSnapshotRevisionDecision
 ): StateSnapshotObservation {
     return decision;
 }
@@ -24,7 +24,7 @@ export class StateSnapshotRevisionConflictError extends Error {
 
     constructor(
         entity: 'Client' | 'Group',
-        revision: number,
+        revision: number
     ) {
         super(`${entity} snapshot revision conflict at revision ${revision}`);
         this.entity = entity;
@@ -33,13 +33,15 @@ export class StateSnapshotRevisionConflictError extends Error {
     }
 }
 
-export function decideStateSnapshotRevision<T>(input: Readonly<{
-    entity: 'Client' | 'Group';
-    current?: T;
-    incoming: T;
-    stateRevisionOf: (value: T) => number;
-    equals: (left: T, right: T) => boolean;
-}>): StateSnapshotRevisionDecision {
+export function decideStateSnapshotRevision<T>(
+    input: Readonly<{
+        entity: 'Client' | 'Group';
+        current?: T;
+        incoming: T;
+        stateRevisionOf: (value: T) => number;
+        equals: (left: T, right: T) => boolean;
+    }>
+): StateSnapshotRevisionDecision {
     if (!input.current) {
         return 'inserted';
     }
@@ -57,6 +59,6 @@ export function decideStateSnapshotRevision<T>(input: Readonly<{
     }
     throw new StateSnapshotRevisionConflictError(
         input.entity,
-        incomingRevision,
+        incomingRevision
     );
 }

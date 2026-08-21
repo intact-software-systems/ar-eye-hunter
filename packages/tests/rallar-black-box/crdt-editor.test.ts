@@ -13,7 +13,7 @@ import {
     renameCrdtEditorColumnBatch,
     setCrdtEditorCooldownMinBatch,
     updateCrdtEditorCardStatusBatch,
-    updateCrdtEditorEntityBatch,
+    updateCrdtEditorEntityBatch
 } from '../../../apps/rallar-black-box/src/crdt-editor.ts';
 
 describe('rallar black-box CRDT editor helpers', () => {
@@ -22,13 +22,13 @@ describe('rallar black-box CRDT editor helpers', () => {
 
         expect(value.columns?.map((column) => column.id)).toEqual([
             'column-backlog',
-            'column-playing',
+            'column-playing'
         ]);
         expect(value.entities?.[0]).toMatchObject({
             id: 'entity-player-1',
             type: 'player',
             health: 100,
-            score: 0,
+            score: 0
         });
     });
 
@@ -38,8 +38,8 @@ describe('rallar black-box CRDT editor helpers', () => {
                 columnId: 'column-review',
                 title: 'Review',
                 positionId: 'column-review@1',
-                operationGroupId: 'group-column',
-            }),
+                operationGroupId: 'group-column'
+            })
         ).toMatchObject({
             kind: 'batch',
             operationGroupId: 'group-column',
@@ -48,9 +48,9 @@ describe('rallar black-box CRDT editor helpers', () => {
                     kind: 'sequence.insert',
                     path: ['columns'],
                     elementId: 'column-review',
-                    positionId: 'column-review@1',
-                },
-            ],
+                    positionId: 'column-review@1'
+                }
+            ]
         });
 
         expect(
@@ -59,8 +59,8 @@ describe('rallar black-box CRDT editor helpers', () => {
                 cardId: 'card-1',
                 title: 'Test convergence',
                 positionId: 'card-1@1',
-                operationGroupId: 'group-card',
-            }).operations.map((operation) => operation.kind),
+                operationGroupId: 'group-card'
+            }).operations.map((operation) => operation.kind)
         ).toEqual(['sequence.insert', 'map.set']);
 
         expect(
@@ -68,20 +68,20 @@ describe('rallar black-box CRDT editor helpers', () => {
                 columnId: 'column-review',
                 cardId: 'card-1',
                 positionId: 'card-1@2',
-                operationGroupId: 'group-move',
-            }).operations[0],
+                operationGroupId: 'group-move'
+            }).operations[0]
         ).toMatchObject({
             kind: 'sequence.move',
             path: ['columns', 'column-review', 'cards'],
-            observedUpdateIds: [],
+            observedUpdateIds: []
         });
 
         expect(
             deleteCrdtEditorCardBatch({
                 columnId: 'column-review',
                 cardId: 'card-1',
-                operationGroupId: 'group-delete',
-            }).operations.map((operation) => operation.kind),
+                operationGroupId: 'group-delete'
+            }).operations.map((operation) => operation.kind)
         ).toEqual(['sequence.delete', 'map.delete']);
     });
 
@@ -90,43 +90,43 @@ describe('rallar black-box CRDT editor helpers', () => {
             renameCrdtEditorColumnBatch({
                 columnId: 'column-review',
                 title: 'QA',
-                operationGroupId: 'group-rename',
-            }).operations[0],
+                operationGroupId: 'group-rename'
+            }).operations[0]
         ).toMatchObject({
             kind: 'register.set',
             path: ['records', 'columns', 'column-review', 'title'],
             value: 'QA',
-            policy: 'lww',
+            policy: 'lww'
         });
 
         expect(
             updateCrdtEditorCardStatusBatch({
                 cardId: 'card-1',
                 status: 'done',
-                operationGroupId: 'group-status',
-            }).operations[0],
+                operationGroupId: 'group-status'
+            }).operations[0]
         ).toMatchObject({
             kind: 'register.set',
             path: ['records', 'cards', 'card-1', 'status'],
-            value: 'done',
+            value: 'done'
         });
 
         expect(
             addCrdtEditorTagBatch({
                 tagId: 'tag-live',
                 label: 'live',
-                operationGroupId: 'group-add-tag',
-            }).operations[0].kind,
+                operationGroupId: 'group-add-tag'
+            }).operations[0].kind
         ).toBe('orset.add');
 
         expect(
             removeCrdtEditorTagBatch({
                 tagId: 'tag-live',
-                operationGroupId: 'group-remove-tag',
-            }).operations[0],
+                operationGroupId: 'group-remove-tag'
+            }).operations[0]
         ).toMatchObject({
             kind: 'orset.remove',
-            observedAddUpdateIds: [],
+            observedAddUpdateIds: []
         });
     });
 
@@ -137,8 +137,8 @@ describe('rallar black-box CRDT editor helpers', () => {
                 type: 'npc',
                 x: 1,
                 y: 2,
-                operationGroupId: 'group-add-entity',
-            }).operations.map((operation) => operation.kind),
+                operationGroupId: 'group-add-entity'
+            }).operations.map((operation) => operation.kind)
         ).toEqual(['sequence.insert', 'map.set']);
 
         expect(
@@ -147,36 +147,36 @@ describe('rallar black-box CRDT editor helpers', () => {
                 x: 3,
                 y: 4,
                 status: 'moving',
-                operationGroupId: 'group-update-entity',
-            }).operations.map((operation) => operation.kind),
+                operationGroupId: 'group-update-entity'
+            }).operations.map((operation) => operation.kind)
         ).toEqual(['register.set', 'register.set', 'register.set']);
 
         expect(
             changeCrdtEditorEntityHealthBatch({
                 entityId: 'entity-2',
                 delta: -5,
-                operationGroupId: 'group-health',
-            }).operations[0],
+                operationGroupId: 'group-health'
+            }).operations[0]
         ).toMatchObject({
             kind: 'counter.add',
             path: ['records', 'entities', 'entity-2', 'healthDelta'],
-            delta: -5,
+            delta: -5
         });
 
         expect(
             addCrdtEditorEntityScoreBatch({
                 entityId: 'entity-2',
                 delta: 10,
-                operationGroupId: 'group-score',
-            }).operations.map((operation) => operation.kind),
+                operationGroupId: 'group-score'
+            }).operations.map((operation) => operation.kind)
         ).toEqual(['counter.add', 'number.max']);
 
         expect(
             setCrdtEditorCooldownMinBatch({
                 entityId: 'entity-2',
                 value: 2,
-                operationGroupId: 'group-min',
-            }).operations[0].kind,
+                operationGroupId: 'group-min'
+            }).operations[0].kind
         ).toBe('number.min');
     });
 });

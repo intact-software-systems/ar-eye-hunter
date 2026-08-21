@@ -1,18 +1,15 @@
+import type { RallarDataFacade, RallarDataStore } from '@shared-web/browser/rallar-data.ts';
 import {
+    toRallarCrdtDocumentKey,
+    validateRallarCrdtSnapshotEnvelope,
+    validateRallarCrdtUpdateEnvelope,
     type RallarCrdtDependencyBlockedUpdate,
     type RallarCrdtDocumentRef,
     type RallarCrdtFailedPendingUpdate,
     type RallarCrdtOperationBatch,
     type RallarCrdtSnapshotEnvelope,
-    type RallarCrdtUpdateEnvelope,
-    toRallarCrdtDocumentKey,
-    validateRallarCrdtSnapshotEnvelope,
-    validateRallarCrdtUpdateEnvelope,
+    type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import type {
-    RallarDataFacade,
-    RallarDataStore,
-} from '@shared-web/browser/rallar-data.ts';
 
 export const RALLAR_CRDT_LOCAL_STORE_NAMES = {
     snapshots: 'crdt:snapshots',
@@ -20,7 +17,7 @@ export const RALLAR_CRDT_LOCAL_STORE_NAMES = {
     failedPendingUpdates: 'crdt:failed-pending-updates',
     dependencyBlockedUpdates: 'crdt:dependency-blocked-updates',
     seenUpdates: 'crdt:seen-updates',
-    metadata: 'crdt:metadata',
+    metadata: 'crdt:metadata'
 } as const;
 
 export const DEFAULT_RALLAR_CRDT_DB_NAME = 'rallar-crdt';
@@ -44,8 +41,7 @@ export type RallarCrdtDocumentMetadataRecord = Readonly<{
     updatedAtEpochMs: number;
 }>;
 
-type RallarCrdtLocalStoreName =
-    (typeof RALLAR_CRDT_LOCAL_STORE_NAMES)[keyof typeof RALLAR_CRDT_LOCAL_STORE_NAMES];
+type RallarCrdtLocalStoreName = (typeof RALLAR_CRDT_LOCAL_STORE_NAMES)[keyof typeof RALLAR_CRDT_LOCAL_STORE_NAMES];
 
 export type RallarCrdtLocalCorruptArtifact = Readonly<{
     store: RallarCrdtLocalStoreName;
@@ -69,36 +65,33 @@ export type RallarCrdtLocalDocumentState<
 }>;
 
 export type RallarCrdtLocalStore = Readonly<{
-    loadDocument<
-        TValue = unknown,
-        TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-    >(
-        ref: RallarCrdtDocumentRef,
+    loadDocument<TValue = unknown, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
+        ref: RallarCrdtDocumentRef
     ): Promise<RallarCrdtLocalDocumentState<TValue, TPayload>>;
     writeSnapshot<TValue>(
-        snapshot: RallarCrdtSnapshotEnvelope<TValue>,
+        snapshot: RallarCrdtSnapshotEnvelope<TValue>
     ): Promise<void>;
     appendPendingUpdate<TPayload extends RallarCrdtOperationBatch>(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): Promise<void>;
     removePendingUpdate(
         ref: RallarCrdtDocumentRef,
-        updateId: string,
+        updateId: string
     ): Promise<boolean>;
     writeFailedPendingUpdate<TPayload extends RallarCrdtOperationBatch>(
-        failed: RallarCrdtFailedPendingUpdate<TPayload>,
+        failed: RallarCrdtFailedPendingUpdate<TPayload>
     ): Promise<void>;
     writeDependencyBlockedUpdate<TPayload extends RallarCrdtOperationBatch>(
-        blocked: RallarCrdtDependencyBlockedUpdate<TPayload>,
+        blocked: RallarCrdtDependencyBlockedUpdate<TPayload>
     ): Promise<void>;
     removeDependencyBlockedUpdate(
         ref: RallarCrdtDocumentRef,
-        updateId: string,
+        updateId: string
     ): Promise<boolean>;
     markSeen(
         ref: RallarCrdtDocumentRef,
         updateId: string,
-        seenAtEpochMs: number,
+        seenAtEpochMs: number
     ): Promise<void>;
     writeMetadata(metadata: RallarCrdtDocumentMetadataRecord): Promise<void>;
     flush(): Promise<void>;
@@ -109,54 +102,48 @@ export type RallarCrdtLocalStore = Readonly<{
 
 type StoreBundle = Readonly<{
     snapshots: RallarDataStore<RallarCrdtSnapshotEnvelope>;
-    pendingUpdates: RallarDataStore<
-        RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>
-    >;
-    failedPendingUpdates: RallarDataStore<
-        RallarCrdtFailedPendingUpdate<RallarCrdtOperationBatch>
-    >;
-    dependencyBlockedUpdates: RallarDataStore<
-        RallarCrdtDependencyBlockedUpdate<RallarCrdtOperationBatch>
-    >;
+    pendingUpdates: RallarDataStore<RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>>;
+    failedPendingUpdates: RallarDataStore<RallarCrdtFailedPendingUpdate<RallarCrdtOperationBatch>>;
+    dependencyBlockedUpdates: RallarDataStore<RallarCrdtDependencyBlockedUpdate<RallarCrdtOperationBatch>>;
     seenUpdates: RallarDataStore<RallarCrdtSeenUpdateRecord>;
     metadata: RallarDataStore<RallarCrdtDocumentMetadataRecord>;
 }>;
 
 export async function createRallarCrdtLocalStore(
-    options: RallarCrdtLocalStoreOptions,
+    options: RallarCrdtLocalStoreOptions
 ): Promise<RallarCrdtLocalStore> {
     const dbName = options.dbName ?? DEFAULT_RALLAR_CRDT_DB_NAME;
     const stores: StoreBundle = {
         snapshots: await openInternalStore(
             options.data,
             dbName,
-            RALLAR_CRDT_LOCAL_STORE_NAMES.snapshots,
+            RALLAR_CRDT_LOCAL_STORE_NAMES.snapshots
         ),
         pendingUpdates: await openInternalStore(
             options.data,
             dbName,
-            RALLAR_CRDT_LOCAL_STORE_NAMES.pendingUpdates,
+            RALLAR_CRDT_LOCAL_STORE_NAMES.pendingUpdates
         ),
         failedPendingUpdates: await openInternalStore(
             options.data,
             dbName,
-            RALLAR_CRDT_LOCAL_STORE_NAMES.failedPendingUpdates,
+            RALLAR_CRDT_LOCAL_STORE_NAMES.failedPendingUpdates
         ),
         dependencyBlockedUpdates: await openInternalStore(
             options.data,
             dbName,
-            RALLAR_CRDT_LOCAL_STORE_NAMES.dependencyBlockedUpdates,
+            RALLAR_CRDT_LOCAL_STORE_NAMES.dependencyBlockedUpdates
         ),
         seenUpdates: await openInternalStore(
             options.data,
             dbName,
-            RALLAR_CRDT_LOCAL_STORE_NAMES.seenUpdates,
+            RALLAR_CRDT_LOCAL_STORE_NAMES.seenUpdates
         ),
         metadata: await openInternalStore(
             options.data,
             dbName,
-            RALLAR_CRDT_LOCAL_STORE_NAMES.metadata,
-        ),
+            RALLAR_CRDT_LOCAL_STORE_NAMES.metadata
+        )
     };
 
     return new DataBackedRallarCrdtLocalStore(stores);
@@ -169,11 +156,8 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
         this.stores = stores;
     }
 
-    public async loadDocument<
-        TValue = unknown,
-        TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-    >(
-        ref: RallarCrdtDocumentRef,
+    public async loadDocument<TValue = unknown, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
+        ref: RallarCrdtDocumentRef
     ): Promise<RallarCrdtLocalDocumentState<TValue, TPayload>> {
         const documentKey = toRallarCrdtDocumentKey(ref);
         const documentStoreKey = toDocumentStoreKey(documentKey);
@@ -185,27 +169,27 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
             failedPendingUpdateEntries,
             dependencyBlockedUpdateEntries,
             seenUpdates,
-            metadata,
+            metadata
         ] = await Promise.all([
             this.stores.snapshots.get(documentStoreKey),
             readDocumentArtifactEntries(this.stores.pendingUpdates, prefix),
             readDocumentArtifactEntries(
                 this.stores.failedPendingUpdates,
-                prefix,
+                prefix
             ),
             readDocumentArtifactEntries(
                 this.stores.dependencyBlockedUpdates,
-                prefix,
+                prefix
             ),
             readDocumentArtifacts(this.stores.seenUpdates, prefix),
-            this.stores.metadata.get(documentStoreKey),
+            this.stores.metadata.get(documentStoreKey)
         ]);
         const corruptArtifacts: RallarCrdtLocalCorruptArtifact[] = [];
         const validSnapshot = validateSnapshotArtifact<TValue>(
             snapshot,
             RALLAR_CRDT_LOCAL_STORE_NAMES.snapshots,
             documentStoreKey,
-            corruptArtifacts,
+            corruptArtifacts
         );
 
         return {
@@ -214,95 +198,91 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
             pendingUpdates: collectValidUpdateArtifacts<TPayload>(
                 pendingUpdateEntries,
                 RALLAR_CRDT_LOCAL_STORE_NAMES.pendingUpdates,
-                corruptArtifacts,
+                corruptArtifacts
             ),
-            failedPendingUpdates: collectValidNestedUpdateArtifacts<
-                RallarCrdtFailedPendingUpdate<TPayload>
-            >(
+            failedPendingUpdates: collectValidNestedUpdateArtifacts<RallarCrdtFailedPendingUpdate<TPayload>>(
                 failedPendingUpdateEntries,
                 RALLAR_CRDT_LOCAL_STORE_NAMES.failedPendingUpdates,
-                corruptArtifacts,
+                corruptArtifacts
             ),
-            dependencyBlockedUpdates: collectValidNestedUpdateArtifacts<
-                RallarCrdtDependencyBlockedUpdate<TPayload>
-            >(
+            dependencyBlockedUpdates: collectValidNestedUpdateArtifacts<RallarCrdtDependencyBlockedUpdate<TPayload>>(
                 dependencyBlockedUpdateEntries,
                 RALLAR_CRDT_LOCAL_STORE_NAMES.dependencyBlockedUpdates,
-                corruptArtifacts,
+                corruptArtifacts
             ),
             seenUpdates,
             metadata,
-            corruptArtifacts,
+            corruptArtifacts
         };
     }
 
     public async writeSnapshot<TValue>(
-        snapshot: RallarCrdtSnapshotEnvelope<TValue>,
+        snapshot: RallarCrdtSnapshotEnvelope<TValue>
     ): Promise<void> {
         await this.stores.snapshots.set(
             toDocumentStoreKey(toRallarCrdtDocumentKey(snapshot.document)),
-            snapshot as RallarCrdtSnapshotEnvelope,
+            snapshot as RallarCrdtSnapshotEnvelope
         );
     }
 
     public async appendPendingUpdate<TPayload extends RallarCrdtOperationBatch>(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): Promise<void> {
         await this.stores.pendingUpdates.set(
             toDocumentArtifactKey(
                 toRallarCrdtDocumentKey(update.document),
-                update.updateId,
+                update.updateId
             ),
-            update,
+            update
         );
     }
 
     public async removePendingUpdate(
         ref: RallarCrdtDocumentRef,
-        updateId: string,
+        updateId: string
     ): Promise<boolean> {
         return await this.stores.pendingUpdates.delete(
-            toDocumentArtifactKey(toRallarCrdtDocumentKey(ref), updateId),
+            toDocumentArtifactKey(toRallarCrdtDocumentKey(ref), updateId)
         );
     }
 
-    public async writeFailedPendingUpdate<
-        TPayload extends RallarCrdtOperationBatch,
-    >(failed: RallarCrdtFailedPendingUpdate<TPayload>): Promise<void> {
+    public async writeFailedPendingUpdate<TPayload extends RallarCrdtOperationBatch>(
+        failed: RallarCrdtFailedPendingUpdate<TPayload>
+    ): Promise<void> {
         await this.stores.failedPendingUpdates.set(
             toDocumentArtifactKey(
                 toRallarCrdtDocumentKey(failed.update.document),
-                failed.update.updateId,
+                failed.update.updateId
             ),
-            failed,
+            failed
         );
     }
 
-    public async writeDependencyBlockedUpdate<
-        TPayload extends RallarCrdtOperationBatch,
-    >(blocked: RallarCrdtDependencyBlockedUpdate<TPayload>): Promise<void> {
+    public async writeDependencyBlockedUpdate<TPayload extends RallarCrdtOperationBatch>(
+        blocked: RallarCrdtDependencyBlockedUpdate<TPayload>
+    ): Promise<void> {
         await this.stores.dependencyBlockedUpdates.set(
             toDocumentArtifactKey(
                 toRallarCrdtDocumentKey(blocked.update.document),
-                blocked.update.updateId,
+                blocked.update.updateId
             ),
-            blocked,
+            blocked
         );
     }
 
     public async removeDependencyBlockedUpdate(
         ref: RallarCrdtDocumentRef,
-        updateId: string,
+        updateId: string
     ): Promise<boolean> {
         return await this.stores.dependencyBlockedUpdates.delete(
-            toDocumentArtifactKey(toRallarCrdtDocumentKey(ref), updateId),
+            toDocumentArtifactKey(toRallarCrdtDocumentKey(ref), updateId)
         );
     }
 
     public async markSeen(
         ref: RallarCrdtDocumentRef,
         updateId: string,
-        seenAtEpochMs: number,
+        seenAtEpochMs: number
     ): Promise<void> {
         const documentKey = toRallarCrdtDocumentKey(ref);
         await this.stores.seenUpdates.set(
@@ -310,23 +290,23 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
             {
                 documentKey,
                 updateId,
-                seenAtEpochMs,
-            },
+                seenAtEpochMs
+            }
         );
     }
 
     public async writeMetadata(
-        metadata: RallarCrdtDocumentMetadataRecord,
+        metadata: RallarCrdtDocumentMetadataRecord
     ): Promise<void> {
         await this.stores.metadata.set(
             toDocumentStoreKey(metadata.documentKey),
-            metadata,
+            metadata
         );
     }
 
     public async flush(): Promise<void> {
         await Promise.all(
-            Object.values(this.stores).map((store) => store.flush()),
+            Object.values(this.stores).map((store) => store.flush())
         );
     }
 
@@ -342,9 +322,9 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
             deleteDocumentArtifacts(this.stores.failedPendingUpdates, prefix),
             deleteDocumentArtifacts(
                 this.stores.dependencyBlockedUpdates,
-                prefix,
+                prefix
             ),
-            deleteDocumentArtifacts(this.stores.seenUpdates, prefix),
+            deleteDocumentArtifacts(this.stores.seenUpdates, prefix)
         ]);
     }
 
@@ -356,7 +336,7 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
     public async close(): Promise<void> {
         await this.flush();
         await Promise.all(
-            Object.values(this.stores).map((store) => store.close()),
+            Object.values(this.stores).map((store) => store.close())
         );
     }
 }
@@ -364,40 +344,40 @@ class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
 async function openInternalStore<V>(
     data: RallarDataFacade,
     dbName: string,
-    name: string,
+    name: string
 ): Promise<RallarDataStore<V>> {
     return await data.open<V>(name, {
         dbName,
         scope: 'app',
         schemaVersion: 1,
-        sync: false,
+        sync: false
     });
 }
 
 async function readDocumentArtifacts<V>(
     store: RallarDataStore<V>,
-    prefix: string,
+    prefix: string
 ): Promise<V[]> {
     return (await readDocumentArtifactEntries(store, prefix)).map(
-        (entry) => entry.value,
+        (entry) => entry.value
     );
 }
 
 async function readDocumentArtifactEntries<V>(
     store: RallarDataStore<V>,
-    prefix: string,
-): Promise<Array<Readonly<{ key: string; value: V }>>> {
+    prefix: string
+): Promise<Array<Readonly<{ key: string; value: V; }>>> {
     const keys = (await store.listKeys())
         .filter((key) => key.startsWith(prefix))
         .sort();
-    const entries: Array<Readonly<{ key: string; value: V }>> = [];
+    const entries: Array<Readonly<{ key: string; value: V; }>> = [];
 
     for (const key of keys) {
         const value = await store.get(key);
         if (value !== undefined) {
             entries.push({
                 key,
-                value,
+                value
             });
         }
     }
@@ -407,11 +387,9 @@ async function readDocumentArtifactEntries<V>(
 
 async function deleteDocumentArtifacts<V>(
     store: RallarDataStore<V>,
-    prefix: string,
+    prefix: string
 ): Promise<void> {
-    const keys = (await store.listKeys()).filter((key) =>
-        key.startsWith(prefix),
-    );
+    const keys = (await store.listKeys()).filter((key) => key.startsWith(prefix));
     await Promise.all(keys.map((key) => store.delete(key)));
 }
 
@@ -425,18 +403,20 @@ function toDocumentArtifactPrefix(documentKey: string): string {
 
 function toDocumentArtifactKey(
     documentKey: string,
-    artifactId: string,
+    artifactId: string
 ): string {
-    return `${toDocumentArtifactPrefix(documentKey)}${encodeURIComponent(
-        artifactId,
-    )}`;
+    return `${toDocumentArtifactPrefix(documentKey)}${
+        encodeURIComponent(
+            artifactId
+        )
+    }`;
 }
 
 function validateSnapshotArtifact<TValue>(
     snapshot: RallarCrdtSnapshotEnvelope | undefined,
     store: RallarCrdtLocalStoreName,
     key: string,
-    corruptArtifacts: RallarCrdtLocalCorruptArtifact[],
+    corruptArtifacts: RallarCrdtLocalCorruptArtifact[]
 ): RallarCrdtSnapshotEnvelope<TValue> | undefined {
     if (!snapshot) {
         return undefined;
@@ -451,15 +431,15 @@ function validateSnapshotArtifact<TValue>(
         store,
         key,
         reason: 'Persisted CRDT snapshot failed validation and was not replayed.',
-        issueCodes: validation.issues.map((issue) => issue.code),
+        issueCodes: validation.issues.map((issue) => issue.code)
     });
     return undefined;
 }
 
 function collectValidUpdateArtifacts<TPayload extends RallarCrdtOperationBatch>(
-    entries: Array<Readonly<{ key: string; value: unknown }>>,
+    entries: Array<Readonly<{ key: string; value: unknown; }>>,
     store: RallarCrdtLocalStoreName,
-    corruptArtifacts: RallarCrdtLocalCorruptArtifact[],
+    corruptArtifacts: RallarCrdtLocalCorruptArtifact[]
 ): RallarCrdtUpdateEnvelope<TPayload>[] {
     const updates: RallarCrdtUpdateEnvelope<TPayload>[] = [];
 
@@ -467,12 +447,13 @@ function collectValidUpdateArtifacts<TPayload extends RallarCrdtOperationBatch>(
         const validation = validateRallarCrdtUpdateEnvelope(entry.value);
         if (validation.valid) {
             updates.push(entry.value as RallarCrdtUpdateEnvelope<TPayload>);
-        } else {
+        }
+        else {
             corruptArtifacts.push({
                 store,
                 key: entry.key,
                 reason: 'Persisted CRDT update failed validation and was not replayed.',
-                issueCodes: validation.issues.map((issue) => issue.code),
+                issueCodes: validation.issues.map((issue) => issue.code)
             });
         }
     }
@@ -480,12 +461,10 @@ function collectValidUpdateArtifacts<TPayload extends RallarCrdtOperationBatch>(
     return updates;
 }
 
-function collectValidNestedUpdateArtifacts<
-    TArtifact extends Readonly<{ update: RallarCrdtUpdateEnvelope }>,
->(
-    entries: Array<Readonly<{ key: string; value: unknown }>>,
+function collectValidNestedUpdateArtifacts<TArtifact extends Readonly<{ update: RallarCrdtUpdateEnvelope; }>>(
+    entries: Array<Readonly<{ key: string; value: unknown; }>>,
     store: RallarCrdtLocalStoreName,
-    corruptArtifacts: RallarCrdtLocalCorruptArtifact[],
+    corruptArtifacts: RallarCrdtLocalCorruptArtifact[]
 ): TArtifact[] {
     const artifacts: TArtifact[] = [];
 
@@ -494,12 +473,13 @@ function collectValidNestedUpdateArtifacts<
         const validation = validateRallarCrdtUpdateEnvelope(update);
         if (validation.valid) {
             artifacts.push(entry.value as TArtifact);
-        } else {
+        }
+        else {
             corruptArtifacts.push({
                 store,
                 key: entry.key,
                 reason: 'Persisted CRDT nested update artifact failed validation and was not replayed.',
-                issueCodes: validation.issues.map((issue) => issue.code),
+                issueCodes: validation.issues.map((issue) => issue.code)
             });
         }
     }
@@ -509,6 +489,6 @@ function collectValidNestedUpdateArtifacts<
 
 function readNestedUpdate(value: unknown): unknown {
     return value && typeof value === 'object' && 'update' in value
-        ? (value as { update?: unknown }).update
+        ? (value as { update?: unknown; }).update
         : undefined;
 }

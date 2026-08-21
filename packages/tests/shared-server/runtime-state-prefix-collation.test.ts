@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Postgres runtime-state prefix collation', () => {
     it('uses bytewise ordering for prefix reads', async () => {
@@ -10,7 +10,7 @@ describe('Postgres runtime-state prefix collation', () => {
 
         await repository.findEntriesByPrefix(
             'group-state:members',
-            'app=app:ws=workspace:group=room:',
+            'app=app:ws=workspace:group=room:'
         );
 
         expect(captured.queries).toHaveLength(1);
@@ -26,7 +26,7 @@ describe('Postgres runtime-state prefix collation', () => {
         await repository.findEntriesByPrefixPage(
             'group-state:members',
             'app=app:ws=workspace:group=room:',
-            { afterKey: 'app=app:ws=workspace:group=room:member=alice', limit: 10 },
+            { afterKey: 'app=app:ws=workspace:group=room:member=alice', limit: 10 }
         );
 
         expect(captured.queries).toHaveLength(1);
@@ -43,7 +43,7 @@ describe('Postgres runtime-state prefix collation', () => {
         await repository.findEntriesByPrefixPage('group-state:members', '', { limit: 10 });
         await repository.findEntriesByPrefixPage('group-state:members', '', {
             afterKey: 'app=app:ws=workspace:group=room:member=alice',
-            limit: 10,
+            limit: 10
         });
 
         expect(captured.queries).toHaveLength(2);
@@ -62,14 +62,12 @@ describe('Postgres runtime-state prefix collation', () => {
                 username: 'admin',
                 accessToken: 'token',
                 sessionId: 'session',
-                expiresAtEpochMs: 2_000,
+                expiresAtEpochMs: 2_000
             },
-            scope: { applicationId: 'app', workspaceId: 'workspace' },
+            scope: { applicationId: 'app', workspaceId: 'workspace' }
         });
 
-        const prefixQueries = captured.queries.filter((query) =>
-            query.includes('select store_key, store_value from runtime_state_store')
-        );
+        const prefixQueries = captured.queries.filter((query) => query.includes('select store_key, store_value from runtime_state_store'));
         expect(prefixQueries).toHaveLength(5);
         for (const query of prefixQueries) {
             expect(query).toContain('store_key collate "C" >=');
@@ -79,7 +77,7 @@ describe('Postgres runtime-state prefix collation', () => {
     });
 });
 
-function captureQueries(): Readonly<{ sql: PSqlSql; queries: string[] }> {
+function captureQueries(): Readonly<{ sql: PSqlSql; queries: string[]; }> {
     const queries: string[] = [];
     const sql = (async (
         strings: TemplateStringsArray,

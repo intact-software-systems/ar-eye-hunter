@@ -2,13 +2,13 @@
 
 ## Responsibility Boundaries
 
-| Boundary | Owns | Does not own |
-| --- | --- | --- |
-| Pure domain | Deterministic rules, accepted inputs, authority decisions, snapshots, validation | React, Rallar facade, browser clocks, transports, renderer objects |
-| Rallar runtime | Initial lifecycle handoff, room sessions and `roomRef`, subscriptions, traffic, cancellation, accepted snapshot flow | DOM layout, scene graph, per-frame transforms, game-rule invention |
-| React adapter/UI | Routes, forms, menus, HUD, accessibility, low-frequency runtime projections | Transport callbacks, authoritative match truth, renderer objects, per-frame entity state |
-| Presentation model | Accepted snapshot mapping, Rallar Motion tracks, interpolation, prediction correction, renderer-neutral frames | Authority, collision, scoring, durable authored truth |
-| Renderer | Canvas/context, camera, scene graph, meshes, materials, assets, effects, frame drawing, renderer diagnostics | Rallar traffic, domain mutation, match authority, ordinary React state |
+| Boundary           | Owns                                                                                                                 | Does not own                                                                             |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Pure domain        | Deterministic rules, accepted inputs, authority decisions, snapshots, validation                                     | React, Rallar facade, browser clocks, transports, renderer objects                       |
+| Rallar runtime     | Initial lifecycle handoff, room sessions and `roomRef`, subscriptions, traffic, cancellation, accepted snapshot flow | DOM layout, scene graph, per-frame transforms, game-rule invention                       |
+| React adapter/UI   | Routes, forms, menus, HUD, accessibility, low-frequency runtime projections                                          | Transport callbacks, authoritative match truth, renderer objects, per-frame entity state |
+| Presentation model | Accepted snapshot mapping, Rallar Motion tracks, interpolation, prediction correction, renderer-neutral frames       | Authority, collision, scoring, durable authored truth                                    |
+| Renderer           | Canvas/context, camera, scene graph, meshes, materials, assets, effects, frame drawing, renderer diagnostics         | Rallar traffic, domain mutation, match authority, ordinary React state                   |
 
 The invariant is **no per-frame React state**. React may mount the canvas and
 show bounded low-frequency diagnostics; the presentation model and renderer own
@@ -16,11 +16,11 @@ hot transforms and the frame loop.
 
 ## Renderer Decision
 
-| Choice | Prefer when | Guardrail |
-| --- | --- | --- |
-| Direct Three.js | The app has imperative hot loops and needs explicit scene/resource ownership, a small adapter, or tight lifecycle/performance control. | Keep Three types behind the renderer and measure asset/camera ergonomics. |
-| React Three Fiber | The scene is naturally declarative and React composition materially helps. | Keep hot transforms outside ordinary React state; use refs/frame hooks or an external presentation model. |
-| Babylon | Its tooling, loaders, diagnostics, or team expertise wins a measured comparison. | Preserve the renderer-neutral contract and compare lifecycle, bundle, memory, and frame budgets. |
+| Choice            | Prefer when                                                                                                                            | Guardrail                                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Direct Three.js   | The app has imperative hot loops and needs explicit scene/resource ownership, a small adapter, or tight lifecycle/performance control. | Keep Three types behind the renderer and measure asset/camera ergonomics.                                 |
+| React Three Fiber | The scene is naturally declarative and React composition materially helps.                                                             | Keep hot transforms outside ordinary React state; use refs/frame hooks or an external presentation model. |
+| Babylon           | Its tooling, loaders, diagnostics, or team expertise wins a measured comparison.                                                       | Preserve the renderer-neutral contract and compare lifecycle, bundle, memory, and frame budgets.          |
 
 Direct Three.js is preferred for imperative hot loops and explicit resource
 ownership. React Three Fiber is appropriate for naturally declarative scenes

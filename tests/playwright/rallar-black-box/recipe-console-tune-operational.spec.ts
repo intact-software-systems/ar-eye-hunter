@@ -4,19 +4,16 @@ import { createTuneArtifactUpload } from './recipe-console-tune-artifacts.ts';
 import {
     installRecipeConsoleTuneFixture,
     type RecipeConsoleTuneFixture,
-    type RecipeConsoleTuneFixtureOptions,
+    type RecipeConsoleTuneFixtureOptions
 } from './recipe-console-tune-fixture.ts';
-import {
-    chooseTuneListboxOption,
-    visibleTuneListboxValues,
-} from './recipe-console-tune-listbox-helpers.ts';
+import { chooseTuneListboxOption, visibleTuneListboxValues } from './recipe-console-tune-listbox-helpers.ts';
 import {
     TUNE_ANALYZE_ROUTE,
     TUNE_COMPARE_ROUTE,
     TUNE_LEFT_RUN_ID,
     TUNE_RIGHT_CONTROL_RUN_ID,
     TUNE_RIGHT_RUN_ID,
-    TUNE_SLOW_AGENT_ID,
+    TUNE_SLOW_AGENT_ID
 } from './recipe-console-tune-run-data.ts';
 
 const SPA_ORIGIN = 'http://127.0.0.1:5176';
@@ -32,11 +29,13 @@ const OPERATIONAL_CASES: readonly OperationalCase[] = [
     {
         name: 'partial control',
         options: { initialControlState: 'partial' },
-        prepare: page => page.goto(absolute(TUNE_COMPARE_ROUTE)).then(() => undefined),
-        verify: async page => {
-            await expect(page.getByRole('status').filter({
-                hasText: 'Partial · reachable',
-            })).toBeVisible();
+        prepare: (page) => page.goto(absolute(TUNE_COMPARE_ROUTE)).then(() => undefined),
+        verify: async (page) => {
+            await expect(
+                page.getByRole('status').filter({
+                    hasText: 'Partial · reachable'
+                })
+            ).toBeVisible();
             const tune = page.locator('[data-tune-workspace]');
             await expect(tune).toHaveAttribute('data-source-kind', 'none');
             await expect(tune).toHaveAttribute('data-source-detail', 'unavailable');
@@ -46,66 +45,70 @@ const OPERATIONAL_CASES: readonly OperationalCase[] = [
                 .toContainText('A paired distributed and control run is required.');
             await expect(tune.getByRole('button', { name: 'Preview candidate' }))
                 .toHaveCount(0);
-        },
+        }
     },
     {
         name: 'retained mismatch fallback',
-        prepare: async page => {
+        prepare: async (page) => {
             await page.goto(absolute(TUNE_ANALYZE_ROUTE));
             await chooseAnalyzeFiles(page, [createTuneArtifactUpload()]);
             await expect(page.locator('[data-artifact-status]'))
                 .toHaveText('Artifact ready');
-            await expect.poll(() => new URL(page.url()).searchParams.get(
-                'distributedRunId',
-            )).toBe(TUNE_RIGHT_RUN_ID);
+            await expect.poll(() =>
+                new URL(page.url()).searchParams.get(
+                    'distributedRunId'
+                )
+            ).toBe(TUNE_RIGHT_RUN_ID);
             await page.getByRole('button', { name: 'Tune', exact: true }).click();
             await chooseTuneListboxOption(
                 page,
                 'Candidate run',
-                TUNE_LEFT_RUN_ID,
+                TUNE_LEFT_RUN_ID
             );
         },
-        verify: async page => {
+        verify: async (page) => {
             const tune = page.locator('[data-tune-workspace]');
             await expect(tune).toHaveAttribute('data-source-kind', 'control');
             await expect(tune).toHaveAttribute('data-source-detail', 'bounded');
             await expect(tune.locator('[data-tune-source]')).toContainText(
-                'Loaded artifact tune-distributed-candidate does not match selected distributed run tune-distributed-baseline; previous analysis is retained.',
+                'Loaded artifact tune-distributed-candidate does not match selected distributed run tune-distributed-baseline; previous analysis is retained.'
             );
             await expect(tune.locator('[data-tune-command-timing]'))
                 .toContainText('P95 600 ms');
             await expect(tune.locator('[data-tune-command-timing]'))
                 .not.toContainText('P95 1,200 ms');
-        },
+        }
     },
     {
         name: 'reference-only recipe',
         options: { rightRecipe: 'reference-only' },
-        prepare: page => page.goto(absolute(TUNE_COMPARE_ROUTE)).then(() => undefined),
-        verify: async page => {
+        prepare: (page) => page.goto(absolute(TUNE_COMPARE_ROUTE)).then(() => undefined),
+        verify: async (page) => {
             const tune = page.locator('[data-tune-workspace]');
             await expect(tune).toHaveAttribute('data-source-kind', 'control');
             await expect(tune.locator('[data-tune-source]')).toContainText(
-                'A selected recipe is reference-only and has no authoritative inline knobs.',
+                'A selected recipe is reference-only and has no authoritative inline knobs.'
             );
             const candidate = tune.locator('[data-tune-candidate]');
-            expect(await visibleTuneListboxValues(
-                candidate,
-                'Exact knob path',
-            )).toEqual(['/ackTimeoutMs', '/barrier/timeoutMs']);
+            expect(
+                await visibleTuneListboxValues(
+                    candidate,
+                    'Exact knob path'
+                )
+            ).toEqual(['/ackTimeoutMs', '/barrier/timeoutMs']);
             await expect(candidate.getByRole('button', {
-                name: 'Preview candidate',
+                name: 'Preview candidate'
             })).toBeEnabled();
-        },
+        }
     },
     {
         name: 'unsupported retained artifact',
-        prepare: async page => {
+        prepare: async (page) => {
             await page.goto(absolute(TUNE_ANALYZE_ROUTE));
             await chooseAnalyzeFiles(page, [createTuneArtifactUpload(99)]);
             await page.getByRole('button', { name: 'Tune', exact: true }).click();
         },
-        verify: async page => {
+        verify: async (page) => {
             const tune = page.locator('[data-tune-workspace]');
             await expect(tune).toHaveAttribute('data-source-kind', 'artifact');
             await expect(tune).toHaveAttribute('data-source-detail', 'inspectable');
@@ -115,10 +118,10 @@ const OPERATIONAL_CASES: readonly OperationalCase[] = [
             await expect(candidate)
                 .toContainText('Artifact schema version 99 is not supported.');
             await expect(candidate.getByRole('button', {
-                name: 'Preview candidate',
+                name: 'Preview candidate'
             })).toBeDisabled();
-        },
-    },
+        }
+    }
 ];
 
 test('renders table-driven Tune operational authority states', async ({ browser }) => {
@@ -128,7 +131,7 @@ test('renders table-driven Tune operational authority states', async ({ browser 
         try {
             const fixture = await installRecipeConsoleTuneFixture(
                 context,
-                scenario.options,
+                scenario.options
             );
             await test.step(scenario.name, async () => {
                 await scenario.prepare(page);
@@ -136,16 +139,14 @@ test('renders table-driven Tune operational authority states', async ({ browser 
                 expect(fixture.artifactRequestCount()).toBe(0);
                 expect(fixture.mutationRequestCount()).toBe(0);
             });
-        } finally {
+        }
+        finally {
             await context.close();
         }
     }
 });
 
-test('keeps real Tune desktop geometry contained through inspection', async ({
-    context,
-    page,
-}) => {
+test('keeps real Tune desktop geometry contained through inspection', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await installRecipeConsoleTuneFixture(context);
     await page.goto(TUNE_COMPARE_ROUTE);
@@ -181,14 +182,14 @@ test('keeps real Tune desktop geometry contained through inspection', async ({
     expect((await inspector.boundingBox())?.width).toBe(352);
     const handoff = new URL(
         await inspector.getByRole('link', {
-            name: 'Open this run in legacy Runs',
+            name: 'Open this run in legacy Runs'
         }).getAttribute('href') ?? '',
-        page.url(),
+        page.url()
     );
     expect(handoff.searchParams.get('controlRunId')).toBe(TUNE_RIGHT_CONTROL_RUN_ID);
     expect(handoff.searchParams.get('distributedRunId')).toBe(TUNE_RIGHT_RUN_ID);
     const legacyLink = inspector.getByRole('link', {
-        name: 'Open this run in legacy Runs',
+        name: 'Open this run in legacy Runs'
     });
     await legacyLink.focus();
     await expect(legacyLink).toBeFocused();
@@ -201,11 +202,11 @@ function absolute(route: string): string {
     return new URL(route, SPA_ORIGIN).toString();
 }
 
-async function documentOverflow(page: Page): Promise<{ x: number; y: number }> {
+async function documentOverflow(page: Page): Promise<{ x: number; y: number; }> {
     return page.evaluate(() => ({
         x: document.documentElement.scrollWidth -
             document.documentElement.clientWidth,
         y: document.documentElement.scrollHeight -
-            document.documentElement.clientHeight,
+            document.documentElement.clientHeight
     }));
 }

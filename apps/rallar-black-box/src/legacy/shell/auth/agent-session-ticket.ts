@@ -1,5 +1,5 @@
 export {
     consumeBootstrapAgentSessionTicket,
     scrubAgentSessionTicketFromUrl,
-    scrubBrowserAgentBootstrapSecretsFromUrl,
+    scrubBrowserAgentBootstrapSecretsFromUrl
 } from '../../../bootstrap-agent-session.ts';

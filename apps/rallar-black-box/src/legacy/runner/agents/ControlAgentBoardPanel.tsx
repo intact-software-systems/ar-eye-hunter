@@ -1,7 +1,4 @@
-import type {
-    ControlAgentBoardRow,
-    ControlAgentBoardSummary,
-} from '../../../control-agent-board.ts';
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../control-agent-board.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { ControlAgentBoardRowView } from './ControlAgentBoardRowView.tsx';
 
@@ -14,7 +11,7 @@ export function ControlAgentBoardPanel({
     selectedAgentIds,
     onToggleAgent,
     disableUntargetableSelection = false,
-    compact = false,
+    compact = false
 }: {
     title: string;
     subtitle?: string;
@@ -66,25 +63,22 @@ export function ControlAgentBoardPanel({
                             summary.offline +
                             summary.wrongGroup +
                             summary.missingIdentity +
-                            summary.missingCapability,
+                            summary.missingCapability
                     )}
-                    tone={
-                        summary.stale +
+                    tone={summary.stale +
                                 summary.offline +
                                 summary.wrongGroup +
                                 summary.missingIdentity +
                                 summary.missingCapability >
                             0
-                            ? 'warn'
-                            : 'good'
-                    }
+                        ? 'warn'
+                        : 'good'}
                 />
             </div>
             <div className="control-agent-board-list">
                 {rows.map((row) => {
                     const selected = selectedAgentIds?.has(row.agentId) ?? false;
-                    const selectionDisabled =
-                        disableUntargetableSelection && !row.targetable;
+                    const selectionDisabled = disableUntargetableSelection && !row.targetable;
                     return (
                         <ControlAgentBoardRowView
                             key={row.agentId}
@@ -95,9 +89,7 @@ export function ControlAgentBoardPanel({
                         />
                     );
                 })}
-                {rows.length === 0 && (
-                    <div className="empty-state">{emptyMessage}</div>
-                )}
+                {rows.length === 0 && <div className="empty-state">{emptyMessage}</div>}
             </div>
         </section>
     );

@@ -13,26 +13,26 @@ that can run in production:
 
 ```ts
 import {
-  defineRallarAiProviderGovernanceMetadata,
-  isRallarAiProviderAllowedInProduction,
+    defineRallarAiProviderGovernanceMetadata,
+    isRallarAiProviderAllowedInProduction
 } from '@shared/rallar-ai/mod.ts';
 
 const ollamaLlama = defineRallarAiProviderGovernanceMetadata({
-  providerId: 'ollama',
-  adapterVersion: 'rallar-ai-v1',
-  modelId: 'llama-prod',
-  modelDigest: 'sha256:...',
-  target: 'server',
-  structuredOutput: true,
-  productionAllowed: true,
-  licenseNotes: 'Reviewed by the application team on 2026-06-06.',
-  knownLimits: {
-    recommendedTimeoutMs: 15_000,
-  },
+    providerId: 'ollama',
+    adapterVersion: 'rallar-ai-v1',
+    modelId: 'llama-prod',
+    modelDigest: 'sha256:...',
+    target: 'server',
+    structuredOutput: true,
+    productionAllowed: true,
+    licenseNotes: 'Reviewed by the application team on 2026-06-06.',
+    knownLimits: {
+        recommendedTimeoutMs: 15_000
+    }
 });
 
 if (!isRallarAiProviderAllowedInProduction(ollamaLlama, 'server')) {
-  throw new Error('Provider is not approved for server-side RallarAI.');
+    throw new Error('Provider is not approved for server-side RallarAI.');
 }
 ```
 
@@ -62,45 +62,40 @@ Production review should record:
 Run deterministic mock-provider evaluation in normal CI:
 
 ```ts
-import {
-  createRallarAiMockProvider,
-  runRallarAiEvaluationSuite,
-} from '@shared/rallar-ai/mod.ts';
+import { createRallarAiMockProvider, runRallarAiEvaluationSuite } from '@shared/rallar-ai/mod.ts';
 
 const report = await runRallarAiEvaluationSuite({
-  suiteId: 'game-event-smoke',
-  provider: createRallarAiMockProvider({
-    value: { kind: 'spawn', amount: 1 },
-  }),
-  cases: [
-    {
-      caseId: 'spawn-event',
-      request: {
-        schemaId: 'game-event',
-        schemaVersion: '1',
-        schema: gameEventSchema,
-        prompt: 'Generate a spawn event.',
-      },
-      expectedValue: { kind: 'spawn', amount: 1 },
-    },
-  ],
+    suiteId: 'game-event-smoke',
+    provider: createRallarAiMockProvider({
+        value: { kind: 'spawn', amount: 1 }
+    }),
+    cases: [
+        {
+            caseId: 'spawn-event',
+            request: {
+                schemaId: 'game-event',
+                schemaVersion: '1',
+                schema: gameEventSchema,
+                prompt: 'Generate a spawn event.'
+            },
+            expectedValue: { kind: 'spawn', amount: 1 }
+        }
+    ]
 });
 ```
 
 Live provider checks should be opt-in:
 
 ```ts
-import {
-  runRallarAiEvaluationSuiteIfEnabled,
-} from '@shared/rallar-ai/mod.ts';
+import { runRallarAiEvaluationSuiteIfEnabled } from '@shared/rallar-ai/mod.ts';
 
 const result = await runRallarAiEvaluationSuiteIfEnabled({
-  suiteId: 'ollama-live-game-event-smoke',
-  provider: ollamaProvider,
-  cases,
-  env: process.env,
-  gate: 'RALLAR_AI_LIVE_OLLAMA',
-  providerLabel: 'Ollama',
+    suiteId: 'ollama-live-game-event-smoke',
+    provider: ollamaProvider,
+    cases,
+    env: process.env,
+    gate: 'RALLAR_AI_LIVE_OLLAMA',
+    providerLabel: 'Ollama'
 });
 ```
 

@@ -1,13 +1,8 @@
+import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import {
-    compareOverlayTopologyCausalTuple,
-    type RallarOverlayTopologySnapshot,
-} from '@shared/api/overlay-topology.ts';
-import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import {
-    RtcTopologySnapshotRevisionConflictError,
-} from './rtc-topology-errors.ts';
+import { compareOverlayTopologyCausalTuple, type RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { RtcTopologySnapshotRevisionConflictError } from './rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from './rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equality.ts';
 
@@ -20,29 +15,41 @@ export type RtcTopologySnapshotObservation =
 
 export function decideTopologySnapshot(
     current: RallarOverlayTopologySnapshot | undefined,
-    incoming: RallarOverlayTopologySnapshot,
+    incoming: RallarOverlayTopologySnapshot
 ): RtcTopologySnapshotObservation {
-    if (!current) return 'inserted';
+    if (!current) {
+        return 'inserted';
+    }
     const tupleComparison = compareTopologyTuple(incoming, current);
-    if (tupleComparison === 'dominates') return 'advanced';
-    if (tupleComparison === 'dominated') return 'stale';
-    if (tupleComparison === 'incomparable') return 'incomparable';
-    if (rtcTopologySemanticEqual(current, incoming)) return 'duplicate';
+    if (tupleComparison === 'dominates') {
+        return 'advanced';
+    }
+    if (tupleComparison === 'dominated') {
+        return 'stale';
+    }
+    if (tupleComparison === 'incomparable') {
+        return 'incomparable';
+    }
+    if (rtcTopologySemanticEqual(current, incoming)) {
+        return 'duplicate';
+    }
     throw new RtcTopologySnapshotRevisionConflictError(incoming.groupRef);
 }
 
 export function compareTopologyTuple(
     left: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>,
-    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>,
+    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version'>
 ): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
     return compareOverlayTopologyCausalTuple(left, right);
 }
 
 export function validateTopologySnapshot(
     value: unknown,
-    expectedRef: GroupRef,
+    expectedRef: GroupRef
 ): asserts value is RallarOverlayTopologySnapshot {
-    if (!isRecord(value)) throw new TypeError('RTC topology snapshot is invalid');
+    if (!isRecord(value)) {
+        throw new TypeError('RTC topology snapshot is invalid');
+    }
     assertExactKeys(value, [
         'sourceGroupStateCausalRevision',
         'state',
@@ -56,15 +63,17 @@ export function validateTopologySnapshot(
         'version',
         'createdByClientId',
         'createdAtEpochMs',
-        'updatedAtEpochMs',
+        'updatedAtEpochMs'
     ]);
     validateGroupRef(value.groupRef, expectedRef);
     validateGroupStateCausalRevision(value.sourceGroupStateCausalRevision);
-    for (const field of [
-        'version',
-        'createdAtEpochMs',
-        'updatedAtEpochMs',
-    ] as const) {
+    for (
+        const field of [
+            'version',
+            'createdAtEpochMs',
+            'updatedAtEpochMs'
+        ] as const
+    ) {
         if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
             throw new TypeError(`RTC topology snapshot ${field} is invalid`);
         }
@@ -121,17 +130,17 @@ export function validateTopologySnapshot(
     }
     if (value.state === 'active') {
         const validation = validateGroupTopologyNextHops({
-            nextHopsBySessionId: value.nextHopsBySessionId as Readonly<
-                Record<string, readonly string[]>
-            >,
+            nextHopsBySessionId: value.nextHopsBySessionId as Readonly<Record<string, readonly string[]>>,
             activeSessionIds,
             maxDegree: value.degreeLimit as number,
-            requireConnected: true,
+            requireConnected: true
         });
         if (!validation.valid) {
             throw new TypeError(
-                `RTC topology snapshot graph is invalid: ${validation.issues
-                    .map((issue) => issue.code).join(',')}`,
+                `RTC topology snapshot graph is invalid: ${
+                    validation.issues
+                        .map((issue) => issue.code).join(',')
+                }`
             );
         }
     }
@@ -150,7 +159,9 @@ function validateGroupStateCausalRevision(value: unknown): void {
 }
 
 function validateGroupRef(value: unknown, expected: GroupRef): void {
-    if (!isRecord(value)) throw new TypeError('RTC topology groupRef is invalid');
+    if (!isRecord(value)) {
+        throw new TypeError('RTC topology groupRef is invalid');
+    }
     assertExactKeys(value, ['applicationId', 'workspaceId', 'groupId']);
     if (
         value.applicationId !== expected.applicationId ||

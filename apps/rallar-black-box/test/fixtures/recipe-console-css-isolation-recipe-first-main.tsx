@@ -2,7 +2,9 @@ import { createRoot } from 'react-dom/client';
 
 async function renderFixture(): Promise<void> {
     const root = document.querySelector('#root');
-    if (!root) throw new Error('CSS isolation fixture root is missing.');
+    if (!root) {
+        throw new Error('CSS isolation fixture root is missing.');
+    }
 
     await import('../../src/recipe-console/design/tokens.css');
     await import('../../src/recipe-console/design/reset.css');
@@ -15,7 +17,7 @@ async function renderFixture(): Promise<void> {
         <>
             <LegacyIsolationSamples />
             <RecipeConsoleIsolationSamples />
-        </>,
+        </>
     );
 }
 

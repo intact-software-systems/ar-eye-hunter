@@ -13,13 +13,13 @@ server code need stable schema hashes:
 
 ```ts
 const gameEventSchema = {
-  type: 'object',
-  required: ['kind', 'amount'],
-  properties: {
-    kind: { type: 'string', enum: ['spawn', 'reward'] },
-    amount: { type: 'integer', minimum: 1 },
-  },
-  additionalProperties: false,
+    type: 'object',
+    required: ['kind', 'amount'],
+    properties: {
+        kind: { type: 'string', enum: ['spawn', 'reward'] },
+        amount: { type: 'integer', minimum: 1 }
+    },
+    additionalProperties: false
 } as const;
 ```
 
@@ -30,26 +30,26 @@ import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 import { createRallarAiMockProvider } from '@shared/rallar-ai/mod.ts';
 
 const ai = createRallarBrowserAi({
-  rallar,
-  provider: createRallarAiMockProvider({
-    value: { kind: 'spawn', amount: 1 },
-  }),
-  policy: { mode: 'browser-only', timeoutMs: 5_000 },
+    rallar,
+    provider: createRallarAiMockProvider({
+        value: { kind: 'spawn', amount: 1 }
+    }),
+    policy: { mode: 'browser-only', timeoutMs: 5_000 }
 });
 
 const result = await ai.generateJson({
-  schemaId: 'game-event',
-  schemaVersion: '1',
-  schema: gameEventSchema,
-  prompt: 'Generate the next room event.',
-  baseStateRevision: currentRevision,
-  dedupeKey: `room:${roomId}:turn:${turnId}`,
+    schemaId: 'game-event',
+    schemaVersion: '1',
+    schema: gameEventSchema,
+    prompt: 'Generate the next room event.',
+    baseStateRevision: currentRevision,
+    dedupeKey: `room:${roomId}:turn:${turnId}`
 });
 
 await ai.broadcastJson({
-  result,
-  transport: 'realtime',
-  roomId,
+    result,
+    transport: 'realtime',
+    roomId
 });
 ```
 
@@ -59,12 +59,12 @@ large model runtime code by default.
 
 ```ts
 const { createWebLlmRallarAiProvider } = await import(
-  '@shared-web/browser/rallar-ai-providers/webllm.ts'
+    '@shared-web/browser/rallar-ai-providers/webllm.ts'
 );
 
 const provider = createWebLlmRallarAiProvider({
-  modelId: selectedBrowserModelId,
-  loadRuntime: loadAppWebLlmRuntime,
+    modelId: selectedBrowserModelId,
+    loadRuntime: loadAppWebLlmRuntime
 });
 ```
 
@@ -75,11 +75,11 @@ browser bundle:
 
 ```ts
 const provider = createWebLlmRallarAiProvider({
-  modelId: selectedBrowserModelId,
-  loadRuntime: async () => {
-    const webllm = await import('@mlc-ai/web-llm');
-    return createAppWebLlmRuntime(webllm, selectedBrowserModelId);
-  },
+    modelId: selectedBrowserModelId,
+    loadRuntime: async () => {
+        const webllm = await import('@mlc-ai/web-llm');
+        return createAppWebLlmRuntime(webllm, selectedBrowserModelId);
+    }
 });
 ```
 
@@ -91,23 +91,23 @@ companion notes:
 
 ```ts
 const result = await ai.generateJson<RelicPlanningAiSuggestion>({
-  schemaId: 'relic-hunters.planning-companion',
-  schemaVersion: '1',
-  schema: relicPlanningAiSuggestionSchema,
-  prompt: 'Suggest one legal planning action.',
-  context: redactedPlanningContext,
-  baseStateRevision,
-  dedupeKey: `relic-planning-ai:${roomId}:${round}:${playerId}`,
+    schemaId: 'relic-hunters.planning-companion',
+    schemaVersion: '1',
+    schema: relicPlanningAiSuggestionSchema,
+    prompt: 'Suggest one legal planning action.',
+    context: redactedPlanningContext,
+    baseStateRevision,
+    dedupeKey: `relic-planning-ai:${roomId}:${round}:${playerId}`
 });
 
 const proposed = transitionRallarAiResultLifecycle(result, 'proposed');
 
 await ai.broadcastJson({
-  result: proposed,
-  transport: 'messages.ws',
-  roomId,
-  topicId: 'room.relic.ai.planning',
-  typeId: 'relic.ai.planning-proposal.v1',
+    result: proposed,
+    transport: 'messages.ws',
+    roomId,
+    topicId: 'room.relic.ai.planning',
+    typeId: 'relic.ai.planning-proposal.v1'
 });
 ```
 
@@ -122,25 +122,24 @@ import { createRallarServerAi } from '@shared-server/rallar-ai/mod.ts';
 import { createRallarAiOllamaProvider } from '@shared-server/rallar-ai/providers/ollama.ts';
 
 const ai = createRallarServerAi({
-  rallar: server,
-  provider: createRallarAiOllamaProvider({
-    model: 'llama-test',
-    baseUrl: 'http://127.0.0.1:11434',
-  }),
-  policy: { mode: 'server-only', timeoutMs: 15_000 },
-  authorize: ({ action, actorId, roomId }) =>
-    canUseRoomAi({ action, actorId, roomId }),
-  limits: {
-    maxConcurrentGenerations: 4,
-    maxRequestBytes: 256 * 1024,
-  },
+    rallar: server,
+    provider: createRallarAiOllamaProvider({
+        model: 'llama-test',
+        baseUrl: 'http://127.0.0.1:11434'
+    }),
+    policy: { mode: 'server-only', timeoutMs: 15_000 },
+    authorize: ({ action, actorId, roomId }) => canUseRoomAi({ action, actorId, roomId }),
+    limits: {
+        maxConcurrentGenerations: 4,
+        maxRequestBytes: 256 * 1024
+    }
 });
 
 ai.createRestRouteInstaller({ path: '/rallar-ai/generate-json' })(app);
 ai.installGenerationTopic({
-  requestTopicId: 'room.ai.generate',
-  resultTopicId: 'room.ai.generated',
-  resultFanout: 'outbox',
+    requestTopicId: 'room.ai.generate',
+    resultTopicId: 'room.ai.generated',
+    resultFanout: 'outbox'
 });
 ```
 
@@ -193,8 +192,8 @@ approval store because game rules differ by application.
 
 ```ts
 import {
-  createRallarAiAcceptedResultTracker,
-  transitionRallarAiResultLifecycle,
+    createRallarAiAcceptedResultTracker,
+    transitionRallarAiResultLifecycle
 } from '@shared/rallar-ai/mod.ts';
 
 const tracker = createRallarAiAcceptedResultTracker();
@@ -202,7 +201,7 @@ const proposed = transitionRallarAiResultLifecycle(result, 'proposed');
 const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
 
 await tracker.acceptOnce(accepted, (proposal) => {
-  applyGameEvent(proposal.value);
+    applyGameEvent(proposal.value);
 });
 ```
 
@@ -236,9 +235,9 @@ const summary = summarizeRallarAiReplayLog(storedEnvelopes);
 
 console.log(summary.duplicateDedupeIds);
 console.log(summary.entries.map((entry) => ({
-  generationId: entry.generationId,
-  lifecycle: entry.lifecycle,
-  validationOk: entry.validationOk,
+    generationId: entry.generationId,
+    lifecycle: entry.lifecycle,
+    validationOk: entry.validationOk
 })));
 ```
 

@@ -107,26 +107,26 @@ export const CASH_CHASE_SIMULATION_VERSION = 1 as const;
 export const CASH_CHASE_CONTENT_MANIFEST_VERSION = 1 as const;
 export const CASH_CHASE_HASH_VERSION = 1 as const;
 export type CashChaseInput = Readonly<{
-  version: 1;
-  clientTick: number;
-  moveX: number;
-  moveY: number;
-  cameraYaw: number;
-  sprintHeld: boolean;
-  dashPressed: boolean;
-  vaultPressed: boolean;
-  interactPressed: boolean;
+    version: 1;
+    clientTick: number;
+    moveX: number;
+    moveY: number;
+    cameraYaw: number;
+    sprintHeld: boolean;
+    dashPressed: boolean;
+    vaultPressed: boolean;
+    interactPressed: boolean;
 }>;
 export function validateCashChaseInput(value: unknown): value is CashChaseInput;
 export type CashChaseOperationError = Readonly<{
-  code: `CCA-${string}`;
-  retryable: boolean;
-  summary: string;
-  diagnostic?: Readonly<Record<string, string | number | boolean>>;
+    code: `CCA-${string}`;
+    retryable: boolean;
+    summary: string;
+    diagnostic?: Readonly<Record<string, string | number | boolean>>;
 }>;
 export type CashChaseOperationResult<T> =
-  | Readonly<{ status: "ok"; value: T }>
-  | Readonly<{ status: "error"; error: CashChaseOperationError }>;
+    | Readonly<{ status: 'ok'; value: T; }>
+    | Readonly<{ status: 'error'; error: CashChaseOperationError; }>;
 ```
 
 **Test-first steps:**
@@ -159,16 +159,16 @@ export type CashChaseOperationResult<T> =
 
 ```ts
 export function createInitialCashChaseState(
-  input: CashChaseInitialStateInput,
+    input: CashChaseInitialStateInput
 ): CashChaseState;
 export function applyCashChaseInput(
-  state: CashChaseState,
-  senderId: string,
-  input: CashChaseInput,
+    state: CashChaseState,
+    senderId: string,
+    input: CashChaseInput
 ): CashChaseState;
 export function stepCashChase(
-  state: CashChaseState,
-  config: CashChaseConfig,
+    state: CashChaseState,
+    config: CashChaseConfig
 ): CashChaseStepResult;
 export function hashCashChaseState(state: CashChaseState): string;
 ```
@@ -201,21 +201,21 @@ export function hashCashChaseState(state: CashChaseState): string;
 ```ts
 export function validateArenaLayout(value: unknown): value is ArenaLayout;
 export function createFallbackArena(
-  seed: string,
-  config: CashChaseConfig,
+    seed: string,
+    config: CashChaseConfig
 ): ArenaLayout;
 export function buildCashChaseSnapshot(
-  state: CashChaseState,
+    state: CashChaseState
 ): CashChaseSnapshot;
 export function createMigrationCheckpoint(
-  state: CashChaseState,
-  inputSeqBySender: Readonly<Record<string, number>>,
+    state: CashChaseState,
+    inputSeqBySender: Readonly<Record<string, number>>
 ): CashChaseMigrationCheckpoint;
 export function restoreMigrationCheckpoint(
-  checkpoint: CashChaseMigrationCheckpoint,
+    checkpoint: CashChaseMigrationCheckpoint
 ): CashChaseState;
 export function derivePresentationFrame(
-  snapshot: CashChaseSnapshot,
+    snapshot: CashChaseSnapshot
 ): CashChasePresentationFrame;
 ```
 

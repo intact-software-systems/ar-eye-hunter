@@ -1,23 +1,20 @@
-import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import { resolvePublicServerUrl, withPublicOpenApiServer } from '@shared-server/http/public-server-url.ts';
+import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import { parse } from 'jsr:@std/yaml@1.0.12';
-import {
-  resolvePublicServerUrl,
-  withPublicOpenApiServer,
-} from '@shared-server/http/public-server-url.ts';
 
 const OPENAPI_URL = '/api/relic/openapi.json';
 
 async function loadRelicOpenApiYaml(): Promise<unknown> {
-  const yamlText = await Deno.readTextFile(
-    new URL('../resources/relic-hunter-server-v1-openapi.yaml', import.meta.url),
-  );
-  return parse(yamlText);
+    const yamlText = await Deno.readTextFile(
+        new URL('../resources/relic-hunter-server-v1-openapi.yaml', import.meta.url)
+    );
+    return parse(yamlText);
 }
 
 function swaggerHtml(c: Context): string {
-  const serverUrl = resolvePublicServerUrl(c.req.raw);
+    const serverUrl = resolvePublicServerUrl(c.req.raw);
 
-  return `
+    return `
         <!doctype html>
         <html lang="en">
           <head>
@@ -58,22 +55,22 @@ function swaggerHtml(c: Context): string {
 }
 
 export function initRelicSwaggerRoutes(app: Hono): Hono {
-  app.get(
-    OPENAPI_URL,
-    async (c) =>
-      c.json(
-        withPublicOpenApiServer(
-          await loadRelicOpenApiYaml(),
-          c.req.raw,
-          'Relic Hunter server',
-        ),
-      ),
-  );
+    app.get(
+        OPENAPI_URL,
+        async (c) =>
+            c.json(
+                withPublicOpenApiServer(
+                    await loadRelicOpenApiYaml(),
+                    c.req.raw,
+                    'Relic Hunter server'
+                )
+            )
+    );
 
-  app.get(
-    '/api/relic/docs',
-    (c) => c.html(swaggerHtml(c)),
-  );
+    app.get(
+        '/api/relic/docs',
+        (c) => c.html(swaggerHtml(c))
+    );
 
-  return app;
+    return app;
 }

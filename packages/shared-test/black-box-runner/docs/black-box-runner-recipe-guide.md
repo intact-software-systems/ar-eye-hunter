@@ -1149,13 +1149,13 @@ live gates, and CI command shape.
 
 The RTC provider name matters:
 
-| Provider | Boundary |
-| --- | --- |
-| `rallar-stub` | Fake provider for parser and runner smoke tests. |
-| `rallar-memory` | Deterministic in-memory provider for runner semantics such as direct, broadcast, close, and reconnect behavior. |
-| `rallar` | WebSocket signaling-only provider. A successful connect means signaling transport opened, not a real WebRTC data path. |
-| `rallar-browser` | Browser-backed provider that uses Playwright and the real browser Rallar facade for Rallar auth, room setup, and RTC payload delivery. |
-| `rallar-remote-browser` | Control-server-backed browser provider for visible or remote browser execution through `rallar-bb-test`. |
+| Provider                | Boundary                                                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `rallar-stub`           | Fake provider for parser and runner smoke tests.                                                                                       |
+| `rallar-memory`         | Deterministic in-memory provider for runner semantics such as direct, broadcast, close, and reconnect behavior.                        |
+| `rallar`                | WebSocket signaling-only provider. A successful connect means signaling transport opened, not a real WebRTC data path.                 |
+| `rallar-browser`        | Browser-backed provider that uses Playwright and the real browser Rallar facade for Rallar auth, room setup, and RTC payload delivery. |
+| `rallar-remote-browser` | Control-server-backed browser provider for visible or remote browser execution through `rallar-bb-test`.                               |
 
 Use `rallar-memory` when testing runner behavior. Use `rallar-browser` when the
 goal is real Rallar RTC behavior in a browser. Use `rallar` only when the test

@@ -1,9 +1,8 @@
-import type { DistributedArtifactEvidenceWindowQuery } from
-    '@shared-test/rallar-bb-test/mod.ts';
+import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
 
 export function analyzeEvidenceQueryFingerprint(
     operationGeneration: number,
-    query: DistributedArtifactEvidenceWindowQuery,
+    query: DistributedArtifactEvidenceWindowQuery
 ): string {
     return JSON.stringify([
         operationGeneration,
@@ -16,6 +15,6 @@ export function analyzeEvidenceQueryFingerprint(
         query.transport ?? null,
         query.category ?? null,
         query.fromEpochMs ?? null,
-        query.toEpochMs ?? null,
+        query.toEpochMs ?? null
     ]);
 }

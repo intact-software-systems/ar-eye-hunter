@@ -1,21 +1,21 @@
-import { AppTopics } from '@shared/api/api-config.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
-import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import {
     readRuntimeStateEntriesByPrefix,
-    RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+    RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
 } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
 import { filterStateEventsForList } from '@shared-server/rallar-system/state-event-listing.ts';
+import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
-import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
+import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -36,7 +36,7 @@ const MODE = Deno.args.find((arg) => arg.startsWith('--mode='))?.slice('--mode='
 const RUNS = Number(Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ?? '3');
 
 const gc = () => {
-    const maybeGc = (globalThis as unknown as { gc?: () => void }).gc;
+    const maybeGc = (globalThis as unknown as { gc?: () => void; }).gc;
     maybeGc?.();
 };
 
@@ -54,7 +54,7 @@ async function measure(
     sizeLabel: string,
     run: number,
     details: JsonRecord,
-    action: () => unknown | Promise<unknown>,
+    action: () => unknown | Promise<unknown>
 ): Promise<BenchResult> {
     const memoryBefore = memory();
     const start = now();
@@ -68,13 +68,13 @@ async function measure(
         durationMs,
         memoryBefore,
         memoryAfter,
-        details,
+        details
     };
 }
 
 async function waitUntil(
     condition: () => boolean,
-    options: { timeoutMs?: number; pollMs?: number } = {},
+    options: { timeoutMs?: number; pollMs?: number; } = {}
 ): Promise<void> {
     const timeoutMs = options.timeoutMs ?? 2_000;
     const pollMs = options.pollMs ?? 1;
@@ -99,8 +99,8 @@ function makeEvent(index: number): JsonRecord {
         principalId: 'principal-hot',
         payload: {
             text: `payload-${index}`,
-            values: [index, index + 1, index + 2, index + 3],
-        },
+            values: [index, index + 1, index + 2, index + 3]
+        }
     };
 }
 
@@ -127,27 +127,26 @@ function makeRuntimeStateEntries(size: number): readonly RuntimeStateEntry[] {
         value: JSON.stringify({
             kind: 'runtime',
             sequence: index,
-            payload: 'x'.repeat(512),
+            payload: 'x'.repeat(512)
         }),
         expireAtTimestamp: Date.now() + 86_400_000,
         updatedTimestamp: new Date(1_700_000_000_000 + index).toISOString(),
-        revision: 0,
+        revision: 0
     }));
 }
 
-class RuntimeStatePrefixBenchRepository
-    implements RuntimeStateTransactionalRepositoryLike {
+class RuntimeStatePrefixBenchRepository implements RuntimeStateTransactionalRepositoryLike {
     findEntriesByPrefixCalls = 0;
     findEntriesByPrefixPageCalls = 0;
     maxRowsReturned = 0;
 
     public constructor(
         private readonly entries: readonly RuntimeStateEntry[],
-        private readonly namespace = 'perf-runtime-20260702',
+        private readonly namespace = 'perf-runtime-20260702'
     ) {}
 
     async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>
     ): Promise<T> {
         return await fn(this);
     }
@@ -162,13 +161,11 @@ class RuntimeStatePrefixBenchRepository
 
     async findEntriesByPrefix(
         namespace: string,
-        keyPrefix: string,
+        keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
         const rows = this.entries
-            .filter((entry) =>
-                namespace === this.namespace && entry.key.startsWith(keyPrefix)
-            )
+            .filter((entry) => namespace === this.namespace && entry.key.startsWith(keyPrefix))
             .map((entry) => ({ ...entry }));
         this.maxRowsReturned = Math.max(this.maxRowsReturned, rows.length);
         return rows;
@@ -176,7 +173,7 @@ class RuntimeStatePrefixBenchRepository
 
     async findEntriesByKeys(
         namespace: string,
-        keys: readonly string[],
+        keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         if (namespace !== this.namespace) {
             return [];
@@ -190,7 +187,7 @@ class RuntimeStatePrefixBenchRepository
     async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,
-        options: RuntimeStateEntryPageOptions,
+        options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixPageCalls += 1;
         const rows: RuntimeStateEntry[] = [];
@@ -223,7 +220,8 @@ class RuntimeStatePrefixBenchRepository
             const mid = Math.floor((low + high) / 2);
             if (this.entries[mid].key.localeCompare(key) <= 0) {
                 low = mid + 1;
-            } else {
+            }
+            else {
                 high = mid;
             }
         }
@@ -252,58 +250,62 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
             const fullRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
             const fullDetails: JsonRecord = {
                 rows: size,
-                pageSize: undefined,
+                pageSize: undefined
             };
-            results.push(await measure(
-                'runtime-prefix.full-materialize-and-parse',
-                `${size} rows`,
-                run,
-                fullDetails,
-                async () => {
-                    let parsed = 0;
-                    for (const entry of await fullRepo.findEntriesByPrefix(namespace, prefix)) {
-                        JSON.parse(entry.value);
-                        parsed += 1;
+            results.push(
+                await measure(
+                    'runtime-prefix.full-materialize-and-parse',
+                    `${size} rows`,
+                    run,
+                    fullDetails,
+                    async () => {
+                        let parsed = 0;
+                        for (const entry of await fullRepo.findEntriesByPrefix(namespace, prefix)) {
+                            JSON.parse(entry.value);
+                            parsed += 1;
+                        }
+                        if (parsed !== size) {
+                            throw new Error(`Expected ${size} parsed rows, got ${parsed}`);
+                        }
+                        fullDetails.findEntriesByPrefixCalls = fullRepo.findEntriesByPrefixCalls;
+                        fullDetails.findEntriesByPrefixPageCalls = fullRepo.findEntriesByPrefixPageCalls;
+                        fullDetails.maxRowsReturnedPerRepositoryCall = fullRepo.maxRowsReturned;
                     }
-                    if (parsed !== size) {
-                        throw new Error(`Expected ${size} parsed rows, got ${parsed}`);
-                    }
-                    fullDetails.findEntriesByPrefixCalls = fullRepo.findEntriesByPrefixCalls;
-                    fullDetails.findEntriesByPrefixPageCalls = fullRepo.findEntriesByPrefixPageCalls;
-                    fullDetails.maxRowsReturnedPerRepositoryCall = fullRepo.maxRowsReturned;
-                },
-            ));
+                )
+            );
 
             const pagedRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
             const pagedDetails: JsonRecord = {
                 rows: size,
-                pageSize: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+                pageSize: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
             };
-            results.push(await measure(
-                'runtime-prefix.paged-read-and-parse',
-                `${size} rows`,
-                run,
-                pagedDetails,
-                async () => {
-                    let parsed = 0;
-                    for await (
-                        const entry of readRuntimeStateEntriesByPrefix(
-                            pagedRepo,
-                            namespace,
-                            prefix,
-                        )
-                    ) {
-                        JSON.parse(entry.value);
-                        parsed += 1;
+            results.push(
+                await measure(
+                    'runtime-prefix.paged-read-and-parse',
+                    `${size} rows`,
+                    run,
+                    pagedDetails,
+                    async () => {
+                        let parsed = 0;
+                        for await (
+                            const entry of readRuntimeStateEntriesByPrefix(
+                                pagedRepo,
+                                namespace,
+                                prefix
+                            )
+                        ) {
+                            JSON.parse(entry.value);
+                            parsed += 1;
+                        }
+                        if (parsed !== size) {
+                            throw new Error(`Expected ${size} parsed rows, got ${parsed}`);
+                        }
+                        pagedDetails.findEntriesByPrefixCalls = pagedRepo.findEntriesByPrefixCalls;
+                        pagedDetails.findEntriesByPrefixPageCalls = pagedRepo.findEntriesByPrefixPageCalls;
+                        pagedDetails.maxRowsReturnedPerRepositoryCall = pagedRepo.maxRowsReturned;
                     }
-                    if (parsed !== size) {
-                        throw new Error(`Expected ${size} parsed rows, got ${parsed}`);
-                    }
-                    pagedDetails.findEntriesByPrefixCalls = pagedRepo.findEntriesByPrefixCalls;
-                    pagedDetails.findEntriesByPrefixPageCalls = pagedRepo.findEntriesByPrefixPageCalls;
-                    pagedDetails.maxRowsReturnedPerRepositoryCall = pagedRepo.maxRowsReturned;
-                },
-            ));
+                )
+            );
         }
     }
 }
@@ -315,27 +317,33 @@ async function benchEvents(results: BenchResult[]): Promise<void> {
         const rows = Array.from({ length: size }, (_, index) => JSON.stringify(makeEvent(index)));
         const bytes = rows.reduce((sum, row) => sum + row.length, 0);
         for (let run = 1; run <= RUNS; run++) {
-            results.push(await measure(
-                'events.legacy.parse-all-and-slice',
-                `${size} rows`,
-                run,
-                { rows: size, rowBytes: bytes, limit },
-                () => runLegacyEventPipeline(rows, limit),
-            ));
-            results.push(await measure(
-                'events.page.parse-page-only',
-                `${size} rows`,
-                run,
-                { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
-                () => runPagedEventPipeline(rows, limit),
-            ));
-            results.push(await measure(
-                'events.recent.parse-bounded-tail',
-                `${size} rows`,
-                run,
-                { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
-                () => runRecentEventPipeline(rows, limit),
-            ));
+            results.push(
+                await measure(
+                    'events.legacy.parse-all-and-slice',
+                    `${size} rows`,
+                    run,
+                    { rows: size, rowBytes: bytes, limit },
+                    () => runLegacyEventPipeline(rows, limit)
+                )
+            );
+            results.push(
+                await measure(
+                    'events.page.parse-page-only',
+                    `${size} rows`,
+                    run,
+                    { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
+                    () => runPagedEventPipeline(rows, limit)
+                )
+            );
+            results.push(
+                await measure(
+                    'events.recent.parse-bounded-tail',
+                    `${size} rows`,
+                    run,
+                    { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
+                    () => runRecentEventPipeline(rows, limit)
+                )
+            );
         }
     }
 }
@@ -345,22 +353,24 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
     for (const size of sizes) {
         for (let run = 1; run <= RUNS; run++) {
             const repo = new ObservableLatestRepository<string, JsonRecord>({ ttlMs: 0 });
-            results.push(await measure(
-                'cache.observable-expired-retained-before-delete',
-                `${size} keys`,
-                run,
-                { keys: size, ttlMs: 0 },
-                async () => {
-                    for (let i = 0; i < size; i++) {
-                        repo.set(`key-${i}`, { i, value: `value-${i}` });
+            results.push(
+                await measure(
+                    'cache.observable-expired-retained-before-delete',
+                    `${size} keys`,
+                    run,
+                    { keys: size, ttlMs: 0 },
+                    async () => {
+                        for (let i = 0; i < size; i++) {
+                            repo.set(`key-${i}`, { i, value: `value-${i}` });
+                        }
+                        await new Promise((resolve) => setTimeout(resolve, 2));
+                        const liveValues = repo.readAllValues().length;
+                        if (liveValues !== 0) {
+                            throw new Error(`Expected zero live values, got ${liveValues}`);
+                        }
                     }
-                    await new Promise((resolve) => setTimeout(resolve, 2));
-                    const liveValues = repo.readAllValues().length;
-                    if (liveValues !== 0) {
-                        throw new Error(`Expected zero live values, got ${liveValues}`);
-                    }
-                },
-            ));
+                )
+            );
             results.push({
                 name: 'cache.observable-size-after-expiry',
                 sizeLabel: `${size} keys`,
@@ -371,16 +381,18 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                 details: {
                     keys: size,
                     retainedEntryCount: repo.size(),
-                    liveValueCount: repo.readAllValues().length,
-                },
+                    liveValueCount: repo.readAllValues().length
+                }
             });
-            results.push(await measure(
-                'cache.observable-delete-expired',
-                `${size} keys`,
-                run,
-                { keys: size },
-                () => repo.deleteExpired(),
-            ));
+            results.push(
+                await measure(
+                    'cache.observable-delete-expired',
+                    `${size} keys`,
+                    run,
+                    { keys: size },
+                    () => repo.deleteExpired()
+                )
+            );
             results.push({
                 name: 'cache.observable-size-after-delete',
                 sizeLabel: `${size} keys`,
@@ -391,30 +403,32 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                 details: {
                     keys: size,
                     retainedEntryCount: repo.size(),
-                    liveValueCount: repo.readAllValues().length,
-                },
+                    liveValueCount: repo.readAllValues().length
+                }
             });
 
             const autoRepo = new ObservableLatestRepository<string, JsonRecord>({
                 ttlMs: 0,
-                deleteExpiredIntervalMs: 1,
+                deleteExpiredIntervalMs: 1
             });
             try {
-                results.push(await measure(
-                    'cache.observable-auto-delete-expired',
-                    `${size} keys`,
-                    run,
-                    { keys: size, ttlMs: 0, deleteExpiredIntervalMs: 1 },
-                    async () => {
-                        for (let i = 0; i < size; i++) {
-                            autoRepo.set(`auto-key-${i}`, {
-                                i,
-                                value: `value-${i}`,
-                            });
+                results.push(
+                    await measure(
+                        'cache.observable-auto-delete-expired',
+                        `${size} keys`,
+                        run,
+                        { keys: size, ttlMs: 0, deleteExpiredIntervalMs: 1 },
+                        async () => {
+                            for (let i = 0; i < size; i++) {
+                                autoRepo.set(`auto-key-${i}`, {
+                                    i,
+                                    value: `value-${i}`
+                                });
+                            }
+                            await waitUntil(() => autoRepo.size() === 0);
                         }
-                        await waitUntil(() => autoRepo.size() === 0);
-                    },
-                ));
+                    )
+                );
                 results.push({
                     name: 'cache.observable-size-after-auto-delete',
                     sizeLabel: `${size} keys`,
@@ -425,10 +439,11 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                     details: {
                         keys: size,
                         retainedEntryCount: autoRepo.size(),
-                        liveValueCount: autoRepo.readAllValues().length,
-                    },
+                        liveValueCount: autoRepo.readAllValues().length
+                    }
                 });
-            } finally {
+            }
+            finally {
                 autoRepo.dispose();
             }
         }
@@ -445,17 +460,19 @@ async function benchRateLimiter(results: BenchResult[]): Promise<void> {
             readRateLimiter('bench', `warm-${size}-${i}`, policy);
         }
         for (let run = 1; run <= RUNS; run++) {
-            results.push(await measure(
-                'rate-limiter.read-with-cache-size',
-                `${size} cached keys`,
-                run,
-                { cachedKeysApprox: size, reads: 100 },
-                () => {
-                    for (let i = 0; i < 100; i++) {
-                        readRateLimiter('bench', `probe-${size}-${run}-${i}`, policy).allow();
+            results.push(
+                await measure(
+                    'rate-limiter.read-with-cache-size',
+                    `${size} cached keys`,
+                    run,
+                    { cachedKeysApprox: size, reads: 100 },
+                    () => {
+                        for (let i = 0; i < 100; i++) {
+                            readRateLimiter('bench', `probe-${size}-${run}-${i}`, policy).allow();
+                        }
                     }
-                },
-            ));
+                )
+            );
         }
     }
 }
@@ -492,7 +509,7 @@ function makeClientSnapshot(index: number, sessionsPerClient: number, liveUntil:
             profileVersion: index + 1,
             presenceVersion: index + 1,
             created: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' },
+            updated: { atEpochMs: 1, byServiceId: 'perf' }
         },
         instances: [],
         activeSessions: Array.from({ length: sessionsPerClient }, (_, sessionIndex) => ({
@@ -507,10 +524,10 @@ function makeClientSnapshot(index: number, sessionsPerClient: number, liveUntil:
             connectedAtEpochMs: 1_700_000_000_000,
             authenticatedAtEpochMs: 1_700_000_000_000,
             lastHeartbeatAtEpochMs: liveUntil - 1_000,
-            expiresAtEpochMs: liveUntil,
+            expiresAtEpochMs: liveUntil
         })),
         isOnline: true,
-        activeSessionCount: sessionsPerClient,
+        activeSessionCount: sessionsPerClient
     } as unknown as ClientSnapshot;
 }
 
@@ -518,7 +535,7 @@ function makeGroupSnapshot(
     groupIndex: number,
     memberCount: number,
     sessionsPerClient: number,
-    liveUntil: number,
+    liveUntil: number
 ): GroupSnapshot {
     return {
         group: {
@@ -535,7 +552,7 @@ function makeGroupSnapshot(
             rosterVersion: groupIndex + 1,
             presenceVersion: groupIndex + 1,
             created: { atEpochMs: 1, byServiceId: 'perf' },
-            updated: { atEpochMs: 1, byServiceId: 'perf' },
+            updated: { atEpochMs: 1, byServiceId: 'perf' }
         },
         members: Array.from({ length: memberCount }, (_, index) => ({
             applicationId: 'app',
@@ -545,7 +562,7 @@ function makeGroupSnapshot(
             role: 'member',
             status: 'active',
             joined: { atEpochMs: 1_700_000_000_000, byServiceId: 'perf' },
-            updated: { atEpochMs: 1_700_000_000_000, byServiceId: 'perf' },
+            updated: { atEpochMs: 1_700_000_000_000, byServiceId: 'perf' }
         })),
         activeSessions: Array.from({ length: memberCount * sessionsPerClient }, (_, index) => ({
             applicationId: 'app',
@@ -555,20 +572,20 @@ function makeGroupSnapshot(
             principalId: `principal-${Math.floor(index / sessionsPerClient)}`,
             connectedAtEpochMs: 1_700_000_000_000,
             lastHeartbeatAtEpochMs: liveUntil - 1_000,
-            expiresAtEpochMs: liveUntil,
+            expiresAtEpochMs: liveUntil
         })),
         memberCount,
-        onlineMemberCount: memberCount,
+        onlineMemberCount: memberCount
     } as unknown as GroupSnapshot;
 }
 
 function makeWsServer(connectionIds: readonly string[]): {
-    connections: Map<string, { id: string; socket: FakeSocket; isOpen: boolean }>;
-    broadcast: (data: unknown, filter?: (ctx: { id: string; isOpen: boolean }) => boolean) => number;
+    connections: Map<string, { id: string; socket: FakeSocket; isOpen: boolean; }>;
+    broadcast: (data: unknown, filter?: (ctx: { id: string; isOpen: boolean; }) => boolean) => number;
     encode: (data: unknown) => EncodedFakeSocketMessage;
     sendEncoded: (connectionId: string, encoded: EncodedFakeSocketMessage) => void;
 } {
-    const connections = new Map<string, { id: string; socket: FakeSocket; isOpen: boolean }>();
+    const connections = new Map<string, { id: string; socket: FakeSocket; isOpen: boolean; }>();
     for (const id of connectionIds) {
         connections.set(id, { id, socket: new FakeSocket(), isOpen: true });
     }
@@ -576,7 +593,7 @@ function makeWsServer(connectionIds: readonly string[]): {
         connections,
         encode(data: unknown): EncodedFakeSocketMessage {
             return {
-                text: JSON.stringify(data),
+                text: JSON.stringify(data)
             };
         },
         sendEncoded(connectionId: string, encoded: EncodedFakeSocketMessage): void {
@@ -586,17 +603,21 @@ function makeWsServer(connectionIds: readonly string[]): {
             }
             ctx.socket.send(encoded.text);
         },
-        broadcast(data: unknown, filter?: (ctx: { id: string; isOpen: boolean }) => boolean): number {
+        broadcast(data: unknown, filter?: (ctx: { id: string; isOpen: boolean; }) => boolean): number {
             const encoded = JSON.stringify(data);
             let count = 0;
             for (const ctx of connections.values()) {
-                if (!ctx.isOpen) continue;
-                if (filter && !filter(ctx)) continue;
+                if (!ctx.isOpen) {
+                    continue;
+                }
+                if (filter && !filter(ctx)) {
+                    continue;
+                }
                 ctx.socket.send(encoded);
                 count += 1;
             }
             return count;
-        },
+        }
     };
 }
 
@@ -606,12 +627,12 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
     const sizes = [
         { clients: 10, sessionsPerClient: 1, groups: 10, members: 10 },
         { clients: 100, sessionsPerClient: 1, groups: 100, members: 100 },
-        { clients: 500, sessionsPerClient: 1, groups: 1_000, members: 100 },
+        { clients: 500, sessionsPerClient: 1, groups: 1_000, members: 100 }
     ];
     for (const size of sizes) {
         const clientSnapshots = Array.from(
             { length: size.clients },
-            (_, index) => makeClientSnapshot(index, size.sessionsPerClient, liveUntilEpochMs),
+            (_, index) => makeClientSnapshot(index, size.sessionsPerClient, liveUntilEpochMs)
         );
         const connectionIds = clientSnapshots.flatMap((snapshot) =>
             snapshot.activeSessions.map((session) => session.sessionId)
@@ -621,42 +642,44 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
             0,
             Math.min(size.members, size.clients),
             size.sessionsPerClient,
-            liveUntilEpochMs,
+            liveUntilEpochMs
         );
         const message = {
             id: 'message-1',
             payload: {
                 typeId: AppTopics.groupStateSnapshot,
-                resource: JSON.stringify(groupSnapshot),
-            },
+                resource: JSON.stringify(groupSnapshot)
+            }
         };
 
         for (let run = 1; run <= RUNS; run++) {
-            results.push(await measure(
-                'state-sync.resolve-group-recipients',
-                `${size.clients} clients/${size.groups} groups label`,
-                run,
-                {
-                    clients: size.clients,
-                    sessionsPerClient: size.sessionsPerClient,
-                    groupsLabel: size.groups,
-                    members: groupSnapshot.members.length,
-                    connections: connectionIds.length,
-                },
-                () => {
-                    const recipients = resolveStateSyncRecipients(
-                        webSocketServer as never,
-                        message as never,
-                        {
-                            readClientSnapshots: () => clientSnapshots,
-                            now: () => nowEpochMs,
-                        },
-                    );
-                    if (!recipients || recipients.length === 0) {
-                        throw new Error('Expected recipients');
+            results.push(
+                await measure(
+                    'state-sync.resolve-group-recipients',
+                    `${size.clients} clients/${size.groups} groups label`,
+                    run,
+                    {
+                        clients: size.clients,
+                        sessionsPerClient: size.sessionsPerClient,
+                        groupsLabel: size.groups,
+                        members: groupSnapshot.members.length,
+                        connections: connectionIds.length
+                    },
+                    () => {
+                        const recipients = resolveStateSyncRecipients(
+                            webSocketServer as never,
+                            message as never,
+                            {
+                                readClientSnapshots: () => clientSnapshots,
+                                now: () => nowEpochMs
+                            }
+                        );
+                        if (!recipients || recipients.length === 0) {
+                            throw new Error('Expected recipients');
+                        }
                     }
-                },
-            ));
+                )
+            );
         }
     }
 }
@@ -670,40 +693,48 @@ async function benchSerialization(results: BenchResult[]): Promise<void> {
             const server = makeWsServer(connectionIds);
             const payload = { type: 'payload', body: 'x'.repeat(payloadBytes) };
             for (let run = 1; run <= RUNS; run++) {
-                results.push(await measure(
-                    'ws.broadcast-encode-once',
-                    `${recipients} recipients/${payloadBytes} bytes`,
-                    run,
-                    { recipients, payloadBytes },
-                    () => {
-                        server.broadcast(payload);
-                    },
-                ));
-                results.push(await measure(
-                    'ws.direct-send-stringify-per-recipient',
-                    `${recipients} recipients/${payloadBytes} bytes`,
-                    run,
-                    { recipients, payloadBytes },
-                    () => {
-                        for (const id of connectionIds) {
-                            const ctx = server.connections.get(id);
-                            if (!ctx) throw new Error('missing ctx');
-                            ctx.socket.send(JSON.stringify(payload));
+                results.push(
+                    await measure(
+                        'ws.broadcast-encode-once',
+                        `${recipients} recipients/${payloadBytes} bytes`,
+                        run,
+                        { recipients, payloadBytes },
+                        () => {
+                            server.broadcast(payload);
                         }
-                    },
-                ));
-                results.push(await measure(
-                    'ws.direct-send-encoded-once',
-                    `${recipients} recipients/${payloadBytes} bytes`,
-                    run,
-                    { recipients, payloadBytes },
-                    () => {
-                        const encoded = server.encode(payload);
-                        for (const id of connectionIds) {
-                            server.sendEncoded(id, encoded);
+                    )
+                );
+                results.push(
+                    await measure(
+                        'ws.direct-send-stringify-per-recipient',
+                        `${recipients} recipients/${payloadBytes} bytes`,
+                        run,
+                        { recipients, payloadBytes },
+                        () => {
+                            for (const id of connectionIds) {
+                                const ctx = server.connections.get(id);
+                                if (!ctx) {
+                                    throw new Error('missing ctx');
+                                }
+                                ctx.socket.send(JSON.stringify(payload));
+                            }
                         }
-                    },
-                ));
+                    )
+                );
+                results.push(
+                    await measure(
+                        'ws.direct-send-encoded-once',
+                        `${recipients} recipients/${payloadBytes} bytes`,
+                        run,
+                        { recipients, payloadBytes },
+                        () => {
+                            const encoded = server.encode(payload);
+                            for (const id of connectionIds) {
+                                server.sendEncoded(id, encoded);
+                            }
+                        }
+                    )
+                );
             }
         }
     }
@@ -718,13 +749,15 @@ async function benchLatestRepositoryCleanup(results: BenchResult[]): Promise<voi
                 repo.set(`key-${i}`, { i });
             }
             await new Promise((resolve) => setTimeout(resolve, 2));
-            results.push(await measure(
-                'latest-repository.delete-expired',
-                `${size} keys`,
-                run,
-                { keys: size },
-                () => repo.deleteExpired(),
-            ));
+            results.push(
+                await measure(
+                    'latest-repository.delete-expired',
+                    `${size} keys`,
+                    run,
+                    { keys: size },
+                    () => repo.deleteExpired()
+                )
+            );
         }
     }
 }
@@ -745,12 +778,12 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
                     const keyIndex = firstKey + i;
                     repo.set(`churn-${keyIndex}`, {
                         keyIndex,
-                        payload: `payload-${keyIndex}`,
+                        payload: `payload-${keyIndex}`
                     });
                 }
                 await new Promise((resolve) => setTimeout(resolve, 2));
                 repo.readAllValues();
-            },
+            }
         );
         results.push({
             name: 'cache.leak-churn-post-expiry',
@@ -763,17 +796,19 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
                 batch,
                 batchSize,
                 retainedEntryCount: repo.size(),
-                liveValueCount: repo.readAllValues().length,
-            },
+                liveValueCount: repo.readAllValues().length
+            }
         });
     }
-    results.push(await measure(
-        'cache.leak-churn-delete-expired',
-        `${batchSize * batches} cumulative keys`,
-        1,
-        { batchSize, batches },
-        () => repo.deleteExpired(),
-    ));
+    results.push(
+        await measure(
+            'cache.leak-churn-delete-expired',
+            `${batchSize * batches} cumulative keys`,
+            1,
+            { batchSize, batches },
+            () => repo.deleteExpired()
+        )
+    );
     results.push({
         name: 'cache.leak-churn-after-delete',
         sizeLabel: `${batchSize * batches} cumulative keys`,
@@ -783,15 +818,15 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
         memoryAfter: memory(),
         details: {
             retainedEntryCount: repo.size(),
-            liveValueCount: repo.readAllValues().length,
-        },
+            liveValueCount: repo.readAllValues().length
+        }
     });
 }
 
 async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void> {
     const repo = new ObservableLatestRepository<string, JsonRecord>({
         ttlMs: 0,
-        deleteExpiredIntervalMs: 1,
+        deleteExpiredIntervalMs: 1
     });
     const batchSize = 10_000;
     const batches = 10;
@@ -799,22 +834,24 @@ async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void
     try {
         for (let batch = 1; batch <= batches; batch++) {
             const firstKey = (batch - 1) * batchSize;
-            results.push(await measure(
-                'cache.auto-eviction-churn-insert-batch',
-                `${batch * batchSize} cumulative keys`,
-                1,
-                { batch, batchSize, deleteExpiredIntervalMs: 1 },
-                async () => {
-                    for (let i = 0; i < batchSize; i++) {
-                        const keyIndex = firstKey + i;
-                        repo.set(`auto-churn-${keyIndex}`, {
-                            keyIndex,
-                            payload: `payload-${keyIndex}`,
-                        });
+            results.push(
+                await measure(
+                    'cache.auto-eviction-churn-insert-batch',
+                    `${batch * batchSize} cumulative keys`,
+                    1,
+                    { batch, batchSize, deleteExpiredIntervalMs: 1 },
+                    async () => {
+                        for (let i = 0; i < batchSize; i++) {
+                            const keyIndex = firstKey + i;
+                            repo.set(`auto-churn-${keyIndex}`, {
+                                keyIndex,
+                                payload: `payload-${keyIndex}`
+                            });
+                        }
+                        await waitUntil(() => repo.size() === 0);
                     }
-                    await waitUntil(() => repo.size() === 0);
-                },
-            ));
+                )
+            );
             results.push({
                 name: 'cache.auto-eviction-churn-post-expiry',
                 sizeLabel: `${batch * batchSize} cumulative keys`,
@@ -826,24 +863,39 @@ async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void
                     batch,
                     batchSize,
                     retainedEntryCount: repo.size(),
-                    liveValueCount: repo.readAllValues().length,
-                },
+                    liveValueCount: repo.readAllValues().length
+                }
             });
         }
-    } finally {
+    }
+    finally {
         repo.dispose();
     }
 }
 
 async function main(): Promise<void> {
     const results: BenchResult[] = [];
-    if (MODE === 'full' || MODE === 'events') await benchEvents(results);
-    if (MODE === 'full' || MODE === 'runtime-prefix') await benchRuntimePrefix(results);
-    if (MODE === 'full' || MODE === 'cache') await benchCacheRetention(results);
-    if (MODE === 'full' || MODE === 'rate-limit') await benchRateLimiter(results);
-    if (MODE === 'full' || MODE === 'state-sync') await benchStateSync(results);
-    if (MODE === 'full' || MODE === 'serialization') await benchSerialization(results);
-    if (MODE === 'full' || MODE === 'latest-cleanup') await benchLatestRepositoryCleanup(results);
+    if (MODE === 'full' || MODE === 'events') {
+        await benchEvents(results);
+    }
+    if (MODE === 'full' || MODE === 'runtime-prefix') {
+        await benchRuntimePrefix(results);
+    }
+    if (MODE === 'full' || MODE === 'cache') {
+        await benchCacheRetention(results);
+    }
+    if (MODE === 'full' || MODE === 'rate-limit') {
+        await benchRateLimiter(results);
+    }
+    if (MODE === 'full' || MODE === 'state-sync') {
+        await benchStateSync(results);
+    }
+    if (MODE === 'full' || MODE === 'serialization') {
+        await benchSerialization(results);
+    }
+    if (MODE === 'full' || MODE === 'latest-cleanup') {
+        await benchLatestRepositoryCleanup(results);
+    }
     if (MODE === 'full' || MODE === 'leak') {
         await benchCacheLeakChurn(results);
         await benchCacheAutoEvictionChurn(results);
@@ -855,7 +907,7 @@ async function main(): Promise<void> {
         mode: MODE,
         runs: RUNS,
         deno: Deno.version,
-        results,
+        results
     };
     await Deno.writeTextFile(OUT, JSON.stringify(payload, null, 2));
     console.log(`Wrote ${results.length} benchmark results to ${OUT}`);

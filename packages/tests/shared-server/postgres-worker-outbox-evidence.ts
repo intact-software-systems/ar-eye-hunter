@@ -4,7 +4,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     expectDirectResourceOutboxLifecycle,
     type DirectResourceOutboxEvidence,
-    type DirectResourceOutboxLifecycleExpectation,
+    type DirectResourceOutboxLifecycleExpectation
 } from './direct-resource-outbox-evidence.ts';
 
 export type WorkerOutboxReceipt = Readonly<{
@@ -30,7 +30,7 @@ export function expectWorkerOutboxLifecycleEvidence(
     entries: readonly DirectResourceOutboxEvidence[],
     outputs: readonly WorkerOutboxReceipt[],
     kind: WorkerOutboxKind,
-    effects: readonly WorkerOutboxEffect[],
+    effects: readonly WorkerOutboxEffect[]
 ): void {
     const expectedEntries = outputs.flatMap((output) => {
         if (output.domainStatus !== 'applied') {
@@ -38,12 +38,10 @@ export function expectWorkerOutboxLifecycleEvidence(
         }
         if (output.outboxIds.length !== effects.length) {
             throw new Error(
-                `Expected ${effects.length} ${kind} outbox ids, received: ${output.outboxIds.length}`,
+                `Expected ${effects.length} ${kind} outbox ids, received: ${output.outboxIds.length}`
             );
         }
-        return output.outboxIds.map((resourceId, index) =>
-            expectedOutboxEntry(resourceId, kind, effects[index]!)
-        );
+        return output.outboxIds.map((resourceId, index) => expectedOutboxEntry(resourceId, kind, effects[index]!));
     });
     const resourceIds = expectedEntries.map((entry) => entry.resourceId);
     if (new Set(resourceIds).size !== resourceIds.length) {
@@ -51,20 +49,20 @@ export function expectWorkerOutboxLifecycleEvidence(
     }
     expectDirectResourceOutboxLifecycle(entries, {
         entries: expectedEntries,
-        appToWsLinks: [],
+        appToWsLinks: []
     });
 }
 
 export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
     rows: readonly DirectResourceInboxRowEvidence[],
-    appResourceIds: readonly string[],
+    appResourceIds: readonly string[]
 ): void {
     const entries = rows.map((row) => ({
         resourceId: row.ri_resource_id,
         topicId: row.ri_topic_id,
         typeId: row.ri_type_id,
         status: row.ri_status,
-        resource: row.ri_resource,
+        resource: row.ri_resource
     }));
     if (appResourceIds.length === 0) {
         throw new Error('Expected receipt-linked group presence-summary APP_OUTBOX rows');
@@ -72,7 +70,9 @@ export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
     const appEntries = appResourceIds.map((resourceId) => {
         const entry = byResourceId.get(resourceId);
-        if (!entry) throw new Error(`Missing group presence-summary APP_OUTBOX: ${resourceId}`);
+        if (!entry) {
+            throw new Error(`Missing group presence-summary APP_OUTBOX: ${resourceId}`);
+        }
         return entry;
     });
     const wsEntries = entries.filter((entry) => entry.typeId === EnqueuedType.WS_OUTBOX);
@@ -86,7 +86,7 @@ export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
             topicId: GROUP_PRESENCE_SUMMARY_TOPIC,
             typeId: EnqueuedType.APP_OUTBOX,
             status: EntityStatus.COMPLETED,
-            payloadIncludes: [commandId, 'group-presence-summary'],
+            payloadIncludes: [commandId, 'group-presence-summary']
         });
         const linked = expectedGroupPresenceSummaryWsEntries(wsEntries, commandId);
         for (const wsEntry of linked) {
@@ -94,7 +94,7 @@ export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
             appToWsLinks.push({
                 appResourceId: appEntry.resourceId,
                 wsResourceId: wsEntry.resourceId,
-                linkIdentity: commandId,
+                linkIdentity: commandId
             });
         }
     }
@@ -104,24 +104,25 @@ export function expectGroupPresenceSummaryAppToWsLifecycleEvidence(
 function commandIdFromGroupPresenceSummaryEntry(entry: DirectResourceOutboxEvidence): string {
     try {
         const message = JSON.parse(entry.resource) as {
-            payload?: { resource?: string };
+            payload?: { resource?: string; };
         };
         const envelope = JSON.parse(message.payload?.resource ?? '') as {
-            data?: { commandId?: unknown };
+            data?: { commandId?: unknown; };
         };
         const commandId = envelope.data?.commandId;
         if (typeof commandId !== 'string' || commandId.length === 0) {
             throw new TypeError('missing command id');
         }
         return commandId;
-    } catch {
+    }
+    catch {
         throw new Error(`Invalid group presence-summary APP_OUTBOX payload: ${entry.resourceId}`);
     }
 }
 
 function expectedGroupPresenceSummaryWsEntries(
     entries: readonly DirectResourceOutboxEvidence[],
-    commandId: string,
+    commandId: string
 ): readonly Readonly<{
     resourceId: string;
     expected: DirectResourceOutboxLifecycleExpectation['entries'][number];
@@ -131,7 +132,7 @@ function expectedGroupPresenceSummaryWsEntries(
     const expectedEffects = [
         ['member-state:delta-envelope', AppTopics.groupStateEvent],
         ['member-state:snapshot', AppTopics.groupStateSnapshot],
-        ['scope-directory:snapshot', AppTopics.groupDirectorySnapshot],
+        ['scope-directory:snapshot', AppTopics.groupDirectorySnapshot]
     ] as const;
     return expectedEffects.map(([effect, topicId]) => {
         const matching = entries.filter((entry) =>
@@ -141,7 +142,7 @@ function expectedGroupPresenceSummaryWsEntries(
         );
         if (matching.length !== 1) {
             throw new Error(
-                `Expected one ${effect} WS_OUTBOX linked to group presence command: ${commandId}`,
+                `Expected one ${effect} WS_OUTBOX linked to group presence command: ${commandId}`
             );
         }
         const entry = matching[0]!;
@@ -152,8 +153,8 @@ function expectedGroupPresenceSummaryWsEntries(
                 topicId,
                 typeId: EnqueuedType.WS_OUTBOX,
                 status: EntityStatus.NEW,
-                payloadIncludes: [commandId, effect],
-            },
+                payloadIncludes: [commandId, effect]
+            }
         };
     });
 }
@@ -161,7 +162,7 @@ function expectedGroupPresenceSummaryWsEntries(
 function expectedOutboxEntry(
     resourceId: string,
     kind: WorkerOutboxKind,
-    effect: WorkerOutboxEffect,
+    effect: WorkerOutboxEffect
 ): DirectResourceOutboxLifecycleExpectation['entries'][number] {
     if (kind === 'client' && effect === 'principal-state:snapshot') {
         return {
@@ -169,7 +170,7 @@ function expectedOutboxEntry(
             topicId: AppTopics.clientStateSnapshot,
             typeId: EnqueuedType.WS_OUTBOX,
             status: EntityStatus.NEW,
-            payloadIncludes: [resourceId, effect],
+            payloadIncludes: [resourceId, effect]
         };
     }
     if (kind === 'client' && effect === 'principal-state:event') {
@@ -178,7 +179,7 @@ function expectedOutboxEntry(
             topicId: AppTopics.clientStateEvent,
             typeId: EnqueuedType.WS_OUTBOX,
             status: EntityStatus.NEW,
-            payloadIncludes: [resourceId, effect],
+            payloadIncludes: [resourceId, effect]
         };
     }
     if (kind === 'group' && effect === 'group-presence-summary') {
@@ -187,7 +188,7 @@ function expectedOutboxEntry(
             topicId: GROUP_PRESENCE_SUMMARY_TOPIC,
             typeId: EnqueuedType.APP_OUTBOX,
             status: EntityStatus.NEW,
-            payloadIncludes: [resourceId, '\\"effectKind\\":\\"group-presence-summary\\"'],
+            payloadIncludes: [resourceId, '\\"effectKind\\":\\"group-presence-summary\\"']
         };
     }
     throw new Error(`Unsupported ${kind} worker outbox effect: ${effect}`);

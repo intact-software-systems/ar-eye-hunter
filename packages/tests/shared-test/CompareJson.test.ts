@@ -1,12 +1,12 @@
-import {describe, expect, it} from 'vitest';
-import {CompareJson} from '../../shared-test/json-compare/json-compare.ts';
+import { describe, expect, it } from 'vitest';
+import { CompareJson } from '../../shared-test/json-compare/json-compare.ts';
 
 describe('CompareJson facade', () => {
     it('compatible should allow extra actual fields', () => {
         const expected = {
             id: 'integer',
             name: 'string',
-            status: 'ACTIVE|PENDING',
+            status: 'ACTIVE|PENDING'
         };
 
         const actual = {
@@ -14,7 +14,7 @@ describe('CompareJson facade', () => {
             name: 'Alice',
             status: 'ACTIVE',
             createdAt: '2026-05-11T18:00:00Z',
-            traceId: 'abc-123',
+            traceId: 'abc-123'
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -25,11 +25,11 @@ describe('CompareJson facade', () => {
     it('compatible should fail when a required field is missing', () => {
         const expected = {
             id: 'integer',
-            name: 'string',
+            name: 'string'
         };
 
         const actual = {
-            id: 123,
+            id: 123
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -44,13 +44,13 @@ describe('CompareJson facade', () => {
         const expected = {
             id: 1,
             name: 'Alice',
-            status: 'ACTIVE',
+            status: 'ACTIVE'
         };
 
         const actual = {
             id: 999,
             name: 'Bob',
-            status: 'PENDING',
+            status: 'PENDING'
         };
 
         const result = CompareJson.compatibleStructure(expected, actual);
@@ -60,11 +60,11 @@ describe('CompareJson facade', () => {
 
     it('compatible should match string alternatives separated by pipe', () => {
         const expected = {
-            status: 'ACTIVE|PENDING|DISABLED',
+            status: 'ACTIVE|PENDING|DISABLED'
         };
 
         const actual = {
-            status: 'PENDING',
+            status: 'PENDING'
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -74,11 +74,11 @@ describe('CompareJson facade', () => {
 
     it('compatible should match integer wildcard for number values', () => {
         const expected = {
-            id: 'integer',
+            id: 'integer'
         };
 
         const actual = {
-            id: 123,
+            id: 123
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -88,11 +88,11 @@ describe('CompareJson facade', () => {
 
     it('compatible should match integer wildcard for integer string values', () => {
         const expected = {
-            id: 'integer',
+            id: 'integer'
         };
 
         const actual = {
-            id: '123',
+            id: '123'
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -102,11 +102,11 @@ describe('CompareJson facade', () => {
 
     it('compatible should reject integer wildcard for non-integer strings', () => {
         const expected = {
-            id: 'integer',
+            id: 'integer'
         };
 
         const actual = {
-            id: '123.45',
+            id: '123.45'
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -116,11 +116,11 @@ describe('CompareJson facade', () => {
 
     it('compatible should match float wildcard for non-integer number values', () => {
         const expected = {
-            amount: 'float',
+            amount: 'float'
         };
 
         const actual = {
-            amount: 42.75,
+            amount: 42.75
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -131,14 +131,14 @@ describe('CompareJson facade', () => {
     it('compatible should match any wildcard for any actual value', () => {
         const expected = {
             id: 'any',
-            payload: 'any',
+            payload: 'any'
         };
 
         const actual = {
             id: 123,
             payload: {
-                nested: true,
-            },
+                nested: true
+            }
         };
 
         const result = CompareJson.compatible(expected, actual);
@@ -149,13 +149,13 @@ describe('CompareJson facade', () => {
     it('exact should fail when actual has extra fields', () => {
         const expected = {
             id: 'integer',
-            name: 'string',
+            name: 'string'
         };
 
         const actual = {
             id: 123,
             name: 'Alice',
-            traceId: 'abc-123',
+            traceId: 'abc-123'
         };
 
         const result = CompareJson.exact(expected, actual);
@@ -170,17 +170,17 @@ describe('CompareJson facade', () => {
         const expected = {
             id: 123,
             name: 'Alice',
-            traceId: 'expected-trace-id',
+            traceId: 'expected-trace-id'
         };
 
         const actual = {
             id: 123,
             name: 'Alice',
-            traceId: 'actual-trace-id',
+            traceId: 'actual-trace-id'
         };
 
         const result = CompareJson.exact(expected, actual, {
-            ignoreJsonKeys: ['traceId'],
+            ignoreJsonKeys: ['traceId']
         });
 
         expect(result.isEqual).toBe(true);
@@ -191,20 +191,20 @@ describe('CompareJson facade', () => {
             id: 'integer',
             metadata: {
                 createdAt: '2020-01-01T00:00:00Z',
-                source: 'api',
-            },
+                source: 'api'
+            }
         };
 
         const actual = {
             id: 123,
             metadata: {
                 createdAt: '2026-05-11T18:00:00Z',
-                source: 'api',
-            },
+                source: 'api'
+            }
         };
 
         const result = CompareJson.compatible(expected, actual, {
-            ignoreJsonPaths: ['metadata.createdAt'],
+            ignoreJsonPaths: ['metadata.createdAt']
         });
 
         expect(result.isEqual).toBe(true);
@@ -212,11 +212,11 @@ describe('CompareJson facade', () => {
 
     it('assertCompatible should throw on mismatch', () => {
         const expected = {
-            id: 'integer',
+            id: 'integer'
         };
 
         const actual = {
-            id: 'not-an-integer',
+            id: 'not-an-integer'
         };
 
         expect(() => CompareJson.assertCompatible(expected, actual)).toThrowError();
@@ -225,13 +225,13 @@ describe('CompareJson facade', () => {
     it('assertCompatible should not throw on match', () => {
         const expected = {
             id: 'integer',
-            name: 'string',
+            name: 'string'
         };
 
         const actual = {
             id: 123,
             name: 'Alice',
-            createdAt: '2026-05-11T18:00:00Z',
+            createdAt: '2026-05-11T18:00:00Z'
         };
 
         expect(() => CompareJson.assertCompatible(expected, actual)).not.toThrow();
@@ -241,25 +241,25 @@ describe('CompareJson facade', () => {
         const expected = [
             {
                 type: 'room.joined',
-                clientId: 'string',
+                clientId: 'string'
             },
             {
                 type: 'room.left',
-                clientId: 'string',
-            },
+                clientId: 'string'
+            }
         ];
 
         const actual = [
             {
                 type: 'room.left',
                 clientId: 'client-2',
-                timestamp: '2026-05-11T18:00:00Z',
+                timestamp: '2026-05-11T18:00:00Z'
             },
             {
                 type: 'room.joined',
                 clientId: 'client-1',
-                timestamp: '2026-05-11T18:00:01Z',
-            },
+                timestamp: '2026-05-11T18:00:01Z'
+            }
         ];
 
         const result = CompareJson.compatible(expected, actual);
@@ -271,19 +271,19 @@ describe('CompareJson facade', () => {
         const expected = [
             {
                 type: 'room.joined',
-                clientId: 'string',
-            },
+                clientId: 'string'
+            }
         ];
 
         const actual = [
             {
                 type: 'room.joined',
-                clientId: 'client-1',
+                clientId: 'client-1'
             },
             {
                 type: 'room.left',
-                clientId: 'client-2',
-            },
+                clientId: 'client-2'
+            }
         ];
 
         const result = CompareJson.exact(expected, actual);
@@ -296,15 +296,15 @@ describe('CompareJson compatible-complete', () => {
     it('accepts arrays whose elements are exactly the expected ones', () => {
         const expected = {
             members: [
-                {principalId: 'client-1', status: 'active'},
-            ],
+                { principalId: 'client-1', status: 'active' }
+            ]
         };
 
         const actual = {
             members: [
-                {principalId: 'client-1', status: 'active', joinedAtEpochMs: 1},
+                { principalId: 'client-1', status: 'active', joinedAtEpochMs: 1 }
             ],
-            traceId: 'extra-object-fields-stay-allowed',
+            traceId: 'extra-object-fields-stay-allowed'
         };
 
         const result = CompareJson.compatibleComplete(expected, actual);
@@ -315,15 +315,15 @@ describe('CompareJson compatible-complete', () => {
     it('rejects an unexpected extra array element that plain compatible accepts', () => {
         const expected = {
             members: [
-                {principalId: 'client-1', status: 'active'},
-            ],
+                { principalId: 'client-1', status: 'active' }
+            ]
         };
 
         const actual = {
             members: [
-                {principalId: 'client-1', status: 'active'},
-                {principalId: 'intruder', status: 'active'},
-            ],
+                { principalId: 'client-1', status: 'active' },
+                { principalId: 'intruder', status: 'active' }
+            ]
         };
 
         expect(CompareJson.compatible(expected, actual).isEqual).toBe(true);
@@ -333,7 +333,7 @@ describe('CompareJson compatible-complete', () => {
         if (!result.isEqual) {
             expect(result.message).toBe('Json array has unexpected elements');
             expect(result.actualNotFound).toEqual([
-                {principalId: 'intruder', status: 'active'},
+                { principalId: 'intruder', status: 'active' }
             ]);
         }
     });
@@ -341,15 +341,15 @@ describe('CompareJson compatible-complete', () => {
     it('still reports missing expected elements', () => {
         const expected = {
             activeSessions: [
-                {sessionId: 'session-1'},
-                {sessionId: 'session-2'},
-            ],
+                { sessionId: 'session-1' },
+                { sessionId: 'session-2' }
+            ]
         };
 
         const actual = {
             activeSessions: [
-                {sessionId: 'session-1'},
-            ],
+                { sessionId: 'session-1' }
+            ]
         };
 
         const result = CompareJson.compatibleComplete(expected, actual);
@@ -359,17 +359,17 @@ describe('CompareJson compatible-complete', () => {
 
     it('keeps object extra-key tolerance unlike exact', () => {
         const expected = {
-            group: {groupId: 'g-1'},
+            group: { groupId: 'g-1' },
             members: [
-                {principalId: 'client-1'},
-            ],
+                { principalId: 'client-1' }
+            ]
         };
 
         const actual = {
-            group: {groupId: 'g-1', displayName: 'Group One'},
+            group: { groupId: 'g-1', displayName: 'Group One' },
             members: [
-                {principalId: 'client-1', status: 'active'},
-            ],
+                { principalId: 'client-1', status: 'active' }
+            ]
         };
 
         expect(CompareJson.compatibleComplete(expected, actual).isEqual).toBe(true);
@@ -379,14 +379,14 @@ describe('CompareJson compatible-complete', () => {
     it('supports wildcard tokens inside complete arrays', () => {
         const expected = {
             members: [
-                {principalId: 'string', status: 'active|invited'},
-            ],
+                { principalId: 'string', status: 'active|invited' }
+            ]
         };
 
         const actual = {
             members: [
-                {principalId: 'client-77', status: 'invited'},
-            ],
+                { principalId: 'client-77', status: 'invited' }
+            ]
         };
 
         expect(CompareJson.compatibleComplete(expected, actual).isEqual).toBe(true);

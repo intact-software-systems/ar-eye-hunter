@@ -51,11 +51,11 @@ the durable work handler calls), with zero-padded session ids, no RTT measuremen
 config — one full replan per membership change, exactly what the pre-phase-4 server executes.
 "Churn" is the symmetric difference of undirected edge sets between consecutive plans.
 
-| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
-| --- | --- | --- | --- | --- | --- |
-| 6 | tree | 5 | 7 | 1 | 6 |
-| 20 | mesh | 37 | 2 | 6 | 54 |
-| 50 | mesh | 97 | 2 | 6 | 180 |
+| N  | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
+| -- | ---- | ------------ | ------------------ | ------------------- | ------------------------------ |
+| 6  | tree | 5            | 7                  | 1                   | 6                              |
+| 20 | mesh | 37           | 2                  | 6                   | 54                             |
+| 50 | mesh | 97           | 2                  | 6                   | 180                            |
 
 Observations:
 
@@ -88,17 +88,17 @@ share is uncaptured (Phase 0 reading rule).
 Churn window (T2−T1; 12 membership changes: 6 joins with presence connect, 6 presence
 disconnects, 1.5 s settle between operations):
 
-| Quantity | Churn window | Per membership change |
-| --- | --- | --- |
-| `overlay.topology` egress bytes | 19,432,098 | **≈ 1.62 MB** |
-| `overlay.topology` WS sends | 24 | 2.0 |
-| Topology replans executed (`topologyUpdateCount`) | 9 | 0.75 |
-| Replans changed / published | 9 / 9 | 0.75 |
-| Fingerprint-gated skips (`topologyRebuildSkippedFingerprintCount`) | 6 | 0.5 |
-| `group-state.event` egress bytes | 6,972,400 | 581 KB |
-| `group-state.snapshot` egress bytes (dual-emit oracle) | 71,812,081 | 5.98 MB |
-| `group-directory.snapshot` egress bytes (dual-emit oracle) | 71,822,047 | 5.99 MB |
-| Presence-summary expansions | 18 | 1.5 |
+| Quantity                                                           | Churn window | Per membership change |
+| ------------------------------------------------------------------ | ------------ | --------------------- |
+| `overlay.topology` egress bytes                                    | 19,432,098   | **≈ 1.62 MB**         |
+| `overlay.topology` WS sends                                        | 24           | 2.0                   |
+| Topology replans executed (`topologyUpdateCount`)                  | 9            | 0.75                  |
+| Replans changed / published                                        | 9 / 9        | 0.75                  |
+| Fingerprint-gated skips (`topologyRebuildSkippedFingerprintCount`) | 6            | 0.5                   |
+| `group-state.event` egress bytes                                   | 6,972,400    | 581 KB                |
+| `group-state.snapshot` egress bytes (dual-emit oracle)             | 71,812,081   | 5.98 MB               |
+| `group-directory.snapshot` egress bytes (dual-emit oracle)         | 71,822,047   | 5.99 MB               |
+| Presence-summary expansions                                        | 18           | 1.5                   |
 
 Steady-state window (T3−T2, ~60 s with two heartbeat rounds across the 50 online clients):
 **0 egress bytes, 0 WS sends, 0 expansions, 0 replans, 0 publications** — the only movement is
@@ -148,16 +148,16 @@ Same measurement as the baseline table, on the slice-2 tree (canonical sorted pl
 hash-derived pair weights at every fallback site including the no-RTT mirrors, order-sensitive
 `changed` predicate, code-unit tie-breaks on the planning path):
 
-| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
-| --- | --- | --- | --- | --- | --- |
-| 6 | tree | 5 | 1 (was 7) | 1 (was 1) | **0 (was 6)** |
-| 20 | mesh | 37 | 2 (was 2) | 8 (was 6) | **0 (was 54)** |
-| 50 | mesh | 97 | 2 (was 2) | 6 (was 6) | **0 (was 180)** |
+| N  | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
+| -- | ---- | ------------ | ------------------ | ------------------- | ------------------------------ |
+| 6  | tree | 5            | 1 (was 7)          | 1 (was 1)           | **0 (was 6)**                  |
+| 20 | mesh | 37           | 2 (was 2)          | 8 (was 6)           | **0 (was 54)**                 |
+| 50 | mesh | 97           | 2 (was 2)          | 6 (was 6)           | **0 (was 180)**                |
 
 - **Same-set reorder churn is 0 at every size** — identical member sets now plan byte-identical
   graphs regardless of arrival order (unit-proven across sizes 2–64, no-RTT and RTT-mixed, in
   `rtc-topology-plan-determinism.test.ts`).
-- Join/leave churn is already inside O(degree) *empirically* on full rebuilds, because
+- Join/leave churn is already inside O(degree) _empirically_ on full rebuilds, because
   pair-stable weights keep unrelated planning decisions identical when one member changes. The
   tree tier's join churn fell 7 → 1. This bound is emergent, not contractual — the
   incremental-seeding + hysteresis slice turns it into a contract (and covers the kind-boundary
@@ -171,11 +171,11 @@ through `updateGroupTree`/`updateGroupMesh`, hysteresis band widths
 `RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH=4` / `TREE_EXIT_WIDTH=0`, RTT-refresh and explicit
 reconfigure work still full rebuilds — the periodic drift bound):
 
-| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Incremental plans / fallbacks |
-| --- | --- | --- | --- | --- | --- |
-| 6 | tree | 5 | 1 | 1 | 2 / 0 |
-| 20 | mesh | 37 | 2 | 5 | 2 / 0 |
-| 50 | mesh | 97 | 2 | 5 | 2 / 0 |
+| N  | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Incremental plans / fallbacks |
+| -- | ---- | ------------ | ------------------ | ------------------- | ----------------------------- |
+| 6  | tree | 5            | 1                  | 1                   | 2 / 0                         |
+| 20 | mesh | 37           | 2                  | 5                   | 2 / 0                         |
+| 50 | mesh | 97           | 2                  | 5                   | 2 / 0                         |
 
 - Structure preservation is now by construction, not coincidence: an unchanged member keeps its
   edges, join adds `meshParamK` (or one tree) edges, leave repairs locally. The contractual
@@ -215,14 +215,14 @@ successes; delta-primary burst 1,323 / churn 2,070 — zero failures in every ru
 
 Churn window (T2−T1, primary server; 12 membership changes):
 
-| Quantity | Baseline (pre-phase-4) | Candidate dual-emit | Candidate delta-primary |
-| --- | --- | --- | --- |
-| Replans executed | 9 | 10 | 11 |
-| **Incremental plans / full-rebuild fallbacks** | — (path did not exist) | **9 / 1** | **9 / 2** |
-| Publications | 9 | 10 | 11 |
-| Fingerprint-gated skips | 6 | 5 | 6 |
-| `overlay.topology` egress bytes | 19,432,098 | 19,497,888 | 19,473,024* |
-| Steady state (T3−T2) | all 0 | all 0 | all 0 |
+| Quantity                                       | Baseline (pre-phase-4) | Candidate dual-emit | Candidate delta-primary |
+| ---------------------------------------------- | ---------------------- | ------------------- | ----------------------- |
+| Replans executed                               | 9                      | 10                  | 11                      |
+| **Incremental plans / full-rebuild fallbacks** | — (path did not exist) | **9 / 1**           | **9 / 2**               |
+| Publications                                   | 9                      | 10                  | 11                      |
+| Fingerprint-gated skips                        | 6                      | 5                   | 6                       |
+| `overlay.topology` egress bytes                | 19,432,098             | 19,497,888          | 19,473,024*             |
+| Steady state (T3−T2)                           | all 0                  | all 0               | all 0                   |
 
 \* delta-primary churn-window overlay egress computed from its own run's captures; the
 `group-state.snapshot`/`group-directory.snapshot` topics are 0 bytes in every delta-primary

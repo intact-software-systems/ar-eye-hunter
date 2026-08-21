@@ -10,20 +10,17 @@ import {
     FLEET_REPORT_ID,
     FLEET_ROUTE,
     FLEET_SELECTED_REGION,
-    installRecipeConsoleFleetFixture,
+    installRecipeConsoleFleetFixture
 } from './recipe-console-fleet-fixture.ts';
 
 const SPA_ORIGIN = 'http://127.0.0.1:5176';
 
-test('restores fleet filters and map layers and links a failure signature to its run evidence', async ({
-    context,
-    page,
-}) => {
+test('restores fleet filters and map layers and links a failure signature to its run evidence', async ({ context, page }) => {
     test.setTimeout(60_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: SPA_ORIGIN },
+        { origin: SPA_ORIGIN }
     );
     const fixture = await installRecipeConsoleFleetFixture(context, page);
     await page.goto(FLEET_ROUTE);
@@ -42,11 +39,11 @@ test('restores fleet filters and map layers and links a failure signature to its
         controlRunId: FLEET_CONTROL_RUN_ID,
         distributedRunId: FLEET_REPORT_ID,
         fleetRegion: FLEET_SELECTED_REGION,
-        fleetMapLayers: 'live-agents,historical-regions,failures',
+        fleetMapLayers: 'live-agents,historical-regions,failures'
     });
     const map = fleet.getByRole('region', { name: 'Fleet evidence map' });
     const routesLayer = map.locator(
-        `[data-fleet-map-layer="observed-routes"]`,
+        `[data-fleet-map-layer="observed-routes"]`
     );
     await expect(routesLayer).toHaveAttribute('aria-pressed', 'false');
     await expect(map.locator('[data-fleet-map-agent]')).toHaveCount(40);
@@ -55,19 +52,19 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect(map.locator('[data-fleet-map-failure]')).toHaveCount(40);
     await expectMapLayerTruth(map, 'Live agents', {
         enabled: true,
-        text: '40 rendered of 50 candidates; 10 omitted.',
+        text: '40 rendered of 50 candidates; 10 omitted.'
     });
     await expectMapLayerTruth(map, 'Historical regions', {
         enabled: true,
-        text: '24 rendered of 69 candidates; 45 omitted.',
+        text: '24 rendered of 69 candidates; 45 omitted.'
     });
     await expectMapLayerTruth(map, 'Observed routes', {
         enabled: false,
-        text: '0 rendered of 36 candidates; 36 omitted.',
+        text: '0 rendered of 36 candidates; 36 omitted.'
     });
     await expectMapLayerTruth(map, 'Failure locations', {
         enabled: true,
-        text: '40 rendered of 45 candidates; 5 omitted.',
+        text: '40 rendered of 45 candidates; 5 omitted.'
     });
 
     const initialHref = page.url();
@@ -78,11 +75,13 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect(page).toHaveURL(initialHref);
     await expect(routesLayer).toHaveAttribute('aria-pressed', 'false');
     await expect(map.locator(
-        `[data-fleet-map-region][data-selected="true"]`,
+        `[data-fleet-map-region][data-selected="true"]`
     )).toHaveCount(24);
-    await expect(fleet.locator(
-        `[data-fleet-region="${FLEET_SELECTED_REGION}"]`,
-    ).first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+        fleet.locator(
+            `[data-fleet-region="${FLEET_SELECTED_REGION}"]`
+        ).first()
+    ).toHaveAttribute('aria-pressed', 'true');
 
     await routesLayer.scrollIntoViewIfNeeded();
     await routesLayer.focus();
@@ -97,11 +96,11 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect(map.locator('[data-fleet-map-failure]')).toHaveCount(40);
     await expectMapLayerTruth(map, 'Observed routes', {
         enabled: true,
-        text: '32 rendered of 36 candidates; 4 omitted.',
+        text: '32 rendered of 36 candidates; 4 omitted.'
     });
 
     const alternateRegion = fleet.locator(
-        `[data-fleet-region="${FLEET_ALTERNATE_REGION}"]`,
+        `[data-fleet-region="${FLEET_ALTERNATE_REGION}"]`
     ).first();
     await tabToFleetRegion(page, fleet, alternateRegion);
     await page.keyboard.press('Enter');
@@ -114,9 +113,11 @@ test('restores fleet filters and map layers and links a failure signature to its
     await page.goBack();
     await expect(page).toHaveURL(allLayersHref);
     await expect(routesLayer).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator(
-        `[data-fleet-region="${FLEET_SELECTED_REGION}"]`,
-    ).first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+        page.locator(
+            `[data-fleet-region="${FLEET_SELECTED_REGION}"]`
+        ).first()
+    ).toHaveAttribute('aria-pressed', 'true');
     await expect(alternateRegion).toBeFocused();
     await page.goBack();
     await expect(page).toHaveURL(initialHref);
@@ -129,27 +130,25 @@ test('restores fleet filters and map layers and links a failure signature to its
     await page.goto(initialHref);
     await expect(fleet.locator('[data-fleet-operational-state="live"]'))
         .toBeVisible();
-    for (const [label, range] of [
-        ['Fleet live agents', 'Showing 1–40 of 95 live agents.'],
-        ['Fleet heatmap agents', 'Showing 1–32 of 100 agents.'],
-        ['Fleet heatmap runs', 'Showing 1–8 of 14 runs.'],
-        ['Fleet regions', 'Showing 1–24 of 69 regions.'],
-        ['Fleet failure groups', 'Showing 1–24 of 30 failure groups.'],
-        ['Fleet region timing', 'Showing 1–24 of 69 region timing groups.'],
-        ['Fleet recipe timing', 'Showing 1–24 of 30 recipe timing groups.'],
-        ['Fleet resolved live agent locations',
-            'Showing 1–40 of 50 resolved live agent locations.'],
-        ['Fleet resolved region locations',
-            'Showing 1–24 of 69 resolved region locations.'],
-        ['Fleet resolved failure locations',
-            'Showing 1–40 of 45 resolved failure locations.'],
-        ['Fleet observed routes', 'Showing 1–32 of 36 observed routes.'],
-        ['Fleet unresolved agents', 'Showing 1–40 of 45 unresolved agents.'],
-        ['Fleet unresolved route endpoints',
-            'Showing 1–40 of 45 unresolved route endpoints.'],
-        ['Fleet unlabeled agents', 'Showing 1–40 of 45 unlabeled agents.'],
-        ['Selected Fleet report recipes', 'Showing 1–24 of 30 recipes.'],
-    ] as const) {
+    for (
+        const [label, range] of [
+            ['Fleet live agents', 'Showing 1–40 of 95 live agents.'],
+            ['Fleet heatmap agents', 'Showing 1–32 of 100 agents.'],
+            ['Fleet heatmap runs', 'Showing 1–8 of 14 runs.'],
+            ['Fleet regions', 'Showing 1–24 of 69 regions.'],
+            ['Fleet failure groups', 'Showing 1–24 of 30 failure groups.'],
+            ['Fleet region timing', 'Showing 1–24 of 69 region timing groups.'],
+            ['Fleet recipe timing', 'Showing 1–24 of 30 recipe timing groups.'],
+            ['Fleet resolved live agent locations', 'Showing 1–40 of 50 resolved live agent locations.'],
+            ['Fleet resolved region locations', 'Showing 1–24 of 69 resolved region locations.'],
+            ['Fleet resolved failure locations', 'Showing 1–40 of 45 resolved failure locations.'],
+            ['Fleet observed routes', 'Showing 1–32 of 36 observed routes.'],
+            ['Fleet unresolved agents', 'Showing 1–40 of 45 unresolved agents.'],
+            ['Fleet unresolved route endpoints', 'Showing 1–40 of 45 unresolved route endpoints.'],
+            ['Fleet unlabeled agents', 'Showing 1–40 of 45 unlabeled agents.'],
+            ['Selected Fleet report recipes', 'Showing 1–24 of 30 recipes.']
+        ] as const
+    ) {
         await expectWindow(fleet, label, range);
     }
     await expect(fleet.locator('[data-fleet-resolved-agent-location]'))
@@ -162,7 +161,7 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect(fleet.locator('[data-fleet-unresolved-agent]')).toHaveCount(40);
     await expect(fleet.locator('[data-fleet-unresolved-endpoint]')).toHaveCount(40);
     await expect(fleet).toContainText(
-        'Observed in the bounded control snapshot event window; not a complete network topology.',
+        'Observed in the bounded control snapshot event window; not a complete network topology.'
     );
     await expect(fleet.getByText(FLEET_EXPLICIT_ONLY_AGENT_ID, { exact: true }))
         .toHaveCount(0);
@@ -174,8 +173,8 @@ test('restores fleet filters and map layers and links a failure signature to its
         ranges: [
             ['Showing 1–40 of 95 live agents.', 40],
             ['Showing 41–80 of 95 live agents.', 40],
-            ['Showing 81–95 of 95 live agents.', 15],
-        ],
+            ['Showing 81–95 of 95 live agents.', 15]
+        ]
     });
     await traverseFleetWindow({
         root: fleet,
@@ -185,8 +184,8 @@ test('restores fleet filters and map layers and links a failure signature to its
             ['Showing 1–32 of 100 agents.', 32],
             ['Showing 33–64 of 100 agents.', 32],
             ['Showing 65–96 of 100 agents.', 32],
-            ['Showing 97–100 of 100 agents.', 4],
-        ],
+            ['Showing 97–100 of 100 agents.', 4]
+        ]
     });
     await traverseFleetWindow({
         root: fleet,
@@ -195,8 +194,8 @@ test('restores fleet filters and map layers and links a failure signature to its
         ranges: [
             ['Showing 1–24 of 69 resolved region locations.', 24],
             ['Showing 25–48 of 69 resolved region locations.', 24],
-            ['Showing 49–69 of 69 resolved region locations.', 21],
-        ],
+            ['Showing 49–69 of 69 resolved region locations.', 21]
+        ]
     });
     await traverseFleetWindow({
         root: fleet,
@@ -204,8 +203,8 @@ test('restores fleet filters and map layers and links a failure signature to its
         items: fleet.locator('[data-fleet-route-evidence]'),
         ranges: [
             ['Showing 1–32 of 36 observed routes.', 32],
-            ['Showing 33–36 of 36 observed routes.', 4],
-        ],
+            ['Showing 33–36 of 36 observed routes.', 4]
+        ]
     });
     await traverseFleetWindow({
         root: fleet,
@@ -213,8 +212,8 @@ test('restores fleet filters and map layers and links a failure signature to its
         items: fleet.locator('[data-fleet-unresolved-endpoint]'),
         ranges: [
             ['Showing 1–40 of 45 unresolved route endpoints.', 40],
-            ['Showing 41–45 of 45 unresolved route endpoints.', 5],
-        ],
+            ['Showing 41–45 of 45 unresolved route endpoints.', 5]
+        ]
     });
     await traverseFleetWindow({
         root: fleet,
@@ -222,12 +221,12 @@ test('restores fleet filters and map layers and links a failure signature to its
         items: fleet.locator('[data-fleet-failure]'),
         ranges: [
             ['Showing 1–24 of 30 failure groups.', 24],
-            ['Showing 25–30 of 30 failure groups.', 6],
-        ],
+            ['Showing 25–30 of 30 failure groups.', 6]
+        ]
     });
 
     const artifact = fleet.getByRole('region', {
-        name: 'Selected report artifact',
+        name: 'Selected report artifact'
     });
     await artifact.getByRole('button', { name: 'Load artifact bundle' }).click();
     await expect(artifact.locator('li')).toHaveCount(4);
@@ -235,55 +234,55 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect.poll(fixture.artifactRequestCount).toBe(1);
     const [download] = await Promise.all([
         page.waitForEvent('download'),
-        artifact.getByRole('button', { name: 'Export validated envelope' }).click(),
+        artifact.getByRole('button', { name: 'Export validated envelope' }).click()
     ]);
     expect(download.suggestedFilename())
         .toBe(`${FLEET_REPORT_ID}-fleet-report-bundle.json`);
 
     const failure = fleet.locator(
-        `[data-fleet-failure="${FLEET_PRIMARY_SIGNATURE_ID}"]`,
+        `[data-fleet-failure="${FLEET_PRIMARY_SIGNATURE_ID}"]`
     );
     await expect(failure).toContainText('Observed route acknowledgement timeout');
     await expect(failure).toContainText('One receiver stopped acknowledging the explicit route.');
     const affectedWindow = failure.getByRole('group', {
-        name: 'Observed route acknowledgement timeout affected agents window',
+        name: 'Observed route acknowledgement timeout affected agents window'
     });
     await expect(affectedWindow).toContainText(
-        'Showing 1–40 of 45 affected agents.',
+        'Showing 1–40 of 45 affected agents.'
     );
     const nextAffected = affectedWindow.getByRole('button', { name: 'Next' });
     await nextAffected.focus();
     await nextAffected.press('Enter');
     await expect(affectedWindow).toContainText(
-        'Showing 41–45 of 45 affected agents.',
+        'Showing 41–45 of 45 affected agents.'
     );
     await expect(failure.locator(
-        `[data-failure-agent-id="${FLEET_PRIMARY_AGENT_ID}"]`,
+        `[data-failure-agent-id="${FLEET_PRIMARY_AGENT_ID}"]`
     )).toBeVisible();
     await expect(failure.locator(
-        '[data-fleet-window-focus-anchor="Observed route acknowledgement timeout affected agents"]',
+        '[data-fleet-window-focus-anchor="Observed route acknowledgement timeout affected agents"]'
     )).toBeFocused();
 
     const affectedAgent = failure.locator(
-        `[data-failure-agent-id="${FLEET_PRIMARY_AGENT_ID}"]`,
+        `[data-failure-agent-id="${FLEET_PRIMARY_AGENT_ID}"]`
     );
     await affectedAgent.focus();
     await affectedAgent.press('Enter');
     await expectFleetUrl(page, {
         view: 'fleet',
-        agentId: FLEET_PRIMARY_AGENT_ID,
+        agentId: FLEET_PRIMARY_AGENT_ID
     });
     const inspector = page.locator('[data-inspector-host]');
     await expect(inspector).toContainText(FLEET_PRIMARY_AGENT_ID);
     await expectWindow(
         inspector,
         'Selected Fleet agent runs',
-        'Showing 1–12 of 14 historical runs.',
+        'Showing 1–12 of 14 historical runs.'
     );
     await expectWindow(
         inspector,
         'Selected Fleet region providers',
-        'Showing 1–24 of 39 provider rows.',
+        'Showing 1–24 of 39 provider rows.'
     );
     await expect(inspector).toHaveAttribute('data-mode', 'rail');
     await expect(inspector.getByRole('button', { name: 'Close inspector' }))
@@ -294,7 +293,7 @@ test('restores fleet filters and map layers and links a failure signature to its
         view: 'analyze',
         controlRunId: FLEET_CONTROL_RUN_ID,
         distributedRunId: FLEET_REPORT_ID,
-        agentId: FLEET_PRIMARY_AGENT_ID,
+        agentId: FLEET_PRIMARY_AGENT_ID
     });
     await page.goBack();
     await expect(fleet).toBeVisible();
@@ -305,7 +304,7 @@ test('restores fleet filters and map layers and links a failure signature to its
         view: 'monitor',
         controlRunId: FLEET_CONTROL_RUN_ID,
         distributedRunId: FLEET_REPORT_ID,
-        agentId: FLEET_PRIMARY_AGENT_ID,
+        agentId: FLEET_PRIMARY_AGENT_ID
     });
     await page.goBack();
     await expect(fleet).toBeVisible();
@@ -319,7 +318,7 @@ test('restores fleet filters and map layers and links a failure signature to its
         compareRight: FLEET_REPORT_ID,
         historyQuery: FLEET_REPORT_ID,
         historyGroup: 'monitor-group',
-        historyRecipeId: FLEET_PRIMARY_RECIPE_ID,
+        historyRecipeId: FLEET_PRIMARY_RECIPE_ID
     });
     await page.goBack();
     await expect(fleet).toBeVisible();
@@ -332,10 +331,10 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect(fleet.locator('[data-fleet-operational-state="stale"]'))
         .toBeVisible();
     await expect(fleet.getByRole('heading', {
-        name: 'Showing last-known Fleet evidence',
+        name: 'Showing last-known Fleet evidence'
     })).toBeVisible();
     await expect(fleet.locator(
-        `[data-fleet-retained-evidence] [data-fleet-failure="${FLEET_PRIMARY_SIGNATURE_ID}"]`,
+        `[data-fleet-retained-evidence] [data-fleet-failure="${FLEET_PRIMARY_SIGNATURE_ID}"]`
     )).toBeVisible();
 
     fixture.recoverRootReads();
@@ -345,15 +344,12 @@ test('restores fleet filters and map layers and links a failure signature to its
     await expect.poll(fixture.rootRequestCount).toBeGreaterThan(readsBeforeRecovery);
     await expect(fleet.locator('[data-fleet-operational-state="live"]'))
         .toBeVisible();
-    expect(await page.evaluate(() =>
-        document.documentElement.scrollWidth - document.documentElement.clientWidth
-    )).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(
+        0
+    );
 });
 
-test('keeps empty partial and schema-error Fleet evidence honest', async ({
-    context,
-    page,
-}) => {
+test('keeps empty partial and schema-error Fleet evidence honest', async ({ context, page }) => {
     const fixture = await installRecipeConsoleFleetFixture(context, page);
     await page.goto(FLEET_ROUTE);
     const fleet = page.locator('[data-fleet-workspace]');
@@ -374,11 +370,11 @@ test('keeps empty partial and schema-error Fleet evidence honest', async ({
     await expect(fleet.locator('[data-fleet-operational-state="schema-error"]'))
         .toBeVisible();
     await expect(fleet.getByRole('heading', {
-        name: 'Some Fleet reports were quarantined',
+        name: 'Some Fleet reports were quarantined'
     })).toBeVisible();
     await expect(fleet).toContainText('14 of 15 reports accepted.');
     await expect(fleet.locator(
-        `[data-fleet-failure="${FLEET_PRIMARY_SIGNATURE_ID}"]`,
+        `[data-fleet-failure="${FLEET_PRIMARY_SIGNATURE_ID}"]`
     )).toBeVisible();
 
     fixture.setFleetCollection('absent');
@@ -396,26 +392,23 @@ test('keeps empty partial and schema-error Fleet evidence honest', async ({
         .toBeVisible();
 });
 
-test('recovers an initially offline Fleet root snapshot', async ({
-    context,
-    page,
-}) => {
+test('recovers an initially offline Fleet root snapshot', async ({ context, page }) => {
     const fixture = await installRecipeConsoleFleetFixture(context, page);
     fixture.failRootReads();
     fixture.holdRootReads();
     await page.goto(FLEET_ROUTE);
     const fleet = page.locator('[data-fleet-workspace]');
     const connecting = fleet.locator(
-        '[data-fleet-operational-state="connecting"]',
+        '[data-fleet-operational-state="connecting"]'
     );
     await expect(connecting).toBeVisible();
     const loading = connecting.locator('[data-state="empty"]');
     await expect(loading).toHaveAttribute('aria-live', 'polite');
     await expect(loading.getByRole('heading', {
-        name: 'Connecting to Fleet evidence',
+        name: 'Connecting to Fleet evidence'
     })).toBeVisible();
     await expect(loading).toContainText(
-        'The root control snapshot has not arrived yet.',
+        'The root control snapshot has not arrived yet.'
     );
     await expect(loading).toContainText('Fleet report collection unavailable.');
 
@@ -437,61 +430,70 @@ test('recovers an initially offline Fleet root snapshot', async ({
 test.describe('touch and reduced-motion Fleet acceptance', () => {
     test.use({ hasTouch: true });
 
-    test('keeps long bidirectional evidence usable in touch portrait and landscape', async ({
-        context,
-        page,
-    }) => {
+    test('keeps long bidirectional evidence usable in touch portrait and landscape', async ({ context, page }) => {
         test.setTimeout(45_000);
         await page.emulateMedia({ reducedMotion: 'reduce' });
         await installRecipeConsoleFleetFixture(context, page);
-        for (const viewport of [
-            { width: 430, height: 932 },
-            { width: 932, height: 430 },
-        ] as const) {
+        for (
+            const viewport of [
+                { width: 430, height: 932 },
+                { width: 932, height: 430 }
+            ] as const
+        ) {
             await page.setViewportSize(viewport);
             await page.goto(FLEET_ROUTE);
             const fleet = page.locator('[data-fleet-workspace]');
             await expect(fleet.locator('[data-fleet-operational-state="live"]'))
                 .toBeVisible();
-            expect(await page.evaluate(() => ({
-                hover: matchMedia('(hover: hover)').matches,
-                reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
-                overflow: document.documentElement.scrollWidth -
-                    document.documentElement.clientWidth,
-            }))).toEqual({ hover: false, reduced: true, overflow: 0 });
+            expect(
+                await page.evaluate(() => ({
+                    hover: matchMedia('(hover: hover)').matches,
+                    reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+                    overflow: document.documentElement.scrollWidth -
+                        document.documentElement.clientWidth
+                }))
+            ).toEqual({ hover: false, reduced: true, overflow: 0 });
 
             const mapLayers = fleet.locator('[data-fleet-map-layer]');
-            expect(await mapLayers.evaluateAll(buttons => buttons.map(button => {
-                const bounds = button.getBoundingClientRect();
-                return bounds.width >= 44 && bounds.height >= 44;
-            }))).toEqual([true, true, true, true]);
+            expect(
+                await mapLayers.evaluateAll((buttons) =>
+                    buttons.map((button) => {
+                        const bounds = button.getBoundingClientRect();
+                        return bounds.width >= 44 && bounds.height >= 44;
+                    })
+                )
+            ).toEqual([true, true, true, true]);
             const undersized = await fleet.locator('button').evaluateAll(
-                buttons => buttons.flatMap(button => {
-                    const style = getComputedStyle(button);
-                    if (
-                        style.display === 'none' ||
-                        style.visibility === 'hidden' ||
-                        button.getClientRects().length === 0
-                    ) return [];
-                    const bounds = button.getBoundingClientRect();
-                    return bounds.width + .5 < 44 || bounds.height + .5 < 44
-                        ? [{
-                            label: button.getAttribute('aria-label') ??
-                                button.textContent?.trim(),
-                            width: bounds.width,
-                            height: bounds.height,
-                        }]
-                        : [];
-                }),
+                (buttons) =>
+                    buttons.flatMap((button) => {
+                        const style = getComputedStyle(button);
+                        if (
+                            style.display === 'none' ||
+                            style.visibility === 'hidden' ||
+                            button.getClientRects().length === 0
+                        ) {
+                            return [];
+                        }
+                        const bounds = button.getBoundingClientRect();
+                        return bounds.width + .5 < 44 || bounds.height + .5 < 44
+                            ? [{
+                                label: button.getAttribute('aria-label') ??
+                                    button.textContent?.trim(),
+                                width: bounds.width,
+                                height: bounds.height
+                            }]
+                            : [];
+                    })
             );
             expect(undersized).toEqual([]);
 
-            const animated = await fleet.locator('*').evaluateAll(elements =>
-                elements.flatMap(element => {
+            const animated = await fleet.locator('*').evaluateAll((elements) =>
+                elements.flatMap((element) => {
                     const style = getComputedStyle(element);
-                    const active = (value: string) => value.split(',').some(
-                        part => Number.parseFloat(part) > 0,
-                    );
+                    const active = (value: string) =>
+                        value.split(',').some(
+                            (part) => Number.parseFloat(part) > 0
+                        );
                     return active(style.transitionDuration) ||
                             active(style.animationDuration)
                         ? [element.tagName]
@@ -506,7 +508,7 @@ test.describe('touch and reduced-motion Fleet acceptance', () => {
             await expect(longIdentifier).toHaveAttribute('dir', 'ltr');
             await expect(longIdentifier).toHaveCSS(
                 'unicode-bidi',
-                'isolate-override',
+                'isolate-override'
             );
 
             if (viewport.width === 430) {
@@ -517,12 +519,13 @@ test.describe('touch and reduced-motion Fleet acceptance', () => {
                 const dialog = page.getByRole('dialog', { name: 'Inspector' });
                 await expect(dialog).toContainText(FLEET_LONG_BIDI_AGENT_ID);
                 await expect(dialog.getByRole('button', {
-                    name: 'Close inspector',
+                    name: 'Close inspector'
                 })).toBeFocused();
                 await page.keyboard.press('Escape');
                 await expect(dialog).toHaveCount(0);
                 await expect(longAgent).toBeFocused();
-            } else {
+            }
+            else {
                 await expectShortLandscapeEvidenceReachable(page, fleet);
             }
         }
@@ -531,16 +534,18 @@ test.describe('touch and reduced-motion Fleet acceptance', () => {
 
 async function expectShortLandscapeEvidenceReachable(
     page: Page,
-    fleet: Locator,
+    fleet: Locator
 ): Promise<void> {
     const work = page.locator('[data-work-surface]');
     const workBounds = await work.boundingBox();
-    if (!workBounds) throw new Error('Missing visible Fleet work surface');
+    if (!workBounds) {
+        throw new Error('Missing visible Fleet work surface');
+    }
 
     await resetFleetScrollOwner(fleet);
     await page.mouse.move(
         workBounds.x + workBounds.width / 2,
-        workBounds.y + Math.min(120, workBounds.height / 2),
+        workBounds.y + Math.min(120, workBounds.height / 2)
     );
     for (let index = 0; index < 6; index += 1) {
         await page.mouse.wheel(0, 10_000);
@@ -555,9 +560,11 @@ async function expectShortLandscapeEvidenceReachable(
     await fleet.focus();
     await expect(fleet).toBeFocused();
     await page.keyboard.press('End');
-    await expect.poll(async () => fleetScrollAtBottom(
-        await readFleetScrollMetrics(page),
-    )).toBe(true);
+    await expect.poll(async () =>
+        fleetScrollAtBottom(
+            await readFleetScrollMetrics(page)
+        )
+    ).toBe(true);
     const keyboard = await readFleetScrollMetrics(page);
     expectFleetScrollAtBottom('keyboard', keyboard);
 
@@ -570,21 +577,23 @@ async function expectShortLandscapeEvidenceReachable(
     for (let gesture = 0; gesture < 120 && !fleetScrollAtBottom(touch); gesture += 1) {
         await cdp.send('Input.dispatchTouchEvent', {
             type: 'touchStart',
-            touchPoints: [{ x, y: startY }],
+            touchPoints: [{ x, y: startY }]
         });
-        for (const y of [
-            startY - (startY - endY) / 3,
-            startY - 2 * (startY - endY) / 3,
-            endY,
-        ]) {
+        for (
+            const y of [
+                startY - (startY - endY) / 3,
+                startY - 2 * (startY - endY) / 3,
+                endY
+            ]
+        ) {
             await cdp.send('Input.dispatchTouchEvent', {
                 type: 'touchMove',
-                touchPoints: [{ x, y }],
+                touchPoints: [{ x, y }]
             });
         }
         await cdp.send('Input.dispatchTouchEvent', {
             type: 'touchEnd',
-            touchPoints: [],
+            touchPoints: []
         });
         touch = await readFleetScrollMetrics(page);
     }
@@ -593,37 +602,37 @@ async function expectShortLandscapeEvidenceReachable(
 
     await test.info().attach('short-landscape-scroll-evidence', {
         body: Buffer.from(`${JSON.stringify({ wheel, keyboard, touch }, null, 2)}\n`),
-        contentType: 'application/json',
+        contentType: 'application/json'
     });
 }
 
 type FleetScrollMetrics = Awaited<ReturnType<typeof readFleetScrollMetrics>>;
 
 async function resetFleetScrollOwner(fleet: Locator): Promise<void> {
-    await fleet.evaluate(element => {
+    await fleet.evaluate((element) => {
         element.scrollTop = 0;
     });
-    await expect.poll(async () =>
-        Math.abs(await fleet.evaluate(element => element.scrollTop)) <= 2
-    ).toBe(true);
+    await expect.poll(async () => Math.abs(await fleet.evaluate((element) => element.scrollTop)) <= 2).toBe(true);
 }
 
 async function readFleetScrollMetrics(page: Page) {
     return page.evaluate(() => {
         const measure = (element: Element | null) => {
-            if (!(element instanceof HTMLElement)) throw new Error('Missing scroll owner');
+            if (!(element instanceof HTMLElement)) {
+                throw new Error('Missing scroll owner');
+            }
             return {
                 clientHeight: element.clientHeight,
                 scrollHeight: element.scrollHeight,
                 scrollTop: element.scrollTop,
-                overflowY: getComputedStyle(element).overflowY,
+                overflowY: getComputedStyle(element).overflowY
             };
         };
         const workSurface = document.querySelector('[data-work-surface]');
         return {
             work: measure(workSurface),
             route: measure(workSurface?.querySelector(':scope > section') ?? null),
-            workspace: measure(document.querySelector('[data-fleet-workspace]')),
+            workspace: measure(document.querySelector('[data-fleet-workspace]'))
         };
     });
 }
@@ -631,13 +640,13 @@ async function readFleetScrollMetrics(page: Page) {
 function fleetScrollAtBottom(metrics: FleetScrollMetrics): boolean {
     return Math.abs(
         metrics.workspace.scrollTop -
-        (metrics.workspace.scrollHeight - metrics.workspace.clientHeight),
+            (metrics.workspace.scrollHeight - metrics.workspace.clientHeight)
     ) <= 1;
 }
 
 function expectFleetScrollAtBottom(
     input: 'keyboard' | 'touch' | 'wheel',
-    metrics: FleetScrollMetrics,
+    metrics: FleetScrollMetrics
 ): void {
     if (!fleetScrollAtBottom(metrics)) {
         throw new Error(`Short-landscape Fleet evidence is not ${input} reachable: ${JSON.stringify(metrics)}`);
@@ -647,16 +656,16 @@ function expectFleetScrollAtBottom(
 async function expectMapLayerTruth(
     map: Locator,
     label: string,
-    truth: Readonly<{ enabled: boolean; text: string }>,
+    truth: Readonly<{ enabled: boolean; text: string; }>
 ): Promise<void> {
     const layer = map.getByRole('heading', {
         exact: true,
         level: 3,
-        name: label,
+        name: label
     }).locator('..');
     await expect(layer).toHaveAttribute(
         'data-layer-enabled',
-        String(truth.enabled),
+        String(truth.enabled)
     );
     await expect(layer.getByText(truth.text, { exact: true })).toBeVisible();
 }
@@ -664,14 +673,17 @@ async function expectMapLayerTruth(
 async function tabToFleetRegion(
     page: Page,
     fleet: Locator,
-    target: Locator,
+    target: Locator
 ): Promise<void> {
     const regionButtons = fleet.locator('#fleet-regions [data-fleet-region]');
-    const targetIndex = await regionButtons.evaluateAll((buttons, targetRegion) =>
-        buttons.findIndex(button =>
-            button.getAttribute('data-fleet-region') === targetRegion
-        ), await target.getAttribute('data-fleet-region'));
-    if (targetIndex < 0) throw new Error('Target Fleet region is not in the current window.');
+    const targetIndex = await regionButtons.evaluateAll(
+        (buttons, targetRegion) =>
+            buttons.findIndex((button) => button.getAttribute('data-fleet-region') === targetRegion),
+        await target.getAttribute('data-fleet-region')
+    );
+    if (targetIndex < 0) {
+        throw new Error('Target Fleet region is not in the current window.');
+    }
     const predecessor = targetIndex === 0
         ? fleet.getByRole('group', { name: 'Fleet regions window' })
             .getByRole('button', { name: 'Next' })
@@ -679,7 +691,7 @@ async function tabToFleetRegion(
     await predecessor.scrollIntoViewIfNeeded();
     await predecessor.focus();
     await page.keyboard.press('Tab');
-    if (!await target.evaluate(element => element === document.activeElement)) {
+    if (!await target.evaluate((element) => element === document.activeElement)) {
         throw new Error('Tab did not reach the adjacent Fleet region control.');
     }
     await expect(target).toBeFocused();
@@ -688,23 +700,25 @@ async function tabToFleetRegion(
 async function expectWindow(
     root: Locator,
     label: string,
-    range: string,
+    range: string
 ): Promise<void> {
     await expect(root.getByRole('group', { name: `${label} window` }))
         .toContainText(range);
 }
 
-async function traverseFleetWindow(input: Readonly<{
-    root: Locator;
-    label: string;
-    items: Locator;
-    ranges: readonly (readonly [range: string, count: number])[];
-}>): Promise<void> {
+async function traverseFleetWindow(
+    input: Readonly<{
+        root: Locator;
+        label: string;
+        items: Locator;
+        ranges: readonly (readonly [range: string, count: number])[];
+    }>
+): Promise<void> {
     const group = input.root.getByRole('group', {
-        name: `${input.label} window`,
+        name: `${input.label} window`
     });
     const anchor = input.root.locator(
-        `[data-fleet-window-focus-anchor="${input.label}"]`,
+        `[data-fleet-window-focus-anchor="${input.label}"]`
     );
     await expect(group).toContainText(input.ranges[0]![0]);
     await expect(input.items).toHaveCount(input.ranges[0]![1]);
@@ -724,7 +738,7 @@ async function traverseFleetWindow(input: Readonly<{
 
 async function refreshFleet(
     fleet: Locator,
-    requestCount: () => number,
+    requestCount: () => number
 ): Promise<void> {
     const before = requestCount();
     await fleet.getByLabel('Fleet recovery actions')
@@ -734,12 +748,14 @@ async function refreshFleet(
 
 async function expectFleetUrl(
     page: Page,
-    expected: Readonly<Record<string, string>>,
+    expected: Readonly<Record<string, string>>
 ): Promise<void> {
-    await expect.poll(() => Object.fromEntries(
-        Object.keys(expected).map(key => [
-            key,
-            new URL(page.url()).searchParams.get(key),
-        ]),
-    )).toEqual(expected);
+    await expect.poll(() =>
+        Object.fromEntries(
+            Object.keys(expected).map((key) => [
+                key,
+                new URL(page.url()).searchParams.get(key)
+            ])
+        )
+    ).toEqual(expected);
 }

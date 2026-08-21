@@ -11,29 +11,23 @@ import type {
     RallarDirectorResignOptions,
     RallarDirectorStatus,
     RallarDirectorStatusListener,
-    RallarDirectorStatusOptions,
+    RallarDirectorStatusOptions
 } from '@shared-web/browser/rallar-director-facade.ts';
 import type {
     RallarMessageSendResult,
     RallarMessageSendStatus,
-    RallarMessagesFacade,
+    RallarMessagesFacade
 } from '@shared-web/browser/rallar-messages-facade.ts';
+import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarRealtimeFacade,
     RallarTargetedChannel,
-    RallarTargetedChannelDefinition,
+    RallarTargetedChannelDefinition
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import {
-    type RallarOperationOptions,
-    toRallarWorkflowPolicies,
-} from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
-import {
-    createRallarSubscriptionScope,
-    notifyListener,
-} from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import { createRallarSubscriptionScope, notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 import {
@@ -41,9 +35,9 @@ import {
     isRallarGroupDirectorForSession,
     isRallarGroupDirectorSessionActive,
     mergeRallarGroupDirectorMetadata,
-    type RallarGroupDirectorAppointment,
     readRallarGroupDirectorFreshness,
     readRallarGroupDirectorFromSnapshot,
+    type RallarGroupDirectorAppointment
 } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -61,7 +55,7 @@ export type CreateRallarDirectorControllerOptions = Readonly<{
     requireSession(): AuthSession;
     connect(options?: RallarOperationOptions): Promise<ApiMiddleware>;
     resolveOperationOptions<T extends RallarOperationOptions>(
-        options: T,
+        options: T
     ): T & RallarOperationOptions;
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
     resolveDefaultRoom(): string | GroupRef | undefined;
@@ -69,10 +63,10 @@ export type CreateRallarDirectorControllerOptions = Readonly<{
     acceptSnapshots(
         ctx: ApiMiddleware,
         groups: readonly GroupSnapshot[],
-        scope?: StateScope,
+        scope?: StateScope
     ): Promise<void>;
     createTargetedChannel<T>(
-        definition: RallarTargetedChannelDefinition,
+        definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
     sendWsUnicast<T>(
         peerId: string,
@@ -82,7 +76,7 @@ export type CreateRallarDirectorControllerOptions = Readonly<{
             topicId: string;
             contextId: string;
             resourceId?: string;
-        }>,
+        }>
     ): Promise<RallarMessageSendResult>;
 }>;
 
@@ -93,49 +87,49 @@ export type RallarDirectorController = Readonly<{
 }>;
 
 export function createRallarDirectorController(
-    options: CreateRallarDirectorControllerOptions,
+    options: CreateRallarDirectorControllerOptions
 ): RallarDirectorController {
     const listeners = new Set<RallarDirectorStatusListener>();
-    const heartbeatByRoom = new Map<
-        string,
-        Readonly<{ sessionId: string; epoch: number; atEpochMs: number }>
-    >();
+    const heartbeatByRoom = new Map<string, Readonly<{ sessionId: string; epoch: number; atEpochMs: number; }>>();
     const relayStops = new Set<() => void>();
 
     const findSnapshot = (
-        room?: string | GroupRef,
-    ): GroupSnapshot | undefined => room
-        ? options.stateStore.findGroupSnapshot(room)
-        : options.stateStore.roomState().currentRoom;
+        room?: string | GroupRef
+    ): GroupSnapshot | undefined =>
+        room
+            ? options.stateStore.findGroupSnapshot(room)
+            : options.stateStore.roomState().currentRoom;
 
     const resolveRoomRef = (
         room: string | GroupRef | undefined,
-        snapshot?: GroupSnapshot,
-    ): GroupRef | undefined => typeof room === 'object'
-        ? room
-        : snapshot?.group ?? options.stateStore.resolveRoomRef(room);
+        snapshot?: GroupSnapshot
+    ): GroupRef | undefined =>
+        typeof room === 'object'
+            ? room
+            : snapshot?.group ?? options.stateStore.resolveRoomRef(room);
 
-    const roomKey = (roomRef: GroupRef): string => JSON.stringify([
-        roomRef.applicationId,
-        roomRef.workspaceId ?? '',
-        roomRef.groupId,
-    ]);
+    const roomKey = (roomRef: GroupRef): string =>
+        JSON.stringify([
+            roomRef.applicationId,
+            roomRef.workspaceId ?? '',
+            roomRef.groupId
+        ]);
 
     const recordHeartbeat = (
         roomRef: GroupRef,
         appointment: RallarGroupDirectorAppointment,
-        atEpochMs = Date.now(),
+        atEpochMs = Date.now()
     ): void => {
         heartbeatByRoom.set(roomKey(roomRef), {
             sessionId: appointment.sessionId,
             epoch: appointment.epoch,
-            atEpochMs,
+            atEpochMs
         });
     };
 
     const status = (
         room?: string | GroupRef,
-        statusOptions: RallarDirectorStatusOptions = {},
+        statusOptions: RallarDirectorStatusOptions = {}
     ): RallarDirectorStatus => {
         const target = room ?? options.resolveDefaultRoom() ??
             options.stateStore.resolveCurrentRoomRef();
@@ -147,8 +141,8 @@ export function createRallarDirectorController(
             ? heartbeatByRoom.get(roomKey(roomRef))
             : undefined;
         const matchingHeartbeat = heartbeat && appointment &&
-            heartbeat.sessionId === appointment.sessionId &&
-            heartbeat.epoch === appointment.epoch
+                heartbeat.sessionId === appointment.sessionId &&
+                heartbeat.epoch === appointment.epoch
             ? heartbeat
             : undefined;
         const now = statusOptions.now ?? Date.now();
@@ -157,9 +151,11 @@ export function createRallarDirectorController(
             ? readRallarGroupDirectorFreshness(
                 appointment,
                 matchingHeartbeat?.atEpochMs,
-                now,
+                now
             )
-            : appointment ? 'stale' : 'none';
+            : appointment
+            ? 'stale'
+            : 'none';
         const isDirector = isRallarGroupDirectorForSession(appointment, session);
         return {
             roomRef,
@@ -167,14 +163,16 @@ export function createRallarDirectorController(
             role: appointment ? (isDirector ? 'director' : 'client') : 'none',
             state: !appointment
                 ? 'none'
-                : !active ? 'inactive' : freshness,
+                : !active
+                ? 'inactive'
+                : freshness,
             appointment,
             isDirector,
             isFresh: freshness === 'fresh' && active,
             active,
             freshness,
             lastHeartbeatAtEpochMs: matchingHeartbeat?.atEpochMs,
-            nowEpochMs: now,
+            nowEpochMs: now
         };
     };
 
@@ -192,11 +190,11 @@ export function createRallarDirectorController(
         current: RallarDirectorStatus,
         topicId: string,
         typeId: string,
-        payload: T,
+        payload: T
     ): RallarDirectorRelayEnvelope<T> => {
         if (!current.appointment || !current.roomId) {
             throw new Error(
-                'Cannot create director envelope without appointment.',
+                'Cannot create director envelope without appointment.'
             );
         }
         return {
@@ -206,7 +204,7 @@ export function createRallarDirectorController(
             roomId: current.roomId,
             epoch: current.appointment.epoch,
             sentAtEpochMs: Date.now(),
-            payload,
+            payload
         };
     };
 
@@ -215,7 +213,7 @@ export function createRallarDirectorController(
         laneId: string,
         topicId: string,
         typeId: string,
-        payload: T,
+        payload: T
     ): Promise<RallarDirectorRelaySendResult> => {
         if (!options.readSession()) {
             return { status: 'no-director', reason: 'Auth session ended.' };
@@ -223,28 +221,26 @@ export function createRallarDirectorController(
         if (!current.appointment || !current.roomId) {
             return {
                 status: 'no-director',
-                reason: 'No director is appointed for this room.',
+                reason: 'No director is appointed for this room.'
             };
         }
         if (!current.isFresh) {
             return {
                 status: 'stale-director',
-                reason: 'The appointed director is stale or inactive.',
+                reason: 'The appointed director is stale or inactive.'
             };
         }
         if (current.isDirector) {
             return {
                 status: 'not-director',
-                reason: 'The local session is the director.',
+                reason: 'The local session is the director.'
             };
         }
 
         const envelope = createEnvelope(current, topicId, typeId, payload);
-        const rtc = await options.createTargetedChannel<
-            RallarDirectorRelayEnvelope<T>
-        >({
+        const rtc = await options.createTargetedChannel<RallarDirectorRelayEnvelope<T>>({
             peerId: current.appointment.sessionId,
-            laneId,
+            laneId
         }).send(envelope);
         if (rtc.status === 'sent') {
             return { status: 'sent', rtc };
@@ -253,7 +249,7 @@ export function createRallarDirectorController(
             current.appointment.sessionId,
             envelope,
             typeId,
-            { topicId, contextId: current.roomId },
+            { topicId, contextId: current.roomId }
         );
         return {
             status: isSuccessfulMessageSendStatus(ws.status)
@@ -263,7 +259,7 @@ export function createRallarDirectorController(
             ws,
             reason: isSuccessfulMessageSendStatus(ws.status)
                 ? undefined
-                : ws.reason,
+                : ws.reason
         };
     };
 
@@ -271,7 +267,7 @@ export function createRallarDirectorController(
         current: RallarDirectorStatus,
         topicId: string,
         typeId: string,
-        payload: T,
+        payload: T
     ): Promise<RallarDirectorRelaySendResult> => {
         if (!options.readSession()) {
             return { status: 'no-director', reason: 'Auth session ended.' };
@@ -279,13 +275,13 @@ export function createRallarDirectorController(
         if (!current.appointment || !current.roomRef || !current.roomId) {
             return {
                 status: 'no-director',
-                reason: 'No director is appointed for this room.',
+                reason: 'No director is appointed for this room.'
             };
         }
         if (!current.isDirector) {
             return {
                 status: 'not-director',
-                reason: 'Only the appointed local director can send director output.',
+                reason: 'Only the appointed local director can send director output.'
             };
         }
         const envelope = createEnvelope(current, topicId, typeId, payload);
@@ -296,7 +292,7 @@ export function createRallarDirectorController(
             payload: envelope,
             reliability: 'best-effort',
             ack: 'none',
-            ttlMs: 5_000,
+            ttlMs: 5_000
         });
         if (isSuccessfulMessageSendStatus(rtc.status)) {
             return { status: 'sent', rtc };
@@ -308,7 +304,7 @@ export function createRallarDirectorController(
             payload: envelope,
             reliability: 'best-effort',
             ack: 'none',
-            ttlMs: 5_000,
+            ttlMs: 5_000
         });
         return {
             status: isSuccessfulMessageSendStatus(ws.status)
@@ -318,12 +314,12 @@ export function createRallarDirectorController(
             ws,
             reason: isSuccessfulMessageSendStatus(ws.status)
                 ? undefined
-                : ws.reason ?? rtc.reason,
+                : ws.reason ?? rtc.reason
         };
     };
 
     const createRelay = <TIntent, TOutput, TSnapshot = TOutput>(
-        config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+        config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
     ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> => {
         const laneId = config.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID;
         const topicId = config.topicId ?? RALLAR_DIRECTOR_DEFAULT_TOPIC_ID;
@@ -353,7 +349,7 @@ export function createRallarDirectorController(
 
         const authEndedResult = (): RallarDirectorRelaySendResult => ({
             status: 'no-director',
-            reason: 'Auth session ended.',
+            reason: 'Auth session ended.'
         });
         const guardSend = (): RallarDirectorRelaySendResult | undefined => {
             if (stopped) {
@@ -375,7 +371,7 @@ export function createRallarDirectorController(
                     laneId,
                     topicId,
                     config.intentTypeId,
-                    intent,
+                    intent
                 );
             },
             sendOutput: async (output: TOutput) => {
@@ -384,7 +380,7 @@ export function createRallarDirectorController(
                     readStatus(),
                     topicId,
                     config.outputTypeId,
-                    output,
+                    output
                 );
             },
             sendHeartbeat: async () => {
@@ -406,8 +402,8 @@ export function createRallarDirectorController(
                     heartbeatTypeId,
                     {
                         sessionId: current.appointment?.sessionId,
-                        epoch: current.appointment?.epoch,
-                    },
+                        epoch: current.appointment?.epoch
+                    }
                 );
             },
             sendSnapshot: async (snapshot?: TSnapshot) => {
@@ -419,14 +415,14 @@ export function createRallarDirectorController(
                 if (resolved === undefined) {
                     return {
                         status: 'failed' as const,
-                        reason: 'No director snapshot is available.',
+                        reason: 'No director snapshot is available.'
                     };
                 }
                 return await sendRoomEnvelope(
                     readStatus(),
                     topicId,
                     snapshotTypeId,
-                    resolved,
+                    resolved
                 );
             },
             requestSync: async (payload?: unknown) => {
@@ -436,16 +432,16 @@ export function createRallarDirectorController(
                     laneId,
                     topicId,
                     syncRequestTypeId,
-                    payload ?? {},
+                    payload ?? {}
                 );
             },
-            stop,
+            stop
         } satisfies RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
 
         const handleEnvelope = async <T>(
             transport: 'rtc' | 'ws',
             senderId: string,
-            envelope: RallarDirectorRelayEnvelope<T>,
+            envelope: RallarDirectorRelayEnvelope<T>
         ): Promise<void> => {
             const currentStatus = readStatus();
             if (
@@ -458,7 +454,7 @@ export function createRallarDirectorController(
                 senderId,
                 data: envelope.payload,
                 envelope,
-                receivedAtEpochMs: Date.now(),
+                receivedAtEpochMs: Date.now()
             };
             if (envelope.typeId === heartbeatTypeId) {
                 const current = readStatus();
@@ -469,7 +465,7 @@ export function createRallarDirectorController(
                     recordHeartbeat(
                         current.roomRef,
                         current.appointment,
-                        message.receivedAtEpochMs,
+                        message.receivedAtEpochMs
                     );
                     emitStatuses();
                 }
@@ -484,7 +480,7 @@ export function createRallarDirectorController(
                     return;
                 }
                 await config.onOutput?.(
-                    message as unknown as RallarDirectorRelayMessage<TOutput>,
+                    message as unknown as RallarDirectorRelayMessage<TOutput>
                 );
                 return;
             }
@@ -497,7 +493,7 @@ export function createRallarDirectorController(
                     return;
                 }
                 await config.onSnapshot?.(
-                    message as unknown as RallarDirectorRelayMessage<TSnapshot>,
+                    message as unknown as RallarDirectorRelayMessage<TSnapshot>
                 );
                 return;
             }
@@ -507,11 +503,13 @@ export function createRallarDirectorController(
             if (envelope.typeId === config.intentTypeId) {
                 const output = await config.onIntent?.(
                     message as unknown as RallarDirectorRelayMessage<TIntent>,
-                    relay,
+                    relay
                 );
                 const outputs = Array.isArray(output)
                     ? output
-                    : output ? [output] : [];
+                    : output
+                    ? [output]
+                    : [];
                 for (const item of outputs) {
                     await relay.sendOutput(item as TOutput);
                 }
@@ -533,10 +531,10 @@ export function createRallarDirectorController(
                         await handleEnvelope(
                             'rtc',
                             message.peerId,
-                            message.data,
+                            message.data
                         );
                     }
-                },
+                }
             ))
             .add(options.messages.ws.onMessage<RallarDirectorRelayEnvelope>(
                 { topicId },
@@ -545,17 +543,19 @@ export function createRallarDirectorController(
                         await handleEnvelope(
                             'ws',
                             message.senderId,
-                            message.payload,
+                            message.payload
                         );
                     }
-                },
+                }
             ));
 
-        for (const typeId of [
-            config.outputTypeId,
-            heartbeatTypeId,
-            snapshotTypeId,
-        ]) {
+        for (
+            const typeId of [
+                config.outputTypeId,
+                heartbeatTypeId,
+                snapshotTypeId
+            ]
+        ) {
             subscriptions.add(
                 options.messages.rtc.onMessage<RallarDirectorRelayEnvelope>(
                     { topicId, typeId },
@@ -564,11 +564,11 @@ export function createRallarDirectorController(
                             await handleEnvelope(
                                 'rtc',
                                 message.senderId,
-                                message.payload,
+                                message.payload
                             );
                         }
-                    },
-                ),
+                    }
+                )
             );
         }
 
@@ -577,8 +577,8 @@ export function createRallarDirectorController(
             Math.min(
                 2_000,
                 (readStatus().appointment?.heartbeatTtlMs ??
-                    DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS) / 2,
-            ),
+                    DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS) / 2
+            )
         );
         timers.push(setInterval(() => {
             if (stopped) {
@@ -592,7 +592,7 @@ export function createRallarDirectorController(
                 void relay.sendHeartbeat().catch((error) => {
                     console.error(
                         'Failed to send director relay heartbeat:',
-                        error,
+                        error
                     );
                 });
             }
@@ -611,7 +611,7 @@ export function createRallarDirectorController(
                     void relay.sendSnapshot().catch((error) => {
                         console.error(
                             'Failed to send director relay snapshot:',
-                            error,
+                            error
                         );
                     });
                 }
@@ -623,11 +623,11 @@ export function createRallarDirectorController(
     const operations: CreateRallarDirectorFacadeOptions = {
         appoint: async (
             room?: string | GroupRef,
-            appointOptions: RallarDirectorAppointOptions = {},
+            appointOptions: RallarDirectorAppointOptions = {}
         ): Promise<RallarDirectorStatus> =>
             await options.runAuthAwareOperation(async () => {
                 const operationOptions = options.resolveOperationOptions(
-                    appointOptions,
+                    appointOptions
                 );
                 const ctx = await options.connect(operationOptions);
                 const target = room ?? options.resolveDefaultRoom() ??
@@ -637,7 +637,7 @@ export function createRallarDirectorController(
                 const roomId = options.stateStore.toRoomId(roomRef ?? target);
                 if (!roomRef || !roomId) {
                     throw new Error(
-                        'Cannot appoint director: no room selected.',
+                        'Cannot appoint director: no room selected.'
                     );
                 }
                 const session = options.requireSession();
@@ -651,7 +651,7 @@ export function createRallarDirectorController(
                     session.clientId,
                     session.sessionId,
                     scope,
-                    toRallarWorkflowPolicies(operationOptions),
+                    toRallarWorkflowPolicies(operationOptions)
                 );
                 await options.acceptSnapshots(ctx, [updated], scope);
                 const appointment = readRallarGroupDirectorFromSnapshot(updated);
@@ -663,7 +663,7 @@ export function createRallarDirectorController(
             }),
         resign: async (
             room?: string | GroupRef,
-            resignOptions: RallarDirectorResignOptions = {},
+            resignOptions: RallarDirectorResignOptions = {}
         ): Promise<RallarDirectorStatus> => {
             const target = room ?? options.resolveDefaultRoom() ??
                 options.stateStore.resolveCurrentRoomRef();
@@ -677,19 +677,19 @@ export function createRallarDirectorController(
             if (
                 !isRallarGroupDirectorForSession(
                     appointment,
-                    options.requireSession(),
+                    options.requireSession()
                 )
             ) {
                 return status(roomRef);
             }
             const metadata = mergeRallarGroupDirectorMetadata(
                 snapshot?.group.metadata,
-                undefined,
+                undefined
             );
             const updated = await options.rooms.updateMetadata(
                 roomRef,
                 metadata,
-                resignOptions,
+                resignOptions
             );
             heartbeatByRoom.delete(roomKey(roomRef));
             emitStatuses();
@@ -701,7 +701,7 @@ export function createRallarDirectorController(
             notifyListener(listener, status());
             return () => listeners.delete(listener);
         },
-        createRelay,
+        createRelay
     };
 
     return {
@@ -713,24 +713,24 @@ export function createRallarDirectorController(
             for (const stop of stops) {
                 runShutdownStep(stop);
             }
-        },
+        }
     };
 }
 
 function isCurrentDirectorEnvelope(
     status: RallarDirectorStatus,
-    envelope: RallarDirectorRelayEnvelope,
+    envelope: RallarDirectorRelayEnvelope
 ): boolean {
     return Boolean(
         status.appointment && status.roomId &&
-        envelope.roomId === status.roomId &&
-        envelope.epoch === status.appointment.epoch,
+            envelope.roomId === status.roomId &&
+            envelope.epoch === status.appointment.epoch
     );
 }
 
 function isDirectorRelayEnvelope(
     value: unknown,
-    topicId: string,
+    topicId: string
 ): value is RallarDirectorRelayEnvelope {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return false;
@@ -746,7 +746,7 @@ function isDirectorRelayEnvelope(
 }
 
 function isSuccessfulMessageSendStatus(
-    status: RallarMessageSendStatus,
+    status: RallarMessageSendStatus
 ): boolean {
     return status === 'enqueued' || status === 'sent-immediate' ||
         status === 'duplicate' || status === 'superseded' || status === 'skipped';
@@ -755,7 +755,8 @@ function isSuccessfulMessageSendStatus(
 function runShutdownStep(step: () => void): void {
     try {
         step();
-    } catch {
+    }
+    catch {
         // Relay teardown remains best-effort during transport shutdown.
     }
 }

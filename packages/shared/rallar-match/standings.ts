@@ -1,13 +1,13 @@
+import { compareRallarMatchOrdinalStrings } from './internal.ts';
 import type {
     RallarMatchStanding,
     RallarMatchStandingComparator,
     RallarMatchStandingRow,
-    RallarMatchStandingsInput,
+    RallarMatchStandingsInput
 } from './types.ts';
-import { compareRallarMatchOrdinalStrings } from './internal.ts';
 
 export function deriveRallarMatchStandings(
-    input: RallarMatchStandingsInput,
+    input: RallarMatchStandingsInput
 ): readonly RallarMatchStanding[] {
     const compare = input.compare ?? compareByPointsDescending;
     const rows = Array.from(input.rows).sort((left, right) => {
@@ -15,7 +15,7 @@ export function deriveRallarMatchStandings(
         return compared === 0
             ? compareRallarMatchOrdinalStrings(
                 left.participantId,
-                right.participantId,
+                right.participantId
             )
             : compared;
     });
@@ -38,14 +38,14 @@ export function deriveRallarMatchStandings(
             sessionIds: row.sessionIds,
             metrics: row.metrics,
             rank: previousRank,
-            tieGroup,
+            tieGroup
         };
     });
 }
 
 export const compareByPointsDescending: RallarMatchStandingComparator = (
     left,
-    right,
+    right
 ) => {
     const leftPoints = readMetric(left, 'points');
     const rightPoints = readMetric(right, 'points');

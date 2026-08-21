@@ -2,30 +2,29 @@ import { useMemo, useState } from 'react';
 import {
     commandExampleSnippets,
     validateSchemaAuthoringText,
-    type CommandExampleSnippet,
+    type CommandExampleSnippet
 } from '../../../schema-authoring.ts';
 import { SchemaAuthoringPanel } from './SchemaAuthoringPanel.tsx';
 
 export function CommandExamplePicker({
     onInsert,
-    onCopy,
+    onCopy
 }: {
     onInsert(text: string): void;
     onCopy(text: string): void;
 }) {
     const snippets = useMemo(() => commandExampleSnippets(), []);
     const [selectedKind, setSelectedKind] = useState(
-        snippets[0]?.kind ?? 'health',
+        snippets[0]?.kind ?? 'health'
     );
-    const selected =
-        snippets.find((snippet) => snippet.kind === selectedKind) ??
+    const selected = snippets.find((snippet) => snippet.kind === selectedKind) ??
         snippets[0];
     if (!selected) {
         return null;
     }
     const selectedValidation = validateSchemaAuthoringText(
         'command',
-        selected.commandText,
+        selected.commandText
     );
 
     return (
@@ -42,9 +41,8 @@ export function CommandExamplePicker({
                         onChange={(event) =>
                             setSelectedKind(
                                 event.target
-                                    .value as CommandExampleSnippet['kind'],
-                            )
-                        }
+                                    .value as CommandExampleSnippet['kind']
+                            )}
                     >
                         {snippets.map((snippet) => (
                             <option key={snippet.kind} value={snippet.kind}>

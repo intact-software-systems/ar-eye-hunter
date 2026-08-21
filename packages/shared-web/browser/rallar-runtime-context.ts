@@ -1,24 +1,19 @@
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { readGroupId } from '@shared/api/group-client-views.ts';
-import type {
-    ApplicationId,
-    GroupRef,
-    GroupSnapshot,
-    WorkspaceId,
-} from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
-import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import {
-    type ApiMiddleware,
     clearMiddleware as clearGlobalMiddleware,
     getMiddleware as getGlobalMiddleware,
     isMiddlewareReady as isGlobalMiddlewareReady,
+    type ApiMiddleware
 } from '@shared-web/browser/app-context.ts';
 import type {
     RallarOperationOptions,
-    RallarOperationRetryPredicate,
+    RallarOperationRetryPredicate
 } from '@shared-web/browser/rallar-operation-options.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { readGroupId } from '@shared/api/group-client-views.ts';
+import type { ApplicationId, GroupRef, GroupSnapshot, WorkspaceId } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 export type RallarBrowserConnectStatus = 'idle' | 'connecting' | 'connected';
 
@@ -81,7 +76,7 @@ export type RallarBrowserFacadeRuntimeContext = Readonly<{
     readDefaultScope(): StateScope | undefined;
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
     resolveOperationOptions<T extends RallarOperationOptions>(
-        options: T,
+        options: T
     ): T & RallarOperationOptions;
     readAuthExpiryTimer(): ReturnType<typeof setTimeout> | undefined;
     setAuthExpiryTimer(timer: ReturnType<typeof setTimeout> | undefined): void;
@@ -106,14 +101,14 @@ type RallarBrowserFacadeRuntimeState = {
 };
 
 export function createRallarBrowserFacadeRuntimeContext(
-    options: RallarBrowserFacadeRuntimeContextOptions = {},
+    options: RallarBrowserFacadeRuntimeContextOptions = {}
 ): RallarBrowserFacadeRuntimeContext {
     const isMiddlewareReady = options.isMiddlewareReady ?? isGlobalMiddlewareReady;
     const getMiddleware = options.getMiddleware ?? getGlobalMiddleware;
     const clearMiddleware = options.clearMiddleware ?? clearGlobalMiddleware;
     const state: RallarBrowserFacadeRuntimeState = {
         connectState: 'idle',
-        endedAuthSessionKeys: new Set<string>(),
+        endedAuthSessionKeys: new Set<string>()
     };
 
     return {
@@ -179,8 +174,8 @@ export function createRallarBrowserFacadeRuntimeContext(
                 typeof room === 'string'
                     ? state.currentRoomId === room
                     : state.currentRoomRef
-                        ? isSameGroupRef(state.currentRoomRef, room)
-                        : state.currentRoomId === room.groupId
+                    ? isSameGroupRef(state.currentRoomRef, room)
+                    : state.currentRoomId === room.groupId
             ) {
                 state.currentRoomId = undefined;
                 state.currentRoomRef = undefined;
@@ -191,17 +186,16 @@ export function createRallarBrowserFacadeRuntimeContext(
             state.defaultScope = defaults
                 ? {
                     applicationId: defaults.applicationId,
-                    workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+                    workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
                 }
                 : undefined;
         },
-        defaults: () =>
-            state.defaults ? cloneRallarRuntimeDefaults(state.defaults) : undefined,
+        defaults: () => state.defaults ? cloneRallarRuntimeDefaults(state.defaults) : undefined,
         readDefaults: () => state.defaults,
         readDefaultScope: () => state.defaultScope,
         resolveOperationScope: (scope) => scope ?? state.defaultScope,
         resolveOperationOptions: <T extends RallarOperationOptions>(
-            options: T,
+            options: T
         ): T & RallarOperationOptions => {
             const timeoutMs = options.timeoutMs !== undefined
                 ? options.timeoutMs
@@ -252,7 +246,7 @@ export function createRallarBrowserFacadeRuntimeContext(
                     ? { rttReportingDegreeLimit }
                     : {}),
                 ...(groupFormationMode !== undefined ? { groupFormationMode } : {}),
-                ...(bootstrapDegree !== undefined ? { bootstrapDegree } : {}),
+                ...(bootstrapDegree !== undefined ? { bootstrapDegree } : {})
             };
         },
         readAuthExpiryTimer: () => state.authExpiryTimer,
@@ -269,12 +263,12 @@ export function createRallarBrowserFacadeRuntimeContext(
         setAuthEndPromise: (promise): void => {
             state.authEndPromise = promise;
         },
-        endedAuthSessionKeys: () => state.endedAuthSessionKeys,
+        endedAuthSessionKeys: () => state.endedAuthSessionKeys
     };
 }
 
 export function cloneRallarRuntimeDefaults(
-    defaults: RallarBrowserRuntimeDefaults,
+    defaults: RallarBrowserRuntimeDefaults
 ): RallarBrowserRuntimeDefaults {
     return {
         applicationId: defaults.applicationId,
@@ -289,8 +283,8 @@ export function cloneRallarRuntimeDefaults(
                         : {}),
                     ...(defaults.room.roomRef
                         ? { roomRef: { ...defaults.room.roomRef } }
-                        : {}),
-                },
+                        : {})
+                }
             }
             : {}),
         ...(defaults.realtime
@@ -302,8 +296,8 @@ export function cloneRallarRuntimeDefaults(
                     ...defaults.rtc,
                     ...(defaults.rtc.dataChannelLanes
                         ? { dataChannelLanes: [...defaults.rtc.dataChannelLanes] }
-                        : {}),
-                },
+                        : {})
+                }
             }
             : {}),
         ...(defaults.messages
@@ -311,6 +305,6 @@ export function cloneRallarRuntimeDefaults(
             : {}),
         ...(defaults.operations
             ? { operations: { ...defaults.operations } }
-            : {}),
+            : {})
     };
 }

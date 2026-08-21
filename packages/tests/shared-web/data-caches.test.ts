@@ -1,32 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import * as dataCaches from '@shared-web/browser/data-caches.ts';
+import { newALBroadcastMessage, newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
-import type {
-    AuditStamp,
-    ClientEvent,
-    ClientSnapshot,
-} from '@shared/api/client-types.ts';
-import type {
-    GroupEvent,
-    GroupSnapshot,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import type { GroupEvent, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID,
-} from '@shared/api/state-types.ts';
-import {
-    newALBroadcastMessage,
-    newALEventRoute,
-    newALUnicastMessage,
-} from '@shared/al-contracts/al-contract.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
-import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import * as dataCaches from '@shared-web/browser/data-caches.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
@@ -40,53 +25,53 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const sameScopeClient = createClientSnapshot(
             'alice',
             'session-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
-            1,
+            1
         );
         const otherWorkspaceClient = createClientSnapshot(
             'bob',
             'session-b',
             DEFAULT_STATE_APPLICATION_ID,
             'workspace-b',
-            1,
+            1
         );
         const sameScopeGroup = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a'],
-            1,
+            1
         );
         const otherWorkspaceGroup = createGroupSnapshot(
             'room-b',
             DEFAULT_STATE_APPLICATION_ID,
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
 
         await dataCaches.hydrateStateCaches(
             manager as never,
             clientData,
             [sameScopeClient, otherWorkspaceClient],
-            [sameScopeGroup, otherWorkspaceGroup],
+            [sameScopeGroup, otherWorkspaceGroup]
         );
 
         expect(
             clientStateSnapshotsRepository.getAllClientStateSnapshots()
                 .map((snapshot) => snapshot.principal.principalId)
-                .sort(),
+                .sort()
         ).toEqual(['alice']);
         expect(
             groupStateSnapshotsRepository.getAllGroupStateSnapshots()
                 .map((snapshot) => snapshot.group.groupId)
-                .sort(),
+                .sort()
         ).toEqual(['room-a']);
     });
 
@@ -95,35 +80,35 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const defaultScopeClient = createClientSnapshot(
             'alice',
             'session-a',
             'ar-eye-hunter',
             'default',
-            1,
+            1
         );
         const customScopeClient = createClientSnapshot(
             'bob',
             'session-b',
             'app-1',
             'workspace-b',
-            1,
+            1
         );
         const defaultScopeGroup = createGroupSnapshot(
             'room-a',
             'ar-eye-hunter',
             'default',
             ['session-a'],
-            1,
+            1
         );
         const customScopeGroup = createGroupSnapshot(
             'room-b',
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
 
         await dataCaches.hydrateStateCaches(
@@ -134,18 +119,18 @@ describe('browser data caches state scope filtering', () => {
             {
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-b',
-                },
-            },
+                    workspaceId: 'workspace-b'
+                }
+            }
         );
 
         expect(
             clientStateSnapshotsRepository.getAllClientStateSnapshots()
-                .map((snapshot) => snapshot.principal.principalId),
+                .map((snapshot) => snapshot.principal.principalId)
         ).toEqual(['bob']);
         expect(
             groupStateSnapshotsRepository.getAllGroupStateSnapshots()
-                .map((snapshot) => snapshot.group.groupId),
+                .map((snapshot) => snapshot.group.groupId)
         ).toEqual(['room-b']);
     });
 
@@ -155,7 +140,7 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const current = withGroupCausalRevision(
             createGroupSnapshot(
@@ -163,20 +148,20 @@ describe('browser data caches state scope filtering', () => {
                 DEFAULT_STATE_APPLICATION_ID,
                 DEFAULT_STATE_WORKSPACE_ID,
                 ['session-a'],
-                2,
+                2
             ),
-            { groupRevision: 2, presenceRevision: 1 },
+            { groupRevision: 2, presenceRevision: 1 }
         );
         const incomparable = withGroupCausalRevision(
             current,
-            { groupRevision: 1, presenceRevision: 2 },
+            { groupRevision: 1, presenceRevision: 2 }
         );
         const recovered = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a'],
-            3,
+            3
         );
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
 
@@ -184,7 +169,7 @@ describe('browser data caches state scope filtering', () => {
             manager as never,
             clientData,
             [],
-            [current],
+            [current]
         );
         acceptUpdate.mockClear();
 
@@ -193,7 +178,7 @@ describe('browser data caches state scope filtering', () => {
             clientData,
             [],
             [incomparable],
-            { rereadGroupSnapshots },
+            { rereadGroupSnapshots }
         );
         expect(rereadGroupSnapshots).toHaveBeenCalledOnce();
         expect(acceptUpdate).toHaveBeenCalledWith(recovered);
@@ -207,18 +192,18 @@ describe('browser data caches state scope filtering', () => {
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const manager = {
             notifyClientPresenceChanged: vi.fn(async () => undefined),
             acceptGroupUpdate: vi.fn(async () => undefined),
             has: vi.fn((input) => input === group.group),
-            delete: vi.fn(async () => undefined),
+            delete: vi.fn(async () => undefined)
         };
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
 
         await dataCaches.hydrateStateCaches(
@@ -229,14 +214,14 @@ describe('browser data caches state scope filtering', () => {
             {
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-b',
-                },
-            },
+                    workspaceId: 'workspace-b'
+                }
+            }
         );
 
         expect(manager.has).toHaveBeenCalledWith(group.group);
         expect(manager.delete).toHaveBeenCalledWith(group.group, {
-            retainConnections: true,
+            retainConnections: true
         });
     });
 
@@ -246,25 +231,25 @@ describe('browser data caches state scope filtering', () => {
             'app-1',
             'workspace-b',
             ['session-a', 'session-b'],
-            1,
+            1
         );
         const left = createGroupSnapshot(
             'shared-room',
             'app-1',
             'workspace-b',
             ['session-b'],
-            2,
+            2
         );
         const manager = {
             notifyClientPresenceChanged: vi.fn(async () => undefined),
             acceptGroupUpdate: vi.fn(async () => undefined),
             has: vi.fn(() => true),
-            delete: vi.fn(async () => undefined),
+            delete: vi.fn(async () => undefined)
         };
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
 
         await dataCaches.hydrateStateCaches(
@@ -275,9 +260,9 @@ describe('browser data caches state scope filtering', () => {
             {
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-b',
-                },
-            },
+                    workspaceId: 'workspace-b'
+                }
+            }
         );
 
         expect(findOverlayById(toScopedOverlayId(joined.group))).toBeDefined();
@@ -290,7 +275,7 @@ describe('browser data caches state scope filtering', () => {
         expect(findOverlayById(toScopedOverlayId(left.group))).toBeUndefined();
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
         expect(manager.delete).toHaveBeenCalledWith(left.group, {
-            retainConnections: true,
+            retainConnections: true
         });
     });
 
@@ -300,7 +285,7 @@ describe('browser data caches state scope filtering', () => {
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const manager = {
             notifyClientPresenceChanged: vi.fn(async () => undefined),
@@ -308,12 +293,12 @@ describe('browser data caches state scope filtering', () => {
             acceptGroupUpdate: vi.fn(async () => undefined),
             has: vi.fn(() => false),
             delete: vi.fn(async () => undefined),
-            ensureAllGroupsConnected: vi.fn(async () => undefined),
+            ensureAllGroupsConnected: vi.fn(async () => undefined)
         };
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
 
         await dataCaches.hydrateStateCaches(
@@ -324,9 +309,9 @@ describe('browser data caches state scope filtering', () => {
             {
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-b',
-                },
-            },
+                    workspaceId: 'workspace-b'
+                }
+            }
         );
 
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
@@ -340,19 +325,19 @@ describe('browser data caches state scope filtering', () => {
             'app-1',
             'workspace-b',
             ['session-a'],
-            1,
+            1
         );
         const manager = {
             notifyClientPresenceChanged: vi.fn(async () => undefined),
             notifyOverlayTopologyChanged: vi.fn(async () => undefined),
             acceptGroupUpdate: vi.fn(async () => undefined),
             has: vi.fn((input) => input === group.group),
-            delete: vi.fn(async () => undefined),
+            delete: vi.fn(async () => undefined)
         };
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
@@ -365,9 +350,9 @@ describe('browser data caches state scope filtering', () => {
             {
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-b',
-                },
-            },
+                    workspaceId: 'workspace-b'
+                }
+            }
         );
         manager.acceptGroupUpdate.mockClear();
         manager.delete.mockClear();
@@ -380,7 +365,7 @@ describe('browser data caches state scope filtering', () => {
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
         expect(listener).toHaveBeenCalledWith({
             clients: [],
-            groups: [group],
+            groups: [group]
         });
 
         unsubscribe();
@@ -391,7 +376,7 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         let onInboxMessage:
             | ((message: unknown) => Promise<void>)
@@ -402,7 +387,7 @@ describe('browser data caches state scope filtering', () => {
             }) => {
                 onInboxMessage = callback.onMessage;
                 return webSocketQueueBox;
-            }),
+            })
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
@@ -410,7 +395,7 @@ describe('browser data caches state scope filtering', () => {
         dataCaches.initialise(
             webSocketQueueBox,
             manager as never,
-            clientData,
+            clientData
         );
 
         await onInboxMessage?.(
@@ -419,8 +404,8 @@ describe('browser data caches state scope filtering', () => {
                 newALEventRoute(AppTopics.groupStateEvent, 'room-a', 'event-1'),
                 'all',
                 AppTopics.groupStateEvent,
-                createGroupEvent('room-a', 'event-1'),
-            ),
+                createGroupEvent('room-a', 'event-1')
+            )
         );
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -428,18 +413,18 @@ describe('browser data caches state scope filtering', () => {
                 newALEventRoute(AppTopics.clientStateEvent, 'alice', 'event-2'),
                 'all',
                 AppTopics.clientStateEvent,
-                createClientEvent('alice', 'event-2'),
-            ),
+                createClientEvent('alice', 'event-2')
+            )
         );
 
         expect(listener).not.toHaveBeenCalled();
         expect(manager.notifyClientPresenceChanged).not.toHaveBeenCalled();
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
         expect(clientStateSnapshotsRepository.getAllClientStateSnapshots()).toEqual(
-            [],
+            []
         );
         expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual(
-            [],
+            []
         );
 
         unsubscribe();
@@ -451,7 +436,7 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         let onInboxMessage:
             | ((message: unknown) => Promise<void>)
@@ -462,7 +447,7 @@ describe('browser data caches state scope filtering', () => {
             }) => {
                 onInboxMessage = callback.onMessage;
                 return webSocketQueueBox;
-            }),
+            })
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
@@ -472,20 +457,20 @@ describe('browser data caches state scope filtering', () => {
                 DEFAULT_STATE_APPLICATION_ID,
                 DEFAULT_STATE_WORKSPACE_ID,
                 ['session-b'],
-                2,
+                2
             ),
-            { groupRevision: 2, presenceRevision: 1 },
+            { groupRevision: 2, presenceRevision: 1 }
         );
         const incoming = withGroupCausalRevision(
             current,
-            { groupRevision: 1, presenceRevision: 2 },
+            { groupRevision: 1, presenceRevision: 2 }
         );
         const recovered = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-b'],
-            3,
+            3
         );
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
         const cacheOptions = { rereadGroupSnapshots };
@@ -494,14 +479,14 @@ describe('browser data caches state scope filtering', () => {
             webSocketQueueBox,
             manager as never,
             clientData,
-            cacheOptions,
+            cacheOptions
         );
         await dataCaches.hydrateStateCaches(
             manager as never,
             clientData,
             [],
             [current],
-            cacheOptions,
+            cacheOptions
         );
         recompute.mockClear();
         listener.mockClear();
@@ -512,22 +497,22 @@ describe('browser data caches state scope filtering', () => {
                 newALEventRoute(
                     AppTopics.groupDirectorySnapshot,
                     'room-a',
-                    'room-a',
+                    'room-a'
                 ),
                 'all',
                 AppTopics.groupDirectorySnapshot,
-                incoming,
-            ),
+                incoming
+            )
         );
 
         expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual([
-            recovered,
+            recovered
         ]);
         expect(rereadGroupSnapshots).toHaveBeenCalledOnce();
         expect(recompute).toHaveBeenCalledOnce();
         expect(listener).toHaveBeenCalledWith({
             clients: [],
-            groups: [recovered],
+            groups: [recovered]
         });
         expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
 
@@ -539,7 +524,7 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         let onInboxMessage:
             | ((message: unknown) => Promise<void>)
@@ -550,45 +535,45 @@ describe('browser data caches state scope filtering', () => {
             }) => {
                 onInboxMessage = callback.onMessage;
                 return webSocketQueueBox;
-            }),
+            })
         };
         const groupSnapshot = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a', 'session-b'],
-            2,
+            2
         );
         const topology: RallarOverlayTopologySnapshot = {
             sourceGroupStateCausalRevision: {
                 groupRevision: 1,
-                presenceRevision: 1,
+                presenceRevision: 1
             },
             state: 'active',
             overlayId: toScopedOverlayId(groupSnapshot.group),
             groupRef: {
                 applicationId: groupSnapshot.group.applicationId,
                 workspaceId: groupSnapshot.group.workspaceId,
-                groupId: groupSnapshot.group.groupId,
+                groupId: groupSnapshot.group.groupId
             },
             name: 'room-a',
             topology: 'tree',
             activeSessionIds: ['session-a', 'session-b'],
             nextHopsBySessionId: {
                 'session-a': ['session-b'],
-                'session-b': ['session-a'],
+                'session-b': ['session-a']
             },
             degreeLimit: 5,
             version: 1,
             createdByClientId: 'server',
             createdAtEpochMs: 1,
-            updatedAtEpochMs: 2,
+            updatedAtEpochMs: 2
         };
 
         dataCaches.initialise(
             webSocketQueueBox,
             manager as never,
-            clientData,
+            clientData
         );
 
         await onInboxMessage?.(
@@ -599,9 +584,9 @@ describe('browser data caches state scope filtering', () => {
                 AppTopics.overlayTopology,
                 topology,
                 {
-                    groupRef: groupSnapshot.group,
-                },
-            ),
+                    groupRef: groupSnapshot.group
+                }
+            )
         );
 
         expect(findOverlayById(topology.overlayId)).toMatchObject({
@@ -609,7 +594,7 @@ describe('browser data caches state scope filtering', () => {
             groupRef: topology.groupRef,
             topology: 'tree',
             nextHopSessionIds: ['session-b'],
-            overlayVersion: 1,
+            overlayVersion: 1
         });
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledOnce();
 
@@ -617,13 +602,13 @@ describe('browser data caches state scope filtering', () => {
             ...topology,
             sourceGroupStateCausalRevision: {
                 groupRevision: 2,
-                presenceRevision: 2,
+                presenceRevision: 2
             },
             state: 'removed' as const,
             nextHopsBySessionId: {
                 'session-a': [],
-                'session-b': [],
-            },
+                'session-b': []
+            }
         };
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -632,8 +617,8 @@ describe('browser data caches state scope filtering', () => {
                 'room',
                 AppTopics.overlayTopology,
                 removed,
-                { groupRef: groupSnapshot.group },
-            ),
+                { groupRef: groupSnapshot.group }
+            )
         );
         await onInboxMessage?.(
             newALBroadcastMessage(
@@ -642,25 +627,27 @@ describe('browser data caches state scope filtering', () => {
                 'room',
                 AppTopics.overlayTopology,
                 topology,
-                { groupRef: groupSnapshot.group },
-            ),
+                { groupRef: groupSnapshot.group }
+            )
         );
 
         expect(findOverlayById(topology.overlayId)).toBeUndefined();
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(3);
     });
 
-    it.each([
-        'rtc-topology-current-repair',
-        'rtc-topology-hydration',
-    ] as const)(
+    it.each(
+        [
+            'rtc-topology-current-repair',
+            'rtc-topology-hydration'
+        ] as const
+    )(
         'adopts incomparable durable current state from %s',
         async (deliveryKind) => {
             const manager = createWebRtcGroupManager();
             const clientData: ClientInfo = {
                 clientId: 'alice',
                 sessionId: 'session-a',
-                isOnline: true,
+                isOnline: true
             };
             let onInboxMessage:
                 | ((message: unknown) => Promise<void>)
@@ -671,28 +658,30 @@ describe('browser data caches state scope filtering', () => {
                 }) => {
                     onInboxMessage = callback.onMessage;
                     return webSocketQueueBox;
-                }),
+                })
             };
             const groupSnapshot = createGroupSnapshot(
                 'room-current-repair',
                 DEFAULT_STATE_APPLICATION_ID,
                 DEFAULT_STATE_WORKSPACE_ID,
                 ['session-a', 'session-b'],
-                2,
+                2
             );
             const historical = createTopologySnapshot(
                 groupSnapshot,
                 { groupRevision: 4, presenceRevision: 6 },
-                7,
+                7
             );
             const current = createTopologySnapshot(
                 groupSnapshot,
                 { groupRevision: 5, presenceRevision: 5 },
-                8,
+                8
             );
             dataCaches.initialise(webSocketQueueBox, manager as never, clientData);
             const receive = onInboxMessage;
-            if (!receive) throw new Error('WebSocket topology callback was not installed.');
+            if (!receive) {
+                throw new Error('WebSocket topology callback was not installed.');
+            }
 
             await receive(withTopologyMessageId(
                 newALBroadcastMessage(
@@ -700,14 +689,14 @@ describe('browser data caches state scope filtering', () => {
                     newALEventRoute(
                         AppTopics.overlayTopology,
                         groupSnapshot.group.groupId,
-                        'historical-topology',
+                        'historical-topology'
                     ),
                     'room',
                     AppTopics.overlayTopology,
                     historical,
-                    { groupRef: groupSnapshot.group },
+                    { groupRef: groupSnapshot.group }
                 ),
-                JSON.stringify(['rtc-topology-publication', 'historical-work']),
+                JSON.stringify(['rtc-topology-publication', 'historical-work'])
             ));
             await expect(receive(withTopologyMessageId(
                 newCurrentStateTopologyMessage(
@@ -715,16 +704,16 @@ describe('browser data caches state scope filtering', () => {
                     'rallar-server',
                     groupSnapshot,
                     current,
-                    'mismatched-current-topology',
+                    'mismatched-current-topology'
                 ),
                 toCurrentTopologyMessageId(deliveryKind, {
                     ...current,
-                    version: current.version + 1,
-                }),
+                    version: current.version + 1
+                })
             ))).rejects.toThrow('Overlay revision conflict');
             expect(findOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
-                overlayVersion: historical.version,
+                overlayVersion: historical.version
             });
             await expect(receive(withTopologyMessageId(
                 newCurrentStateTopologyMessage(
@@ -732,13 +721,13 @@ describe('browser data caches state scope filtering', () => {
                     'session-a',
                     groupSnapshot,
                     current,
-                    'spoofed-current-topology',
+                    'spoofed-current-topology'
                 ),
-                toCurrentTopologyMessageId(deliveryKind, current),
+                toCurrentTopologyMessageId(deliveryKind, current)
             ))).rejects.toThrow('Overlay revision conflict');
             expect(findOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
-                overlayVersion: historical.version,
+                overlayVersion: historical.version
             });
             await receive(withTopologyMessageId(
                 newCurrentStateTopologyMessage(
@@ -746,21 +735,21 @@ describe('browser data caches state scope filtering', () => {
                     'rallar-server',
                     groupSnapshot,
                     current,
-                    'current-topology',
+                    'current-topology'
                 ),
-                toCurrentTopologyMessageId(deliveryKind, current),
+                toCurrentTopologyMessageId(deliveryKind, current)
             ));
 
             expect(findOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
-                overlayVersion: current.version,
+                overlayVersion: current.version
             });
             expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(2);
 
             const delayed = createTopologySnapshot(
                 groupSnapshot,
                 { groupRevision: 4, presenceRevision: 4 },
-                9,
+                9
             );
             await receive(withTopologyMessageId(
                 newCurrentStateTopologyMessage(
@@ -768,13 +757,13 @@ describe('browser data caches state scope filtering', () => {
                     'rallar-server',
                     groupSnapshot,
                     delayed,
-                    'delayed-current-topology',
+                    'delayed-current-topology'
                 ),
-                toCurrentTopologyMessageId(deliveryKind, delayed),
+                toCurrentTopologyMessageId(deliveryKind, delayed)
             ));
             expect(findOverlayById(current.overlayId)).toMatchObject({
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
-                overlayVersion: current.version,
+                overlayVersion: current.version
             });
 
             const equalConflict = { ...current, name: 'Conflicting current topology' };
@@ -784,16 +773,16 @@ describe('browser data caches state scope filtering', () => {
                     'rallar-server',
                     groupSnapshot,
                     equalConflict,
-                    'conflicting-current-topology',
+                    'conflicting-current-topology'
                 ),
-                toCurrentTopologyMessageId(deliveryKind, equalConflict),
+                toCurrentTopologyMessageId(deliveryKind, equalConflict)
             ))).rejects.toThrow('Overlay revision conflict');
             expect(findOverlayById(current.overlayId)).toMatchObject({
                 name: current.name,
                 sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
-                overlayVersion: current.version,
+                overlayVersion: current.version
             });
-        },
+        }
     );
 
     it('pulls the floored group snapshot when a delta envelope arrives over a causal gap', async () => {
@@ -801,7 +790,7 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         let onInboxMessage:
             | ((message: unknown) => Promise<void>)
@@ -812,7 +801,7 @@ describe('browser data caches state scope filtering', () => {
             }) => {
                 onInboxMessage = callback.onMessage;
                 return webSocketQueueBox;
-            }),
+            })
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
@@ -821,22 +810,21 @@ describe('browser data caches state scope filtering', () => {
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a'],
-            2,
+            2
         );
         const envelope = createGroupStateDeltaEnvelope(
             resulting,
-            { groupRevision: 1, presenceRevision: 1 },
+            { groupRevision: 1, presenceRevision: 1 }
         );
         configureApiClient({ apiBaseUrl: 'https://api.example.test' });
         vi.stubGlobal('localStorage', { getItem: () => null });
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
-            groupSnapshotResponse(resulting));
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => groupSnapshotResponse(resulting));
         vi.stubGlobal('fetch', fetchMock);
 
         dataCaches.initialise(
             webSocketQueueBox,
             manager as never,
-            clientData,
+            clientData
         );
 
         await onInboxMessage?.(
@@ -845,21 +833,21 @@ describe('browser data caches state scope filtering', () => {
                 newALEventRoute(AppTopics.groupStateEvent, 'room-a', envelope.event.eventId),
                 'all',
                 AppTopics.groupStateEvent,
-                envelope,
-            ),
+                envelope
+            )
         );
 
         expect(fetchMock).toHaveBeenCalledOnce();
         expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
             'https://api.example.test/api/state/apps/rallar-server/workspaces/default' +
-                '/groups/room-a?minGroupRevision=2&minPresenceRevision=2',
+                '/groups/room-a?minGroupRevision=2&minPresenceRevision=2'
         );
         expect(
-            groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
+            groupStateSnapshotsRepository.getAllGroupStateSnapshots()
         ).toEqual([resulting]);
         expect(listener).toHaveBeenCalledWith({
             clients: [],
-            groups: [resulting],
+            groups: [resulting]
         });
 
         vi.unstubAllGlobals();
@@ -871,18 +859,18 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const memberSessionIds = Array.from(
             { length: 8 },
-            (_, index) => `session-${String.fromCharCode(97 + index)}`,
+            (_, index) => `session-${String.fromCharCode(97 + index)}`
         );
         const group = createGroupSnapshot(
             'room-bootstrap',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             memberSessionIds,
-            1,
+            1
         );
 
         await dataCaches.hydrateStateCaches(manager as never, clientData, [], [group]);
@@ -891,7 +879,7 @@ describe('browser data caches state scope filtering', () => {
         expect(overlay).toMatchObject({
             provenance: 'bootstrap',
             topology: 'star',
-            degreeLimit: 5,
+            degreeLimit: 5
         });
         expect(overlay?.nextHopSessionIds).toHaveLength(5);
         expect(overlay?.nextHopSessionIds).not.toContain('session-a');
@@ -902,20 +890,20 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const group = createGroupSnapshot(
             'room-server-owned',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a', 'session-b', 'session-c'],
-            1,
+            1
         );
         const overlayId = toScopedOverlayId(group.group);
         setOverlayById(overlayId, {
             sourceGroupStateCausalRevision: {
                 groupRevision: 1,
-                presenceRevision: 1,
+                presenceRevision: 1
             },
             provenance: 'server',
             state: 'active',
@@ -928,7 +916,7 @@ describe('browser data caches state scope filtering', () => {
             nextHopSessionIds: ['session-c'],
             degreeLimit: 5,
             overlayVersion: 1,
-            updatedAtEpochMs: 1,
+            updatedAtEpochMs: 1
         });
 
         const newerGroup = createGroupSnapshot(
@@ -936,14 +924,14 @@ describe('browser data caches state scope filtering', () => {
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a', 'session-b', 'session-c'],
-            5,
+            5
         );
         await dataCaches.hydrateStateCaches(manager as never, clientData, [], [newerGroup]);
 
         expect(findOverlayById(overlayId)).toMatchObject({
             provenance: 'server',
             topology: 'tree',
-            nextHopSessionIds: ['session-c'],
+            nextHopSessionIds: ['session-c']
         });
     });
 
@@ -952,29 +940,29 @@ describe('browser data caches state scope filtering', () => {
         const clientData: ClientInfo = {
             clientId: 'alice',
             sessionId: 'session-a',
-            isOnline: true,
+            isOnline: true
         };
         const memberSessionIds = Array.from(
             { length: 8 },
-            (_, index) => `session-${String.fromCharCode(97 + index)}`,
+            (_, index) => `session-${String.fromCharCode(97 + index)}`
         );
         const group = createGroupSnapshot(
             'room-legacy',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             memberSessionIds,
-            1,
+            1
         );
 
         await dataCaches.hydrateStateCaches(manager as never, clientData, [], [group], {
-            groupFormation: { mode: 'legacy-star', bootstrapDegree: 5 },
+            groupFormation: { mode: 'legacy-star', bootstrapDegree: 5 }
         });
 
         const overlay = findOverlayById(toScopedOverlayId(group.group));
         expect(overlay).toMatchObject({
             provenance: 'bootstrap',
             topology: 'star',
-            degreeLimit: 7,
+            degreeLimit: 7
         });
         expect(overlay?.nextHopSessionIds).toEqual(memberSessionIds);
     });
@@ -987,7 +975,7 @@ function createWebRtcGroupManager() {
         acceptGroupUpdate: vi.fn(async () => undefined),
         ensureAllGroupsConnected: vi.fn(async () => undefined),
         delete: vi.fn(async () => undefined),
-        has: vi.fn(() => false),
+        has: vi.fn(() => false)
     };
 }
 
@@ -996,7 +984,7 @@ function createClientSnapshot(
     sessionId: string,
     applicationId: string,
     workspaceId: string,
-    snapshotVersion: number,
+    snapshotVersion: number
 ): ClientSnapshot {
     return {
         stateRevision: snapshotVersion,
@@ -1019,7 +1007,7 @@ function createClientSnapshot(
             updated: auditStamp(snapshotVersion),
             disabled: null,
             deleted: null,
-            lastSeenAtEpochMs: snapshotVersion,
+            lastSeenAtEpochMs: snapshotVersion
         },
         instances: [],
         activeSessions: [{
@@ -1039,11 +1027,11 @@ function createClientSnapshot(
             expiresAtEpochMs: 60_000,
             connectionId: null,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         }],
         isOnline: true,
         activeSessionCount: 1,
-        lastSeenAtEpochMs: snapshotVersion,
+        lastSeenAtEpochMs: snapshotVersion
     };
 }
 
@@ -1052,7 +1040,7 @@ function createGroupSnapshot(
     applicationId: string,
     workspaceId: string,
     sessionIds: readonly string[],
-    snapshotVersion: number,
+    snapshotVersion: number
 ): GroupSnapshot {
     const ownerPrincipalId = sessionIds[0];
     if (!ownerPrincipalId) {
@@ -1062,7 +1050,7 @@ function createGroupSnapshot(
         stateRevision: snapshotVersion * 2,
         causalRevision: {
             groupRevision: snapshotVersion,
-            presenceRevision: snapshotVersion,
+            presenceRevision: snapshotVersion
         },
         group: createTestGroup({
             applicationId,
@@ -1076,7 +1064,7 @@ function createGroupSnapshot(
             created: auditStamp(1),
             updated: auditStamp(snapshotVersion),
             activeMemberCount: sessionIds.length,
-            ownerPrincipalId,
+            ownerPrincipalId
         }),
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
@@ -1091,7 +1079,7 @@ function createGroupSnapshot(
             removed: null,
             banned: null,
             invitedByPrincipalId: null,
-            invitationExpiresAtEpochMs: null,
+            invitationExpiresAtEpochMs: null
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId,
@@ -1106,17 +1094,17 @@ function createGroupSnapshot(
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         })),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
+        onlineMemberCount: sessionIds.length
     };
 }
 
 function createTopologySnapshot(
     group: GroupSnapshot,
     causalRevision: GroupSnapshot['causalRevision'],
-    version: number,
+    version: number
 ): RallarOverlayTopologySnapshot {
     return {
         sourceGroupStateCausalRevision: causalRevision,
@@ -1125,30 +1113,30 @@ function createTopologySnapshot(
         groupRef: {
             applicationId: group.group.applicationId,
             workspaceId: group.group.workspaceId,
-            groupId: group.group.groupId,
+            groupId: group.group.groupId
         },
         name: group.group.displayName,
         topology: 'tree',
         activeSessionIds: ['session-a', 'session-b'],
         nextHopsBySessionId: {
             'session-a': ['session-b'],
-            'session-b': ['session-a'],
+            'session-b': ['session-a']
         },
         degreeLimit: 5,
         version,
         createdByClientId: 'server',
         createdAtEpochMs: 1,
-        updatedAtEpochMs: version,
+        updatedAtEpochMs: version
     };
 }
 
-function withTopologyMessageId<T extends { readonly id: Readonly<{ readonly msgId: string }> }>(
+function withTopologyMessageId<T extends { readonly id: Readonly<{ readonly msgId: string; }>; }>(
     message: T,
-    messageId: string,
+    messageId: string
 ): T {
     return {
         ...message,
-        id: { ...message.id, msgId: messageId },
+        id: { ...message.id, msgId: messageId }
     };
 }
 
@@ -1157,12 +1145,12 @@ function newCurrentStateTopologyMessage(
     senderId: string,
     group: GroupSnapshot,
     topology: RallarOverlayTopologySnapshot,
-    resourceId: string,
+    resourceId: string
 ) {
     const route = newALEventRoute(
         AppTopics.overlayTopology,
         group.group.groupId,
-        resourceId,
+        resourceId
     );
     return deliveryKind === 'rtc-topology-current-repair'
         ? newALBroadcastMessage(
@@ -1171,7 +1159,7 @@ function newCurrentStateTopologyMessage(
             'room',
             AppTopics.overlayTopology,
             topology,
-            { groupRef: group.group },
+            { groupRef: group.group }
         )
         : (() => {
             const message = newALUnicastMessage(
@@ -1179,18 +1167,18 @@ function newCurrentStateTopologyMessage(
                 route,
                 'session-a',
                 AppTopics.overlayTopology,
-                topology,
+                topology
             );
             return {
                 ...message,
-                id: { ...message.id, sessionId: 'session-a' },
+                id: { ...message.id, sessionId: 'session-a' }
             };
         })();
 }
 
 function toCurrentTopologyMessageId(
     deliveryKind: 'rtc-topology-current-repair' | 'rtc-topology-hydration',
-    topology: RallarOverlayTopologySnapshot,
+    topology: RallarOverlayTopologySnapshot
 ): string {
     const revision = topology.sourceGroupStateCausalRevision;
     return deliveryKind === 'rtc-topology-current-repair'
@@ -1201,11 +1189,11 @@ function toCurrentTopologyMessageId(
                 topology.groupRef.workspaceId === undefined
                     ? ['absent']
                     : ['present', topology.groupRef.workspaceId],
-                topology.groupRef.groupId,
+                topology.groupRef.groupId
             ]),
             revision.groupRevision,
             revision.presenceRevision,
-            topology.version,
+            topology.version
         ])
         : JSON.stringify([
             deliveryKind,
@@ -1213,33 +1201,32 @@ function toCurrentTopologyMessageId(
             'generation-a',
             revision.groupRevision,
             revision.presenceRevision,
-            topology.version,
+            topology.version
         ]);
 }
 
 function withGroupCausalRevision(
     snapshot: GroupSnapshot,
-    causalRevision: GroupSnapshot['causalRevision'],
+    causalRevision: GroupSnapshot['causalRevision']
 ): GroupSnapshot {
     return {
         ...snapshot,
-        stateRevision:
-            causalRevision.groupRevision + causalRevision.presenceRevision,
+        stateRevision: causalRevision.groupRevision + causalRevision.presenceRevision,
         causalRevision,
         group: {
             ...snapshot.group,
             snapshotVersion: causalRevision.groupRevision,
-            presenceVersion: causalRevision.presenceRevision,
-        },
+            presenceVersion: causalRevision.presenceRevision
+        }
     };
 }
 
 function createGroupStateDeltaEnvelope(
     resulting: GroupSnapshot,
-    predecessorCausalRevision: GroupStateCausalRevision,
+    predecessorCausalRevision: GroupStateCausalRevision
 ): GroupStateDeltaEnvelope {
     const activeSessionIds = resulting.activeSessions.map(
-        (session) => session.sessionId,
+        (session) => session.sessionId
     );
     return {
         event: {
@@ -1255,7 +1242,7 @@ function createGroupStateDeltaEnvelope(
             reason: null,
             traceId: null,
             requestId: 'request-delta',
-            payload: {},
+            payload: {}
         },
         predecessorCausalRevision,
         resultingCausalRevision: resulting.causalRevision,
@@ -1267,7 +1254,7 @@ function createGroupStateDeltaEnvelope(
         group: resulting.group,
         memberCount: resulting.memberCount,
         onlineMemberCount: resulting.onlineMemberCount,
-        audienceSessionIds: activeSessionIds,
+        audienceSessionIds: activeSessionIds
     };
 }
 
@@ -1280,15 +1267,15 @@ function groupSnapshotResponse(snapshot: GroupSnapshot): Response {
             'rallar-state-source': 'durable',
             'rallar-group-revision': String(snapshot.causalRevision.groupRevision),
             'rallar-presence-revision': String(
-                snapshot.causalRevision.presenceRevision,
-            ),
-        },
+                snapshot.causalRevision.presenceRevision
+            )
+        }
     });
 }
 
 function createGroupEvent(
     groupId: string,
-    eventId: string,
+    eventId: string
 ): GroupEvent {
     return {
         applicationId: 'ar-eye-hunter',
@@ -1302,18 +1289,18 @@ function createGroupEvent(
         actor: {
             kind: 'session',
             principalId: 'alice',
-            sessionId: 'session-a',
+            sessionId: 'session-a'
         },
         reason: null,
         traceId: null,
         requestId: 'request-1',
-        payload: {},
+        payload: {}
     };
 }
 
 function createClientEvent(
     principalId: string,
-    eventId: string,
+    eventId: string
 ): ClientEvent {
     return {
         applicationId: 'ar-eye-hunter',
@@ -1328,12 +1315,12 @@ function createClientEvent(
         actor: {
             kind: 'session',
             principalId,
-            sessionId: 'session-a',
+            sessionId: 'session-a'
         },
         reason: null,
         traceId: null,
         requestId: 'request-2',
-        payload: {},
+        payload: {}
     };
 }
 
@@ -1343,6 +1330,6 @@ function auditStamp(atEpochMs: number): AuditStamp {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

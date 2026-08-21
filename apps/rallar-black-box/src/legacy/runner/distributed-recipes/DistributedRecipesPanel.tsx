@@ -1,6 +1,7 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { DistributedRunMonitorPanel } from '../distributed/DistributedRunMonitorPanel.tsx';
 import { DistributedRecipeAuthoringSection } from './authoring/DistributedRecipeAuthoringSection.tsx';
@@ -13,7 +14,6 @@ import { DistributedRecipeCatalogPanel } from './views/DistributedRecipeCatalogP
 import { DistributedRecipesHeader } from './views/DistributedRecipesHeader.tsx';
 import { DistributedRunControlPanel } from './views/DistributedRunControlPanel.tsx';
 import { DistributedTargetResolutionPanel } from './views/DistributedTargetResolutionPanel.tsx';
-import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 
 type DistributedRecipesPanelProps = Readonly<{
     state: RallarBlackBoxTestState;
@@ -23,7 +23,10 @@ type DistributedRecipesPanelProps = Readonly<{
 }>;
 
 export function DistributedRecipesPanel({
-    state, bootstrap, control, globalValues,
+    state,
+    bootstrap,
+    control,
+    globalValues
 }: DistributedRecipesPanelProps) {
     const diagnosticContext = useLegacyDiagnosticContext().context;
     const initialControlRunId = diagnosticContext?.controlRunId;
@@ -43,18 +46,24 @@ export function DistributedRecipesPanel({
 }
 
 function DistributedRecipesPanelVisit({
-    state, bootstrap, control, globalValues, initialControlRunId,
-    initialDistributedRunId,
-}: DistributedRecipesPanelProps & Readonly<{
-    initialControlRunId?: string;
-    initialDistributedRunId?: string;
-}>) {
+    state,
+    bootstrap,
+    control,
+    globalValues,
+    initialControlRunId,
+    initialDistributedRunId
+}:
+    & DistributedRecipesPanelProps
+    & Readonly<{
+        initialControlRunId?: string;
+        initialDistributedRunId?: string;
+    }>) {
     const remote = useDistributedRecipesRemoteState({
         state,
         bootstrap,
         control,
         initialControlRunId,
-        initialDistributedRunId,
+        initialDistributedRunId
     });
     const builder = useDistributedRecipeBuilder({
         globalValues,
@@ -65,10 +74,14 @@ function DistributedRecipesPanelVisit({
         targetResolutionPreview: remote.targetResolutionPreview,
         monitorAgentProgress: remote.selectedMonitor?.agentProgress,
         initialDistributedRunId,
-        diagnosticSelectionIssue: remote.diagnosticSelectionIssue,
+        diagnosticSelectionIssue: remote.diagnosticSelectionIssue
     });
     const actions = useDistributedRecipesActions({
-        bootstrap, control, roomId: globalValues.roomId, remote, builder,
+        bootstrap,
+        control,
+        roomId: globalValues.roomId,
+        remote,
+        builder
     });
 
     return (

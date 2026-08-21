@@ -1,15 +1,7 @@
-import { inventoryDistributedRunTuningKnobs } from
-    '@shared-test/rallar-bb-test/mod.ts';
-import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
-import {
-    projectAnalyzeIdentity,
-    projectWorkspaceIssue,
-} from './analyze-artifact-display-projection.ts';
+import { inventoryDistributedRunTuningKnobs } from '@shared-test/rallar-bb-test/mod.ts';
 import { projectAnalyzeAnalysis } from './analyze-analysis-projection.ts';
-import type {
-    AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerRequest,
-} from './analyze-worker-contract.ts';
+import { projectAnalyzeIdentity, projectWorkspaceIssue } from './analyze-artifact-display-projection.ts';
+import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
 import {
     boundedText,
     finiteNumber,
@@ -19,7 +11,7 @@ import {
     MAX_TUNE_ROWS,
     projectAuthorityIdentifier,
     projectOpaqueIdentifier,
-    withinSerializedLimit,
+    withinSerializedLimit
 } from './analyze-projection-bounds.ts';
 import { minimalTuneFacade } from './analyze-tune-fallback.ts';
 import {
@@ -27,24 +19,26 @@ import {
     projectTuningKnob,
     projectTuningLimitation,
     receivedMessageDeltas,
-    tuneArtifactRole,
+    tuneArtifactRole
 } from './analyze-tune-projection-rows.ts';
+import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
 
 export function projectAnalyzeTuneArtifactFacade(
     model: AnalyzeArtifactModel,
     selection: Pick<
-        Extract<AnalyzeWorkerRequest, { type: 'tune' }>,
+        Extract<AnalyzeWorkerRequest, { type: 'tune'; }>,
         'focusRunId' | 'compareLeft' | 'compareRight' | 'timingMetric'
-    > = {},
+    > = {}
 ): AnalyzeTuneArtifactFacade {
     const run = model.snapshots.distributedRun;
     const manifest = run.manifest;
-    const recipeIds = manifest.recipes.slice(0, MAX_TUNE_ROWS).map(row =>
-        row.recipe?.recipeId ?? row.recipeId
-    ).filter((recipeId): recipeId is string => recipeId !== undefined);
+    const recipeIds = manifest.recipes.slice(0, MAX_TUNE_ROWS).map((row) => row.recipe?.recipeId ?? row.recipeId)
+        .filter(
+            (recipeId): recipeId is string => recipeId !== undefined
+        );
     const inventory = inventoryDistributedRunTuningKnobs(manifest);
     const candidateManifest = inventory.knobs.length <= MAX_TUNE_ROWS &&
-        isExactCandidateManifestSafe(manifest)
+            isExactCandidateManifestSafe(manifest)
         ? manifest
         : undefined;
     const targetAgentIds = run.targetAgentIds.slice(0, MAX_TUNE_ROWS);
@@ -57,7 +51,7 @@ export function projectAnalyzeTuneArtifactFacade(
             entries: model.workspace.issues.slice(0, MAX_TUNE_ROWS)
                 .map(projectWorkspaceIssue),
             total: model.workspace.issues.length,
-            omitted: Math.max(0, model.workspace.issues.length - MAX_TUNE_ROWS),
+            omitted: Math.max(0, model.workspace.issues.length - MAX_TUNE_ROWS)
         },
         generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
         manifestSummary: {
@@ -71,35 +65,35 @@ export function projectAnalyzeTuneArtifactFacade(
             group: {
                 applicationId: boundedText(
                     manifest.group.applicationId,
-                    MAX_METADATA_BYTES,
+                    MAX_METADATA_BYTES
                 ),
                 workspaceId: boundedText(
                     manifest.group.workspaceId,
-                    MAX_METADATA_BYTES,
+                    MAX_METADATA_BYTES
                 ),
-                groupId: boundedText(manifest.group.groupId, MAX_METADATA_BYTES),
+                groupId: boundedText(manifest.group.groupId, MAX_METADATA_BYTES)
             },
             ...(manifest.startMode ? { startMode: manifest.startMode } : {}),
             recipeIds: {
-                entries: recipeIds.map(value => projectOpaqueIdentifier(value)),
+                entries: recipeIds.map((value) => projectOpaqueIdentifier(value)),
                 total: manifest.recipes.length,
-                omitted: Math.max(0, manifest.recipes.length - recipeIds.length),
+                omitted: Math.max(0, manifest.recipes.length - recipeIds.length)
             },
             targetPolicy: {
                 mode: manifest.targetPolicy.mode,
                 ...(manifest.targetPolicy.expectedParticipantCount !== undefined
                     ? {
-                          expectedParticipantCount: finiteNumber(
-                              manifest.targetPolicy.expectedParticipantCount,
-                          ),
-                      }
+                        expectedParticipantCount: finiteNumber(
+                            manifest.targetPolicy.expectedParticipantCount
+                        )
+                    }
                     : {}),
                 configuredAgentCount: manifest.targetPolicy.agentIds?.length ?? 0,
                 configuredRoleCount: Object.keys(
-                    manifest.targetPolicy.roles ?? {},
-                ).length,
+                    manifest.targetPolicy.roles ?? {}
+                ).length
             },
-            roleAssignmentCount: manifest.roleAssignments?.length ?? 0,
+            roleAssignmentCount: manifest.roleAssignments?.length ?? 0
         },
         tuningInventory: {
             totalKnobs: inventory.knobs.length,
@@ -110,17 +104,16 @@ export function projectAnalyzeTuneArtifactFacade(
                 .map(projectTuningLimitation),
             omittedLimitations: Math.max(
                 0,
-                inventory.limitations.length - MAX_TUNE_ROWS,
-            ),
+                inventory.limitations.length - MAX_TUNE_ROWS
+            )
         },
         ...(candidateManifest
             ? { candidateManifest }
             : {
-                  candidateManifestOmittedReason:
-                      inventory.knobs.length > MAX_TUNE_ROWS
-                          ? 'inventory-windowed' as const
-                          : 'manifest-too-large' as const,
-              }),
+                candidateManifestOmittedReason: inventory.knobs.length > MAX_TUNE_ROWS
+                    ? 'inventory-windowed' as const
+                    : 'manifest-too-large' as const
+            }),
         selection: {
             ...(selection.focusRunId
                 ? { focusRunId: projectAuthorityIdentifier(selection.focusRunId) }
@@ -133,13 +126,13 @@ export function projectAnalyzeTuneArtifactFacade(
                 : {}),
             ...(selection.timingMetric
                 ? {
-                      timingMetric: boundedText(
-                          selection.timingMetric,
-                          MAX_METADATA_BYTES,
-                      ),
-                  }
+                    timingMetric: boundedText(
+                        selection.timingMetric,
+                        MAX_METADATA_BYTES
+                    )
+                }
                 : {}),
-            artifactRole,
+            artifactRole
         },
         distributedRun: {
             distributedRunId: projectAuthorityIdentifier(run.distributedRunId),
@@ -149,21 +142,22 @@ export function projectAnalyzeTuneArtifactFacade(
             completedAtEpochMs: run.completedAtEpochMs,
             updatedAtEpochMs: finiteNumber(run.updatedAtEpochMs),
             targetAgentIds: {
-                entries: targetAgentIds.map(value => projectOpaqueIdentifier(value)),
+                entries: targetAgentIds.map((value) => projectOpaqueIdentifier(value)),
                 total: run.targetAgentIds.length,
-                omitted: Math.max(0, run.targetAgentIds.length - targetAgentIds.length),
+                omitted: Math.max(0, run.targetAgentIds.length - targetAgentIds.length)
             },
-            rollup: projectTuneRollup(run.rollup) as typeof run.rollup,
+            rollup: projectTuneRollup(run.rollup) as typeof run.rollup
         },
         analysis: projectAnalyzeAnalysis(model.analysis),
-        receivedMessageDeltas: messageDeltas,
+        receivedMessageDeltas: messageDeltas
     };
-    return withinSerializedLimit(candidate, () => minimalTuneFacade(
-        model,
-        selection,
-        artifactRole,
-        inventory.knobs.length,
-        inventory.limitations.length,
-        messageDeltas.total,
-    ));
+    return withinSerializedLimit(candidate, () =>
+        minimalTuneFacade(
+            model,
+            selection,
+            artifactRole,
+            inventory.knobs.length,
+            inventory.limitations.length,
+            messageDeltas.total
+        ));
 }

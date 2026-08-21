@@ -1,15 +1,9 @@
-import { useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../client-defaults.ts';
-import {
-    runDirectRallarStatusCheck,
-    type DirectRallarOperationResult,
-} from '../../direct-rallar-operations.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../runtime-store.ts';
+import { runDirectRallarStatusCheck, type DirectRallarOperationResult } from '../../direct-rallar-operations.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../rallar/load-browser-rallar-facade.ts';
 import { Metric } from '../shared/Metric.tsx';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';
@@ -23,7 +17,7 @@ export function DirectRallarBoundaryPanel({
     globalValues,
     authSession,
     onOpenAuth,
-    onOpenRunnerMode,
+    onOpenRunnerMode
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -33,9 +27,7 @@ export function DirectRallarBoundaryPanel({
     onOpenRunnerMode(): void;
 }) {
     const [busy, setBusy] = useState(false);
-    const [result, setResult] = useState<
-        DirectRallarOperationResult | undefined
-    >();
+    const [result, setResult] = useState<DirectRallarOperationResult | undefined>();
     const providerMode = bootstrap.providerMode;
     const realBackendReady = providerMode === 'browser-rallar';
     const canRun = realBackendReady && Boolean(authSession) && !busy;
@@ -55,9 +47,9 @@ export function DirectRallarBoundaryPanel({
                     roomId: globalValues.roomId,
                     actor: authSession?.username ?? bootstrap.actor,
                     authSession,
-                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+                    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
                 },
-                loadBrowserRallarFacade,
+                loadBrowserRallarFacade
             );
             nextResult.events.forEach((event) => {
                 rallarBlackBoxRuntimeStore.recordRuntimeEvent(event);
@@ -71,15 +63,16 @@ export function DirectRallarBoundaryPanel({
                     payload: {
                         status: nextResult.status,
                         durationMs: nextResult.durationMs,
-                        error: nextResult.error,
-                    },
+                        error: nextResult.error
+                    }
                 },
                 nextResult.status === 'failed'
                     ? 'Direct Rallar status check failed'
-                    : 'Direct Rallar status check completed',
+                    : 'Direct Rallar status check completed'
             );
             setResult(nextResult);
-        } finally {
+        }
+        finally {
             setBusy(false);
         }
     };
@@ -127,13 +120,11 @@ export function DirectRallarBoundaryPanel({
                     <Metric
                         label="Direct status"
                         value={result?.status ?? 'not checked'}
-                        tone={
-                            result?.status === 'failed'
-                                ? 'bad'
-                                : result?.status === 'completed'
-                                  ? 'good'
-                                  : 'muted'
-                        }
+                        tone={result?.status === 'failed'
+                            ? 'bad'
+                            : result?.status === 'completed'
+                            ? 'good'
+                            : 'muted'}
                     />
                     <Metric
                         label="Connected"
@@ -177,8 +168,8 @@ export function DirectRallarBoundaryPanel({
                 </div>
                 {!realBackendReady && (
                     <div className="command-center-status" role="status">
-                        Simulated provider cannot run direct facade actions.
-                        Use runner mode for local recipes and artifacts.
+                        Simulated provider cannot run direct facade actions. Use runner mode for local recipes and
+                        artifacts.
                     </div>
                 )}
                 {realBackendReady && !authSession && (

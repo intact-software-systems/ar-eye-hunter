@@ -1,36 +1,88 @@
 import type { AppTabId } from '../../../app-tabs.ts';
-import {
-    useRunnerRecipesController,
-    type UseRunnerRecipesControllerInput,
-} from './use-runner-recipes-controller.ts';
+import { useRunnerRecipesController, type UseRunnerRecipesControllerInput } from './use-runner-recipes-controller.ts';
 import { RunnerRecipeCatalogList } from './views/RunnerRecipeCatalogList.tsx';
 import { RunnerRecipeDetail } from './views/RunnerRecipeDetail.tsx';
 import { RunnerRecipesOverview } from './views/RunnerRecipesOverview.tsx';
 
-type RunnerRecipesPanelProps = UseRunnerRecipesControllerInput &
-    Readonly<{ onOpenTab(tab: AppTabId): void }>;
+type RunnerRecipesPanelProps =
+    & UseRunnerRecipesControllerInput
+    & Readonly<{ onOpenTab(tab: AppTabId): void; }>;
 
 export function RunnerRecipesPanel({
-    state, bootstrap, control, authSession, globalValues, busy, runState,
-    lastError, onDistributedRunStarted, onOpenTab,
+    state,
+    bootstrap,
+    control,
+    authSession,
+    globalValues,
+    busy,
+    runState,
+    lastError,
+    onDistributedRunStarted,
+    onOpenTab
 }: RunnerRecipesPanelProps) {
     const {
-        selectedRecipe, launchState, busyAction, localDisabledReason,
-        localRunning, distributedDisabledReason, runLocalRecipe,
-        runDistributedRecipe, readiness, refreshReadiness, openAgentTabs,
-        groupRef, recipeAgentRows, recipeAgentSummary, agentRunId,
-        agentPrefix, agentCount, agentRestoreSession, agentControlWsUrl,
-        controlRun, agentIds, agentLaunchMessage, setAgentRunId,
-        setControlRunId, setControlRun, setAgentPrefix, setAgentCount,
-        setAgentRestoreSession, copyAgentLinks, query, setQuery, profile,
-        setProfile, profileOptions, sourceFilter, setSourceFilter,
-        controlBaseUrl, setControlBaseUrl, controlToken, setControlToken,
-        brokeredControlToken, brokeredControlTokenError, filteredRecipes,
-        catalog, apiProbe, controlProbe, targetableRows, connectedAgentCount,
-        setSelectedRecipeId, setShowEditor, controlRunId, recipePreflight,
-        launchMessage, launchError, history, failures, latestResult,
-        firstFailure, distributedRun, artifactBundle, showEditor,
-        copyText,
+        selectedRecipe,
+        launchState,
+        busyAction,
+        localDisabledReason,
+        localRunning,
+        distributedDisabledReason,
+        runLocalRecipe,
+        runDistributedRecipe,
+        readiness,
+        refreshReadiness,
+        openAgentTabs,
+        groupRef,
+        recipeAgentRows,
+        recipeAgentSummary,
+        agentRunId,
+        agentPrefix,
+        agentCount,
+        agentRestoreSession,
+        agentControlWsUrl,
+        controlRun,
+        agentIds,
+        agentLaunchMessage,
+        setAgentRunId,
+        setControlRunId,
+        setControlRun,
+        setAgentPrefix,
+        setAgentCount,
+        setAgentRestoreSession,
+        copyAgentLinks,
+        query,
+        setQuery,
+        profile,
+        setProfile,
+        profileOptions,
+        sourceFilter,
+        setSourceFilter,
+        controlBaseUrl,
+        setControlBaseUrl,
+        controlToken,
+        setControlToken,
+        brokeredControlToken,
+        brokeredControlTokenError,
+        filteredRecipes,
+        catalog,
+        apiProbe,
+        controlProbe,
+        targetableRows,
+        connectedAgentCount,
+        setSelectedRecipeId,
+        setShowEditor,
+        controlRunId,
+        recipePreflight,
+        launchMessage,
+        launchError,
+        history,
+        failures,
+        latestResult,
+        firstFailure,
+        distributedRun,
+        artifactBundle,
+        showEditor,
+        copyText
     } = useRunnerRecipesController({
         state,
         bootstrap,
@@ -40,7 +92,7 @@ export function RunnerRecipesPanel({
         busy,
         runState,
         lastError,
-        onDistributedRunStarted,
+        onDistributedRunStarted
     });
 
     return (

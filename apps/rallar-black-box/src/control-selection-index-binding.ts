@@ -1,17 +1,12 @@
-import type { ControlSnapshotSelectionIndex } from
-    '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import type { ControlServerSnapshot } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
-const boundIndexesBySnapshot = new WeakMap<
-    ControlServerSnapshot,
-    WeakSet<ControlSnapshotSelectionIndex>
->();
+const boundIndexesBySnapshot = new WeakMap<ControlServerSnapshot, WeakSet<ControlSnapshotSelectionIndex>>();
 
 /** Associates an immutable poll snapshot with topology proven for its exact bytes. */
 export function bindControlSelectionIndexToSnapshot(
     snapshot: ControlServerSnapshot,
-    index: ControlSnapshotSelectionIndex,
+    index: ControlSnapshotSelectionIndex
 ): ControlSnapshotSelectionIndex {
     let boundIndexes = boundIndexesBySnapshot.get(snapshot);
     if (!boundIndexes) {
@@ -24,7 +19,7 @@ export function bindControlSelectionIndexToSnapshot(
 
 export function isControlSelectionIndexBoundToSnapshot(
     snapshot: ControlServerSnapshot,
-    index: ControlSnapshotSelectionIndex,
+    index: ControlSnapshotSelectionIndex
 ): boolean {
     return boundIndexesBySnapshot.get(snapshot)?.has(index) === true;
 }

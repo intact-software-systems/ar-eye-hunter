@@ -1,16 +1,13 @@
+import { DequeueController, Reservator, type FailureDto, type SuccessDto } from '@shared/queuebox/DequeueController.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    DequeueController,
-    type FailureDto,
-    Reservator,
-    type SuccessDto,
-} from '@shared/queuebox/DequeueController.ts';
 
 describe('resource inbox fairness precedence', () => {
     it('lets the fairness selector claim an overdue retry before the ordinary retry lane', async () => {
         let available = true;
         const reserveEligibleRetry = async () => {
-            if (!available) return new Map<string, string>();
+            if (!available) {
+                return new Map<string, string>();
+            }
             available = false;
             return new Map([['overdue', 'work']]);
         };
@@ -25,7 +22,7 @@ describe('resource inbox fairness precedence', () => {
             .onFairnessEntriesReserveDo(reserveEligibleRetry)
             .onReleaseEntriesDo(
                 async (entries: Map<string, SuccessDto<string, string, string>>) => entries,
-                async (entries: Map<string, FailureDto<string, string>>) => entries,
+                async (entries: Map<string, FailureDto<string, string>>) => entries
             );
 
         const dequeued = await controller.dequeueForCompute(async () => 'done');

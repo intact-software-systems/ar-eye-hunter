@@ -3,20 +3,16 @@ import type {
     RelicActionKind,
     RelicEvent,
     RelicPlayer,
-    RelicPublicSnapshot,
+    RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import {
     createRallarAiMockProvider,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
     type RallarAiJsonResult,
-    type RallarAiJsonSchema,
+    type RallarAiJsonSchema
 } from '@shared/rallar-ai/mod.ts';
-import type {
-    ActionDraft,
-    RelicActionOption,
-    RelicGameViewModel,
-} from '../game-view-model.ts';
+import type { ActionDraft, RelicActionOption, RelicGameViewModel } from '../game-view-model.ts';
 import type { Lang } from '../lang.ts';
 import type { SceneObjective } from '../scene/objectives.ts';
 
@@ -152,8 +148,8 @@ export type RelicPlanningAiState = Readonly<{
 }>;
 
 export type RelicPlanningAiSuggestionValidation =
-    | Readonly<{ ok: true; suggestion: RelicPlanningAiSuggestion }>
-    | Readonly<{ ok: false; reason: string }>;
+    | Readonly<{ ok: true; suggestion: RelicPlanningAiSuggestion; }>
+    | Readonly<{ ok: false; reason: string; }>;
 
 export const RELIC_PLANNING_AI_SUGGESTION_SCHEMA: RallarAiJsonSchema = {
     type: 'object',
@@ -168,20 +164,20 @@ export const RELIC_PLANNING_AI_SUGGESTION_SCHEMA: RallarAiJsonSchema = {
             properties: {
                 kind: {
                     type: 'string',
-                    enum: ['move', 'search', 'steal', 'escape'],
+                    enum: ['move', 'search', 'steal', 'escape']
                 },
                 targetRoomId: { type: 'string', minLength: 1, maxLength: 80 },
-                targetPlayerId: { type: 'string', minLength: 1, maxLength: 120 },
-            },
+                targetPlayerId: { type: 'string', minLength: 1, maxLength: 120 }
+            }
         },
         rationale: { type: 'string', minLength: 1, maxLength: RATIONALE_MAX_LENGTH },
         risks: {
             type: 'array',
             maxItems: 3,
-            items: { type: 'string', minLength: 1, maxLength: RISK_MAX_LENGTH },
+            items: { type: 'string', minLength: 1, maxLength: RISK_MAX_LENGTH }
         },
-        confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
-    },
+        confidence: { type: 'string', enum: ['low', 'medium', 'high'] }
+    }
 };
 
 export function buildRelicPlanningAiContext({
@@ -190,7 +186,7 @@ export function buildRelicPlanningAiContext({
     draft,
     lang,
     viewModel,
-    sceneObjective,
+    sceneObjective
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -216,7 +212,7 @@ export function buildRelicPlanningAiContext({
             waitingPlayerCount: viewModel.turnStatus.waitingPlayerCount,
             localSubmitted: !!(
                 localPlayerId && snapshot.submittedPlayerIds.includes(localPlayerId)
-            ),
+            )
         },
         localPlayer: currentPlayer
             ? {
@@ -225,7 +221,7 @@ export function buildRelicPlanningAiContext({
                 score: currentPlayer.score,
                 relicCount: currentPlayer.relicIds.length,
                 escaped: currentPlayer.escaped,
-                defeated: currentPlayer.defeated,
+                defeated: currentPlayer.defeated
             }
             : undefined,
         currentRoom: currentRoom
@@ -235,7 +231,7 @@ export function buildRelicPlanningAiContext({
                 kind: currentRoom.kind,
                 unstable: !!currentRoom.unstable,
                 collapsed: !!currentRoom.collapsed,
-                investigated: roomInvestigated(snapshot, currentRoom.id),
+                investigated: roomInvestigated(snapshot, currentRoom.id)
             }
             : undefined,
         objective: viewModel.objective,
@@ -251,7 +247,7 @@ export function buildRelicPlanningAiContext({
                 exitDistance: exitDistances.get(roomId),
                 relicSignal: hasUnfoundRelicSignal(snapshot, roomId),
                 unstable: !!room?.unstable,
-                collapsed: !!room?.collapsed,
+                collapsed: !!room?.collapsed
             };
         }),
         stealTargets: viewModel.stealTargets.map((player) => ({
@@ -259,19 +255,17 @@ export function buildRelicPlanningAiContext({
             username: player.username,
             health: player.health,
             score: player.score,
-            relicCount: player.relicIds.length,
+            relicCount: player.relicIds.length
         })),
         warnings: viewModel.warnings.map((warning) => ({
             kind: warning.kind,
             severity: warning.severity,
-            message: warning.message,
+            message: warning.message
         })),
         knownInvestigations: snapshot.roomInvestigations.slice(-8).map((investigation) => {
             const room = snapshot.map.find((candidate) => candidate.id === investigation.roomId);
             const revealedRoom = investigation.revealedRoomId
-                ? snapshot.map.find((candidate) =>
-                    candidate.id === investigation.revealedRoomId
-                )
+                ? snapshot.map.find((candidate) => candidate.id === investigation.revealedRoomId)
                 : undefined;
             return {
                 roomName: room?.name ?? 'Unknown room',
@@ -279,15 +273,15 @@ export function buildRelicPlanningAiContext({
                 summary: investigation.summary,
                 hint: investigation.hint,
                 danger: investigation.danger,
-                revealedRoomName: revealedRoom?.name,
+                revealedRoomName: revealedRoom?.name
             };
         }),
         recentEvents: snapshot.events.slice(-6).map((event: RelicEvent) => ({
             round: event.round,
             type: event.type,
             message: event.message,
-            tone: event.tone,
-        })),
+            tone: event.tone
+        }))
     };
 }
 
@@ -296,7 +290,7 @@ export function createRelicPlanningAiRequest({
     baseStateRevision,
     dedupeKey,
     requestId,
-    signal,
+    signal
 }: Readonly<{
     context: RelicPlanningAiContext;
     baseStateRevision: string;
@@ -314,7 +308,7 @@ export function createRelicPlanningAiRequest({
             'Return one concise JSON suggestion for the local player.',
             'Only recommend legal actions and target ids from the context.',
             'Do not claim hidden relic names, exact hidden values, or unrevealed secret locations.',
-            'Never submit actions or imply that the suggestion is authoritative.',
+            'Never submit actions or imply that the suggestion is authoritative.'
         ].join(' '),
         context: stripUndefinedValues(context) as RelicPlanningAiContext,
         baseStateRevision,
@@ -322,22 +316,20 @@ export function createRelicPlanningAiRequest({
         maxOutputTokens: 220,
         temperature: 0.2,
         timeoutMs: 5_000,
-        signal,
+        signal
     };
 }
 
 export function relicPlanningAiBaseStateRevision({
     snapshot,
     localPlayerId,
-    draft,
+    draft
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
     draft: ActionDraft;
 }>): string {
-    const localRoomId = snapshot.players.find((player) =>
-        player.playerId === localPlayerId
-    )?.roomId;
+    const localRoomId = snapshot.players.find((player) => player.playerId === localPlayerId)?.roomId;
     return [
         'relic-planning-ai-v1',
         snapshot.roomId,
@@ -347,14 +339,14 @@ export function relicPlanningAiBaseStateRevision({
         [...snapshot.submittedPlayerIds].sort().join(','),
         localPlayerId ?? 'anonymous',
         localRoomId ?? 'no-room',
-        relicPlanningAiDraftKey(draft),
+        relicPlanningAiDraftKey(draft)
     ].join('|');
 }
 
 export function relicPlanningAiDedupeKey({
     snapshot,
     localPlayerId,
-    baseStateRevision,
+    baseStateRevision
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -365,7 +357,7 @@ export function relicPlanningAiDedupeKey({
         snapshot.roomId,
         String(snapshot.round),
         localPlayerId ?? 'anonymous',
-        baseStateRevision,
+        baseStateRevision
     ].join(':');
 }
 
@@ -373,17 +365,15 @@ export function relicPlanningAiDraftKey(draft: ActionDraft): string {
     return [
         draft.kind,
         draft.targetRoomId ?? '',
-        draft.targetPlayerId ?? '',
+        draft.targetPlayerId ?? ''
     ].join(':');
 }
 
 export function canGenerateRelicPlanningAi(
     snapshot: RelicPublicSnapshot | undefined,
-    localPlayerId: string | undefined,
+    localPlayerId: string | undefined
 ): boolean {
-    const player = snapshot?.players.find((candidate) =>
-        candidate.playerId === localPlayerId
-    );
+    const player = snapshot?.players.find((candidate) => candidate.playerId === localPlayerId);
     return !!snapshot &&
         snapshot.phase === 'planning' &&
         !!player &&
@@ -394,23 +384,29 @@ export function canGenerateRelicPlanningAi(
 
 export function validateRelicPlanningAiSuggestion(
     value: unknown,
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): RelicPlanningAiSuggestionValidation {
     if (!isRecord(value)) {
         return { ok: false, reason: 'Suggestion must be an object.' };
     }
 
     const headline = readCappedString(value.headline, 'headline', HEADLINE_MAX_LENGTH);
-    if (!headline.ok) return headline;
+    if (!headline.ok) {
+        return headline;
+    }
     const rationale = readCappedString(value.rationale, 'rationale', RATIONALE_MAX_LENGTH);
-    if (!rationale.ok) return rationale;
+    if (!rationale.ok) {
+        return rationale;
+    }
     if (!Array.isArray(value.risks) || value.risks.length > 3) {
         return { ok: false, reason: 'Risks must contain at most 3 entries.' };
     }
     const risks: string[] = [];
     for (const risk of value.risks) {
         const next = readCappedString(risk, 'risk', RISK_MAX_LENGTH);
-        if (!next.ok) return next;
+        if (!next.ok) {
+            return next;
+        }
         risks.push(next.value);
     }
     if (!isConfidence(value.confidence)) {
@@ -420,7 +416,9 @@ export function validateRelicPlanningAiSuggestion(
     const action = value.action === undefined
         ? undefined
         : readSuggestedAction(value.action);
-    if (action && !action.ok) return action;
+    if (action && !action.ok) {
+        return action;
+    }
     if (action?.ok && !isActionLegalInContext(action.value, context)) {
         return { ok: false, reason: 'Suggested action is not legal for this turn.' };
     }
@@ -432,8 +430,8 @@ export function validateRelicPlanningAiSuggestion(
             action: action?.ok ? action.value : undefined,
             rationale: rationale.value,
             risks,
-            confidence: value.confidence,
-        },
+            confidence: value.confidence
+        }
     };
 }
 
@@ -441,9 +439,10 @@ export function createRelicPlanningAiMockProvider(): RallarAiJsonProvider {
     return createRallarAiMockProvider({
         providerId: 'relic-planning-mock',
         modelId: 'deterministic-planning-companion-v1',
-        value: (request: RallarAiJsonRequest<RelicPlanningAiContext>) => mockRelicPlanningSuggestion(
-            request.context as RelicPlanningAiContext,
-        ),
+        value: (request: RallarAiJsonRequest<RelicPlanningAiContext>) =>
+            mockRelicPlanningSuggestion(
+                request.context as RelicPlanningAiContext
+            )
     });
 }
 
@@ -456,7 +455,7 @@ export function addRelicPlanningAiProposal({
     messageRoomId,
     currentRoomId,
     currentBaseStateRevision,
-    revisionMode = 'shared',
+    revisionMode = 'shared'
 }: Readonly<{
     proposals: readonly RelicPlanningAiProposal[];
     result: RallarAiJsonResult<RelicPlanningAiSuggestion>;
@@ -484,7 +483,7 @@ export function addRelicPlanningAiProposal({
         !isRelicPlanningAiRevisionCurrent(
             result.baseStateRevision,
             currentBaseStateRevision,
-            revisionMode,
+            revisionMode
         )
     ) {
         return pruned;
@@ -496,12 +495,12 @@ export function addRelicPlanningAiProposal({
             result,
             senderId,
             receivedAtEpochMs,
-            local,
+            local
         },
         ...pruned.filter((proposal) =>
             proposal.result.generationId !== result.generationId &&
             (proposal.result.dedupeKey ?? proposal.result.generationId) !== dedupeId
-        ),
+        )
     ]
         .sort((left, right) => right.receivedAtEpochMs - left.receivedAtEpochMs)
         .slice(0, RELIC_PLANNING_AI_PROPOSAL_LIMIT);
@@ -509,12 +508,10 @@ export function addRelicPlanningAiProposal({
 
 export function pruneRelicPlanningAiProposals(
     proposals: readonly RelicPlanningAiProposal[],
-    nowEpochMs: number,
+    nowEpochMs: number
 ): readonly RelicPlanningAiProposal[] {
     return proposals
-        .filter((proposal) =>
-            nowEpochMs - proposal.receivedAtEpochMs <= RELIC_PLANNING_AI_PROPOSAL_TTL_MS
-        )
+        .filter((proposal) => nowEpochMs - proposal.receivedAtEpochMs <= RELIC_PLANNING_AI_PROPOSAL_TTL_MS)
         .sort((left, right) => right.receivedAtEpochMs - left.receivedAtEpochMs)
         .slice(0, RELIC_PLANNING_AI_PROPOSAL_LIMIT);
 }
@@ -522,7 +519,7 @@ export function pruneRelicPlanningAiProposals(
 export function isRelicPlanningAiRevisionCurrent(
     candidateRevision: string | undefined,
     currentRevision: string,
-    mode: 'exact' | 'shared' = 'exact',
+    mode: 'exact' | 'shared' = 'exact'
 ): boolean {
     if (!candidateRevision) {
         return false;
@@ -534,7 +531,7 @@ export function isRelicPlanningAiRevisionCurrent(
 }
 
 function mockRelicPlanningSuggestion(
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): RelicPlanningAiSuggestion {
     const action = firstLegalMockAction(context);
     if (!action) {
@@ -542,7 +539,7 @@ function mockRelicPlanningSuggestion(
             headline: 'Hold and read the room',
             rationale: 'No clean legal plan is visible, so avoid inventing a move.',
             risks: context.warnings.slice(0, 3).map((warning) => warning.message),
-            confidence: 'low',
+            confidence: 'low'
         };
     }
 
@@ -551,12 +548,12 @@ function mockRelicPlanningSuggestion(
         action,
         rationale: rationaleForAction(action, context),
         risks: risksForAction(action, context),
-        confidence: confidenceForAction(action, context),
+        confidence: confidenceForAction(action, context)
     };
 }
 
 function firstLegalMockAction(
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): RelicPlanningAiSuggestedAction | undefined {
     if (
         context.sceneRecommendation &&
@@ -599,11 +596,9 @@ function firstLegalMockAction(
 
 function isActionLegalInContext(
     action: RelicPlanningAiSuggestedAction,
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): boolean {
-    const option = context.actionOptions.find((candidate) =>
-        candidate.kind === action.kind
-    );
+    const option = context.actionOptions.find((candidate) => candidate.kind === action.kind);
     if (!option?.legal) {
         return false;
     }
@@ -620,12 +615,10 @@ function isActionLegalInContext(
 
 function headlineForAction(
     action: RelicPlanningAiSuggestedAction,
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): string {
     if (action.kind === 'move') {
-        const target = context.moveTargets.find((candidate) =>
-            candidate.roomId === action.targetRoomId
-        );
+        const target = context.moveTargets.find((candidate) => candidate.roomId === action.targetRoomId);
         return `Move toward ${target?.name ?? 'the next room'}`;
     }
     if (action.kind === 'search') {
@@ -634,9 +627,7 @@ function headlineForAction(
             : 'Search for a clue';
     }
     if (action.kind === 'steal') {
-        const target = context.stealTargets.find((candidate) =>
-            candidate.playerId === action.targetPlayerId
-        );
+        const target = context.stealTargets.find((candidate) => candidate.playerId === action.targetPlayerId);
         return `Pressure ${target?.username ?? 'a rival hunter'}`;
     }
     return 'Bank the run';
@@ -644,17 +635,17 @@ function headlineForAction(
 
 function rationaleForAction(
     action: RelicPlanningAiSuggestedAction,
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): string {
     if (action.kind === 'move') {
-        const target = context.moveTargets.find((candidate) =>
-            candidate.roomId === action.targetRoomId
-        );
+        const target = context.moveTargets.find((candidate) => candidate.roomId === action.targetRoomId);
         if (target?.relicSignal) {
             return `${target.name} has the strongest visible relic signal among legal routes.`;
         }
         return target?.exitDistance !== undefined
-            ? `${target.name} keeps a legal route open and is ${target.exitDistance} step${target.exitDistance === 1 ? '' : 's'} from the Exit.`
+            ? `${target.name} keeps a legal route open and is ${target.exitDistance} step${
+                target.exitDistance === 1 ? '' : 's'
+            } from the Exit.`
             : 'Moving keeps the expedition from stalling in the current room.';
     }
     if (action.kind === 'search') {
@@ -663,9 +654,7 @@ function rationaleForAction(
             : 'The current room has no resolved investigation in the visible journal.';
     }
     if (action.kind === 'steal') {
-        const target = context.stealTargets.find((candidate) =>
-            candidate.playerId === action.targetPlayerId
-        );
+        const target = context.stealTargets.find((candidate) => candidate.playerId === action.targetPlayerId);
         return target
             ? `${target.username} is in reach with ${target.relicCount} relic${target.relicCount === 1 ? '' : 's'}.`
             : 'A rival hunter is in reach this turn.';
@@ -675,7 +664,7 @@ function rationaleForAction(
 
 function risksForAction(
     action: RelicPlanningAiSuggestedAction,
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): readonly string[] {
     const risks = context.warnings.slice(0, 2).map((warning) => warning.message);
     if (action.kind === 'search' && context.currentRoom?.unstable) {
@@ -692,7 +681,7 @@ function risksForAction(
 
 function confidenceForAction(
     action: RelicPlanningAiSuggestedAction,
-    context: RelicPlanningAiContext,
+    context: RelicPlanningAiContext
 ): RelicPlanningAiConfidence {
     if (context.warnings.some((warning) => warning.severity === 'danger')) {
         return 'medium';
@@ -712,13 +701,13 @@ function toContextActionOption(option: RelicActionOption): RelicPlanningAiContex
         blocker: option.blocker,
         consequence: {
             text: option.consequence.text,
-            status: option.consequence.status,
-        },
+            status: option.consequence.status
+        }
     };
 }
 
 function toPlanningAiAction(
-    action: RelicActionInput | ActionDraft | undefined,
+    action: RelicActionInput | ActionDraft | undefined
 ): RelicPlanningAiSuggestedAction | undefined {
     if (!action) {
         return undefined;
@@ -726,13 +715,13 @@ function toPlanningAiAction(
     return stripUndefinedValues({
         kind: action.kind,
         targetRoomId: action.targetRoomId,
-        targetPlayerId: action.targetPlayerId,
+        targetPlayerId: action.targetPlayerId
     }) as RelicPlanningAiSuggestedAction;
 }
 
 function readSuggestedAction(
-    value: unknown,
-): Readonly<{ ok: true; value: RelicPlanningAiSuggestedAction }> | Readonly<{ ok: false; reason: string }> {
+    value: unknown
+): Readonly<{ ok: true; value: RelicPlanningAiSuggestedAction; }> | Readonly<{ ok: false; reason: string; }> {
     if (!isRecord(value) || !isRelicActionKind(value.kind)) {
         return { ok: false, reason: 'Action kind is invalid.' };
     }
@@ -745,16 +734,16 @@ function readSuggestedAction(
                 : undefined,
             targetPlayerId: typeof value.targetPlayerId === 'string'
                 ? value.targetPlayerId
-                : undefined,
-        },
+                : undefined
+        }
     };
 }
 
 function readCappedString(
     value: unknown,
     field: string,
-    maxLength: number,
-): Readonly<{ ok: true; value: string }> | Readonly<{ ok: false; reason: string }> {
+    maxLength: number
+): Readonly<{ ok: true; value: string; }> | Readonly<{ ok: false; reason: string; }> {
     if (typeof value !== 'string' || value.trim().length === 0) {
         return { ok: false, reason: `${field} must be a non-empty string.` };
     }
@@ -776,9 +765,7 @@ function isRelicActionKind(value: unknown): value is RelicActionKind {
 }
 
 function roomInvestigated(snapshot: RelicPublicSnapshot, roomId: string): boolean {
-    return snapshot.roomInvestigations.some((investigation) =>
-        investigation.roomId === roomId
-    ) ||
+    return snapshot.roomInvestigations.some((investigation) => investigation.roomId === roomId) ||
         snapshot.relics.some((relic) =>
             relic.roomId === roomId &&
             (!!relic.foundBy || !!relic.carriedBy || !!relic.escapedBy)
@@ -787,7 +774,7 @@ function roomInvestigated(snapshot: RelicPublicSnapshot, roomId: string): boolea
 
 function hasUnfoundRelicSignal(
     snapshot: RelicPublicSnapshot,
-    roomId: string,
+    roomId: string
 ): boolean {
     return snapshot.relics.some((relic) =>
         relic.roomId === roomId &&
@@ -798,15 +785,15 @@ function hasUnfoundRelicSignal(
 }
 
 function relicExitDistances(
-    map: RelicPublicSnapshot['map'],
+    map: RelicPublicSnapshot['map']
 ): Map<string, number> {
     const exit = map.find((room) => room.kind === 'exit');
     const distances = new Map<string, number>();
     if (!exit) {
         return distances;
     }
-    const queue: Array<Readonly<{ roomId: string; distance: number }>> = [
-        { roomId: exit.id, distance: 0 },
+    const queue: Array<Readonly<{ roomId: string; distance: number; }>> = [
+        { roomId: exit.id, distance: 0 }
     ];
     distances.set(exit.id, 0);
     while (queue.length > 0) {
@@ -844,7 +831,7 @@ function stripUndefinedValues(value: unknown): unknown {
     return Object.fromEntries(
         Object.entries(value)
             .filter(([, entry]) => entry !== undefined)
-            .map(([key, entry]) => [key, stripUndefinedValues(entry)]),
+            .map(([key, entry]) => [key, stripUndefinedValues(entry)])
     );
 }
 

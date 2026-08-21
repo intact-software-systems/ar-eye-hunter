@@ -1,9 +1,9 @@
 import type {
-    RallarGameHostCapability,
     RallarGameHostCandidate,
     RallarGameHostCandidateReason,
+    RallarGameHostCapability,
     RallarGameHostElectionInput,
-    RallarGameHostElectionResult,
+    RallarGameHostElectionResult
 } from './types.ts';
 
 export const DEFAULT_RALLAR_GAME_CAPABILITY_TTL_MS = 15_000;
@@ -11,7 +11,7 @@ export const RALLAR_GAME_MISSING_CAPABILITY_SCORE = -1_000_000;
 export const RALLAR_GAME_CANNOT_HOST_SCORE = -10_000_000;
 
 export function scoreRallarGameHostCapability(
-    capability: RallarGameHostCapability,
+    capability: RallarGameHostCapability
 ): number {
     if (capability.canHost === false) {
         return RALLAR_GAME_CANNOT_HOST_SCORE;
@@ -31,12 +31,12 @@ export function scoreRallarGameHostCapability(
             (capability.isMobile ? 120 : 0) -
             (capability.isBatterySaving ? 120 : 0) -
             previousDisconnects * 60 +
-            (capability.scoreBias ?? 0),
+            (capability.scoreBias ?? 0)
     );
 }
 
 export function electRallarGameHost(
-    input: RallarGameHostElectionInput,
+    input: RallarGameHostElectionInput
 ): RallarGameHostElectionResult {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const capabilityTtlMs = input.capabilityTtlMs ??
@@ -65,7 +65,7 @@ export function electRallarGameHost(
                     capability,
                     score: RALLAR_GAME_CANNOT_HOST_SCORE,
                     eligible: false,
-                    reason: 'cannot-host',
+                    reason: 'cannot-host'
                 };
             }
 
@@ -74,7 +74,7 @@ export function electRallarGameHost(
                 capability,
                 score: scoreHost(capability),
                 eligible: true,
-                reason: 'fresh-capability',
+                reason: 'fresh-capability'
             };
         })
         .sort(compareCandidates);
@@ -85,27 +85,24 @@ export function electRallarGameHost(
         backup: eligible[1],
         candidates,
         nowEpochMs,
-        capabilityTtlMs,
+        capabilityTtlMs
     };
 }
 
 function fallbackCandidate(
     peerId: string,
-    reason: Extract<
-        RallarGameHostCandidateReason,
-        'missing-capability' | 'stale-capability'
-    >,
+    reason: Extract<RallarGameHostCandidateReason, 'missing-capability' | 'stale-capability'>
 ): RallarGameHostCandidate {
     return {
         peerId,
         score: RALLAR_GAME_MISSING_CAPABILITY_SCORE,
         eligible: true,
-        reason,
+        reason
     };
 }
 
 function latestCapabilitiesByPeer(
-    capabilities: readonly RallarGameHostCapability[],
+    capabilities: readonly RallarGameHostCapability[]
 ): ReadonlyMap<string, RallarGameHostCapability> {
     const byPeer = new Map<string, RallarGameHostCapability>();
     for (const capability of capabilities) {
@@ -122,7 +119,7 @@ function latestCapabilitiesByPeer(
 
 function compareCandidates(
     left: RallarGameHostCandidate,
-    right: RallarGameHostCandidate,
+    right: RallarGameHostCandidate
 ): number {
     if (left.eligible !== right.eligible) {
         return left.eligible ? -1 : 1;

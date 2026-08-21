@@ -11,7 +11,7 @@ export function MetricStrip({ items, label = 'Metrics' }: Readonly<{
 }>) {
     return (
         <dl aria-label={label} className={styles.metricStrip}>
-            {items.map(item => (
+            {items.map((item) => (
                 <div className={styles.metric} key={item.label}>
                     <dt className={styles.metricLabel}>{item.label}</dt>
                     <dd className={styles.metricValue}>{item.value}</dd>

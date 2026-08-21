@@ -1,14 +1,13 @@
 import { ALMessage, newALEventRoute, newALUnicastMessage } from '../al-contracts/al-contract.ts';
+import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import WsQueueBoxClientService from '../services/WsQueueBoxClientService.ts';
 import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
     QRtcSignalingTransportInputDto
 } from './QRtcSignalingContracts.ts';
-import WsQueueBoxClientService from '../services/WsQueueBoxClientService.ts';
-import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTransport {
-
     private readonly id: string = 'signaling-ws-' + crypto.randomUUID().toString();
 
     public readonly qbox: WsQueueBoxClientService;
@@ -18,7 +17,7 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
     constructor(
         qbox: WsQueueBoxClientService,
         typeId: string,
-        wakeOutbox?: () => void,
+        wakeOutbox?: () => void
     ) {
         this.qbox = qbox;
         this.typeId = typeId;
@@ -32,21 +31,24 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
                 onOpen: async () => {
                     try {
                         await input.callbacks.onOpen(input.sessionId, input.token);
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('Error in onOpen handler', e);
                     }
                 },
                 onClose: async () => {
                     try {
                         await input.callbacks.onClose(input.sessionId, input.token);
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('Error in onClose handler', e);
                     }
                 },
                 onError: async (error: Event) => {
                     try {
                         await input.callbacks.onError(input.sessionId, input.token, error.toString());
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('Error in onError handler', e);
                     }
                 }
@@ -63,7 +65,8 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
                         }
 
                         await input.callbacks.onMessage(input.sessionId, input.token, message);
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('Error in onMessage handler', e);
                     }
 

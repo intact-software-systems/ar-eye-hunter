@@ -1,25 +1,22 @@
 import type {
     GraphDiagnosticReadOptions,
-    GraphDiagnosticReadResponse,
+    GraphDiagnosticReadResponse
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { serializeGraphInfoSnapshot } from './graph-diagnostics-serialization.ts';
 import {
     computeGroupGraph,
     computeScopedGlobalGraphAndCacheIt,
-    toScopedGlobalGraphRef,
+    toScopedGlobalGraphRef
 } from './group-graphs-create-service.ts';
+import { findGraphByRef, setGraph } from './repository/graphs-repository.ts';
 import type { GraphInfoSnapshot } from './shared-graph-types.ts';
-import {
-    findGraphByRef,
-    setGraph,
-} from './repository/graphs-repository.ts';
-import { serializeGraphInfoSnapshot } from './graph-diagnostics-serialization.ts';
 
 export function readScopedGlobalGraphDiagnostic(
     scope: StateScope,
-    options: GraphDiagnosticReadOptions = {},
+    options: GraphDiagnosticReadOptions = {}
 ): Either<string, GraphDiagnosticReadResponse> {
     const groupRef = toScopedGlobalGraphRef(scope);
     return readGraphDiagnostic(
@@ -28,16 +25,16 @@ export function readScopedGlobalGraphDiagnostic(
         (current) => {
             const computed = computeScopedGlobalGraphAndCacheIt(
                 scope,
-                options.includeMeasured ?? false,
+                options.includeMeasured ?? false
             );
             return ensureFreshVersion(computed, current);
-        },
+        }
     );
 }
 
 export function readGroupGraphDiagnostic(
     groupRef: GroupRef,
-    options: GraphDiagnosticReadOptions = {},
+    options: GraphDiagnosticReadOptions = {}
 ): Either<string, GraphDiagnosticReadResponse> {
     return readGraphDiagnostic(
         groupRef,
@@ -49,9 +46,9 @@ export function readGroupGraphDiagnostic(
             }
 
             return Either.ofRight(
-                ensureFreshVersion(result.right, current),
+                ensureFreshVersion(result.right, current)
             );
-        },
+        }
     );
 }
 
@@ -59,8 +56,8 @@ function readGraphDiagnostic(
     groupRef: GroupRef,
     options: GraphDiagnosticReadOptions,
     compute: (
-        current: GraphInfoSnapshot | undefined,
-    ) => GraphInfoSnapshot | Either<string, GraphInfoSnapshot>,
+        current: GraphInfoSnapshot | undefined
+    ) => GraphInfoSnapshot | Either<string, GraphInfoSnapshot>
 ): Either<string, GraphDiagnosticReadResponse> {
     const refresh = options.refresh ?? 'if-missing';
     const current = findGraphByRef(groupRef);
@@ -68,7 +65,9 @@ function readGraphDiagnostic(
     if (refresh === 'never') {
         if (!current) {
             return Either.ofLeft(
-                `No cached graph diagnostic for ${groupRef.applicationId}/${groupRef.workspaceId ?? ''}/${groupRef.groupId}`,
+                `No cached graph diagnostic for ${groupRef.applicationId}/${
+                    groupRef.workspaceId ?? ''
+                }/${groupRef.groupId}`
             );
         }
 
@@ -88,13 +87,15 @@ function readGraphDiagnostic(
     }
     if (!snapshot) {
         return Either.ofLeft(
-            `No graph diagnostic could be computed for ${groupRef.applicationId}/${groupRef.workspaceId ?? ''}/${groupRef.groupId}`,
+            `No graph diagnostic could be computed for ${groupRef.applicationId}/${
+                groupRef.workspaceId ?? ''
+            }/${groupRef.groupId}`
         );
     }
 
     setGraph(snapshot);
     return Either.ofRight(
-        toReadResponse(groupRef, snapshot, current !== undefined, true),
+        toReadResponse(groupRef, snapshot, current !== undefined, true)
     );
 }
 
@@ -102,21 +103,21 @@ function toReadResponse(
     groupRef: GroupRef,
     snapshot: GraphInfoSnapshot,
     hit: boolean,
-    refreshed: boolean,
+    refreshed: boolean
 ): GraphDiagnosticReadResponse {
     return {
         groupRef,
         snapshot: serializeGraphInfoSnapshot(snapshot),
         cache: {
             hit,
-            refreshed,
-        },
+            refreshed
+        }
     };
 }
 
 function ensureFreshVersion(
     snapshot: GraphInfoSnapshot | undefined,
-    current: GraphInfoSnapshot | undefined,
+    current: GraphInfoSnapshot | undefined
 ): GraphInfoSnapshot {
     if (!snapshot) {
         throw new Error('Graph diagnostic computation returned no snapshot');
@@ -128,6 +129,6 @@ function ensureFreshVersion(
 
     return {
         ...snapshot,
-        version: current.version + 1,
+        version: current.version + 1
     };
 }

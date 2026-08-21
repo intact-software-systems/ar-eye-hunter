@@ -25,10 +25,12 @@ export function ExplicitWindowControls({
     model,
     pending = false,
     onPrevious,
-    onNext,
+    onNext
 }: ExplicitWindowControlsProps) {
     function invoke(action: () => void): void {
-        if (!pending) action();
+        if (!pending) {
+            action();
+        }
     }
 
     return (
@@ -56,7 +58,8 @@ export function ExplicitWindowControls({
                 role={announceRange ? 'status' : undefined}
                 tabIndex={-1}
             >
-                {rangeLabel(model, itemLabel, emptyLabel)}{pending ? ' Updating…' : ''}
+                {rangeLabel(model, itemLabel, emptyLabel)}
+                {pending ? ' Updating…' : ''}
             </span>
             <button
                 aria-controls={contentId}
@@ -75,9 +78,11 @@ export function ExplicitWindowControls({
 function rangeLabel(
     model: ExplicitWindowModel,
     itemLabel: string,
-    emptyLabel: string | undefined,
+    emptyLabel: string | undefined
 ): string {
-    if (model.total === 0) return emptyLabel ?? `No ${itemLabel}.`;
+    if (model.total === 0) {
+        return emptyLabel ?? `No ${itemLabel}.`;
+    }
     return `Showing ${number(model.displayStart)}–${number(model.displayEnd)} of ${number(model.total)} ${itemLabel}.`;
 }
 

@@ -1,6 +1,6 @@
 import type {
     ControlDistributedRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
@@ -17,21 +17,19 @@ export function validateControlRunSnapshot(value: unknown): void {
 }
 
 export function validateControlDistributedRuns(
-    value: unknown,
+    value: unknown
 ): asserts value is readonly ControlDistributedRunSnapshot[] {
     if (!Array.isArray(value)) {
         throw new Error(
-            'Control server snapshot distributedRuns must be an array.',
+            'Control server snapshot distributedRuns must be an array.'
         );
     }
-    value.forEach((run, index) =>
-        validateDistributedRun(run, `distributedRuns[${index}]`)
-    );
+    value.forEach((run, index) => validateDistributedRun(run, `distributedRuns[${index}]`));
     requireUniqueStringField(value, 'distributedRunId', 'distributedRuns');
 }
 
 export function withoutDistributedRuns(
-    snapshot: ControlServerSnapshot,
+    snapshot: ControlServerSnapshot
 ): ControlServerSnapshot {
     const { distributedRuns: _ignored, ...core } = snapshot;
     return core;
@@ -42,18 +40,16 @@ function validateControlRun(value: unknown, path: string): void {
     requiredString(run, 'runId', `${path}.runId`);
     const agents = requiredArray(run, 'agents', `${path}.agents`);
     const commands = requiredArray(run, 'commands', `${path}.commands`);
-    agents.forEach((agent, index) =>
-        validateControlAgent(agent, `${path}.agents[${index}]`)
-    );
+    agents.forEach((agent, index) => validateControlAgent(agent, `${path}.agents[${index}]`));
     requireUniqueStringField(agents, 'agentId', `${path}.agents`);
     commands.forEach((command, index) => {
         const commandRecord = requiredRecord(
             command,
-            `${path}.commands[${index}]`,
+            `${path}.commands[${index}]`
         );
         requiredRecord(
             commandRecord.envelope,
-            `${path}.commands[${index}].envelope`,
+            `${path}.commands[${index}].envelope`
         );
     });
 }
@@ -65,51 +61,57 @@ function validateControlAgent(value: unknown, path: string): void {
     requiredArray(
         agent,
         'completedCommandIds',
-        `${path}.completedCommandIds`,
+        `${path}.completedCommandIds`
     );
-    for (const field of [
-        'receivedResultCount',
-        'receivedEventCount',
-        'reconnectCount',
-    ] as const) {
+    for (
+        const field of [
+            'receivedResultCount',
+            'receivedEventCount',
+            'reconnectCount'
+        ] as const
+    ) {
         requiredNumber(agent, field, `${path}.${field}`);
     }
-    for (const field of [
-        'lastHeartbeatAtEpochMs',
-        'lastSeenAtEpochMs',
-    ] as const) {
+    for (
+        const field of [
+            'lastHeartbeatAtEpochMs',
+            'lastSeenAtEpochMs'
+        ] as const
+    ) {
         optionalNumber(agent, field, `${path}.${field}`);
     }
     if (agent.identity !== undefined) {
         const identity = requiredRecord(agent.identity, `${path}.identity`);
-        for (const field of [
-            'principalId',
-            'clientId',
-            'username',
-            'sessionId',
-            'clientInstanceId',
-            'applicationId',
-            'workspaceId',
-            'groupId',
-            'providerMode',
-            'browserLabel',
-            'sessionLabel',
-            'region',
-            'provider',
-            'datacenter',
-            'hostId',
-            'agentPoolId',
-            'deploymentId',
-            'browserName',
-            'browserVersion',
-            'os',
-        ] as const) {
+        for (
+            const field of [
+                'principalId',
+                'clientId',
+                'username',
+                'sessionId',
+                'clientInstanceId',
+                'applicationId',
+                'workspaceId',
+                'groupId',
+                'providerMode',
+                'browserLabel',
+                'sessionLabel',
+                'region',
+                'provider',
+                'datacenter',
+                'hostId',
+                'agentPoolId',
+                'deploymentId',
+                'browserName',
+                'browserVersion',
+                'os'
+            ] as const
+        ) {
             optionalString(identity, field, `${path}.identity.${field}`);
         }
         optionalNumber(
             identity,
             'updatedAtEpochMs',
-            `${path}.identity.updatedAtEpochMs`,
+            `${path}.identity.updatedAtEpochMs`
         );
     }
 }
@@ -120,23 +122,25 @@ function validateDistributedRun(value: unknown, path: string): void {
         requiredString(run, field, `${path}.${field}`);
     }
     requiredString(run, 'state', `${path}.state`);
-    if (!(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES as readonly unknown[]).includes(
-        run.state,
-    )) {
+    if (
+        !(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES as readonly unknown[]).includes(
+            run.state
+        )
+    ) {
         throw new Error(
-            `Control server snapshot ${path}.state must be a known distributed-run state.`,
+            `Control server snapshot ${path}.state must be a known distributed-run state.`
         );
     }
     requiredNumber(run, 'updatedAtEpochMs', `${path}.updatedAtEpochMs`);
     const targetAgentIds = requiredArray(
         run,
         'targetAgentIds',
-        `${path}.targetAgentIds`,
+        `${path}.targetAgentIds`
     );
     targetAgentIds.forEach((agentId, index) => {
         if (typeof agentId !== 'string') {
             throw new Error(
-                `Control server snapshot ${path}.targetAgentIds[${index}] must be a string.`,
+                `Control server snapshot ${path}.targetAgentIds[${index}] must be a string.`
             );
         }
     });
@@ -144,17 +148,17 @@ function validateDistributedRun(value: unknown, path: string): void {
     const commandLinks = requiredArray(
         run,
         'commandLinks',
-        `${path}.commandLinks`,
+        `${path}.commandLinks`
     );
     commandLinks.forEach((link, index) => {
         const linkRecord = requiredRecord(
             link,
-            `${path}.commandLinks[${index}]`,
+            `${path}.commandLinks[${index}]`
         );
         requiredString(
             linkRecord,
             'agentId',
-            `${path}.commandLinks[${index}].agentId`,
+            `${path}.commandLinks[${index}].agentId`
         );
     });
 
@@ -165,7 +169,7 @@ function validateDistributedRun(value: unknown, path: string): void {
     }
     validateRoleAssignments(
         manifest.roleAssignments,
-        `${path}.manifest.roleAssignments`,
+        `${path}.manifest.roleAssignments`
     );
 
     const rollup = requiredRecord(run.rollup, `${path}.rollup`);
@@ -173,28 +177,30 @@ function validateDistributedRun(value: unknown, path: string): void {
     requiredNumber(
         summary,
         'blockingFailures',
-        `${path}.rollup.summary.blockingFailures`,
+        `${path}.rollup.summary.blockingFailures`
     );
 
     if (run.targetResolution !== undefined) {
         const resolution = requiredRecord(
             run.targetResolution,
-            `${path}.targetResolution`,
+            `${path}.targetResolution`
         );
         const roleAssignments = requiredArray(
             resolution,
             'roleAssignments',
-            `${path}.targetResolution.roleAssignments`,
+            `${path}.targetResolution.roleAssignments`
         );
         validateRoleAssignments(
             roleAssignments,
-            `${path}.targetResolution.roleAssignments`,
+            `${path}.targetResolution.roleAssignments`
         );
     }
 }
 
 function validateRoleAssignments(value: unknown, path: string): void {
-    if (value === undefined) return;
+    if (value === undefined) {
+        return;
+    }
     if (!Array.isArray(value)) {
         throw new Error(`Control server snapshot ${path} must be an array.`);
     }
@@ -221,7 +227,7 @@ function requiredRecord(value: unknown, path: string): Record<string, unknown> {
 function requiredArray(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): readonly unknown[] {
     const value = record[field];
     if (!Array.isArray(value)) {
@@ -233,7 +239,7 @@ function requiredArray(
 function optionalArray(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (record[field] !== undefined) {
         requiredArray(record, field, path);
@@ -243,7 +249,7 @@ function optionalArray(
 function requiredString(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (typeof record[field] !== 'string') {
         throw new Error(`Control server snapshot ${path} must be a string.`);
@@ -253,7 +259,7 @@ function requiredString(
 function optionalString(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (record[field] !== undefined) {
         requiredString(record, field, path);
@@ -263,7 +269,7 @@ function optionalString(
 function requiredBoolean(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (typeof record[field] !== 'boolean') {
         throw new Error(`Control server snapshot ${path} must be a boolean.`);
@@ -273,7 +279,7 @@ function requiredBoolean(
 function requiredNumber(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (typeof record[field] !== 'number' || !Number.isFinite(record[field])) {
         throw new Error(`Control server snapshot ${path} must be a finite number.`);
@@ -283,7 +289,7 @@ function requiredNumber(
 function optionalNumber(
     record: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (record[field] !== undefined) {
         requiredNumber(record, field, path);
@@ -293,7 +299,7 @@ function optionalNumber(
 function requireUniqueStringField(
     values: readonly unknown[],
     field: string,
-    path: string,
+    path: string
 ): void {
     const strings = values.map((value) => {
         const record = requiredRecord(value, path);
@@ -301,7 +307,7 @@ function requireUniqueStringField(
     });
     if (new Set(strings).size !== strings.length) {
         throw new Error(
-            `Control server snapshot ${path} must contain unique ${field} values.`,
+            `Control server snapshot ${path} must contain unique ${field} values.`
         );
     }
 }
@@ -309,7 +315,7 @@ function requireUniqueStringField(
 function requireUniqueStrings(values: readonly unknown[], path: string): void {
     if (new Set(values).size !== values.length) {
         throw new Error(
-            `Control server snapshot ${path} must contain unique values.`,
+            `Control server snapshot ${path} must contain unique values.`
         );
     }
 }

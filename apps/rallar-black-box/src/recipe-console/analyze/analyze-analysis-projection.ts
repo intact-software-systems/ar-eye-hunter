@@ -1,5 +1,4 @@
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/mod.ts';
-import type { AnalyzeWorkerAnalysisProjection } from './analyze-worker-contract.ts';
 import { projectAnalyzePerformance } from './analyze-performance-projection.ts';
 import {
     boundedText,
@@ -7,15 +6,16 @@ import {
     MAX_ANALYSIS_ROWS,
     MAX_METADATA_BYTES,
     MAX_SUMMARY_BYTES,
-    PROJECTION_OMISSION_MESSAGE,
     projectAuthorityIdentifier,
+    PROJECTION_OMISSION_MESSAGE,
     projectOpaqueIdentifier,
-    projectOpaqueKey,
+    projectOpaqueKey
 } from './analyze-projection-bounds.ts';
 import { projectAnalyzeVerdict } from './analyze-verdict-projection.ts';
+import type { AnalyzeWorkerAnalysisProjection } from './analyze-worker-contract.ts';
 
 export function projectAnalyzeAnalysis(
-    analysis: DistributedRunAnalysis,
+    analysis: DistributedRunAnalysis
 ): AnalyzeWorkerAnalysisProjection {
     return {
         generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
@@ -33,16 +33,16 @@ export function projectAnalyzeAnalysis(
             agents: finiteNumber(analysis.summary.agents),
             passRate: finiteNumber(analysis.summary.passRate),
             failureGroups: finiteNumber(analysis.summary.failureGroups),
-            blockingFailures: finiteNumber(analysis.summary.blockingFailures),
+            blockingFailures: finiteNumber(analysis.summary.blockingFailures)
         },
         parseWarnings: analysis.parseWarnings.slice(0, MAX_ANALYSIS_ROWS).map(
-            warning => ({
+            (warning) => ({
                 fileName: boundedText(warning.fileName, MAX_METADATA_BYTES),
                 message: boundedText(warning.message, MAX_SUMMARY_BYTES),
                 ...(warning.lineNumber !== undefined
                     ? { lineNumber: finiteNumber(warning.lineNumber) }
-                    : {}),
-            }),
+                    : {})
+            })
         ),
         ...(analysis.failure ? { failure: projectFailure(analysis.failure) } : {}),
         ...(analysis.performance
@@ -60,12 +60,12 @@ export function projectAnalyzeAnalysis(
             : {}),
         ...(analysis.performanceMarkdown
             ? { performanceMarkdown: boundedText(analysis.performanceMarkdown) }
-            : {}),
+            : {})
     };
 }
 
 export function minimalAnalyzeAnalysis(
-    analysis: DistributedRunAnalysis,
+    analysis: DistributedRunAnalysis
 ): AnalyzeWorkerAnalysisProjection {
     return {
         generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
@@ -82,18 +82,18 @@ export function minimalAnalyzeAnalysis(
         parseWarnings: [],
         ...(analysis.spa
             ? {
-                  spa: {
-                      verdict: {
-                          ...projectAnalyzeVerdict(analysis.spa.verdict),
-                          primaryEvidence: [],
-                          successSignals: [],
-                          warningSignals: [],
-                          causalTrail: [],
-                      },
-                  },
-              }
+                spa: {
+                    verdict: {
+                        ...projectAnalyzeVerdict(analysis.spa.verdict),
+                        primaryEvidence: [],
+                        successSignals: [],
+                        warningSignals: [],
+                        causalTrail: []
+                    }
+                }
+            }
             : {}),
-        summaryMarkdown: PROJECTION_OMISSION_MESSAGE,
+        summaryMarkdown: PROJECTION_OMISSION_MESSAGE
     };
 }
 
@@ -107,12 +107,12 @@ function projectGroup(group: NonNullable<DistributedRunAnalysis['group']>) {
             : {}),
         ...(group.groupId
             ? { groupId: boundedText(group.groupId, MAX_METADATA_BYTES) }
-            : {}),
+            : {})
     };
 }
 
 function projectFailure(
-    failure: NonNullable<DistributedRunAnalysis['failure']>,
+    failure: NonNullable<DistributedRunAnalysis['failure']>
 ): NonNullable<AnalyzeWorkerAnalysisProjection['failure']> {
     return {
         category: boundedText(failure.category, MAX_METADATA_BYTES),
@@ -122,21 +122,21 @@ function projectFailure(
         minimalFixArea: boundedText(failure.minimalFixArea, MAX_SUMMARY_BYTES),
         verificationCommand: boundedText(failure.verificationCommand),
         affectedAgents: failure.affectedAgents.slice(0, MAX_ANALYSIS_ROWS)
-            .map(value => projectOpaqueIdentifier(value)),
+            .map((value) => projectOpaqueIdentifier(value)),
         affectedRegions: failure.affectedRegions.slice(0, MAX_ANALYSIS_ROWS)
-            .map(value => boundedText(value, MAX_METADATA_BYTES)),
+            .map((value) => boundedText(value, MAX_METADATA_BYTES)),
         ...(failure.commandId
             ? { commandId: projectOpaqueIdentifier(failure.commandId) }
             : {}),
         ...(failure.recipeId
             ? { recipeId: projectOpaqueIdentifier(failure.recipeId) }
             : {}),
-        evidenceFile: boundedText(failure.evidenceFile, MAX_METADATA_BYTES),
+        evidenceFile: boundedText(failure.evidenceFile, MAX_METADATA_BYTES)
     };
 }
 
 function projectTargetResolution(
-    target: NonNullable<DistributedRunAnalysis['targetResolution']>,
+    target: NonNullable<DistributedRunAnalysis['targetResolution']>
 ): NonNullable<AnalyzeWorkerAnalysisProjection['targetResolution']> {
     return {
         selected: finiteNumber(target.selected),
@@ -153,14 +153,16 @@ function projectTargetResolution(
         regions: projectNumberRecord(target.regions),
         providers: projectNumberRecord(target.providers),
         targetAgentIds: target.targetAgentIds.slice(0, MAX_ANALYSIS_ROWS)
-            .map(value => projectOpaqueIdentifier(value)),
+            .map((value) => projectOpaqueIdentifier(value)),
         blockingAgentIds: target.blockingAgentIds.slice(0, MAX_ANALYSIS_ROWS)
-            .map(value => projectOpaqueIdentifier(value)),
+            .map((value) => projectOpaqueIdentifier(value))
     };
 }
 
 function projectNumberRecord(value: Readonly<Record<string, number>>) {
-    return Object.fromEntries(Object.entries(value).slice(0, MAX_ANALYSIS_ROWS).map(
-        ([key, count]) => [projectOpaqueKey(key), finiteNumber(count)],
-    ));
+    return Object.fromEntries(
+        Object.entries(value).slice(0, MAX_ANALYSIS_ROWS).map(
+            ([key, count]) => [projectOpaqueKey(key), finiteNumber(count)]
+        )
+    );
 }

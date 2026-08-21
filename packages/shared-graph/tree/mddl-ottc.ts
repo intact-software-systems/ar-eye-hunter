@@ -3,12 +3,12 @@ import { EdgeProp, GraphProp, TreeGraph, VertexId, VertexProp } from '../graph-p
 
 export type RelaxDegreeFn = (
     degreeBroken: ReadonlySet<VertexId>,
-    degreeBound: Map<VertexId, number>,
+    degreeBound: Map<VertexId, number>
 ) => boolean;
 
 export function relaxDegreeByOne(
     degreeBroken: ReadonlySet<string>,
-    degreeBound: Map<string, number>,
+    degreeBound: Map<string, number>
 ): boolean {
     if (degreeBroken.size === 0) {
         return false;
@@ -20,7 +20,6 @@ export function relaxDegreeByOne(
 
     return true;
 }
-
 
 export type MddlOttcComputed = {
     success: boolean;
@@ -45,7 +44,7 @@ export function mddlOTTC(
     inputGraph: TreeGraph,
     src: VertexId,
     treeNodes: ReadonlySet<VertexId>,
-    relaxDegree: RelaxDegreeFn,
+    relaxDegree: RelaxDegreeFn
 ): MddlOttcComputed {
     const tree = createEmptyTreeLike(inputGraph);
     const state = initializeMddlState(inputGraph, src, treeNodes);
@@ -91,7 +90,7 @@ export function mddlOTTC(
 function initializeMddlState(
     inputGraph: TreeGraph,
     src: VertexId,
-    treeNodes: ReadonlySet<VertexId>,
+    treeNodes: ReadonlySet<VertexId>
 ): MddlState {
     const near = new Map<VertexId, VertexId | undefined>();
     const ecc = new Map<VertexId, number>();
@@ -100,7 +99,7 @@ function initializeMddlState(
     const notInTree = new Set<VertexId>(treeNodes);
     let nearest: NearestChoice = {
         node: undefined,
-        score: Number.POSITIVE_INFINITY,
+        score: Number.POSITIVE_INFINITY
     };
 
     for (const v of treeNodes) {
@@ -109,7 +108,8 @@ function initializeMddlState(
 
         if (v === src) {
             near.set(v, src);
-        } else {
+        }
+        else {
             const edgeKey = inputGraph.edge(v, src);
             if (edgeKey !== undefined) {
                 near.set(v, src);
@@ -117,7 +117,8 @@ function initializeMddlState(
                 if (w < nearest.score) {
                     nearest = { node: v, score: w };
                 }
-            } else {
+            }
+            else {
                 near.set(v, undefined);
             }
         }
@@ -135,7 +136,7 @@ function initializeMddlState(
         degreeBound,
         dist,
         notInTree,
-        nearest,
+        nearest
     };
 }
 
@@ -144,7 +145,7 @@ function attachVertex(
     inputGraph: TreeGraph,
     node: VertexId,
     parent: VertexId,
-    state: MddlState,
+    state: MddlState
 ): void {
     addVertexFromInput(tree, inputGraph, node);
     addEdgeFromInput(tree, inputGraph, node, parent);
@@ -162,7 +163,7 @@ function updateDistanceStateAfterAttach(
     inputGraph: TreeGraph,
     state: MddlState,
     node: VertexId,
-    parent: VertexId,
+    parent: VertexId
 ): void {
     const edgeKey = inputGraph.edge(node, parent);
     if (edgeKey === undefined) {
@@ -196,7 +197,7 @@ function updateDistanceStateAfterAttach(
 function recomputeNearForNotInTree(
     tree: TreeGraph,
     inputGraph: TreeGraph,
-    state: MddlState,
+    state: MddlState
 ): void {
     for (const v of state.notInTree) {
         let bestParent: VertexId | undefined;
@@ -204,8 +205,12 @@ function recomputeNearForNotInTree(
 
         for (const inTree of tree.nodes() as VertexId[]) {
             const edgeKey = inputGraph.edge(v, inTree);
-            if (edgeKey === undefined) continue;
-            if (tree.degree(inTree) >= (state.degreeBound.get(inTree) ?? 0)) continue;
+            if (edgeKey === undefined) {
+                continue;
+            }
+            if (tree.degree(inTree) >= (state.degreeBound.get(inTree) ?? 0)) {
+                continue;
+            }
 
             const weight = inputGraph.getEdgeAttribute(edgeKey, 'weight') as number;
             const score = (state.ecc.get(inTree) ?? 0) + weight;
@@ -224,24 +229,28 @@ function selectNextNearestVertex(
     tree: TreeGraph,
     inputGraph: TreeGraph,
     state: MddlState,
-    relaxDegree: RelaxDegreeFn,
+    relaxDegree: RelaxDegreeFn
 ): NearestChoice {
     let failsafe = 0;
 
     while (true) {
         let nearest: NearestChoice = {
             node: undefined,
-            score: Number.POSITIVE_INFINITY,
+            score: Number.POSITIVE_INFINITY
         };
 
         const degreeBroken = new Set<VertexId>();
 
         for (const v of state.notInTree) {
             const nearV = state.near.get(v);
-            if (nearV === undefined) continue;
+            if (nearV === undefined) {
+                continue;
+            }
 
             const edgeKey = inputGraph.edge(v, nearV);
-            if (edgeKey === undefined) continue;
+            if (edgeKey === undefined) {
+                continue;
+            }
 
             const bound = state.degreeBound.get(nearV) ?? 0;
             const outDegree = tree.degree(nearV);
@@ -289,9 +298,11 @@ function getDegreeConstraint(graph: TreeGraph, node: VertexId): number {
 function addVertexFromInput(
     tree: TreeGraph,
     inputGraph: TreeGraph,
-    node: VertexId,
+    node: VertexId
 ): void {
-    if (tree.hasNode(node)) return;
+    if (tree.hasNode(node)) {
+        return;
+    }
     tree.addNode(node, { ...inputGraph.getNodeAttributes(node) });
 }
 
@@ -299,9 +310,11 @@ function addEdgeFromInput(
     tree: TreeGraph,
     inputGraph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): void {
-    if (tree.hasEdge(a, b)) return;
+    if (tree.hasEdge(a, b)) {
+        return;
+    }
 
     const edgeKey = inputGraph.edge(a, b);
     if (edgeKey === undefined) {
@@ -312,14 +325,14 @@ function addEdgeFromInput(
     tree.addEdge(a, b, {
         from: a,
         to: b,
-        weight,
+        weight
     });
 }
 
 function getDist(
     dist: Map<VertexId, Map<VertexId, number>>,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): number {
     return dist.get(a)?.get(b) ?? 0;
 }
@@ -328,7 +341,7 @@ function setDist(
     dist: Map<VertexId, Map<VertexId, number>>,
     a: VertexId,
     b: VertexId,
-    value: number,
+    value: number
 ): void {
     let row = dist.get(a);
     if (row === undefined) {

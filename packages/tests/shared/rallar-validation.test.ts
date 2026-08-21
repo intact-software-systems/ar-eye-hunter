@@ -1,11 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
-    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
-    RallarValidationError,
     assertValidRallarGroupRef,
     formatRallarValidation,
     isRallarValidationError,
+    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+    RallarValidationError,
     toRallarRoomId,
     toRallarTopicId,
     toRallarTypeId,
@@ -14,8 +13,9 @@ import {
     validateRallarJsonPayload,
     validateRallarNonNegativeInteger,
     validateRallarRouteId,
-    validateRallarWsUserTopicId,
+    validateRallarWsUserTopicId
 } from '@shared/api/rallar-validation.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Rallar shared validation', () => {
     it('accepts route-safe identifiers and returns branded strings', () => {
@@ -35,7 +35,7 @@ describe('Rallar shared validation', () => {
         ['room%name', 'invalid-route-id'],
         ['.', 'reserved-route-id'],
         ['..', 'reserved-route-id'],
-        ['a'.repeat(129), 'max-length'],
+        ['a'.repeat(129), 'max-length']
     ])('rejects invalid route id %j', (value, code) => {
         const result = validateRallarRouteId(value, '$.roomId');
 
@@ -59,7 +59,7 @@ describe('Rallar shared validation', () => {
         const valid = {
             applicationId: 'game',
             workspaceId: 'default',
-            groupId: 'lobby',
+            groupId: 'lobby'
         };
 
         expect(validateRallarGroupRef(valid, '$.roomRef').ok).toBe(true);
@@ -68,20 +68,20 @@ describe('Rallar shared validation', () => {
         const invalid = validateRallarGroupRef({
             applicationId: 'game',
             workspaceId: 'default workspace',
-            groupId: 'bad/room',
+            groupId: 'bad/room'
         }, '$.roomRef');
 
         expect(invalid.ok).toBe(false);
         expect(invalid.issues.map((issue) => issue.path)).toEqual([
             '$.roomRef.workspaceId',
-            '$.roomRef.groupId',
+            '$.roomRef.groupId'
         ]);
     });
 
     it('validates JSON payload compatibility and byte limits', () => {
         const accepted = validateRallarJsonPayload(
             { text: 'hello' },
-            { path: '$.payload', maxBytes: RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES },
+            { path: '$.payload', maxBytes: RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES }
         );
 
         expect(accepted.ok).toBe(true);
@@ -94,17 +94,17 @@ describe('Rallar shared validation', () => {
                 omitted: undefined,
                 nested: {
                     kept: true,
-                    alsoOmitted: undefined,
-                },
+                    alsoOmitted: undefined
+                }
             },
-            { path: '$.payload' },
+            { path: '$.payload' }
         );
         expect(withUndefinedProperties.ok).toBe(true);
         expect(withUndefinedProperties.serialized).toBe('{"text":"hello","nested":{"kept":true}}');
 
         const withUndefinedArrayItems = validateRallarJsonPayload(
             ['hello', undefined, { value: undefined }],
-            { path: '$.payload' },
+            { path: '$.payload' }
         );
         expect(withUndefinedArrayItems.ok).toBe(true);
         expect(withUndefinedArrayItems.serialized).toBe('["hello",null,{}]');
@@ -115,10 +115,12 @@ describe('Rallar shared validation', () => {
             .toBe('invalid-json-number');
         expect(validateRallarJsonPayload(1n, { path: '$.payload' }).issues[0]?.code)
             .toBe('invalid-json-payload');
-        expect(validateRallarJsonPayload({ text: 'hello' }, {
-            path: '$.payload',
-            maxBytes: 3,
-        }).issues[0]?.code).toBe('payload-too-large');
+        expect(
+            validateRallarJsonPayload({ text: 'hello' }, {
+                path: '$.payload',
+                maxBytes: 3
+            }).issues[0]?.code
+        ).toBe('payload-too-large');
 
         const cyclic: Record<string, unknown> = {};
         cyclic.self = cyclic;
@@ -147,7 +149,8 @@ describe('Rallar shared validation', () => {
         expect(() => toRallarRoomId('bad room')).toThrow(RallarValidationError);
         try {
             toRallarRoomId('bad room');
-        } catch (error) {
+        }
+        catch (error) {
             expect(isRallarValidationError(error)).toBe(true);
             expect((error as RallarValidationError).issues[0]?.path).toBe('$');
         }

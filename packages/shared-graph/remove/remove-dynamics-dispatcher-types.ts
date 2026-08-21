@@ -1,6 +1,6 @@
-import type { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
-import type { SelectSteinerCandidate } from './remove-dynamics-mddl.ts';
 import type { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
+import type { SelectSteinerCandidate } from './remove-dynamics-mddl.ts';
+import type { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 
 export type RemoveDispatcherDeps = {
     selectSteinerCandidate?: SelectSteinerCandidate;
@@ -14,5 +14,5 @@ export type RemoveDispatcherOptions = {
 
 export type RemoveAlgorithmFn = (
     ctx: RemoveDynamicsContext,
-    deps: RemoveDispatcherDeps,
+    deps: RemoveDispatcherDeps
 ) => RemoveResult;

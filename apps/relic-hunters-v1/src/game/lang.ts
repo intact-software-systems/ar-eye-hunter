@@ -9,26 +9,36 @@ export type DialogueLine = Readonly<{
 export const INTRO_DIALOGUE: Record<Lang, readonly DialogueLine[]> = {
     en: [
         { text: 'Welcome... brave hunters.', delayMs: 1000 },
-        { text: 'The Castle of Yamashiro has stood for a thousand years, hiding relics of immense power.', delayMs: 4200 },
+        {
+            text: 'The Castle of Yamashiro has stood for a thousand years, hiding relics of immense power.',
+            delayMs: 4200
+        },
         { text: 'You are not alone in this quest. Others seek the same relics.', delayMs: 9200 },
         { text: 'Navigate the treacherous halls. Decipher ancient clues. Claim what you can carry.', delayMs: 13200 },
-        { text: 'But be warned — monsters stir in the dark. Traps are set. And not every hunter... plays fair.', delayMs: 17800 },
+        {
+            text: 'But be warned — monsters stir in the dark. Traps are set. And not every hunter... plays fair.',
+            delayMs: 17800
+        },
         { text: 'Only the cunning, the bold, and the lucky shall escape with their prize.', delayMs: 23200 },
         { text: '...', delayMs: 27200 },
         { text: 'Now go. Find the relics.', delayMs: 28000 },
-        { text: 'And may the ruin... remember your name!', delayMs: 30200, isCast: true },
+        { text: 'And may the ruin... remember your name!', delayMs: 30200, isCast: true }
     ],
     no: [
         { text: 'Velkommen... modige jegere.', delayMs: 1000 },
         { text: 'Yamashiro-slottet har stått i tusen år og skjult relikvier av enorm makt.', delayMs: 4200 },
         { text: 'Dere er ikke alene i dette søket. Andre jakter på de samme relikvier.', delayMs: 9200 },
         { text: 'Naviger de farlige hallene. Tyd de gamle ledetrådene. Ta det dere kan bære.', delayMs: 13200 },
-        { text: 'Men vær advart — monstre rører seg i mørket. Feller er satt. Og ikke alle jegere... spiller rettferdig.', delayMs: 17800 },
+        {
+            text:
+                'Men vær advart — monstre rører seg i mørket. Feller er satt. Og ikke alle jegere... spiller rettferdig.',
+            delayMs: 17800
+        },
         { text: 'Bare de listige, de modige og de heldige vil unnslippe med sin premie.', delayMs: 23200 },
         { text: '...', delayMs: 27200 },
         { text: 'Gå nå. Finn relikvierne.', delayMs: 28000 },
-        { text: 'Og måtte ruinen... huske deres navn!', delayMs: 30200, isCast: true },
-    ],
+        { text: 'Og måtte ruinen... huske deres navn!', delayMs: 30200, isCast: true }
+    ]
 };
 
 export const AUTO_COMPLETE_MS = 34000;
@@ -95,7 +105,7 @@ export const UI: Record<Lang, UIStrings> = {
         timerLabel: 'Time left',
         timerAutoSubmit: 'Time is up — submitting your plan…',
         setTimerTitle: 'Round Time Limit',
-        waitingForKeeper: 'Waiting for the Keeper to begin the hunt…',
+        waitingForKeeper: 'Waiting for the Keeper to begin the hunt…'
     },
     no: {
         phaseLobby: 'Vokteren samler jegere',
@@ -126,16 +136,18 @@ export const UI: Record<Lang, UIStrings> = {
         timerLabel: 'Tid igjen',
         timerAutoSubmit: 'Tiden er ute — sender inn planen din…',
         setTimerTitle: 'Tidsbegrensning per runde',
-        waitingForKeeper: 'Venter på at Vokteren skal starte jakten…',
-    },
+        waitingForKeeper: 'Venter på at Vokteren skal starte jakten…'
+    }
 };
 
 export function pickSpeechVoice(lang: Lang): SpeechSynthesisVoice | null {
-    if (typeof speechSynthesis === 'undefined') return null;
+    if (typeof speechSynthesis === 'undefined') {
+        return null;
+    }
     const voices = speechSynthesis.getVoices();
     const locale = lang === 'no' ? 'nb' : 'en';
     // Prefer non-local (higher quality network) voices, then any matching locale
-    return voices.find((v) => v.lang.startsWith(locale) && !v.localService)
-        ?? voices.find((v) => v.lang.startsWith(locale))
-        ?? null;
+    return voices.find((v) => v.lang.startsWith(locale) && !v.localService) ??
+        voices.find((v) => v.lang.startsWith(locale)) ??
+        null;
 }

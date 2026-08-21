@@ -1,5 +1,4 @@
-import type { SearchableListboxOption } from
-    '../ui/searchable-listbox-model.ts';
+import type { SearchableListboxOption } from '../ui/searchable-listbox-model.ts';
 import type { TuneRunOption } from './tune-run-catalog.ts';
 import type { TuneSelectionModel } from './tune-selection-model.ts';
 
@@ -16,7 +15,7 @@ export type TuneRunPickerModel = Readonly<{
 }>;
 
 export function createTuneRunPickerModel(
-    selection: TuneSelectionModel,
+    selection: TuneSelectionModel
 ): TuneRunPickerModel {
     const options: SearchableListboxOption[] = [];
     let revisionKey = 'tune-run-picker-v1:';
@@ -32,13 +31,13 @@ export function createTuneRunPickerModel(
                 option.distributedRun.state,
                 option.pairStatus,
                 option.source,
-                option.manifestValidation,
+                option.manifestValidation
             ].join(' '),
             detail: `${option.source} · control ${option.controlRunId} · ${
                 option.manifestValidation === 'validated'
                     ? 'manifest validated'
                     : 'validates on selection'
-            }`,
+            }`
         } satisfies SearchableListboxOption;
         options.push(projected);
         const revisionRow = JSON.stringify(projected);
@@ -50,7 +49,7 @@ export function createTuneRunPickerModel(
         revisionKey,
         work: {
             runOptionsVisited: selection.options.length,
-            pickerOptionsProjected: options.length,
-        },
+            pickerOptionsProjected: options.length
+        }
     };
 }

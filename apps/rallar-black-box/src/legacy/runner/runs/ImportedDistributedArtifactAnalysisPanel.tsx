@@ -3,20 +3,16 @@ import { distributedRecipeStateTone } from '../../../distributed-recipes.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatDuration } from '../../shared/time-format.ts';
 import { CausalTrailPanel } from '../evidence/CausalTrailPanel.tsx';
-import {
-    formatFleetDuration,
-    formatPercent,
-    formatStreamRate,
-} from '../shared/performance-format.ts';
+import { formatFleetDuration, formatPercent, formatStreamRate } from '../shared/performance-format.ts';
 import { shortRunId } from '../shared/run-id-presentation.ts';
 import {
     DISTRIBUTED_ARTIFACT_REQUIRED_FILES,
-    type DistributedArtifactImportStatus,
+    type DistributedArtifactImportStatus
 } from './distributed-artifact-import.ts';
 
 export function ImportedDistributedArtifactAnalysisPanel({
     analysis,
-    status,
+    status
 }: {
     analysis: DistributedRunAnalysis;
     status?: DistributedArtifactImportStatus;
@@ -77,51 +73,53 @@ export function ImportedDistributedArtifactAnalysisPanel({
                     <h4>{failure ? 'Verdict and Fix' : 'Verdict'}</h4>
                     <span>{failure ? failure.minimalFixArea : 'passed'}</span>
                 </div>
-                {failure ? (
-                    <div className="runner-analysis-first-failure">
-                        <div>
-                            <span className="eyebrow">Focus</span>
-                            <h4>{failure.title}</h4>
-                            <p>{failure.likelyCause}</p>
-                            <small>{failure.nextAction}</small>
+                {failure
+                    ? (
+                        <div className="runner-analysis-first-failure">
+                            <div>
+                                <span className="eyebrow">Focus</span>
+                                <h4>{failure.title}</h4>
+                                <p>{failure.likelyCause}</p>
+                                <small>{failure.nextAction}</small>
+                            </div>
+                            <dl>
+                                <div>
+                                    <dt>Fix area</dt>
+                                    <dd>{failure.minimalFixArea}</dd>
+                                </div>
+                                <div>
+                                    <dt>Evidence</dt>
+                                    <dd>{failure.evidenceFile}</dd>
+                                </div>
+                                <div>
+                                    <dt>Agents</dt>
+                                    <dd>{failure.affectedAgents.join(', ') || '-'}</dd>
+                                </div>
+                                <div>
+                                    <dt>Command</dt>
+                                    <dd>{failure.commandId ?? '-'}</dd>
+                                </div>
+                                <div>
+                                    <dt>Verify</dt>
+                                    <dd>{failure.verificationCommand.replaceAll('`', '')}</dd>
+                                </div>
+                            </dl>
                         </div>
-                        <dl>
-                            <div>
-                                <dt>Fix area</dt>
-                                <dd>{failure.minimalFixArea}</dd>
-                            </div>
-                            <div>
-                                <dt>Evidence</dt>
-                                <dd>{failure.evidenceFile}</dd>
-                            </div>
-                            <div>
-                                <dt>Agents</dt>
-                                <dd>{failure.affectedAgents.join(', ') || '-'}</dd>
-                            </div>
-                            <div>
-                                <dt>Command</dt>
-                                <dd>{failure.commandId ?? '-'}</dd>
-                            </div>
-                            <div>
-                                <dt>Verify</dt>
-                                <dd>{failure.verificationCommand.replaceAll('`', '')}</dd>
-                            </div>
-                        </dl>
-                    </div>
-                ) : (
-                    <div className="runner-analysis-warning success" role="status">
-                        <strong>Performance baseline</strong>
-                        <span>
-                            {performance
-                                ? `${formatDuration(performance.runDurationMs)} run, ${performance.reconnectCount} reconnects, ${performance.exportedEventCount} exported events`
-                                : 'No performance artifact data was loaded.'}
-                        </span>
-                    </div>
-                )}
+                    )
+                    : (
+                        <div className="runner-analysis-warning success" role="status">
+                            <strong>Performance baseline</strong>
+                            <span>
+                                {performance
+                                    ? `${
+                                        formatDuration(performance.runDurationMs)
+                                    } run, ${performance.reconnectCount} reconnects, ${performance.exportedEventCount} exported events`
+                                    : 'No performance artifact data was loaded.'}
+                            </span>
+                        </div>
+                    )}
             </div>
-            {causalTrail.length > 0 && (
-                <CausalTrailPanel items={causalTrail} />
-            )}
+            {causalTrail.length > 0 && <CausalTrailPanel items={causalTrail} />}
             <div className="imported-artifact-band">
                 <div className="section-heading compact">
                     <h4>Performance Health</h4>
@@ -248,7 +246,11 @@ export function ImportedDistributedArtifactAnalysisPanel({
                         <strong>Slowest stream agent</strong>
                         <span>
                             {slowestStreamAgent
-                                ? `${slowestStreamAgent.agentId} - max ${formatFleetDuration(slowestStreamAgent.maxMs)}, p99 ${formatFleetDuration(slowestStreamAgent.p99Ms)}, frames ${slowestStreamAgent.completedFrames}/${slowestStreamAgent.plannedFrames}`
+                                ? `${slowestStreamAgent.agentId} - max ${
+                                    formatFleetDuration(slowestStreamAgent.maxMs)
+                                }, p99 ${
+                                    formatFleetDuration(slowestStreamAgent.p99Ms)
+                                }, frames ${slowestStreamAgent.completedFrames}/${slowestStreamAgent.plannedFrames}`
                                 : 'No stream latency rows'}
                         </span>
                     </div>
@@ -257,7 +259,9 @@ export function ImportedDistributedArtifactAnalysisPanel({
                     <strong>Slowest agent</strong>
                     <span>
                         {slowestAgent
-                            ? `${slowestAgent.agentId} - max ${formatFleetDuration(slowestAgent.maxMs)}, avg ${formatFleetDuration(slowestAgent.averageMs)}`
+                            ? `${slowestAgent.agentId} - max ${formatFleetDuration(slowestAgent.maxMs)}, avg ${
+                                formatFleetDuration(slowestAgent.averageMs)
+                            }`
                             : 'No agent latency rows'}
                     </span>
                 </div>

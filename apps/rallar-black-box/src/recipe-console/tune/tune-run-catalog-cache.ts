@@ -1,17 +1,8 @@
-import type { ControlServerSnapshot } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { AnalyzeTuneArtifactFacade } from
-    '../analyze/analyze-worker-contract.ts';
-import { controlSnapshotRevisionOf } from
-    '../control/control-snapshot-revision.ts';
-import {
-    buildTuneRunCatalog,
-    type TuneRunCatalog,
-} from './tune-run-catalog.ts';
-import {
-    createTuneRunCatalogWork,
-    type TuneRunCatalogWork,
-} from './tune-run-catalog-work.ts';
+import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import { controlSnapshotRevisionOf } from '../control/control-snapshot-revision.ts';
+import { createTuneRunCatalogWork, type TuneRunCatalogWork } from './tune-run-catalog-work.ts';
+import { buildTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';
 
 export type TuneRunCatalogCacheInput = Readonly<{
     snapshot?: ControlServerSnapshot;
@@ -63,7 +54,7 @@ export function createTuneRunCatalogCache(): TuneRunCatalogCache {
         hitCount: 0,
         missCount: 0,
         catalogBuildCount: 0,
-        lastLookup: emptyLookup(true),
+        lastLookup: emptyLookup(true)
     };
     const cache: TuneRunCatalogCache = Object.freeze({
         get(input: TuneRunCatalogCacheInput): TuneRunCatalog {
@@ -83,14 +74,14 @@ export function createTuneRunCatalogCache(): TuneRunCatalogCache {
                 controlRuns: input.snapshot?.runs ?? [],
                 distributedRuns: input.snapshot?.distributedRuns ?? [],
                 retainedFacade: input.retainedFacade,
-                performanceRunIds: input.performanceRunIds,
+                performanceRunIds: input.performanceRunIds
             });
             work.missCount += 1;
             work.catalogBuildCount += 1;
             work.lastLookup = {
                 cacheHit: false,
                 catalogBuildCount: 1,
-                build: catalog.work,
+                build: catalog.work
             };
             entry = {
                 snapshotKey,
@@ -98,18 +89,18 @@ export function createTuneRunCatalogCache(): TuneRunCatalogCache {
                     ? {}
                     : { retainedFacade: input.retainedFacade }),
                 performanceRunIds: [...input.performanceRunIds],
-                catalog,
+                catalog
             };
             publish(cache, work);
             return catalog;
-        },
+        }
     });
     publish(cache, work);
     return cache;
 }
 
 export function tuneRunCatalogCacheWorkForTest(
-    cache: TuneRunCatalogCache,
+    cache: TuneRunCatalogCache
 ): TuneRunCatalogCacheWork | undefined {
     return workByCache.get(cache);
 }
@@ -118,7 +109,7 @@ function emptyLookup(cacheHit: boolean): TuneRunCatalogCacheLookupWork {
     return {
         cacheHit,
         catalogBuildCount: 0,
-        build: createTuneRunCatalogWork(),
+        build: createTuneRunCatalogWork()
     };
 }
 
@@ -133,6 +124,6 @@ function publish(cache: object, work: MutableCacheWork): void {
         hitCount: work.hitCount,
         missCount: work.missCount,
         catalogBuildCount: work.catalogBuildCount,
-        lastLookup: work.lastLookup,
+        lastLookup: work.lastLookup
     });
 }

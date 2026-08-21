@@ -1,13 +1,13 @@
-import {spawn} from 'node:child_process';
-import {mkdir, mkdtemp, readFile, writeFile} from 'node:fs/promises';
-import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
-import {tmpdir} from 'node:os';
+import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {describe, expect, it} from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
 
 const scenarioCliPath = fileURLToPath(
-    new URL('../../shared-test/black-box-runner/scenario-black-box.ts', import.meta.url),
+    new URL('../../shared-test/black-box-runner/scenario-black-box.ts', import.meta.url)
 );
 
 async function writeTempConfig(config: unknown): Promise<string> {
@@ -15,7 +15,7 @@ async function writeTempConfig(config: unknown): Promise<string> {
 
     await writeFile(
         path.join(dir, 'config.json'),
-        JSON.stringify(config, null, 2),
+        JSON.stringify(config, null, 2)
     );
 
     return dir;
@@ -34,43 +34,43 @@ async function runScenarioCli(args: string[], env: Record<string, string | undef
                 stdio: ['ignore', 'pipe', 'pipe'],
                 env: {
                     ...process.env,
-                    ...env,
-                },
-            },
+                    ...env
+                }
+            }
         );
 
         let stdout = '';
         let stderr = '';
 
-        child.stdout.on('data', chunk => {
+        child.stdout.on('data', (chunk) => {
             stdout += chunk.toString();
         });
 
-        child.stderr.on('data', chunk => {
+        child.stderr.on('data', (chunk) => {
             stderr += chunk.toString();
         });
 
         child.on('error', reject);
 
-        child.on('close', code => {
+        child.on('close', (code) => {
             resolve({
                 code: code ?? 0,
                 stdout,
-                stderr,
+                stderr
             });
         });
     });
 }
 
-async function startHeaderEchoServer(): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+async function startHeaderEchoServer(): Promise<{ baseUrl: string; close: () => Promise<void>; }> {
     const server = createServer((request: IncomingMessage, response: ServerResponse) => {
         response.writeHead(200, {
-            'content-type': 'application/json',
+            'content-type': 'application/json'
         });
         response.end(JSON.stringify({
             method: request.method,
             url: request.url,
-            headers: request.headers,
+            headers: request.headers
         }));
     });
 
@@ -89,16 +89,17 @@ async function startHeaderEchoServer(): Promise<{ baseUrl: string; close: () => 
 
     return {
         baseUrl: `http://127.0.0.1:${address.port}`,
-        close: () => closeServer(server),
+        close: () => closeServer(server)
     };
 }
 
-async function tryStartHeaderEchoServer(): Promise<{ baseUrl: string; close: () => Promise<void> } | undefined> {
+async function tryStartHeaderEchoServer(): Promise<{ baseUrl: string; close: () => Promise<void>; } | undefined> {
     try {
         return await startHeaderEchoServer();
-    } catch (error) {
+    }
+    catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown }).code)
+            ? String((error as { code?: unknown; }).code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;
@@ -109,7 +110,7 @@ async function tryStartHeaderEchoServer(): Promise<{ baseUrl: string; close: () 
 
 function closeServer(server: Server): Promise<void> {
     return new Promise((resolve, reject) => {
-        server.close(error => {
+        server.close((error) => {
             if (error) {
                 reject(error);
                 return;
@@ -123,13 +124,13 @@ describe('scenario-black-box CLI', () => {
     it('explains a valid recipe without executing network calls', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                apiBaseUrl: 'http://localhost:8080',
+                apiBaseUrl: 'http://localhost:8080'
             },
             connections: {
                 api: {
                     type: 'http',
-                    baseUrl: '{apiBaseUrl}',
-                },
+                    baseUrl: '{apiBaseUrl}'
+                }
             },
             steps: [
                 {
@@ -138,13 +139,13 @@ describe('scenario-black-box CLI', () => {
                     connection: 'api',
                     request: {
                         method: 'GET',
-                        path: '/health',
+                        path: '/health'
                     },
                     expect: {
-                        status: 200,
-                    },
-                },
-            ],
+                        status: 200
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -152,7 +153,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--explain',
+            '--explain'
         ]);
 
         expect(result.code).toBe(0);
@@ -167,20 +168,20 @@ describe('scenario-black-box CLI', () => {
         expect(preflight.connections).toMatchObject({
             defined: ['api'],
             referenced: ['api'],
-            missing: [],
+            missing: []
         });
         expect(preflight.operations[0]).toMatchObject({
             name: 'health',
             transport: 'HTTP',
             connection: 'api',
-            path: 'http://localhost:8080/health',
+            path: 'http://localhost:8080/health'
         });
     });
 
     it('expands static recipe fragments during explain mode', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                roomId: 'room-from-parent',
+                roomId: 'room-from-parent'
             },
             fragments: {
                 inlineAssert: {
@@ -189,54 +190,58 @@ describe('scenario-black-box CLI', () => {
                             name: 'assertActor',
                             type: 'assert',
                             actual: {
-                                actor: '{actorValue}',
+                                actor: '{actorValue}'
                             },
                             expect: {
                                 body: {
-                                    actor: 'alice',
-                                },
-                            },
-                        },
-                    ],
-                },
+                                    actor: 'alice'
+                                }
+                            }
+                        }
+                    ]
+                }
             },
             steps: [
                 {
                     include: {
                         path: 'fragments/actor.json',
                         variables: {
-                            actor: 'alice',
+                            actor: 'alice'
                         },
-                        namePrefix: 'alice-',
-                    },
+                        namePrefix: 'alice-'
+                    }
                 },
                 {
-                    include: 'inlineAssert',
-                },
-            ],
+                    include: 'inlineAssert'
+                }
+            ]
         });
         await mkdir(path.join(workingDirectory, 'fragments'));
         await writeFile(
             path.join(workingDirectory, 'fragments/actor.json'),
-            JSON.stringify({
-                variables: {
-                    actor: 'fragment-default',
+            JSON.stringify(
+                {
+                    variables: {
+                        actor: 'fragment-default'
+                    },
+                    steps: [
+                        {
+                            name: 'setActor',
+                            type: 'set',
+                            output: 'actorValue',
+                            value: '{actor}'
+                        },
+                        {
+                            name: 'setRoom',
+                            type: 'set',
+                            output: 'roomValue',
+                            value: '{roomId}'
+                        }
+                    ]
                 },
-                steps: [
-                    {
-                        name: 'setActor',
-                        type: 'set',
-                        output: 'actorValue',
-                        value: '{actor}',
-                    },
-                    {
-                        name: 'setRoom',
-                        type: 'set',
-                        output: 'roomValue',
-                        value: '{roomId}',
-                    },
-                ],
-            }, null, 2),
+                null,
+                2
+            )
         );
 
         const result = await runScenarioCli([
@@ -244,7 +249,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--explain',
+            '--explain'
         ]);
 
         expect(result.code).toBe(0);
@@ -257,71 +262,75 @@ describe('scenario-black-box CLI', () => {
         expect(preflight.includes.resolved).toEqual([
             expect.objectContaining({
                 source: 'file:fragments/actor.json',
-                stepCount: 2,
+                stepCount: 2
             }),
             expect.objectContaining({
                 source: 'fragment:inlineAssert',
-                stepCount: 1,
-            }),
+                stepCount: 1
+            })
         ]);
-        expect(preflight.operations.map((operation: { name: string }) => operation.name)).toEqual([
+        expect(preflight.operations.map((operation: { name: string; }) => operation.name)).toEqual([
             'alice-setActor',
             'alice-setRoom',
-            'assertActor',
+            'assertActor'
         ]);
     });
 
     it('writes expanded recipe artifacts that no longer require include files', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                roomId: 'room-from-parent',
+                roomId: 'room-from-parent'
             },
             steps: [
                 {
                     include: {
                         path: 'fragments/actor.json',
                         variables: {
-                            actor: 'alice',
+                            actor: 'alice'
                         },
-                        namePrefix: 'alice-',
-                    },
+                        namePrefix: 'alice-'
+                    }
                 },
                 {
                     name: 'assertRoom',
                     type: 'assert',
                     actual: {
-                        room: '{roomValue}',
+                        room: '{roomValue}'
                     },
                     expect: {
                         body: {
-                            room: 'room-from-parent',
-                        },
-                    },
-                },
-            ],
+                            room: 'room-from-parent'
+                        }
+                    }
+                }
+            ]
         });
         await mkdir(path.join(workingDirectory, 'fragments'));
         await writeFile(
             path.join(workingDirectory, 'fragments/actor.json'),
-            JSON.stringify({
-                variables: {
-                    actor: 'fragment-default',
+            JSON.stringify(
+                {
+                    variables: {
+                        actor: 'fragment-default'
+                    },
+                    steps: [
+                        {
+                            name: 'setActor',
+                            type: 'set',
+                            output: 'actorValue',
+                            value: '{actor}'
+                        },
+                        {
+                            name: 'setRoom',
+                            type: 'set',
+                            output: 'roomValue',
+                            value: '{roomId}'
+                        }
+                    ]
                 },
-                steps: [
-                    {
-                        name: 'setActor',
-                        type: 'set',
-                        output: 'actorValue',
-                        value: '{actor}',
-                    },
-                    {
-                        name: 'setRoom',
-                        type: 'set',
-                        output: 'roomValue',
-                        value: '{roomId}',
-                    },
-                ],
-            }, null, 2),
+                null,
+                2
+            )
         );
         const artifactDir = path.join(workingDirectory, 'include-artifacts');
 
@@ -331,7 +340,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -342,19 +351,19 @@ describe('scenario-black-box CLI', () => {
 
         expect(report.outputs).toMatchObject({
             actorValue: 'alice',
-            roomValue: 'room-from-parent',
+            roomValue: 'room-from-parent'
         });
         expect(expandedRecipe.kind).toBe('black-box-runner.expanded-recipe');
         expect(expandedRecipe.includeMetadata.includes).toEqual([
             expect.objectContaining({
                 source: 'file:fragments/actor.json',
-                stepCount: 2,
-            }),
+                stepCount: 2
+            })
         ]);
-        expect(expandedRecipe.recipe.steps.map((step: { name: string }) => step.name)).toEqual([
+        expect(expandedRecipe.recipe.steps.map((step: { name: string; }) => step.name)).toEqual([
             'alice-setActor',
             'alice-setRoom',
-            'assertRoom',
+            'assertRoom'
         ]);
         expect(JSON.stringify(expandedRecipe.recipe.steps)).not.toContain('"include"');
     });
@@ -363,39 +372,39 @@ describe('scenario-black-box CLI', () => {
         const missingDirectory = await writeTempConfig({
             steps: [
                 {
-                    include: 'missing.json',
-                },
-            ],
+                    include: 'missing.json'
+                }
+            ]
         });
         const circularDirectory = await writeTempConfig({
             fragments: {
                 a: {
                     steps: [
                         {
-                            include: 'b',
-                        },
-                    ],
+                            include: 'b'
+                        }
+                    ]
                 },
                 b: {
                     steps: [
                         {
-                            include: 'a',
-                        },
-                    ],
-                },
+                            include: 'a'
+                        }
+                    ]
+                }
             },
             steps: [
                 {
-                    include: 'a',
-                },
-            ],
+                    include: 'a'
+                }
+            ]
         });
         const remoteDirectory = await writeTempConfig({
             steps: [
                 {
-                    include: 'https://example.com/recipe-fragment.json',
-                },
-            ],
+                    include: 'https://example.com/recipe-fragment.json'
+                }
+            ]
         });
 
         const missing = await runScenarioCli([
@@ -403,21 +412,21 @@ describe('scenario-black-box CLI', () => {
             missingDirectory,
             '-c',
             'config.json',
-            '--validate',
+            '--validate'
         ]);
         const circular = await runScenarioCli([
             '-w',
             circularDirectory,
             '-c',
             'config.json',
-            '--validate',
+            '--validate'
         ]);
         const remote = await runScenarioCli([
             '-w',
             remoteDirectory,
             '-c',
             'config.json',
-            '--validate',
+            '--validate'
         ]);
 
         expect(missing.code).toBe(1);
@@ -431,20 +440,20 @@ describe('scenario-black-box CLI', () => {
         expect(missingPreflight.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'PLAN_EXPANSION_FAILED',
-                message: expect.stringContaining('Failed to load include missing.json'),
-            }),
+                message: expect.stringContaining('Failed to load include missing.json')
+            })
         ]));
         expect(circularPreflight.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'PLAN_EXPANSION_FAILED',
-                message: expect.stringContaining('Circular include detected'),
-            }),
+                message: expect.stringContaining('Circular include detected')
+            })
         ]));
         expect(remotePreflight.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'PLAN_EXPANSION_FAILED',
-                message: expect.stringContaining('Remote includes are not allowed by default'),
-            }),
+                message: expect.stringContaining('Remote includes are not allowed by default')
+            })
         ]));
     });
 
@@ -454,8 +463,8 @@ describe('scenario-black-box CLI', () => {
                 apiToken: {
                     env: 'RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN',
                     required: true,
-                    secret: true,
-                },
+                    secret: true
+                }
             },
             steps: [
                 {
@@ -464,11 +473,11 @@ describe('scenario-black-box CLI', () => {
                     connection: 'missingWs',
                     request: {
                         send: {
-                            token: '{apiToken}',
-                        },
-                    },
-                },
-            ],
+                            token: '{apiToken}'
+                        }
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -476,9 +485,9 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--validate',
+            '--validate'
         ], {
-            RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN: undefined,
+            RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN: undefined
         });
 
         expect(result.code).toBe(1);
@@ -489,12 +498,12 @@ describe('scenario-black-box CLI', () => {
         expect(preflight.ok).toBe(false);
         expect(preflight.env.missing).toEqual([expect.objectContaining({
             envName: 'RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN',
-            variableName: 'apiToken',
+            variableName: 'apiToken'
         })]);
         expect(preflight.connections.missing).toEqual(['missingWs']);
-        expect(preflight.issues.map((issue: { code: string }) => issue.code)).toEqual(expect.arrayContaining([
+        expect(preflight.issues.map((issue: { code: string; }) => issue.code)).toEqual(expect.arrayContaining([
             'MISSING_ENV',
-            'MISSING_CONNECTION',
+            'MISSING_CONNECTION'
         ]));
         expect(result.stdout).not.toContain('<missing:RALLAR_BB_REQUIRED_PREFLIGHT_TOKEN>');
     });
@@ -509,19 +518,19 @@ describe('scenario-black-box CLI', () => {
                     operations: [
                         {
                             name: 'set-ok',
-                            steps: ['setOk'],
-                        },
-                    ],
-                },
+                            steps: ['setOk']
+                        }
+                    ]
+                }
             },
             steps: [
                 {
                     name: 'setOk',
                     type: 'set',
                     output: 'ok',
-                    value: true,
-                },
-            ],
+                    value: true
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -529,7 +538,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--explain',
+            '--explain'
         ]);
 
         expect(result.code).toBe(1);
@@ -540,11 +549,11 @@ describe('scenario-black-box CLI', () => {
         expect(preflight.ok).toBe(false);
         expect(preflight.stepReferences.missing).toEqual([expect.objectContaining({
             name: 'connectMissing',
-            path: 'execution.trafficPlan.setupSteps[0]',
+            path: 'execution.trafficPlan.setupSteps[0]'
         })]);
-        expect(preflight.issues.map((issue: { code: string }) => issue.code)).toEqual(expect.arrayContaining([
+        expect(preflight.issues.map((issue: { code: string; }) => issue.code)).toEqual(expect.arrayContaining([
             'MISSING_STEP_REFERENCE',
-            'PLAN_EXPANSION_FAILED',
+            'PLAN_EXPANSION_FAILED'
         ]));
     });
 
@@ -560,17 +569,17 @@ describe('scenario-black-box CLI', () => {
                         {
                             name: 'left',
                             weight: 1,
-                            steps: ['sendLeft'],
-                        },
-                    ],
-                },
+                            steps: ['sendLeft']
+                        }
+                    ]
+                }
             },
             steps: [
                 {
                     name: 'setup',
                     type: 'set',
                     output: 'setup',
-                    value: true,
+                    value: true
                 },
                 {
                     name: 'sendLeft',
@@ -578,16 +587,16 @@ describe('scenario-black-box CLI', () => {
                     output: 'sent{traffic.sequence}',
                     value: {
                         sequence: '{traffic.sequence}',
-                        operation: '{traffic.operation}',
-                    },
+                        operation: '{traffic.operation}'
+                    }
                 },
                 {
                     name: 'cleanup',
                     type: 'set',
                     output: 'cleanup',
-                    value: true,
-                },
-            ],
+                    value: true
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -595,7 +604,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--explain',
+            '--explain'
         ]);
 
         expect(result.code).toBe(0);
@@ -609,15 +618,15 @@ describe('scenario-black-box CLI', () => {
             replay: false,
             seed: 20260601,
             decisionCount: 3,
-            stepCount: 5,
+            stepCount: 5
         });
         expect(preflight.summary.generatedOperationCount).toBe(5);
-        expect(preflight.operations.map((operation: { name: string }) => operation.name)).toEqual([
+        expect(preflight.operations.map((operation: { name: string; }) => operation.name)).toEqual([
             'setup',
             'sendLeft',
             'sendLeft',
             'sendLeft',
-            'cleanup',
+            'cleanup'
         ]);
     });
 
@@ -627,9 +636,9 @@ describe('scenario-black-box CLI', () => {
                 {
                     name: 'badSet',
                     type: 'set',
-                    value: 'missing output',
-                },
-            ],
+                    value: 'missing output'
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -638,7 +647,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--explain',
-            '--strict',
+            '--strict'
         ]);
 
         expect(result.code).toBe(1);
@@ -650,8 +659,8 @@ describe('scenario-black-box CLI', () => {
         expect(preflight.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'STRICT_SET_OUTPUT',
-                severity: 'error',
-            }),
+                severity: 'error'
+            })
         ]));
     });
 
@@ -659,10 +668,10 @@ describe('scenario-black-box CLI', () => {
         const workingDirectory = await writeTempConfig({
             variables: {
                 tokenType: 'Bearer',
-                token: 'abc-123',
+                token: 'abc-123'
             },
             execution: {
-                failFast: true,
+                failFast: true
             },
             steps: [
                 {
@@ -672,32 +681,32 @@ describe('scenario-black-box CLI', () => {
                     value: {
                         body: {
                             token_type: '{tokenType}',
-                            access_token: '{token}',
-                        },
-                    },
+                            access_token: '{token}'
+                        }
+                    }
                 },
                 {
                     name: 'deriveAuthHeader',
                     type: 'set',
                     output: 'authHeader',
-                    value: '{auth.body.token_type} {auth.body.access_token}',
+                    value: '{auth.body.token_type} {auth.body.access_token}'
                 },
                 {
                     name: 'assertAuthHeader',
                     type: 'assert',
                     actual: '{authHeader}',
                     expect: {
-                        body: 'Bearer abc-123',
-                    },
-                },
-            ],
+                        body: 'Bearer abc-123'
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(0);
@@ -714,7 +723,7 @@ describe('scenario-black-box CLI', () => {
     it('runs safe output transforms for SET values and extracted outputs', async () => {
         const workingDirectory = await writeTempConfig({
             execution: {
-                failFast: true,
+                failFast: true
             },
             steps: [
                 {
@@ -726,110 +735,110 @@ describe('scenario-black-box CLI', () => {
                             access_token: 'secret token/123',
                             token_type: 'Bearer',
                             user: {
-                                idText: '42',
+                                idText: '42'
                             },
                             revision: 46,
                             onlineMemberCount: 13,
                             enabledText: 'true',
                             payload: {
-                                roomId: 'room-1',
+                                roomId: 'room-1'
                             },
                             payloadJson: '["room.join",true]',
-                            fallback: 'fallback-value',
-                        },
+                            fallback: 'fallback-value'
+                        }
                     },
                     outputs: {
                         accessToken: {
                             path: 'body.access_token',
                             secret: true,
-                            redactAs: 'accessToken',
+                            redactAs: 'accessToken'
                         },
                         authHeader: {
                             concat: [
                                 { path: 'body.token_type' },
                                 ' ',
-                                { path: 'body.access_token' },
+                                { path: 'body.access_token' }
                             ],
                             secret: true,
-                            redactAs: 'authHeader',
+                            redactAs: 'authHeader'
                         },
                         encodedToken: {
                             urlEncode: { path: 'body.access_token' },
                             secret: true,
-                            redactAs: 'encodedToken',
+                            redactAs: 'encodedToken'
                         },
                         userId: {
-                            number: { path: 'body.user.idText' },
+                            number: { path: 'body.user.idText' }
                         },
                         nextRevision: {
                             add: [
                                 { path: 'body.revision' },
-                                1,
-                            ],
+                                1
+                            ]
                         },
                         maximumRevision: {
                             max: [
                                 44,
                                 { path: 'body.revision' },
-                                45,
-                            ],
+                                45
+                            ]
                         },
                         convergedRevision: {
                             if: {
                                 condition: {
                                     equals: [
                                         { path: 'body.onlineMemberCount' },
-                                        13,
-                                    ],
+                                        13
+                                    ]
                                 },
                                 then: { path: 'body.revision' },
                                 else: {
                                     add: [
                                         { path: 'body.revision' },
-                                        1,
-                                    ],
-                                },
-                            },
+                                        1
+                                    ]
+                                }
+                            }
                         },
                         pendingRevision: {
                             if: {
                                 condition: {
                                     equals: [
                                         { path: 'body.onlineMemberCount' },
-                                        12,
-                                    ],
+                                        12
+                                    ]
                                 },
                                 then: { path: 'body.revision' },
                                 else: {
                                     add: [
                                         { path: 'body.revision' },
-                                        1,
-                                    ],
-                                },
-                            },
+                                        1
+                                    ]
+                                }
+                            }
                         },
                         enabled: {
-                            boolean: { path: 'body.enabledText' },
+                            boolean: { path: 'body.enabledText' }
                         },
                         parsedPayload: {
-                            jsonParse: { path: 'body.payloadJson' },
+                            jsonParse: { path: 'body.payloadJson' }
                         },
                         payloadJson: {
-                            jsonStringify: { path: 'body.payload' },
+                            jsonStringify: { path: 'body.payload' }
                         },
                         fallbackValue: {
                             coalesce: [
                                 { path: 'body.missing' },
                                 '',
-                                { path: 'body.fallback' },
-                            ],
+                                { path: 'body.fallback' }
+                            ]
                         },
                         templatedToken: {
                             template: 'token={result.actual.body.access_token}',
                             secret: true,
-                            redactAs: 'templatedToken',
-                        },
-                    },
+                            redactAs: 'templatedToken'
+                        }
+                    }
                 },
                 {
                     name: 'deriveTraceId',
@@ -840,9 +849,9 @@ describe('scenario-black-box CLI', () => {
                             'trace-',
                             { uuid: true },
                             '-',
-                            { timestamp: true },
-                        ],
-                    },
+                            { timestamp: true }
+                        ]
+                    }
                 },
                 {
                     name: 'assertTransforms',
@@ -857,7 +866,7 @@ describe('scenario-black-box CLI', () => {
                         pendingRevision: '{pendingRevision}',
                         enabled: '{enabled}',
                         parsedPayload: '{parsedPayload}',
-                        fallbackValue: '{fallbackValue}',
+                        fallbackValue: '{fallbackValue}'
                     },
                     expect: {
                         body: {
@@ -870,18 +879,18 @@ describe('scenario-black-box CLI', () => {
                             pendingRevision: 47,
                             enabled: true,
                             parsedPayload: ['room.join', true],
-                            fallbackValue: 'fallback-value',
-                        },
-                    },
-                },
-            ],
+                            fallbackValue: 'fallback-value'
+                        }
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(0);
@@ -892,7 +901,7 @@ describe('scenario-black-box CLI', () => {
 
         expect(report.summary).toMatchObject({
             failure: 0,
-            success: 3,
+            success: 3
         });
         expect(report.outputs).toMatchObject({
             accessToken: '<redacted:accessToken>',
@@ -907,7 +916,7 @@ describe('scenario-black-box CLI', () => {
             parsedPayload: ['room.join', true],
             payloadJson: '{"roomId":"room-1"}',
             fallbackValue: 'fallback-value',
-            templatedToken: 'token=<redacted:accessToken>',
+            templatedToken: 'token=<redacted:accessToken>'
         });
         expect(report.outputs.traceId).toMatch(/^trace-[0-9a-f-]{36}-\d+$/);
         expect(report.resultsByName.assertTransforms[0].status).toBe('SUCCESS');
@@ -919,8 +928,8 @@ describe('scenario-black-box CLI', () => {
                 badJson: {
                     env: 'BLACK_BOX_BAD_JSON',
                     required: true,
-                    secret: true,
-                },
+                    secret: true
+                }
             },
             steps: [
                 {
@@ -928,19 +937,19 @@ describe('scenario-black-box CLI', () => {
                     type: 'set',
                     output: 'parsed',
                     transform: {
-                        jsonParse: '{badJson}',
-                    },
-                },
-            ],
+                        jsonParse: '{badJson}'
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ], {
-            BLACK_BOX_BAD_JSON: 'not-json-secret',
+            BLACK_BOX_BAD_JSON: 'not-json-secret'
         });
 
         expect(result.code).toBe(1);
@@ -955,36 +964,36 @@ describe('scenario-black-box CLI', () => {
         expect(failure.result).toBe('Set transform failed.');
         expect(failure.details.transformError.details).toMatchObject({
             operator: 'jsonParse',
-            input: '<redacted:badJson>',
+            input: '<redacted:badJson>'
         });
     });
 
     it('exits with code 1 when config assertion fails', async () => {
         const workingDirectory = await writeTempConfig({
             execution: {
-                failFast: true,
+                failFast: true
             },
             steps: [
                 {
                     name: 'assertFails',
                     type: 'assert',
                     actual: {
-                        id: 'not-an-integer',
+                        id: 'not-an-integer'
                     },
                     expect: {
                         body: {
-                            id: 'integer',
-                        },
-                    },
-                },
-            ],
+                            id: 'integer'
+                        }
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(1);
@@ -1000,35 +1009,35 @@ describe('scenario-black-box CLI', () => {
     it('supports failFast false from config file', async () => {
         const workingDirectory = await writeTempConfig({
             execution: {
-                failFast: false,
+                failFast: false
             },
             steps: [
                 {
                     name: 'firstAssertFails',
                     type: 'assert',
                     actual: {
-                        id: 'not-an-integer',
+                        id: 'not-an-integer'
                     },
                     expect: {
                         body: {
-                            id: 'integer',
-                        },
-                    },
+                            id: 'integer'
+                        }
+                    }
                 },
                 {
                     name: 'setAfterFailure',
                     type: 'set',
                     output: 'afterFailure',
-                    value: 'still-runs',
-                },
-            ],
+                    value: 'still-runs'
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(1);
@@ -1043,19 +1052,19 @@ describe('scenario-black-box CLI', () => {
     it('dry mode prints executable interactions from config file', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                roomId: 'room-1',
+                roomId: 'room-1'
             },
             connections: {
                 aliceWs: {
                     type: 'ws',
-                    url: 'ws://localhost:8080/ws',
-                },
+                    url: 'ws://localhost:8080/ws'
+                }
             },
             steps: [
                 {
                     name: 'connectAlice',
                     type: 'ws.connect',
-                    connection: 'aliceWs',
+                    connection: 'aliceWs'
                 },
                 {
                     name: 'aliceSendsJoin',
@@ -1064,11 +1073,11 @@ describe('scenario-black-box CLI', () => {
                     request: {
                         send: {
                             type: 'room.join',
-                            roomId: '{roomId}',
-                        },
-                    },
-                },
-            ],
+                            roomId: '{roomId}'
+                        }
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -1077,7 +1086,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '-e',
-            'dry',
+            'dry'
         ]);
 
         expect(result.code).toBe(0);
@@ -1095,14 +1104,14 @@ describe('scenario-black-box CLI', () => {
         expect(interactions[1].WS.request.action).toBe('send');
         expect(interactions[1].WS.request.send).toEqual({
             type: 'room.join',
-            roomId: 'room-1',
+            roomId: 'room-1'
         });
     });
 
     it('dry-run option returns report instead of executable interactions', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                roomId: 'room-1',
+                roomId: 'room-1'
             },
             connections: {
                 aliceRtc: {
@@ -1110,16 +1119,16 @@ describe('scenario-black-box CLI', () => {
                     provider: 'unknown-rtc-provider',
                     actor: 'alice',
                     peerId: 'alice',
-                    roomId: '{roomId}',
-                },
+                    roomId: '{roomId}'
+                }
             },
             steps: [
                 {
                     name: 'connectAlice',
                     type: 'rtc.connect',
-                    connection: 'aliceRtc',
-                },
-            ],
+                    connection: 'aliceRtc'
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -1127,7 +1136,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--dry-run',
+            '--dry-run'
         ]);
 
         expect(result.code).toBe(0);
@@ -1152,15 +1161,15 @@ describe('scenario-black-box CLI', () => {
                     provider: 'unknown-rtc-provider',
                     actor: 'alice',
                     peerId: 'alice',
-                    roomId: 'room-1',
+                    roomId: 'room-1'
                 },
                 bobRtc: {
                     type: 'rtc',
                     provider: 'unknown-rtc-provider',
                     actor: 'bob',
                     peerId: 'bob',
-                    roomId: 'room-1',
-                },
+                    roomId: 'room-1'
+                }
             },
             steps: [
                 {
@@ -1171,41 +1180,41 @@ describe('scenario-black-box CLI', () => {
                         send: {
                             topic: 'chat.message',
                             payload: {
-                                text: 'hello bob',
-                            },
+                                text: 'hello bob'
+                            }
                         },
                         outputs: {
                             sendStatus: 'sendResult.status',
-                            deliveredPayload: 'matchedMessage.data.payload',
-                        },
+                            deliveredPayload: 'matchedMessage.data.payload'
+                        }
                     },
                     expect: {
                         connection: 'bobRtc',
                         message: {
                             topic: 'chat.message',
                             payload: {
-                                text: 'hello bob',
-                            },
-                        },
-                    },
+                                text: 'hello bob'
+                            }
+                        }
+                    }
                 },
                 {
                     name: 'assertDryRunOutputs',
                     type: 'assert',
                     actual: {
                         sendStatus: '{sendStatus}',
-                        deliveredPayload: '{deliveredPayload}',
+                        deliveredPayload: '{deliveredPayload}'
                     },
                     expect: {
                         body: {
                             sendStatus: 'sent',
                             deliveredPayload: {
-                                text: 'hello bob',
-                            },
-                        },
-                    },
-                },
-            ],
+                                text: 'hello bob'
+                            }
+                        }
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -1213,7 +1222,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '--dry-run',
+            '--dry-run'
         ]);
 
         expect(result.code).toBe(0);
@@ -1224,12 +1233,12 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary.failure).toBe(0);
         expect(report.outputs.sendStatus).toBe('sent');
         expect(report.outputs.deliveredPayload).toEqual({
-            text: 'hello bob',
+            text: 'hello bob'
         });
         expect(report.resultsByName.aliceSendsToBob[0].actual.dryRun).toBe(true);
         expect(report.resultsByName.aliceSendsToBob[0].actual.sendResult).toEqual({
             status: 'sent',
-            dryRun: true,
+            dryRun: true
         });
     });
 
@@ -1241,16 +1250,16 @@ describe('scenario-black-box CLI', () => {
                     provider: 'unknown-rtc-provider',
                     actor: 'alice',
                     peerId: 'alice',
-                    roomId: 'room-1',
-                },
+                    roomId: 'room-1'
+                }
             },
             steps: [
                 {
                     name: 'connectAlice',
                     type: 'rtc.connect',
-                    connection: 'aliceRtc',
-                },
-            ],
+                    connection: 'aliceRtc'
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -1258,7 +1267,7 @@ describe('scenario-black-box CLI', () => {
             workingDirectory,
             '-c',
             'config.json',
-            '-n',
+            '-n'
         ]);
 
         expect(result.code).toBe(0);
@@ -1276,24 +1285,24 @@ describe('scenario-black-box CLI', () => {
     it('applies command-line replacements over config variables', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                token: 'from-config',
+                token: 'from-config'
             },
             steps: [
                 {
                     name: 'setToken',
                     type: 'set',
                     output: 'tokenValue',
-                    value: '{token}',
+                    value: '{token}'
                 },
                 {
                     name: 'assertToken',
                     type: 'assert',
                     actual: '{tokenValue}',
                     expect: {
-                        body: 'from-cli',
-                    },
-                },
-            ],
+                        body: 'from-cli'
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
@@ -1302,7 +1311,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '-r',
-            'token:=from-cli',
+            'token:=from-cli'
         ]);
 
         expect(result.code).toBe(0);
@@ -1319,34 +1328,34 @@ describe('scenario-black-box CLI', () => {
                 apiToken: {
                     env: 'BLACK_BOX_TEST_API_TOKEN',
                     required: true,
-                    secret: true,
-                },
+                    secret: true
+                }
             },
             steps: [
                 {
                     name: 'deriveAuthHeader',
                     type: 'set',
                     output: 'authHeader',
-                    value: 'Bearer {apiToken}',
+                    value: 'Bearer {apiToken}'
                 },
                 {
                     name: 'assertRedactedHeader',
                     type: 'assert',
                     actual: '{authHeader}',
                     expect: {
-                        body: 'Bearer secret-token-123',
-                    },
-                },
-            ],
+                        body: 'Bearer secret-token-123'
+                    }
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ], {
-            BLACK_BOX_TEST_API_TOKEN: 'secret-token-123',
+            BLACK_BOX_TEST_API_TOKEN: 'secret-token-123'
         });
 
         expect(result.code).toBe(0);
@@ -1365,28 +1374,28 @@ describe('scenario-black-box CLI', () => {
                 apiToken: {
                     env: 'BLACK_BOX_TEST_API_TOKEN',
                     required: true,
-                    secret: true,
-                },
+                    secret: true
+                }
             },
             execution: {
-                failFast: false,
+                failFast: false
             },
             steps: [
                 {
                     name: 'deriveAuthHeader',
                     type: 'set',
                     output: 'authHeader',
-                    value: 'Bearer {apiToken}',
+                    value: 'Bearer {apiToken}'
                 },
                 {
                     name: 'assertSecretHeaderFails',
                     type: 'assert',
                     actual: '{authHeader}',
                     expect: {
-                        body: 'Bearer expected-token',
-                    },
-                },
-            ],
+                        body: 'Bearer expected-token'
+                    }
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'artifacts');
 
@@ -1396,9 +1405,9 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ], {
-            BLACK_BOX_TEST_API_TOKEN: 'secret-token-123',
+            BLACK_BOX_TEST_API_TOKEN: 'secret-token-123'
         });
 
         expect(result.code).toBe(1);
@@ -1413,7 +1422,7 @@ describe('scenario-black-box CLI', () => {
             eventsText,
             failuresText,
             metadataText,
-            artifactIndexText,
+            artifactIndexText
         ].join('\n');
 
         expect(artifactText).not.toContain('secret-token-123');
@@ -1425,19 +1434,19 @@ describe('scenario-black-box CLI', () => {
         const events = eventsText
             .trim()
             .split('\n')
-            .map(line => JSON.parse(line));
+            .map((line) => JSON.parse(line));
 
         expect(report.summary.failure).toBe(1);
         expect(failures.summary.failure).toBe(1);
         expect(failures.failures[0].name).toBe('assertSecretHeaderFails');
         expect(failures.failures[0].actual).toBe('Bearer <redacted:apiToken>');
-        expect(events.some(event => event.kind === 'step-result' && event.name === 'assertSecretHeaderFails'))
+        expect(events.some((event) => event.kind === 'step-result' && event.name === 'assertSecretHeaderFails'))
             .toBe(true);
         expect(artifactIndex.firstFailure).toMatchObject({
             name: 'assertSecretHeaderFails',
-            kind: 'step-result',
+            kind: 'step-result'
         });
-        expect(artifactIndex.stepResults.every((entry: { sequence?: number }) => typeof entry.sequence === 'number'))
+        expect(artifactIndex.stepResults.every((entry: { sequence?: number; }) => typeof entry.sequence === 'number'))
             .toBe(true);
         expect(metadata.summary.failure).toBe(1);
         expect(metadata.command.join(' ')).toContain('--artifact-dir');
@@ -1449,38 +1458,38 @@ describe('scenario-black-box CLI', () => {
                 failFast: false,
                 artifacts: {
                     maxEventsByKind: {
-                        'step-result': 2,
-                    },
-                },
+                        'step-result': 2
+                    }
+                }
             },
             steps: [
                 {
                     name: 'setOne',
                     type: 'set',
                     output: 'one',
-                    value: 'one',
+                    value: 'one'
                 },
                 {
                     name: 'setTwo',
                     type: 'set',
                     output: 'two',
-                    value: 'two',
+                    value: 'two'
                 },
                 {
                     name: 'setThree',
                     type: 'set',
                     output: 'three',
-                    value: 'three',
+                    value: 'three'
                 },
                 {
                     name: 'assertFailureIsPreserved',
                     type: 'assert',
                     actual: '{three}',
                     expect: {
-                        body: 'not-three',
-                    },
-                },
-            ],
+                        body: 'not-three'
+                    }
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'indexed-artifacts');
 
@@ -1490,7 +1499,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(1);
@@ -1499,49 +1508,49 @@ describe('scenario-black-box CLI', () => {
         const events = (await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8'))
             .trim()
             .split('\n')
-            .map(line => JSON.parse(line));
+            .map((line) => JSON.parse(line));
         const artifactIndex = JSON.parse(await readFile(path.join(artifactDir, 'artifact-index.json'), 'utf8'));
         const stepEventNames = events
-            .filter(event => event.kind === 'step-result')
-            .map(event => event.name);
+            .filter((event) => event.kind === 'step-result')
+            .map((event) => event.name);
 
         expect(report.artifact).toMatchObject({
             truncated: true,
             omittedEvents: 1,
             maxEventsByKind: {
-                'step-result': 2,
-            },
+                'step-result': 2
+            }
         });
         expect(stepEventNames).toEqual([
             'setOne',
             'setTwo',
-            'assertFailureIsPreserved',
+            'assertFailureIsPreserved'
         ]);
         expect(events.at(-1)).toMatchObject({
             kind: 'artifact-truncated',
             omittedByKind: {
-                'step-result': 1,
-            },
+                'step-result': 1
+            }
         });
         expect(artifactIndex.firstFailure).toMatchObject({
-            name: 'assertFailureIsPreserved',
+            name: 'assertFailureIsPreserved'
         });
         expect(artifactIndex.stepResults).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 name: 'setThree',
-                emitted: false,
+                emitted: false
             }),
             expect.objectContaining({
                 name: 'assertFailureIsPreserved',
                 emitted: true,
-                status: 'FAILURE',
-            }),
+                status: 'FAILURE'
+            })
         ]));
         expect(artifactIndex.compaction.repeatedSuccessSummaries).toEqual([
             expect.objectContaining({
                 name: 'setThree',
-                count: 1,
-            }),
+                count: 1
+            })
         ]);
     });
 
@@ -1551,30 +1560,30 @@ describe('scenario-black-box CLI', () => {
                 dryRun: true,
                 artifacts: {
                     maxEventsByKind: {
-                        'step-result': 1,
-                    },
-                },
+                        'step-result': 1
+                    }
+                }
             },
             steps: [
                 {
                     name: 'retainedProducer',
                     type: 'crdt',
                     action: 'open',
-                    connection: 'east',
+                    connection: 'east'
                 },
                 {
                     name: 'producer|CRDT',
                     type: 'crdt',
                     action: 'ship',
-                    connection: 'east',
+                    connection: 'east'
                 },
                 {
                     name: 'producer',
                     type: 'crdt',
                     action: 'CRDT|ship',
-                    connection: 'east',
-                },
-            ],
+                    connection: 'east'
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'delimiter-artifacts');
 
@@ -1584,7 +1593,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -1600,7 +1609,7 @@ describe('scenario-black-box CLI', () => {
                 status: 'SUCCESS',
                 count: 1,
                 firstSequence: 2,
-                lastSequence: 2,
+                lastSequence: 2
             },
             {
                 name: 'producer',
@@ -1610,8 +1619,8 @@ describe('scenario-black-box CLI', () => {
                 status: 'SUCCESS',
                 count: 1,
                 firstSequence: 3,
-                lastSequence: 3,
-            },
+                lastSequence: 3
+            }
         ]);
     });
 
@@ -1627,13 +1636,13 @@ describe('scenario-black-box CLI', () => {
                     correlation: {
                         runnerRunId: 'bb-correlation-run',
                         injectHeaders: true,
-                        injectPayloads: true,
-                    },
+                        injectPayloads: true
+                    }
                 },
                 connections: {
                     api: {
                         type: 'http',
-                        baseUrl: server.baseUrl,
+                        baseUrl: server.baseUrl
                     },
                     aliceRtc: {
                         type: 'rtc',
@@ -1641,7 +1650,7 @@ describe('scenario-black-box CLI', () => {
                         actor: 'alice',
                         peerId: 'alice',
                         roomId: 'correlation-room',
-                        remotePeerId: 'bob',
+                        remotePeerId: 'bob'
                     },
                     bobRtc: {
                         type: 'rtc',
@@ -1649,8 +1658,8 @@ describe('scenario-black-box CLI', () => {
                         actor: 'bob',
                         peerId: 'bob',
                         roomId: 'correlation-room',
-                        remotePeerId: 'alice',
-                    },
+                        remotePeerId: 'alice'
+                    }
                 },
                 steps: [
                     {
@@ -1658,26 +1667,26 @@ describe('scenario-black-box CLI', () => {
                         type: 'http',
                         connection: 'api',
                         request: {
-                            path: '/headers',
+                            path: '/headers'
                         },
                         expect: {
                             status: 200,
                             body: {
                                 headers: {
-                                    'x-rallar-black-box-run-id': 'bb-correlation-run',
-                                },
-                            },
-                        },
+                                    'x-rallar-black-box-run-id': 'bb-correlation-run'
+                                }
+                            }
+                        }
                     },
                     {
                         name: 'connectAlice',
                         type: 'rtc.connect',
-                        connection: 'aliceRtc',
+                        connection: 'aliceRtc'
                     },
                     {
                         name: 'connectBob',
                         type: 'rtc.connect',
-                        connection: 'bobRtc',
+                        connection: 'bobRtc'
                     },
                     {
                         name: 'aliceSendsToBob',
@@ -1688,9 +1697,9 @@ describe('scenario-black-box CLI', () => {
                                 topic: 'correlation.test',
                                 toPeerId: 'bob',
                                 payload: {
-                                    text: 'hello',
-                                },
-                            },
+                                    text: 'hello'
+                                }
+                            }
                         },
                         expect: {
                             connection: 'bobRtc',
@@ -1700,25 +1709,25 @@ describe('scenario-black-box CLI', () => {
                                 topic: 'correlation.test',
                                 toPeerId: 'bob',
                                 payload: {
-                                    text: 'hello',
+                                    text: 'hello'
                                 },
                                 blackBoxRunner: {
-                                    runnerRunId: 'bb-correlation-run',
-                                },
-                            },
-                        },
+                                    runnerRunId: 'bb-correlation-run'
+                                }
+                            }
+                        }
                     },
                     {
                         name: 'closeAlice',
                         type: 'rtc.close',
-                        connection: 'aliceRtc',
+                        connection: 'aliceRtc'
                     },
                     {
                         name: 'closeBob',
                         type: 'rtc.close',
-                        connection: 'bobRtc',
-                    },
-                ],
+                        connection: 'bobRtc'
+                    }
+                ]
             });
             const artifactDir = path.join(workingDirectory, 'correlation-artifacts');
 
@@ -1728,7 +1737,7 @@ describe('scenario-black-box CLI', () => {
                 '-c',
                 'config.json',
                 '--artifact-dir',
-                artifactDir,
+                artifactDir
             ]);
 
             expect(result.code).toBe(0);
@@ -1741,7 +1750,7 @@ describe('scenario-black-box CLI', () => {
             const events = eventsText
                 .trim()
                 .split('\n')
-                .map(line => JSON.parse(line));
+                .map((line) => JSON.parse(line));
             const metadata = JSON.parse(metadataText);
             const artifactReport = JSON.parse(artifactReportText);
             const headerResult = report.resultsByName.echoHeaders[0];
@@ -1750,7 +1759,7 @@ describe('scenario-black-box CLI', () => {
             expect(report.runnerRunId).toBe('bb-correlation-run');
             expect(report.correlation.injection).toMatchObject({
                 headers: true,
-                payloads: true,
+                payloads: true
             });
             expect(headerResult.runnerRunId).toBe('bb-correlation-run');
             expect(headerResult.actual.body.headers['x-rallar-black-box-run-id']).toBe('bb-correlation-run');
@@ -1758,11 +1767,11 @@ describe('scenario-black-box CLI', () => {
             expect(headerResult.correlation.injected.headers).toBe(true);
             expect(sendResult.actual.sent.blackBoxRunner).toMatchObject({
                 runnerRunId: 'bb-correlation-run',
-                runnerStepId: sendResult.runnerStepId,
+                runnerStepId: sendResult.runnerStepId
             });
             expect(sendResult.actual.matchedMessage.data.blackBoxRunner).toMatchObject({
                 runnerRunId: 'bb-correlation-run',
-                runnerStepId: sendResult.runnerStepId,
+                runnerStepId: sendResult.runnerStepId
             });
             expect(sendResult.correlation.injected.payload).toBe(true);
             expect(events).toEqual(expect.arrayContaining([
@@ -1770,12 +1779,13 @@ describe('scenario-black-box CLI', () => {
                     kind: 'step-result',
                     name: 'aliceSendsToBob',
                     runnerRunId: 'bb-correlation-run',
-                    runnerStepId: sendResult.runnerStepId,
-                }),
+                    runnerStepId: sendResult.runnerStepId
+                })
             ]));
             expect(metadata.correlation.runnerRunId).toBe('bb-correlation-run');
             expect(artifactReport.resultsByName.echoHeaders[0].runnerStepId).toBe(headerResult.runnerStepId);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -1792,13 +1802,13 @@ describe('scenario-black-box CLI', () => {
                     correlation: {
                         runnerRunId: 'bb-record-only',
                         injectHeaders: false,
-                        injectPayloads: false,
-                    },
+                        injectPayloads: false
+                    }
                 },
                 connections: {
                     api: {
                         type: 'http',
-                        baseUrl: server.baseUrl,
+                        baseUrl: server.baseUrl
                     },
                     aliceRtc: {
                         type: 'rtc',
@@ -1806,7 +1816,7 @@ describe('scenario-black-box CLI', () => {
                         actor: 'alice',
                         peerId: 'alice',
                         roomId: 'correlation-opt-out-room',
-                        remotePeerId: 'bob',
+                        remotePeerId: 'bob'
                     },
                     bobRtc: {
                         type: 'rtc',
@@ -1814,8 +1824,8 @@ describe('scenario-black-box CLI', () => {
                         actor: 'bob',
                         peerId: 'bob',
                         roomId: 'correlation-opt-out-room',
-                        remotePeerId: 'alice',
-                    },
+                        remotePeerId: 'alice'
+                    }
                 },
                 steps: [
                     {
@@ -1823,21 +1833,21 @@ describe('scenario-black-box CLI', () => {
                         type: 'http',
                         connection: 'api',
                         request: {
-                            path: '/headers',
+                            path: '/headers'
                         },
                         expect: {
-                            status: 200,
-                        },
+                            status: 200
+                        }
                     },
                     {
                         name: 'connectAlice',
                         type: 'rtc.connect',
-                        connection: 'aliceRtc',
+                        connection: 'aliceRtc'
                     },
                     {
                         name: 'connectBob',
                         type: 'rtc.connect',
-                        connection: 'bobRtc',
+                        connection: 'bobRtc'
                     },
                     {
                         name: 'aliceSendsToBob',
@@ -1848,9 +1858,9 @@ describe('scenario-black-box CLI', () => {
                                 topic: 'correlation.optout',
                                 toPeerId: 'bob',
                                 payload: {
-                                    text: 'plain',
-                                },
-                            },
+                                    text: 'plain'
+                                }
+                            }
                         },
                         expect: {
                             connection: 'bobRtc',
@@ -1860,29 +1870,29 @@ describe('scenario-black-box CLI', () => {
                                 topic: 'correlation.optout',
                                 toPeerId: 'bob',
                                 payload: {
-                                    text: 'plain',
-                                },
-                            },
-                        },
+                                    text: 'plain'
+                                }
+                            }
+                        }
                     },
                     {
                         name: 'closeAlice',
                         type: 'rtc.close',
-                        connection: 'aliceRtc',
+                        connection: 'aliceRtc'
                     },
                     {
                         name: 'closeBob',
                         type: 'rtc.close',
-                        connection: 'bobRtc',
-                    },
-                ],
+                        connection: 'bobRtc'
+                    }
+                ]
             });
 
             const result = await runScenarioCli([
                 '-w',
                 workingDirectory,
                 '-c',
-                'config.json',
+                'config.json'
             ]);
 
             expect(result.code).toBe(0);
@@ -1901,7 +1911,8 @@ describe('scenario-black-box CLI', () => {
             expect(sendResult.actual.sent.blackBoxRunner).toBeUndefined();
             expect(sendResult.actual.matchedMessage.data.blackBoxRunner).toBeUndefined();
             expect(sendResult.correlation.injected.payload).toBe(false);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -1913,17 +1924,17 @@ describe('scenario-black-box CLI', () => {
                     name: 'setValue',
                     type: 'set',
                     output: 'value',
-                    value: 'ok',
+                    value: 'ok'
                 },
                 {
                     name: 'assertValue',
                     type: 'assert',
                     actual: '{value}',
                     expect: {
-                        body: 'ok',
-                    },
-                },
-            ],
+                        body: 'ok'
+                    }
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'scale-artifacts');
 
@@ -1935,7 +1946,7 @@ describe('scenario-black-box CLI', () => {
             '--iterations',
             '2',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -1965,12 +1976,12 @@ describe('scenario-black-box CLI', () => {
         const events = eventsText
             .trim()
             .split('\n')
-            .map(line => JSON.parse(line));
+            .map((line) => JSON.parse(line));
 
         expect(artifactReport.summary.runs).toBe(2);
         expect(metadata.summary.runs).toBe(2);
-        expect(events.filter(event => event.kind === 'step-result')).toHaveLength(4);
-        expect(events.every(event => event.kind !== 'step-result' || event.runIndex === 1 || event.runIndex === 2))
+        expect(events.filter((event) => event.kind === 'step-result')).toHaveLength(4);
+        expect(events.every((event) => event.kind !== 'step-result' || event.runIndex === 1 || event.runIndex === 2))
             .toBe(true);
     });
 
@@ -1979,39 +1990,39 @@ describe('scenario-black-box CLI', () => {
             execution: {
                 thresholds: {
                     'summary.failure': {
-                        max: 0,
+                        max: 0
                     },
                     'metrics.byTransport.SET': {
-                        gte: 1,
+                        gte: 1
                     },
                     'metrics.latencyMs.stepDuration.count': {
-                        min: 2,
-                    },
-                },
+                        min: 2
+                    }
+                }
             },
             postRunAssertions: [
                 {
                     name: 'artifact stream is complete',
                     path: 'artifact.truncated',
-                    equals: false,
-                },
+                    equals: false
+                }
             ],
             steps: [
                 {
                     name: 'setValue',
                     type: 'set',
                     output: 'value',
-                    value: 'ok',
+                    value: 'ok'
                 },
                 {
                     name: 'assertValue',
                     type: 'assert',
                     actual: '{value}',
                     expect: {
-                        body: 'ok',
-                    },
-                },
-            ],
+                        body: 'ok'
+                    }
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'post-run-artifacts');
 
@@ -2021,7 +2032,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -2033,9 +2044,9 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary.postRunAssertions).toEqual({
             total: 4,
             success: 4,
-            failure: 0,
+            failure: 0
         });
-        expect(report.postRunAssertions.results.map((entry: { status: string }) => entry.status))
+        expect(report.postRunAssertions.results.map((entry: { status: string; }) => entry.status))
             .toEqual(['SUCCESS', 'SUCCESS', 'SUCCESS', 'SUCCESS']);
         expect(report.metrics.byTransport.SET).toBe(1);
         expect(report.artifact.truncated).toBe(false);
@@ -2045,11 +2056,11 @@ describe('scenario-black-box CLI', () => {
         const events = eventsText
             .trim()
             .split('\n')
-            .map(line => JSON.parse(line));
+            .map((line) => JSON.parse(line));
         const artifactReport = JSON.parse(artifactReportText);
 
         expect(artifactReport.postRunAssertions.summary.failure).toBe(0);
-        expect(events.filter(event => event.kind === 'post-run-assertion')).toHaveLength(4);
+        expect(events.filter((event) => event.kind === 'post-run-assertion')).toHaveLength(4);
     });
 
     it('exits with code 1 when a post-run threshold fails without step failures', async () => {
@@ -2057,18 +2068,18 @@ describe('scenario-black-box CLI', () => {
             execution: {
                 thresholds: {
                     'metrics.byTransport.SET': {
-                        gte: 2,
-                    },
-                },
+                        gte: 2
+                    }
+                }
             },
             steps: [
                 {
                     name: 'setValue',
                     type: 'set',
                     output: 'value',
-                    value: 'ok',
-                },
-            ],
+                    value: 'ok'
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'post-run-failure-artifacts');
 
@@ -2078,7 +2089,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(1);
@@ -2091,20 +2102,20 @@ describe('scenario-black-box CLI', () => {
         const events = eventsText
             .trim()
             .split('\n')
-            .map(line => JSON.parse(line));
+            .map((line) => JSON.parse(line));
 
         expect(report.summary.failure).toBe(0);
         expect(report.summary.ok).toBe(false);
         expect(report.summary.postRunAssertions).toEqual({
             total: 1,
             success: 0,
-            failure: 1,
+            failure: 1
         });
         expect(report.summary.firstPostRunAssertionFailure).toMatchObject({
             path: 'metrics.byTransport.SET',
             operator: 'gte',
             expected: 2,
-            actual: 1,
+            actual: 1
         });
         expect(failures.failures).toEqual([]);
         expect(failures.postRunAssertionFailures).toHaveLength(1);
@@ -2112,15 +2123,15 @@ describe('scenario-black-box CLI', () => {
             expect.objectContaining({
                 kind: 'post-run-assertion',
                 status: 'FAILURE',
-                path: 'metrics.byTransport.SET',
-            }),
+                path: 'metrics.byTransport.SET'
+            })
         ]));
     });
 
     it('runs same-connection soak loops and writes bounded artifacts', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {
-                roomId: 'soak-room',
+                roomId: 'soak-room'
             },
             execution: {
                 failFast: true,
@@ -2130,34 +2141,34 @@ describe('scenario-black-box CLI', () => {
                     maxArtifactEvents: 5,
                     setupSteps: [
                         'connectAlice',
-                        'connectBob',
+                        'connectBob'
                     ],
                     loopSteps: [
                         'aliceSendsToBob',
-                        'bobSendsToAlice',
+                        'bobSendsToAlice'
                     ],
                     cleanupSteps: [
                         'closeAlice',
-                        'closeBob',
-                    ],
+                        'closeBob'
+                    ]
                 },
                 postRunAssertions: [
                     {
                         name: 'all soak sends succeeded',
                         path: 'metrics.soak.sends.successRatio',
-                        gte: 1,
+                        gte: 1
                     },
                     {
                         name: 'no warning diagnostics',
                         path: 'metrics.soak.diagnostics.bySeverity.warning',
-                        lte: 0,
+                        lte: 0
                     },
                     {
                         name: 'artifact truncation recorded',
                         path: 'artifact.truncated',
-                        equals: true,
-                    },
-                ],
+                        equals: true
+                    }
+                ]
             },
             connections: {
                 aliceRtc: {
@@ -2166,7 +2177,7 @@ describe('scenario-black-box CLI', () => {
                     actor: 'alice',
                     peerId: 'alice',
                     roomId: '{roomId}',
-                    remotePeerId: 'bob',
+                    remotePeerId: 'bob'
                 },
                 bobRtc: {
                     type: 'rtc',
@@ -2174,19 +2185,19 @@ describe('scenario-black-box CLI', () => {
                     actor: 'bob',
                     peerId: 'bob',
                     roomId: '{roomId}',
-                    remotePeerId: 'alice',
-                },
+                    remotePeerId: 'alice'
+                }
             },
             steps: [
                 {
                     name: 'connectAlice',
                     type: 'rtc.connect',
-                    connection: 'aliceRtc',
+                    connection: 'aliceRtc'
                 },
                 {
                     name: 'connectBob',
                     type: 'rtc.connect',
-                    connection: 'bobRtc',
+                    connection: 'bobRtc'
                 },
                 {
                     name: 'aliceSendsToBob',
@@ -2197,9 +2208,9 @@ describe('scenario-black-box CLI', () => {
                             topic: 'soak.alice',
                             toPeerId: 'bob',
                             payload: {
-                                text: 'ping bob',
-                            },
-                        },
+                                text: 'ping bob'
+                            }
+                        }
                     },
                     expect: {
                         connection: 'bobRtc',
@@ -2209,10 +2220,10 @@ describe('scenario-black-box CLI', () => {
                             topic: 'soak.alice',
                             toPeerId: 'bob',
                             payload: {
-                                text: 'ping bob',
-                            },
-                        },
-                    },
+                                text: 'ping bob'
+                            }
+                        }
+                    }
                 },
                 {
                     name: 'bobSendsToAlice',
@@ -2223,9 +2234,9 @@ describe('scenario-black-box CLI', () => {
                             topic: 'soak.bob',
                             toPeerId: 'alice',
                             payload: {
-                                text: 'ping alice',
-                            },
-                        },
+                                text: 'ping alice'
+                            }
+                        }
                     },
                     expect: {
                         connection: 'aliceRtc',
@@ -2235,22 +2246,22 @@ describe('scenario-black-box CLI', () => {
                             topic: 'soak.bob',
                             toPeerId: 'alice',
                             payload: {
-                                text: 'ping alice',
-                            },
-                        },
-                    },
+                                text: 'ping alice'
+                            }
+                        }
+                    }
                 },
                 {
                     name: 'closeAlice',
                     type: 'rtc.close',
-                    connection: 'aliceRtc',
+                    connection: 'aliceRtc'
                 },
                 {
                     name: 'closeBob',
                     type: 'rtc.close',
-                    connection: 'bobRtc',
-                },
-            ],
+                    connection: 'bobRtc'
+                }
+            ]
         });
         const artifactDir = path.join(workingDirectory, 'soak-artifacts');
 
@@ -2260,7 +2271,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -2275,7 +2286,7 @@ describe('scenario-black-box CLI', () => {
             setupStepCount: 2,
             loopStepCount: 2,
             cleanupStepCount: 2,
-            maxArtifactEvents: 5,
+            maxArtifactEvents: 5
         });
         expect(report.resultsByName.connectAlice).toHaveLength(1);
         expect(report.resultsByName.connectBob).toHaveLength(1);
@@ -2292,19 +2303,19 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary.postRunAssertions).toEqual({
             total: 3,
             success: 3,
-            failure: 0,
+            failure: 0
         });
 
         const eventsText = await readFile(path.join(artifactDir, 'events.jsonl'), 'utf8');
         const events = eventsText
             .trim()
             .split('\n')
-            .map(line => JSON.parse(line));
+            .map((line) => JSON.parse(line));
 
         expect(events).toHaveLength(6);
         expect(events.at(-1)).toMatchObject({
             kind: 'artifact-truncated',
-            emittedEvents: 5,
+            emittedEvents: 5
         });
     });
 
@@ -2315,31 +2326,31 @@ describe('scenario-black-box CLI', () => {
                     messageCount: 5,
                     loopSteps: [
                         'loopA',
-                        'loopB',
-                    ],
-                },
+                        'loopB'
+                    ]
+                }
             },
             steps: [
                 {
                     name: 'loopA',
                     type: 'set',
                     output: 'loopAValue',
-                    value: 'a',
+                    value: 'a'
                 },
                 {
                     name: 'loopB',
                     type: 'set',
                     output: 'loopBValue',
-                    value: 'b',
-                },
-            ],
+                    value: 'b'
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(0);
@@ -2351,13 +2362,13 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary.soak).toMatchObject({
             iterations: 3,
             requestedMessageCount: 5,
-            loopStepCount: 2,
+            loopStepCount: 2
         });
         expect(report.resultsByName.loopA).toHaveLength(3);
         expect(report.resultsByName.loopB).toHaveLength(2);
-        expect(report.resultsByName.loopA.map((result: { repeatIndex: number }) => result.repeatIndex))
+        expect(report.resultsByName.loopA.map((result: { repeatIndex: number; }) => result.repeatIndex))
             .toEqual([1, 2, 3]);
-        expect(report.resultsByName.loopB.map((result: { repeatIndex: number }) => result.repeatIndex))
+        expect(report.resultsByName.loopB.map((result: { repeatIndex: number; }) => result.repeatIndex))
             .toEqual([1, 2]);
     });
 
@@ -2379,19 +2390,19 @@ describe('scenario-black-box CLI', () => {
                                 iteration: '{loop.iteration}',
                                 stepIndex: '{loop.stepIndex}',
                                 count: '{loop.count}',
-                                elapsedMs: '{loop.elapsedMs}',
-                            },
-                        },
-                    ],
-                },
-            ],
+                                elapsedMs: '{loop.elapsedMs}'
+                            }
+                        }
+                    ]
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(0);
@@ -2402,21 +2413,21 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary).toMatchObject({
             total: 5,
             success: 5,
-            failure: 0,
+            failure: 0
         });
         expect(report.outputs.frame1).toEqual({
             index: 1,
             iteration: 1,
             stepIndex: 1,
             count: 3,
-            elapsedMs: 0,
+            elapsedMs: 0
         });
         expect(report.outputs.frame2.iteration).toBe(2);
         expect(report.outputs.frame3.elapsedMs).toBe(2);
         expect(report.resultsByName.positionLoopDelay).toHaveLength(2);
-        expect(report.resultsByName.positionLoopDelay.map((entry: { delayMs: number }) => entry.delayMs))
+        expect(report.resultsByName.positionLoopDelay.map((entry: { delayMs: number; }) => entry.delayMs))
             .toEqual([1, 1]);
-        expect(report.resultsList.map((entry: { name: string }) => entry.name))
+        expect(report.resultsList.map((entry: { name: string; }) => entry.name))
             .toEqual(['frame1', 'positionLoopDelay', 'frame2', 'positionLoopDelay', 'frame3']);
     });
 
@@ -2425,12 +2436,12 @@ describe('scenario-black-box CLI', () => {
             variables: {
                 runId: {
                     env: 'RALLAR_TEST_RUN_ID',
-                    default: 'local',
+                    default: 'local'
                 },
                 applicationId: {
                     env: 'RALLAR_TEST_APPLICATION_ID',
-                    default: 'app-{runId}',
-                },
+                    default: 'app-{runId}'
+                }
             },
             steps: [
                 {
@@ -2449,31 +2460,31 @@ describe('scenario-black-box CLI', () => {
                                             name: 'captureToken{loop.iteration}',
                                             type: 'set',
                                             output: 'runtimeToken',
-                                            value: 'token',
+                                            value: 'token'
                                         },
                                         {
                                             name: 'captureResolvedValue{loop.iteration}',
                                             type: 'set',
                                             output: 'resolvedValue',
-                                            value: '{applicationId}:{runtimeToken}:{loop.iteration}',
-                                        },
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
-                },
-            ],
+                                            value: '{applicationId}:{runtimeToken}:{loop.iteration}'
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ], {
             RALLAR_TEST_RUN_ID: undefined,
-            RALLAR_TEST_APPLICATION_ID: undefined,
+            RALLAR_TEST_APPLICATION_ID: undefined
         });
 
         expect(result.stderr).toBe('');
@@ -2503,10 +2514,10 @@ describe('scenario-black-box CLI', () => {
                                     value: {
                                         operation: '{traffic.operation}',
                                         sequence: '{traffic.sequence}',
-                                        randomInt: '{traffic.randomInt}',
-                                    },
-                                },
-                            ],
+                                        randomInt: '{traffic.randomInt}'
+                                    }
+                                }
+                            ]
                         },
                         {
                             name: 'beta',
@@ -2519,15 +2530,15 @@ describe('scenario-black-box CLI', () => {
                                     value: {
                                         operation: '{traffic.operation}',
                                         sequence: '{traffic.sequence}',
-                                        randomInt: '{traffic.randomInt}',
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                },
+                                        randomInt: '{traffic.randomInt}'
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
             },
-            steps: [],
+            steps: []
         });
         const artifactDir = path.join(workingDirectory, 'traffic-artifacts');
 
@@ -2537,7 +2548,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -2550,7 +2561,7 @@ describe('scenario-black-box CLI', () => {
             seed: 20260528,
             replay: false,
             decisionCount: 5,
-            stepCount: 5,
+            stepCount: 5
         });
         expect(expandedPlan.decisions).toHaveLength(5);
         expect(expandedPlan.steps).toHaveLength(5);
@@ -2562,21 +2573,25 @@ describe('scenario-black-box CLI', () => {
 
         await writeFile(
             path.join(workingDirectory, 'replay.json'),
-            JSON.stringify({
-                execution: {
-                    trafficPlan: {
-                        replayFrom: 'traffic-artifacts/expanded-plan.json',
+            JSON.stringify(
+                {
+                    execution: {
+                        trafficPlan: {
+                            replayFrom: 'traffic-artifacts/expanded-plan.json'
+                        }
                     },
+                    steps: []
                 },
-                steps: [],
-            }, null, 2),
+                null,
+                2
+            )
         );
 
         const replay = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'replay.json',
+            'replay.json'
         ]);
         const replayReport = JSON.parse(replay.stdout);
 
@@ -2585,10 +2600,10 @@ describe('scenario-black-box CLI', () => {
             seed: 20260528,
             replay: true,
             decisionCount: 5,
-            stepCount: 5,
+            stepCount: 5
         });
-        expect(replayReport.resultsList.map((entry: { name: string }) => entry.name))
-            .toEqual(report.resultsList.map((entry: { name: string }) => entry.name));
+        expect(replayReport.resultsList.map((entry: { name: string; }) => entry.name))
+            .toEqual(report.resultsList.map((entry: { name: string; }) => entry.name));
         expect(replayReport.outputs).toEqual(report.outputs);
     });
 
@@ -2613,15 +2628,15 @@ describe('scenario-black-box CLI', () => {
                                     output: 'position{traffic.sequence}',
                                     value: {
                                         sequence: '{traffic.sequence}',
-                                        operation: '{traffic.operation}',
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                },
+                                        operation: '{traffic.operation}'
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
             },
-            steps: [],
+            steps: []
         });
         const artifactDir = path.join(workingDirectory, 'traffic-pacing-artifacts');
 
@@ -2631,7 +2646,7 @@ describe('scenario-black-box CLI', () => {
             '-c',
             'config.json',
             '--artifact-dir',
-            artifactDir,
+            artifactDir
         ]);
 
         expect(result.code).toBe(0);
@@ -2644,18 +2659,18 @@ describe('scenario-black-box CLI', () => {
             seed: 20260601,
             replay: false,
             decisionCount: 5,
-            stepCount: 7,
+            stepCount: 7
         });
         expect(expandedPlan.generator.pacing).toMatchObject({
             rateHz: 20,
             intervalMs: 50,
             jitterMs: 0,
             burstSize: 2,
-            maxInFlight: 2,
+            maxInFlight: 2
         });
-        expect(expandedPlan.decisions.map((decision: { delayMs: number }) => decision.delayMs))
+        expect(expandedPlan.decisions.map((decision: { delayMs: number; }) => decision.delayMs))
             .toEqual([0, 50, 0, 50, 0]);
-        expect(expandedPlan.steps.map((step: { name: string }) => step.name))
+        expect(expandedPlan.steps.map((step: { name: string; }) => step.name))
             .toEqual([
                 'position1',
                 'position2',
@@ -2663,28 +2678,32 @@ describe('scenario-black-box CLI', () => {
                 'position3',
                 'position4',
                 'trafficDelay',
-                'position5',
+                'position5'
             ]);
-        expect(report.resultsByName.trafficDelay.map((entry: { delayMs: number }) => entry.delayMs))
+        expect(report.resultsByName.trafficDelay.map((entry: { delayMs: number; }) => entry.delayMs))
             .toEqual([50, 50]);
 
         await writeFile(
             path.join(workingDirectory, 'replay-pacing.json'),
-            JSON.stringify({
-                execution: {
-                    trafficPlan: {
-                        replayFrom: 'traffic-pacing-artifacts/expanded-plan.json',
+            JSON.stringify(
+                {
+                    execution: {
+                        trafficPlan: {
+                            replayFrom: 'traffic-pacing-artifacts/expanded-plan.json'
+                        }
                     },
+                    steps: []
                 },
-                steps: [],
-            }, null, 2),
+                null,
+                2
+            )
         );
 
         const replay = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'replay-pacing.json',
+            'replay-pacing.json'
         ]);
         const replayReport = JSON.parse(replay.stdout);
 
@@ -2693,10 +2712,10 @@ describe('scenario-black-box CLI', () => {
             seed: 20260601,
             replay: true,
             decisionCount: 5,
-            stepCount: 7,
+            stepCount: 7
         });
-        expect(replayReport.resultsList.map((entry: { name: string }) => entry.name))
-            .toEqual(report.resultsList.map((entry: { name: string }) => entry.name));
+        expect(replayReport.resultsList.map((entry: { name: string; }) => entry.name))
+            .toEqual(report.resultsList.map((entry: { name: string; }) => entry.name));
         expect(replayReport.outputs).toEqual(report.outputs);
     });
 
@@ -2715,9 +2734,9 @@ describe('scenario-black-box CLI', () => {
                                     name: 'setLeft',
                                     type: 'set',
                                     output: 'left',
-                                    value: 'left-value',
-                                },
-                            ],
+                                    value: 'left-value'
+                                }
+                            ]
                         },
                         {
                             name: 'right',
@@ -2726,20 +2745,20 @@ describe('scenario-black-box CLI', () => {
                                     name: 'setRight',
                                     type: 'set',
                                     output: 'right',
-                                    value: 'right-value',
-                                },
-                            ],
-                        },
-                    ],
-                },
-            ],
+                                    value: 'right-value'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         });
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'config.json',
+            'config.json'
         ]);
 
         expect(result.code).toBe(0);
@@ -2750,32 +2769,32 @@ describe('scenario-black-box CLI', () => {
         expect(report.summary).toMatchObject({
             total: 3,
             success: 3,
-            failure: 0,
+            failure: 0
         });
         expect(report.resultsByName.parallelSets[0].actual).toMatchObject({
             groupCount: 2,
             maxConcurrency: 2,
             success: 2,
-            failure: 0,
+            failure: 0
         });
         expect(report.outputs).toMatchObject({
             left: 'left-value',
-            right: 'right-value',
+            right: 'right-value'
         });
-        expect(report.resultsList.map((entry: { name: string }) => entry.name))
+        expect(report.resultsList.map((entry: { name: string; }) => entry.name))
             .toEqual(['parallelSets', 'setLeft', 'setRight']);
     });
 
     it('returns useful error when config file is missing', async () => {
         const workingDirectory = await mkdtemp(
-            path.join(tmpdir(), 'scenario-black-box-missing-config-'),
+            path.join(tmpdir(), 'scenario-black-box-missing-config-')
         );
 
         const result = await runScenarioCli([
             '-w',
             workingDirectory,
             '-c',
-            'does-not-exist.json',
+            'does-not-exist.json'
         ]);
 
         expect(result.code).toBe(1);

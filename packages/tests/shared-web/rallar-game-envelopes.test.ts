@@ -1,9 +1,5 @@
+import { createRallarGameEnvelope, createRallarGameSequenceTracker, isRallarGameEnvelope } from '@shared-web/game/mod.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    createRallarGameEnvelope,
-    createRallarGameSequenceTracker,
-    isRallarGameEnvelope,
-} from '@shared-web/game/mod.ts';
 
 describe('Rallar Game envelopes', () => {
     it('creates and identifies protocol-scoped envelopes', () => {
@@ -15,7 +11,7 @@ describe('Rallar Game envelopes', () => {
             seq: 7,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
-            payload: { moveX: 1 },
+            payload: { moveX: 1 }
         });
 
         expect(envelope).toEqual({
@@ -26,7 +22,7 @@ describe('Rallar Game envelopes', () => {
             seq: 7,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
-            payload: { moveX: 1 },
+            payload: { moveX: 1 }
         });
         expect(isRallarGameEnvelope(envelope, 'test.game.v1')).toBe(true);
         expect(isRallarGameEnvelope(envelope, 'other.v1')).toBe(false);
@@ -42,7 +38,7 @@ describe('Rallar Game envelopes', () => {
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
             matchId: 'match-a',
-            payload: { moveX: 1 },
+            payload: { moveX: 1 }
         });
 
         expect(envelope.matchId).toBe('match-a');
@@ -59,13 +55,13 @@ describe('Rallar Game envelopes', () => {
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
             matchId: 'match-a',
-            payload: { moveX: 1 },
+            payload: { moveX: 1 }
         });
 
         expect(tracker.accept(envelope, { matchId: 'match-b' })).toEqual({
             accepted: false,
             reason: 'wrong-match',
-            envelope,
+            envelope
         });
     });
 
@@ -79,13 +75,13 @@ describe('Rallar Game envelopes', () => {
             seq: 10,
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
-            payload: { moveX: 1 },
+            payload: { moveX: 1 }
         });
 
         expect(tracker.accept(envelope, { matchId: 'match-b' })).toEqual({
             accepted: false,
             reason: 'wrong-match',
-            envelope,
+            envelope
         });
     });
 
@@ -100,12 +96,12 @@ describe('Rallar Game envelopes', () => {
             directorEpoch: 3,
             sentAtEpochMs: 1_000,
             matchId: 'match-a',
-            payload: { moveX: 1 },
+            payload: { moveX: 1 }
         });
         const matchBEnvelope = createRallarGameEnvelope({
             ...matchAEnvelope,
             seq: 1,
-            matchId: 'match-b',
+            matchId: 'match-b'
         });
 
         expect(tracker.accept(matchAEnvelope, { matchId: 'match-a' }))
@@ -117,28 +113,28 @@ describe('Rallar Game envelopes', () => {
     it('identifies envelopes with an explicit undefined match identity', () => {
         expect(isRallarGameEnvelope({
             ...validEnvelope,
-            matchId: undefined,
+            matchId: undefined
         }, 'test.game.v1')).toBe(true);
     });
 
     it('rejects a null match identity', () => {
         expect(isRallarGameEnvelope({
             ...validEnvelope,
-            matchId: null,
+            matchId: null
         }, 'test.game.v1')).toBe(false);
     });
 
     it('rejects a numeric match identity', () => {
         expect(isRallarGameEnvelope({
             ...validEnvelope,
-            matchId: 1,
+            matchId: 1
         }, 'test.game.v1')).toBe(false);
     });
 
     it('rejects an object match identity', () => {
         expect(isRallarGameEnvelope({
             ...validEnvelope,
-            matchId: { id: 'match-a' },
+            matchId: { id: 'match-a' }
         }, 'test.game.v1')).toBe(false);
     });
 
@@ -153,10 +149,10 @@ describe('Rallar Game envelopes', () => {
                     seq: -1,
                     directorEpoch: 1,
                     sentAtEpochMs: 1_000,
-                    payload: {},
+                    payload: {}
                 },
-                'test.game.v1',
-            ),
+                'test.game.v1'
+            )
         ).toBe(false);
         expect(
             isRallarGameEnvelope(
@@ -168,10 +164,10 @@ describe('Rallar Game envelopes', () => {
                     seq: 1,
                     directorEpoch: 1,
                     sentAtEpochMs: 1_000,
-                    payload: {},
+                    payload: {}
                 },
-                'test.game.v1',
-            ),
+                'test.game.v1'
+            )
         ).toBe(false);
     });
 
@@ -185,7 +181,7 @@ describe('Rallar Game envelopes', () => {
             seq: 10,
             directorEpoch: 4,
             sentAtEpochMs: 1_000,
-            payload: { tick: 1 },
+            payload: { tick: 1 }
         });
 
         expect(
@@ -194,8 +190,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-1',
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-protocol' });
 
         expect(
@@ -204,8 +200,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-2',
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-room' });
 
         expect(
@@ -214,8 +210,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-1',
                 senderId: 'director-2',
                 minDirectorEpoch: 4,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-sender' });
 
         expect(
@@ -224,8 +220,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-1',
                 senderId: 'director-1',
                 minDirectorEpoch: 5,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'stale-epoch' });
 
         expect(
@@ -234,8 +230,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-1',
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
-                kinds: ['event'],
-            }),
+                kinds: ['event']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-kind' });
 
         expect(
@@ -244,8 +240,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-1',
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: true });
         expect(
             tracker.accept(envelope, {
@@ -253,8 +249,8 @@ describe('Rallar Game envelopes', () => {
                 roomId: 'room-1',
                 senderId: 'director-1',
                 minDirectorEpoch: 4,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'duplicate-sequence' });
         expect(
             tracker.accept(
@@ -264,9 +260,9 @@ describe('Rallar Game envelopes', () => {
                     roomId: 'room-1',
                     senderId: 'director-1',
                     minDirectorEpoch: 4,
-                    kinds: ['snapshot'],
-                },
-            ),
+                    kinds: ['snapshot']
+                }
+            )
         ).toMatchObject({ accepted: false, reason: 'stale-sequence' });
     });
 
@@ -283,9 +279,9 @@ describe('Rallar Game envelopes', () => {
                     seq: 10,
                     directorEpoch: 4,
                     sentAtEpochMs: 1_000,
-                    payload: {},
-                }),
-            ),
+                    payload: {}
+                })
+            )
         ).toMatchObject({ accepted: true });
         expect(
             tracker.accept(
@@ -297,9 +293,9 @@ describe('Rallar Game envelopes', () => {
                     seq: 1,
                     directorEpoch: 5,
                     sentAtEpochMs: 2_000,
-                    payload: {},
-                }),
-            ),
+                    payload: {}
+                })
+            )
         ).toMatchObject({ accepted: true });
     });
 });
@@ -312,5 +308,5 @@ const validEnvelope = {
     seq: 1,
     directorEpoch: 1,
     sentAtEpochMs: 1_000,
-    payload: {},
+    payload: {}
 };

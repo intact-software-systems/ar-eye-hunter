@@ -1,10 +1,7 @@
 import type { BrowserContext, Route } from '@playwright/test';
 import type { ControlDistributedRunArtifactBundle } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { createAnalyzeArtifactEnvelope } from './recipe-console-analyze-artifacts.ts';
-import {
-    createAnalyzeControlRun,
-    createAnalyzeDistributedRun,
-} from './recipe-console-analyze-run-data.ts';
+import { createAnalyzeControlRun, createAnalyzeDistributedRun } from './recipe-console-analyze-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 
@@ -21,7 +18,7 @@ export type RecipeConsoleAnalyzeFixture = Readonly<{
 }>;
 
 export async function installRecipeConsoleAnalyzeFixture(
-    context: BrowserContext,
+    context: BrowserContext
 ): Promise<RecipeConsoleAnalyzeFixture> {
     const controlRun = createAnalyzeControlRun();
     const distributedRun = createAnalyzeDistributedRun();
@@ -30,10 +27,12 @@ export async function installRecipeConsoleAnalyzeFixture(
     let artifactReads = 0;
     let runReads = 0;
     let distributedRunReads = 0;
-    let nextArtifactFailure: Readonly<{
-        status: number;
-        body: unknown;
-    }> | undefined;
+    let nextArtifactFailure:
+        | Readonly<{
+            status: number;
+            body: unknown;
+        }>
+        | undefined;
     let deferArtifactResponse = false;
     let markDeferredArtifactStarted = (): void => {};
     let releaseDeferredArtifact = (): void => {};
@@ -44,7 +43,7 @@ export async function installRecipeConsoleAnalyzeFixture(
         releaseDeferredArtifact = resolve;
     });
 
-    await context.route(CONTROL_ROUTE, async route => {
+    await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'OPTIONS') {
@@ -88,7 +87,7 @@ export async function installRecipeConsoleAnalyzeFixture(
             return;
         }
         await fulfillJson(route, {
-            error: `Unhandled ${request.method()} ${url.pathname}`,
+            error: `Unhandled ${request.method()} ${url.pathname}`
         }, 404);
     });
 
@@ -97,26 +96,30 @@ export async function installRecipeConsoleAnalyzeFixture(
         artifactRequestCount: () => artifactReads,
         runRequestCount: () => runReads,
         distributedRunRequestCount: () => distributedRunReads,
-        setArtifactResponse: next => { artifactResponse = next; },
+        setArtifactResponse: (next) => {
+            artifactResponse = next;
+        },
         failNextArtifactResponse: (status, body) => {
             nextArtifactFailure = { status, body };
         },
-        deferNextArtifactResponse: () => { deferArtifactResponse = true; },
+        deferNextArtifactResponse: () => {
+            deferArtifactResponse = true;
+        },
         waitForDeferredArtifactRequest: () => deferredArtifactStarted,
-        releaseDeferredArtifactResponse: releaseDeferredArtifact,
+        releaseDeferredArtifactResponse: releaseDeferredArtifact
     };
 }
 
 async function fulfillJson(
     route: Route,
     body: unknown,
-    status = 200,
+    status = 200
 ): Promise<void> {
     await route.fulfill({
         status,
         contentType: 'application/json',
         headers: corsHeaders(),
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 }
 
@@ -124,6 +127,6 @@ function corsHeaders(): Record<string, string> {
     return {
         'access-control-allow-origin': '*',
         'access-control-allow-headers': '*',
-        'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-allow-methods': 'GET,POST,OPTIONS'
     };
 }

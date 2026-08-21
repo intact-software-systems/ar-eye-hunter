@@ -1,9 +1,13 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
 import { IceConfig, PeerId } from '../api/api-config.ts';
+import { AsyncCommand, type AsyncCommandTimeoutEvent } from '../cache/AsyncCommand.ts';
+import { CommandCancelledError, CommandTimedOutError } from '../cache/Command.ts';
+import { PullPushCommand } from '../cache/PullPushCommand.ts';
+import { Either } from '../resilience/Either.ts';
 import {
     QRtcDataChannel,
     type RtcDataChannelFlowControlPolicy,
-    type RtcDataChannelHealth,
+    type RtcDataChannelHealth
 } from '../webrtc/QRtcDataChannel.ts';
 import { QRtcMediaChannel } from '../webrtc/QRtcMediaChannel.ts';
 import { QRtcDataExchanged, QRtcPeerConnection } from '../webrtc/QRtcPeerConnection.ts';
@@ -11,24 +15,20 @@ import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
     QRtcSignalingTransportCallbacks,
-    QRtcSignalingType,
+    QRtcSignalingType
 } from '../webrtc/QRtcSignalingContracts.ts';
-import { Either } from '../resilience/Either.ts';
-import { CommandCancelledError, CommandTimedOutError, } from '../cache/Command.ts';
-import { AsyncCommand, type AsyncCommandTimeoutEvent, } from '../cache/AsyncCommand.ts';
-import { PullPushCommand } from '../cache/PullPushCommand.ts';
 
 export type WebRtcQueueBoxClientServiceInputDto = {
-    readonly sessionId: string
-    readonly token: string
-    readonly iceCandidates: IceConfig
-    readonly dataChannelName: string
-    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[]
-    readonly rtcSignalingTopicId: string
-    readonly peerEstablishmentTimeout?: WebRtcPeerEstablishmentTimeoutPolicy
-    readonly peerConnectionAttemptBudget?: WebRtcPeerConnectionAttemptBudgetPolicy
-    readonly maxPeerConnections?: number
-}
+    readonly sessionId: string;
+    readonly token: string;
+    readonly iceCandidates: IceConfig;
+    readonly dataChannelName: string;
+    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    readonly rtcSignalingTopicId: string;
+    readonly peerEstablishmentTimeout?: WebRtcPeerEstablishmentTimeoutPolicy;
+    readonly peerConnectionAttemptBudget?: WebRtcPeerConnectionAttemptBudgetPolicy;
+    readonly maxPeerConnections?: number;
+};
 
 export type WebRtcPeerEstablishmentTimeoutPolicy = Readonly<{
     enabled: boolean;
@@ -45,7 +45,7 @@ export type WebRtcPeerEstablishmentTimeoutEvent = Readonly<{
 
 export const DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY: WebRtcPeerEstablishmentTimeoutPolicy = {
     enabled: false,
-    timeoutMs: 30_000,
+    timeoutMs: 30_000
 };
 
 export type WebRtcPeerConnectionAttemptBudgetPolicy = Readonly<{
@@ -70,10 +70,10 @@ export type WebRtcPeerConnectionAttemptDiagnostics = Readonly<{
 export type WebRtcPeerConnectionAttemptExhaustedEvent =
     & WebRtcPeerConnectionAttemptDiagnostics
     & Readonly<{
-    exhaustedAtEpochMs: number;
-    retryAfterEpochMs: number;
-    reason: 'peer-connection-attempt-budget-exhausted';
-}>;
+        exhaustedAtEpochMs: number;
+        retryAfterEpochMs: number;
+        reason: 'peer-connection-attempt-budget-exhausted';
+    }>;
 
 export type WebRtcPeerConnectionAttemptBudgetDiagnostics = Readonly<{
     consumedCount: number;
@@ -87,12 +87,11 @@ export const DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY: WebRtcPeerCo
     enabled: false,
     maxAttempts: 6,
     maxTotalDurationMs: 180_000,
-    cooldownMs: 30_000,
+    cooldownMs: 30_000
 };
 
 export const DEFAULT_WEB_RTC_MAX_PEER_CONNECTIONS = 10;
-export const RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON =
-    'rtc-connect-attempt-budget-exhausted';
+export const RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON = 'rtc-connect-attempt-budget-exhausted';
 
 export type RtcDataChannelLaneConfig = Readonly<{
     id: string;
@@ -103,12 +102,12 @@ export type RtcDataChannelLaneConfig = Readonly<{
 }>;
 
 export type QRtcPeerDto = {
-    peerId: PeerId
-    connection: QRtcPeerConnection
-    channel: QRtcDataChannel
-    channels: ReadonlyMap<string, QRtcDataChannel>
-    media: QRtcMediaChannel
-}
+    peerId: PeerId;
+    connection: QRtcPeerConnection;
+    channel: QRtcDataChannel;
+    channels: ReadonlyMap<string, QRtcDataChannel>;
+    media: QRtcMediaChannel;
+};
 
 export const DEFAULT_RTC_DATA_CHANNEL_LANE_ID = 'reliable';
 
@@ -125,25 +124,25 @@ export type RtcPeerHealth = Readonly<{
 
 export type WebRtcPeerConnectionLeft = Readonly<
     | {
-    kind: 'self';
-    peerId: PeerId;
-}
+        kind: 'self';
+        peerId: PeerId;
+    }
     | {
-    kind: 'connect-failed';
-    peerId: PeerId;
-    error: Error;
-}
+        kind: 'connect-failed';
+        peerId: PeerId;
+        error: Error;
+    }
     | {
-    kind: 'connect-exhausted';
-    peerId: PeerId;
-    event: WebRtcPeerConnectionAttemptExhaustedEvent;
-    error: Error;
-}
+        kind: 'connect-exhausted';
+        peerId: PeerId;
+        event: WebRtcPeerConnectionAttemptExhaustedEvent;
+        error: Error;
+    }
     | {
-    kind: 'signal-handle-failed';
-    peerId: PeerId;
-    error: Error;
-}
+        kind: 'signal-handle-failed';
+        peerId: PeerId;
+        error: Error;
+    }
 >;
 
 export type WebRtcPeerLaneOpenStatus =
@@ -204,9 +203,9 @@ export type WebRtcInboundPeerCreationDecision =
     | 'deny'
     | 'tentative'
     | Readonly<{
-    decision: 'allow' | 'deny' | 'tentative';
-    reason?: string;
-}>;
+        decision: 'allow' | 'deny' | 'tentative';
+        reason?: string;
+    }>;
 
 class WebRtcPeerLaneOpenFailure extends Error {
     public readonly status: Exclude<WebRtcPeerLaneOpenStatus, 'open'>;
@@ -218,7 +217,7 @@ class WebRtcPeerLaneOpenFailure extends Error {
         peerId: PeerId,
         laneId: string,
         message: string,
-        options?: ErrorOptions,
+        options?: ErrorOptions
     ) {
         super(message, options);
         this.status = status;
@@ -232,7 +231,7 @@ class WebRtcPeerConnectionAttemptExhaustedError extends Error {
     public readonly event: WebRtcPeerConnectionAttemptExhaustedEvent;
 
     constructor(
-        event: WebRtcPeerConnectionAttemptExhaustedEvent,
+        event: WebRtcPeerConnectionAttemptExhaustedEvent
     ) {
         super(RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON);
         this.event = event;
@@ -247,11 +246,11 @@ export interface OnRtcPeerLifecycleCallback {
 
     onConnectTimeout?(
         peerDto: QRtcPeerDto,
-        event: WebRtcPeerEstablishmentTimeoutEvent,
+        event: WebRtcPeerEstablishmentTimeoutEvent
     ): void;
 
     onConnectExhausted?(
-        event: WebRtcPeerConnectionAttemptExhaustedEvent,
+        event: WebRtcPeerConnectionAttemptExhaustedEvent
     ): void;
 }
 
@@ -262,26 +261,23 @@ export type WebRtcInboundPeerCreationPolicyInput = Readonly<{
 }>;
 
 export type WebRtcInboundPeerCreationPolicy = (
-    input: WebRtcInboundPeerCreationPolicyInput,
+    input: WebRtcInboundPeerCreationPolicyInput
 ) => WebRtcInboundPeerCreationDecision;
 
 export class WebRtcConnectionService {
-
-    private static readonly PEER_ESTABLISHMENT_CALLBACK_ID =
-        'web-rtc-connection-service:peer-establishment';
+    private static readonly PEER_ESTABLISHMENT_CALLBACK_ID = 'web-rtc-connection-service:peer-establishment';
 
     private readonly onRtcPeerLifecycleCallbacks: Map<string, OnRtcPeerLifecycleCallback> = new Map();
 
     private readonly peerDtoByPeerId = new Map<PeerId, QRtcPeerDto>();
     private readonly peerEstablishmentWatchdog = new AsyncCommand<PeerId, QRtcPeerDto>();
-    private readonly peerConnectionAttemptStateByPeerId =
-        new Map<PeerId, WebRtcPeerConnectionAttemptState>();
+    private readonly peerConnectionAttemptStateByPeerId = new Map<PeerId, WebRtcPeerConnectionAttemptState>();
     private readonly attemptBudgetDiagnostics = {
         consumedCount: 0,
         resetOnSuccessCount: 0,
         resetOnRemovalCount: 0,
         cooldownExpiredClearCount: 0,
-        exhaustedCount: 0,
+        exhaustedCount: 0
     };
     private readonly tentativePeerIds = new Set<PeerId>();
     private inboundPeerCreationPolicy: WebRtcInboundPeerCreationPolicy | undefined;
@@ -298,14 +294,14 @@ export class WebRtcConnectionService {
     }
 
     setInboundPeerCreationPolicy(
-        policy?: WebRtcInboundPeerCreationPolicy,
+        policy?: WebRtcInboundPeerCreationPolicy
     ): WebRtcConnectionService {
         this.inboundPeerCreationPolicy = policy;
         return this;
     }
 
     peerConnectionAttemptDiagnostics(
-        peerId: PeerId,
+        peerId: PeerId
     ): WebRtcPeerConnectionAttemptDiagnostics | undefined {
         const state = this.peerConnectionAttemptStateByPeerId.get(peerId);
         if (!state) {
@@ -338,7 +334,7 @@ export class WebRtcConnectionService {
 
     removePeerIfPresent(
         peerId: string,
-        options: WebRtcRemovePeerOptions = {},
+        options: WebRtcRemovePeerOptions = {}
     ): boolean {
         console.log(`Cleaning up peer: ${peerId}`);
         const rtcPeer: QRtcPeerDto | undefined = this.peerDtoByPeerId.get(peerId);
@@ -363,7 +359,7 @@ export class WebRtcConnectionService {
         rtcPeer.media?.reset();
         for (const channel of rtcPeer.channels.values()) {
             channel.removeRtcCallbackById(
-                WebRtcConnectionService.PEER_ESTABLISHMENT_CALLBACK_ID,
+                WebRtcConnectionService.PEER_ESTABLISHMENT_CALLBACK_ID
             );
             channel.reset();
         }
@@ -407,7 +403,7 @@ export class WebRtcConnectionService {
     }
 
     readyPeerIdsForLane(
-        laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+        laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID
     ): readonly string[] {
         return Array.from(this.peerDtoByPeerId.entries())
             .filter(([, peerDto]) => {
@@ -427,7 +423,7 @@ export class WebRtcConnectionService {
 
     readPeerChannel(
         peerId: string,
-        laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+        laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID
     ): QRtcDataChannel | undefined {
         return this.peerDtoByPeerId.get(peerId)?.channels.get(laneId);
     }
@@ -444,8 +440,8 @@ export class WebRtcConnectionService {
                 .map(([laneId, channel]) => ({
                     peerId,
                     laneId,
-                    channel: channel.readHealth(),
-                })),
+                    channel: channel.readHealth()
+                }))
         };
     }
 
@@ -479,7 +475,9 @@ export class WebRtcConnectionService {
             onMessage: async (sessionId: string, token: string, message: ALMessage) => {
                 console.log(`Message received for ${sessionId} and ${token} ${message.payload.resource}`);
                 if (this.input.sessionId !== sessionId) {
-                    throw new Error('Message received for wrong session id: ' + sessionId + ' expected: ' + this.input.sessionId);
+                    throw new Error(
+                        'Message received for wrong session id: ' + sessionId + ' expected: ' + this.input.sessionId
+                    );
                 }
 
                 const msg: QRtcSignalingMessage = JSON.parse(message.payload.resource) as QRtcSignalingMessage;
@@ -489,18 +487,23 @@ export class WebRtcConnectionService {
                 if (msg.toId !== sessionId) {
                     console.log('Message not for us, ignoring: ' + message.payload.resource);
                     return Promise.resolve();
-                } else if (peerId === sessionId) {
-                    console.log('Ignoring message from self msg.fromId' + peerId + ' my session id' + sessionId, new Error().stack);
+                }
+                else if (peerId === sessionId) {
+                    console.log(
+                        'Ignoring message from self msg.fromId' + peerId + ' my session id' + sessionId,
+                        new Error().stack
+                    );
                     return Promise.resolve();
                 }
 
                 const peerDto = this.peerDtoByPeerId.get(peerId);
                 if (!peerDto) {
-                    const inboundDecision =
-                        this.shouldCreatePeerFromInboundSignal(peerId, msg);
+                    const inboundDecision = this.shouldCreatePeerFromInboundSignal(peerId, msg);
                     if (!inboundDecision.allowed) {
                         console.log(
-                            `Ignoring inbound RTC signaling from ${peerId}: peer creation denied${inboundDecision.reason ? ` (${inboundDecision.reason})` : ''}`,
+                            `Ignoring inbound RTC signaling from ${peerId}: peer creation denied${
+                                inboundDecision.reason ? ` (${inboundDecision.reason})` : ''
+                            }`
                         );
                         return Promise.resolve();
                     }
@@ -508,10 +511,12 @@ export class WebRtcConnectionService {
                     const accepted = await this.acceptPeerIfAbsent(peerId, msg);
                     if (accepted.left) {
                         this.logPeerConnectionLeft(peerId, accepted.left);
-                    } else if (inboundDecision.tentative) {
+                    }
+                    else if (inboundDecision.tentative) {
                         this.tentativePeerIds.add(peerId);
                     }
-                } else {
+                }
+                else {
                     await peerDto.connection.handleSignal(
                         msg.signalType,
                         msg.payload as QRtcDataExchanged
@@ -525,7 +530,7 @@ export class WebRtcConnectionService {
 
     private shouldCreatePeerFromInboundSignal(
         peerId: PeerId,
-        message: QRtcSignalingMessage,
+        message: QRtcSignalingMessage
     ): InboundPeerCreationDecision {
         const plausible = this.isPlausibleMissingPeerSignal(message);
         if (!plausible.allowed) {
@@ -546,30 +551,31 @@ export class WebRtcConnectionService {
                 this.inboundPeerCreationPolicy({
                     peerId,
                     signalType: message.signalType,
-                    message,
-                }),
+                    message
+                })
             );
-        } catch (error) {
+        }
+        catch (error) {
             console.error(
                 `Inbound RTC peer creation policy failed for ${peerId}`,
-                error,
+                error
             );
             return {
                 allowed: false,
                 tentative: false,
-                reason: 'policy-error',
+                reason: 'policy-error'
             };
         }
     }
 
     private isPlausibleMissingPeerSignal(
-        message: QRtcSignalingMessage,
+        message: QRtcSignalingMessage
     ): InboundPeerCreationDecision {
         if (message.signalType === QRtcSignalingType.Answer) {
             return {
                 allowed: false,
                 tentative: false,
-                reason: 'missing-peer-answer',
+                reason: 'missing-peer-answer'
             };
         }
 
@@ -580,7 +586,7 @@ export class WebRtcConnectionService {
             return {
                 allowed: false,
                 tentative: false,
-                reason: 'malformed-offer',
+                reason: 'malformed-offer'
             };
         }
 
@@ -591,13 +597,13 @@ export class WebRtcConnectionService {
             return {
                 allowed: false,
                 tentative: false,
-                reason: 'malformed-ice-candidate',
+                reason: 'malformed-ice-candidate'
             };
         }
 
         return {
             allowed: true,
-            tentative: false,
+            tentative: false
         };
     }
 
@@ -605,45 +611,45 @@ export class WebRtcConnectionService {
         if (this.peerDtoByPeerId.has(peerId)) {
             return {
                 allowed: true,
-                tentative: false,
+                tentative: false
             };
         }
 
         if (this.peerDtoByPeerId.size < this.maxPeerConnections()) {
             return {
                 allowed: true,
-                tentative: false,
+                tentative: false
             };
         }
 
         return {
             allowed: false,
             tentative: false,
-            reason: 'max-peer-connections',
+            reason: 'max-peer-connections'
         };
     }
 
     private normalizeInboundPeerCreationDecision(
-        decision: WebRtcInboundPeerCreationDecision,
+        decision: WebRtcInboundPeerCreationDecision
     ): InboundPeerCreationDecision {
         if (decision === true || decision === 'allow') {
             return {
                 allowed: true,
-                tentative: false,
+                tentative: false
             };
         }
 
         if (decision === 'tentative') {
             return {
                 allowed: true,
-                tentative: true,
+                tentative: true
             };
         }
 
         if (decision === false || decision === 'deny') {
             return {
                 allowed: false,
-                tentative: false,
+                tentative: false
             };
         }
 
@@ -651,7 +657,7 @@ export class WebRtcConnectionService {
             return {
                 allowed: true,
                 tentative: true,
-                reason: decision.reason,
+                reason: decision.reason
             };
         }
 
@@ -659,20 +665,20 @@ export class WebRtcConnectionService {
             return {
                 allowed: true,
                 tentative: false,
-                reason: decision.reason,
+                reason: decision.reason
             };
         }
 
         return {
             allowed: false,
             tentative: false,
-            reason: decision.reason,
+            reason: decision.reason
         };
     }
 
     async acceptPeerIfAbsent(
         peerId: string,
-        message: QRtcSignalingMessage,
+        message: QRtcSignalingMessage
     ): Promise<Either<WebRtcPeerConnectionLeft, QRtcPeerDto>> {
         const connected = this.ensurePeerConnectionStarted(peerId);
         if (connected.left) {
@@ -684,40 +690,40 @@ export class WebRtcConnectionService {
             return Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
                 kind: 'connect-failed',
                 peerId,
-                error: new Error(`Peer ${peerId} missing after successful connection`),
+                error: new Error(`Peer ${peerId} missing after successful connection`)
             });
         }
 
         try {
             await peerDto.connection.handleSignal(
                 message.signalType,
-                message.payload as QRtcDataExchanged,
+                message.payload as QRtcDataExchanged
             );
             return Either.ofRight<WebRtcPeerConnectionLeft, QRtcPeerDto>(peerDto);
-        } catch (error) {
+        }
+        catch (error) {
             return Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
                 kind: 'signal-handle-failed',
                 peerId,
-                error: WebRtcConnectionService.toError(error),
+                error: WebRtcConnectionService.toError(error)
             });
         }
     }
 
     ensurePeerConnectionStarted(
         peerId: string,
-        isInitiator: boolean = !this.isPolite(peerId),
+        isInitiator: boolean = !this.isPolite(peerId)
     ): Either<WebRtcPeerConnectionLeft, QRtcPeerDto> {
         if (peerId === this.input.sessionId) {
             return Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
                 kind: 'self',
-                peerId,
+                peerId
             });
         }
 
         try {
             const computed = this.computeRtcPeerDtoIfAbsent(peerId);
             if (computed.shouldConnect) {
-
                 this.watchPeerEstablishmentIfEnabled(computed.peerDto);
 
                 computed.peerDto.connection.connect(
@@ -746,8 +752,8 @@ export class WebRtcConnectionService {
             }
 
             return Either.ofRight<WebRtcPeerConnectionLeft, QRtcPeerDto>(computed.peerDto);
-        } catch (error) {
-
+        }
+        catch (error) {
             const existingPeerDto = this.peerDtoByPeerId.get(peerId);
             if (existingPeerDto && this.isPeerConnectedOrInProgress(existingPeerDto)) {
                 return Either.ofRight<WebRtcPeerConnectionLeft, QRtcPeerDto>(existingPeerDto);
@@ -758,14 +764,14 @@ export class WebRtcConnectionService {
                     kind: 'connect-exhausted',
                     peerId,
                     event: error.event,
-                    error,
+                    error
                 });
             }
 
             return Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
                 kind: 'connect-failed',
                 peerId,
-                error: WebRtcConnectionService.toError(error),
+                error: WebRtcConnectionService.toError(error)
             });
         }
     }
@@ -773,102 +779,103 @@ export class WebRtcConnectionService {
     async ensurePeerLaneOpen(
         peerId: string,
         laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-        options: WebRtcPeerLaneOpenOptions = {},
+        options: WebRtcPeerLaneOpenOptions = {}
     ): Promise<WebRtcPeerLaneOpenResult> {
         let started: Either<WebRtcPeerConnectionLeft, QRtcPeerDto> | undefined;
 
         try {
-            const result =
-                await new PullPushCommand<Either<WebRtcPeerConnectionLeft, QRtcPeerDto>, QRtcDataChannel>(
-                    () => this.ensurePeerConnectionStarted(
+            const result = await new PullPushCommand<Either<WebRtcPeerConnectionLeft, QRtcPeerDto>, QRtcDataChannel>(
+                () =>
+                    this.ensurePeerConnectionStarted(
                         peerId,
-                        options.isInitiator ?? !this.isPolite(peerId),
+                        options.isInitiator ?? !this.isPolite(peerId)
                     ),
-                    async (connected, signal) => {
-                        if (connected.left) {
-                            throw this.toPeerLaneOpenFailureFromConnectLeft(
-                                connected.left,
-                                laneId,
-                            );
-                        }
-
-                        const peer = connected.right ?? this.readPeer(peerId);
-                        if (!peer) {
-                            throw new WebRtcPeerLaneOpenFailure(
-                                'no-peer',
-                                peerId,
-                                laneId,
-                                `RTC peer ${peerId} missing after connection start`,
-                            );
-                        }
-
-                        const channel = peer.channels.get(laneId);
-                        if (!channel) {
-                            throw new WebRtcPeerLaneOpenFailure(
-                                'no-lane',
-                                peerId,
-                                laneId,
-                                `RTC peer ${peerId} has no lane ${laneId}`,
-                            );
-                        }
-
-                        const initialHealth = channel.readHealth();
-                        if (isOpenRtcChannelHealth(initialHealth)) {
-                            return channel;
-                        }
-
-                        if (isClosedRtcChannelHealth(initialHealth)) {
-                            throw new WebRtcPeerLaneOpenFailure(
-                                'closed',
-                                peerId,
-                                laneId,
-                                `RTC lane ${laneId} for peer ${peerId} is closed`,
-                            );
-                        }
-
-                        const opened = await waitForRtcChannelOpenOrAbort(
-                            channel,
-                            options.timeoutMs,
-                            signal,
+                async (connected, signal) => {
+                    if (connected.left) {
+                        throw this.toPeerLaneOpenFailureFromConnectLeft(
+                            connected.left,
+                            laneId
                         );
-                        if (opened) {
-                            return channel;
-                        }
+                    }
 
-                        const currentHealth = channel.readHealth();
+                    const peer = connected.right ?? this.readPeer(peerId);
+                    if (!peer) {
                         throw new WebRtcPeerLaneOpenFailure(
-                            isClosedRtcChannelHealth(currentHealth)
-                                ? 'closed'
-                                : 'timeout',
+                            'no-peer',
                             peerId,
                             laneId,
-                            `RTC lane ${laneId} for peer ${peerId} did not open`,
+                            `RTC peer ${peerId} missing after connection start`
                         );
-                    },
-                    {
-                        signal: options.signal,
-                        timeoutMs: options.timeoutMs,
-                        hooks: {
-                            onPullSuccess: (value) => {
-                                started = value;
-                            },
-                        },
-                    },
-                ).run();
+                    }
+
+                    const channel = peer.channels.get(laneId);
+                    if (!channel) {
+                        throw new WebRtcPeerLaneOpenFailure(
+                            'no-lane',
+                            peerId,
+                            laneId,
+                            `RTC peer ${peerId} has no lane ${laneId}`
+                        );
+                    }
+
+                    const initialHealth = channel.readHealth();
+                    if (isOpenRtcChannelHealth(initialHealth)) {
+                        return channel;
+                    }
+
+                    if (isClosedRtcChannelHealth(initialHealth)) {
+                        throw new WebRtcPeerLaneOpenFailure(
+                            'closed',
+                            peerId,
+                            laneId,
+                            `RTC lane ${laneId} for peer ${peerId} is closed`
+                        );
+                    }
+
+                    const opened = await waitForRtcChannelOpenOrAbort(
+                        channel,
+                        options.timeoutMs,
+                        signal
+                    );
+                    if (opened) {
+                        return channel;
+                    }
+
+                    const currentHealth = channel.readHealth();
+                    throw new WebRtcPeerLaneOpenFailure(
+                        isClosedRtcChannelHealth(currentHealth)
+                            ? 'closed'
+                            : 'timeout',
+                        peerId,
+                        laneId,
+                        `RTC lane ${laneId} for peer ${peerId} did not open`
+                    );
+                },
+                {
+                    signal: options.signal,
+                    timeoutMs: options.timeoutMs,
+                    hooks: {
+                        onPullSuccess: (value) => {
+                            started = value;
+                        }
+                    }
+                }
+            ).run();
 
             return {
                 status: 'open',
                 peerId,
                 laneId,
                 peer: result.pulled.right,
-                channel: result.pushed,
+                channel: result.pushed
             };
-        } catch (error) {
+        }
+        catch (error) {
             const result = this.toPeerLaneOpenResultFromError(
                 error,
                 peerId,
                 laneId,
-                started?.right,
+                started?.right
             );
             if (options.cleanupOnFailure && result.peer) {
                 // A failed lane open consumed budget; cleaning up the peer
@@ -893,14 +900,14 @@ export class WebRtcConnectionService {
 
     private toPeerLaneOpenFailureFromConnectLeft(
         left: WebRtcPeerConnectionLeft,
-        laneId: string,
+        laneId: string
     ): WebRtcPeerLaneOpenFailure {
         if (left.kind === 'self') {
             return new WebRtcPeerLaneOpenFailure(
                 'self',
                 left.peerId,
                 laneId,
-                `Ignoring self-connection attempt for peer ${left.peerId}`,
+                `Ignoring self-connection attempt for peer ${left.peerId}`
             );
         }
 
@@ -910,7 +917,7 @@ export class WebRtcConnectionService {
                 left.peerId,
                 laneId,
                 RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON,
-                { cause: left.error },
+                { cause: left.error }
             );
         }
 
@@ -919,7 +926,7 @@ export class WebRtcConnectionService {
             left.peerId,
             laneId,
             `Failed to start RTC peer ${left.peerId}: ${left.kind}`,
-            { cause: left.error },
+            { cause: left.error }
         );
     }
 
@@ -927,7 +934,7 @@ export class WebRtcConnectionService {
         error: unknown,
         peerId: PeerId,
         laneId: string,
-        peer: QRtcPeerDto | undefined,
+        peer: QRtcPeerDto | undefined
     ): WebRtcPeerLaneOpenResult {
         if (error instanceof WebRtcPeerLaneOpenFailure) {
             return {
@@ -935,7 +942,7 @@ export class WebRtcConnectionService {
                 peerId: error.peerId,
                 laneId: error.laneId,
                 peer,
-                error,
+                error
             };
         }
 
@@ -945,7 +952,7 @@ export class WebRtcConnectionService {
                 peerId,
                 laneId,
                 peer,
-                error,
+                error
             };
         }
 
@@ -955,7 +962,7 @@ export class WebRtcConnectionService {
                 peerId,
                 laneId,
                 peer,
-                error,
+                error
             };
         }
 
@@ -964,7 +971,7 @@ export class WebRtcConnectionService {
             peerId,
             laneId,
             peer,
-            error: WebRtcConnectionService.toError(error),
+            error: WebRtcConnectionService.toError(error)
         };
     }
 
@@ -975,29 +982,35 @@ export class WebRtcConnectionService {
 
             if (this.isPeerConnectedOrInProgress(existingPeerDto)) {
                 if (this.hasReconnectableDataChannels(existingPeerDto)) {
-                    console.log(`Peer ${peerId} has reconnectable data channels. Reusing connection and reconnecting channels`);
+                    console.log(
+                        `Peer ${peerId} has reconnectable data channels. Reusing connection and reconnecting channels`
+                    );
                     return {
                         peerDto: existingPeerDto,
-                        shouldConnect: true,
+                        shouldConnect: true
                     };
                 }
 
                 // console.log(`Peer ${peerId} already in ${existingPeerDto.connection.status.state}/${connectionState}. Reuse existing connection`);
                 return {
                     peerDto: existingPeerDto,
-                    shouldConnect: false,
+                    shouldConnect: false
                 };
             }
 
             if (existingPeerDto.connection.isReadyToConnect()) {
-                console.log(`Peer connection to ${peerId} already exists in state ${connectionState}. Reuse existing connection`);
+                console.log(
+                    `Peer connection to ${peerId} already exists in state ${connectionState}. Reuse existing connection`
+                );
                 return {
                     peerDto: existingPeerDto,
-                    shouldConnect: true,
+                    shouldConnect: true
                 };
             }
 
-            console.log(`Peer connection to ${peerId} exists in state ${connectionState}. Removing existing connection`);
+            console.log(
+                `Peer connection to ${peerId} exists in state ${connectionState}. Removing existing connection`
+            );
             this.removePeerIfPresent(peerId, { resetAttemptBudget: false });
         }
 
@@ -1037,7 +1050,7 @@ export class WebRtcConnectionService {
                 {
                     peerId: peerId
                 }
-            ),
+            )
         };
 
         this.peerDtoByPeerId.set(peerId, rtcPeerDto);
@@ -1045,7 +1058,8 @@ export class WebRtcConnectionService {
         for (const [_, cb] of this.onRtcPeerLifecycleCallbacks.entries()) {
             try {
                 cb.onCreated(rtcPeerDto);
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Error calling onRtcPeerLifecycleCallbacks.onCreated', e);
             }
         }
@@ -1054,7 +1068,7 @@ export class WebRtcConnectionService {
 
         return {
             peerDto: rtcPeerDto,
-            shouldConnect: true,
+            shouldConnect: true
         };
     }
 
@@ -1065,8 +1079,8 @@ export class WebRtcConnectionService {
                 {
                     onOpen: async () => {
                         this.markPeerEstablished(peerDto.peerId);
-                    },
-                },
+                    }
+                }
             );
         }
     }
@@ -1088,14 +1102,13 @@ export class WebRtcConnectionService {
             isComplete: (watchedPeer) =>
                 this.peerDtoByPeerId.get(watchedPeer.peerId) !== watchedPeer ||
                 this.isPeerEstablished(watchedPeer),
-            onTimeout: (watchedPeer, event) =>
-                this.handlePeerEstablishmentTimeout(watchedPeer, event),
+            onTimeout: (watchedPeer, event) => this.handlePeerEstablishmentTimeout(watchedPeer, event),
             onError: (error) => {
                 console.error(
                     'Error handling RTC peer establishment timeout',
-                    error,
+                    error
                 );
-            },
+            }
         });
     }
 
@@ -1111,7 +1124,7 @@ export class WebRtcConnectionService {
 
     private handlePeerEstablishmentTimeout(
         peerDto: QRtcPeerDto,
-        timeoutEvent: AsyncCommandTimeoutEvent<PeerId>,
+        timeoutEvent: AsyncCommandTimeoutEvent<PeerId>
     ): void {
         const currentPeerDto = this.peerDtoByPeerId.get(peerDto.peerId);
         if (!currentPeerDto || currentPeerDto !== peerDto) {
@@ -1127,20 +1140,21 @@ export class WebRtcConnectionService {
             timeoutMs: timeoutEvent.timeoutMs,
             startedAtEpochMs: timeoutEvent.startedAtEpochMs,
             timedOutAtEpochMs: timeoutEvent.timedOutAtEpochMs,
-            reason: 'peer-establishment-timeout',
+            reason: 'peer-establishment-timeout'
         };
 
         console.warn(
-            `RTC peer establishment timed out for ${peerDto.peerId} after ${event.timeoutMs}ms`,
+            `RTC peer establishment timed out for ${peerDto.peerId} after ${event.timeoutMs}ms`
         );
 
         for (const [_, cb] of this.onRtcPeerLifecycleCallbacks.entries()) {
             try {
                 cb.onConnectTimeout?.(peerDto, event);
-            } catch (e) {
+            }
+            catch (e) {
                 console.error(
                     'Error calling onRtcPeerLifecycleCallbacks.onConnectTimeout',
-                    e,
+                    e
                 );
             }
         }
@@ -1153,12 +1167,12 @@ export class WebRtcConnectionService {
             DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY;
         return {
             enabled: policy.enabled,
-            timeoutMs: Math.max(0, Math.floor(policy.timeoutMs)),
+            timeoutMs: Math.max(0, Math.floor(policy.timeoutMs))
         };
     }
 
     private consumePeerConnectionAttempt(
-        peerId: PeerId,
+        peerId: PeerId
     ): WebRtcPeerConnectionAttemptExhaustedEvent | undefined {
         const policy = this.peerConnectionAttemptBudgetPolicy();
         if (!policy.enabled) {
@@ -1174,13 +1188,14 @@ export class WebRtcConnectionService {
             if (now < current.retryAfterEpochMs) {
                 return this.toPeerConnectionAttemptExhaustedEvent(
                     current,
-                    policy,
+                    policy
                 );
             }
 
             this.peerConnectionAttemptStateByPeerId.delete(peerId);
             this.attemptBudgetDiagnostics.cooldownExpiredClearCount += 1;
-        } else if (
+        }
+        else if (
             current &&
             this.isPeerConnectionAttemptBudgetExhausted(current, policy, now)
         ) {
@@ -1188,7 +1203,7 @@ export class WebRtcConnectionService {
                 peerId,
                 current,
                 policy,
-                now,
+                now
             );
         }
 
@@ -1197,13 +1212,13 @@ export class WebRtcConnectionService {
             ? {
                 ...latest,
                 attempts: latest.attempts + 1,
-                lastAttemptAtEpochMs: now,
+                lastAttemptAtEpochMs: now
             }
             : {
                 peerId,
                 attempts: 1,
                 firstAttemptAtEpochMs: now,
-                lastAttemptAtEpochMs: now,
+                lastAttemptAtEpochMs: now
             };
         this.peerConnectionAttemptStateByPeerId.set(peerId, next);
         this.attemptBudgetDiagnostics.consumedCount += 1;
@@ -1213,7 +1228,7 @@ export class WebRtcConnectionService {
     private isPeerConnectionAttemptBudgetExhausted(
         state: WebRtcPeerConnectionAttemptState,
         policy: WebRtcPeerConnectionAttemptBudgetPolicy,
-        now: number,
+        now: number
     ): boolean {
         return state.attempts >= policy.maxAttempts ||
             now - state.firstAttemptAtEpochMs >= policy.maxTotalDurationMs;
@@ -1223,18 +1238,18 @@ export class WebRtcConnectionService {
         peerId: PeerId,
         state: WebRtcPeerConnectionAttemptState,
         policy: WebRtcPeerConnectionAttemptBudgetPolicy,
-        exhaustedAtEpochMs: number,
+        exhaustedAtEpochMs: number
     ): WebRtcPeerConnectionAttemptExhaustedEvent {
         const exhausted: WebRtcPeerConnectionAttemptState = {
             ...state,
             exhaustedAtEpochMs,
-            retryAfterEpochMs: exhaustedAtEpochMs + policy.cooldownMs,
+            retryAfterEpochMs: exhaustedAtEpochMs + policy.cooldownMs
         };
         this.peerConnectionAttemptStateByPeerId.set(peerId, exhausted);
         this.attemptBudgetDiagnostics.exhaustedCount += 1;
         const event = this.toPeerConnectionAttemptExhaustedEvent(
             exhausted,
-            policy,
+            policy
         );
         this.emitPeerConnectionAttemptExhausted(event);
         return event;
@@ -1242,7 +1257,7 @@ export class WebRtcConnectionService {
 
     private toPeerConnectionAttemptExhaustedEvent(
         state: WebRtcPeerConnectionAttemptState,
-        policy: WebRtcPeerConnectionAttemptBudgetPolicy,
+        policy: WebRtcPeerConnectionAttemptBudgetPolicy
     ): WebRtcPeerConnectionAttemptExhaustedEvent {
         return {
             ...this.toPeerConnectionAttemptDiagnostics(state, policy),
@@ -1250,14 +1265,13 @@ export class WebRtcConnectionService {
                 state.lastAttemptAtEpochMs,
             retryAfterEpochMs: state.retryAfterEpochMs ??
                 state.lastAttemptAtEpochMs + policy.cooldownMs,
-            reason: 'peer-connection-attempt-budget-exhausted',
+            reason: 'peer-connection-attempt-budget-exhausted'
         };
     }
 
     private toPeerConnectionAttemptDiagnostics(
         state: WebRtcPeerConnectionAttemptState,
-        policy: WebRtcPeerConnectionAttemptBudgetPolicy =
-            this.peerConnectionAttemptBudgetPolicy(),
+        policy: WebRtcPeerConnectionAttemptBudgetPolicy = this.peerConnectionAttemptBudgetPolicy()
     ): WebRtcPeerConnectionAttemptDiagnostics {
         return {
             peerId: state.peerId,
@@ -1268,20 +1282,21 @@ export class WebRtcConnectionService {
             maxTotalDurationMs: policy.maxTotalDurationMs,
             cooldownMs: policy.cooldownMs,
             exhaustedAtEpochMs: state.exhaustedAtEpochMs,
-            retryAfterEpochMs: state.retryAfterEpochMs,
+            retryAfterEpochMs: state.retryAfterEpochMs
         };
     }
 
     private emitPeerConnectionAttemptExhausted(
-        event: WebRtcPeerConnectionAttemptExhaustedEvent,
+        event: WebRtcPeerConnectionAttemptExhaustedEvent
     ): void {
         for (const [_, cb] of this.onRtcPeerLifecycleCallbacks.entries()) {
             try {
                 cb.onConnectExhausted?.(event);
-            } catch (e) {
+            }
+            catch (e) {
                 console.error(
                     'Error calling onRtcPeerLifecycleCallbacks.onConnectExhausted',
-                    e,
+                    e
                 );
             }
         }
@@ -1289,14 +1304,15 @@ export class WebRtcConnectionService {
 
     private clearPeerConnectionAttemptBudget(
         peerId: PeerId,
-        reason: 'established' | 'removal',
+        reason: 'established' | 'removal'
     ): void {
         if (!this.peerConnectionAttemptStateByPeerId.delete(peerId)) {
             return;
         }
         if (reason === 'established') {
             this.attemptBudgetDiagnostics.resetOnSuccessCount += 1;
-        } else {
+        }
+        else {
             this.attemptBudgetDiagnostics.resetOnRemovalCount += 1;
         }
     }
@@ -1308,7 +1324,7 @@ export class WebRtcConnectionService {
             enabled: policy.enabled,
             maxAttempts: Math.max(1, Math.floor(policy.maxAttempts)),
             maxTotalDurationMs: Math.max(1, Math.floor(policy.maxTotalDurationMs)),
-            cooldownMs: Math.max(0, Math.floor(policy.cooldownMs)),
+            cooldownMs: Math.max(0, Math.floor(policy.cooldownMs))
         };
     }
 
@@ -1336,7 +1352,7 @@ export class WebRtcConnectionService {
 
     private createDataChannels(
         connection: QRtcPeerConnection,
-        peerId: string,
+        peerId: string
     ): Map<string, QRtcDataChannel> {
         const channels = new Map<string, QRtcDataChannel>();
 
@@ -1350,9 +1366,9 @@ export class WebRtcConnectionService {
                         dataChannelName: lane.label,
                         dataChannelInit: lane.init,
                         binaryType: lane.binaryType,
-                        flowControl: lane.flowControl,
-                    },
-                ),
+                        flowControl: lane.flowControl
+                    }
+                )
             );
         }
 
@@ -1361,9 +1377,7 @@ export class WebRtcConnectionService {
 
     private dataChannelLanes(): readonly RtcDataChannelLaneConfig[] {
         const explicit = this.input.dataChannelLanes ?? [];
-        const hasReliable = explicit.some((lane) =>
-            lane.id === DEFAULT_RTC_DATA_CHANNEL_LANE_ID
-        );
+        const hasReliable = explicit.some((lane) => lane.id === DEFAULT_RTC_DATA_CHANNEL_LANE_ID);
 
         if (hasReliable) {
             return explicit;
@@ -1372,9 +1386,9 @@ export class WebRtcConnectionService {
         return [
             {
                 id: DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-                label: this.input.dataChannelName,
+                label: this.input.dataChannelName
             },
-            ...explicit,
+            ...explicit
         ];
     }
 
@@ -1384,7 +1398,7 @@ export class WebRtcConnectionService {
 
     private logPeerConnectionLeft(
         peerId: string,
-        left: WebRtcPeerConnectionLeft,
+        left: WebRtcPeerConnectionLeft
     ): void {
         if (left.kind === 'self') {
             console.warn(`Ignoring self-connection attempt for peer ${peerId}`);
@@ -1393,7 +1407,7 @@ export class WebRtcConnectionService {
 
         if (left.kind === 'connect-exhausted') {
             console.warn(
-                `RTC peer ${peerId} connection attempt budget exhausted until ${left.event.retryAfterEpochMs}`,
+                `RTC peer ${peerId} connection attempt budget exhausted until ${left.event.retryAfterEpochMs}`
             );
             return;
         }
@@ -1407,14 +1421,14 @@ export class WebRtcConnectionService {
 }
 
 function isRtcSignalPayloadWithDescription(
-    payload: unknown,
+    payload: unknown
 ): payload is QRtcDataExchanged {
     return isRecord(payload) && payload.description !== null &&
         payload.description !== undefined;
 }
 
 function isRtcSignalPayloadWithCandidate(
-    payload: unknown,
+    payload: unknown
 ): payload is QRtcDataExchanged {
     return isRecord(payload) && payload.candidate !== null &&
         payload.candidate !== undefined;
@@ -1425,13 +1439,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isOpenRtcChannelHealth(
-    health: RtcDataChannelHealth | undefined,
+    health: RtcDataChannelHealth | undefined
 ): boolean {
     return health?.readyState === 'open' || health?.state === 'Open';
 }
 
 function isClosedRtcChannelHealth(
-    health: RtcDataChannelHealth | undefined,
+    health: RtcDataChannelHealth | undefined
 ): boolean {
     return health?.readyState === 'closing' ||
         health?.readyState === 'closed' ||
@@ -1442,7 +1456,7 @@ function isClosedRtcChannelHealth(
 async function waitForRtcChannelOpenOrAbort(
     channel: QRtcDataChannel,
     timeoutMs: number | undefined,
-    signal: AbortSignal | undefined,
+    signal: AbortSignal | undefined
 ): Promise<boolean> {
     const waitUntilOpen = timeoutMs === undefined
         ? channel.waitUntilOpen()

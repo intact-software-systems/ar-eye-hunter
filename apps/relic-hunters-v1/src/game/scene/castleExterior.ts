@@ -1,7 +1,7 @@
-import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
@@ -19,7 +19,7 @@ function mat(
     hex: string,
     emissive: number,
     metallic: number,
-    roughness: number,
+    roughness: number
 ): PBRMaterial {
     const m = new PBRMaterial(name, scene);
     const col = Color3.FromHexString(hex);
@@ -32,17 +32,21 @@ function mat(
 
 export function createCastleExteriorScene(scene: Scene): readonly Mesh[] {
     const meshes: Mesh[] = [];
-    const add = (m: Mesh, material: PBRMaterial) => { m.material = material; meshes.push(m); return m; };
+    const add = (m: Mesh, material: PBRMaterial) => {
+        m.material = material;
+        meshes.push(m);
+        return m;
+    };
 
-    const matStone   = mat(scene, 'ext-stone',   '#8f9b91', 0.012, 0.02, 0.92);
-    const matWhite   = mat(scene, 'ext-white',   '#f2ead4', 0.05,  0,    0.90);
-    const matDkWood  = mat(scene, 'ext-dkwood',  '#745039', 0.020, 0,    0.62);
-    const matDkRoof  = mat(scene, 'ext-dkroof',  '#5a7280', 0.014, 0,    0.80);
-    const matRed     = mat(scene, 'ext-red',     '#b8402f', 0.075, 0,    0.44);
-    const matGold    = mat(scene, 'ext-gold',    '#e3b44b', 0.20,  0.8,  0.24);
-    const matGrass   = mat(scene, 'ext-grass',   '#6fa867', 0.020, 0,    0.92);
-    const matPlaza   = mat(scene, 'ext-plaza',   '#b9b8a9', 0.012, 0.04, 0.92);
-    const matLantern = mat(scene, 'ext-lantern', '#ffaa38', 0.94,  0,    0.90);
+    const matStone = mat(scene, 'ext-stone', '#8f9b91', 0.012, 0.02, 0.92);
+    const matWhite = mat(scene, 'ext-white', '#f2ead4', 0.05, 0, 0.90);
+    const matDkWood = mat(scene, 'ext-dkwood', '#745039', 0.020, 0, 0.62);
+    const matDkRoof = mat(scene, 'ext-dkroof', '#5a7280', 0.014, 0, 0.80);
+    const matRed = mat(scene, 'ext-red', '#b8402f', 0.075, 0, 0.44);
+    const matGold = mat(scene, 'ext-gold', '#e3b44b', 0.20, 0.8, 0.24);
+    const matGrass = mat(scene, 'ext-grass', '#6fa867', 0.020, 0, 0.92);
+    const matPlaza = mat(scene, 'ext-plaza', '#b9b8a9', 0.012, 0.04, 0.92);
+    const matLantern = mat(scene, 'ext-lantern', '#ffaa38', 0.94, 0, 0.90);
 
     // Ground / courtyard
     add(MeshBuilder.CreateBox('ext-ground', { width: 68, height: 0.4, depth: 68 }, scene), matPlaza)
@@ -121,18 +125,29 @@ export function createCastleExteriorScene(scene: Scene): readonly Mesh[] {
         .position.set(0, 4.3, 11);
 
     // Side walls connecting gate to keep
-    for (const [wx, wz, ww, wd] of [
-        [-9.5, 19.5, 0.6, 17], [9.5, 19.5, 0.6, 17],
-        [-15, 11, 11, 0.6],    [15, 11, 11, 0.6],
-    ] as [number, number, number, number][]) {
+    for (
+        const [wx, wz, ww, wd] of [
+            [-9.5, 19.5, 0.6, 17],
+            [9.5, 19.5, 0.6, 17],
+            [-15, 11, 11, 0.6],
+            [15, 11, 11, 0.6]
+        ] as [number, number, number, number][]
+    ) {
         add(MeshBuilder.CreateBox(`ext-swall-${wx}`, { width: ww, height: 5.2, depth: wd }, scene), matStone)
             .position.set(wx, 2.6, wz);
     }
 
     // ===== STONE LANTERNS along path =====
-    for (const [lx, lz] of [
-        [-3.6, -4], [3.6, -4], [-3.6, 2], [3.6, 2], [-3.6, 7.5], [3.6, 7.5],
-    ] as [number, number][]) {
+    for (
+        const [lx, lz] of [
+            [-3.6, -4],
+            [3.6, -4],
+            [-3.6, 2],
+            [3.6, 2],
+            [-3.6, 7.5],
+            [3.6, 7.5]
+        ] as [number, number][]
+    ) {
         const n = `ext-toro-${lx}-${lz}`;
         add(MeshBuilder.CreateBox(`${n}-slab`, { width: 0.62, height: 0.12, depth: 0.62 }, scene), matStone)
             .position.set(lx, 0.06, lz);
@@ -140,20 +155,53 @@ export function createCastleExteriorScene(scene: Scene): readonly Mesh[] {
             .position.set(lx, 0.49, lz);
         add(MeshBuilder.CreateCylinder(`${n}-mid`, { height: 0.12, diameter: 0.46, tessellation: 6 }, scene), matStone)
             .position.set(lx, 0.9, lz);
-        add(MeshBuilder.CreateCylinder(`${n}-body`, { height: 0.52, diameter: 0.46, tessellation: 6 }, scene), matLantern)
+        add(
+            MeshBuilder.CreateCylinder(`${n}-body`, { height: 0.52, diameter: 0.46, tessellation: 6 }, scene),
+            matLantern
+        )
             .position.set(lx, 1.18, lz);
-        add(MeshBuilder.CreateCylinder(`${n}-roof`, { height: 0.22, diameterTop: 0.1, diameterBottom: 0.64, tessellation: 6 }, scene), matStone)
+        add(
+            MeshBuilder.CreateCylinder(`${n}-roof`, {
+                height: 0.22,
+                diameterTop: 0.1,
+                diameterBottom: 0.64,
+                tessellation: 6
+            }, scene),
+            matStone
+        )
             .position.set(lx, 1.5, lz);
     }
 
     // ===== PINE TREES =====
-    for (const [tx, tz] of [
-        [-10, -6], [10, -6], [-12, 4], [12, 4], [-14, 14], [14, 14],
-    ] as [number, number][]) {
-        add(MeshBuilder.CreateCylinder(`ext-trunk-${tx}-${tz}`, { height: 2.8, diameter: 0.44, tessellation: 8 }, scene), matDkWood)
+    for (
+        const [tx, tz] of [
+            [-10, -6],
+            [10, -6],
+            [-12, 4],
+            [12, 4],
+            [-14, 14],
+            [14, 14]
+        ] as [number, number][]
+    ) {
+        add(
+            MeshBuilder.CreateCylinder(
+                `ext-trunk-${tx}-${tz}`,
+                { height: 2.8, diameter: 0.44, tessellation: 8 },
+                scene
+            ),
+            matDkWood
+        )
             .position.set(tx, 1.4, tz);
         for (let i = 0; i < 3; i++) {
-            add(MeshBuilder.CreateCylinder(`ext-pine-${tx}-${tz}-${i}`, { height: 2.4 - i * 0.3, diameterTop: 0, diameterBottom: 4.0 - i * 0.9, tessellation: 8 }, scene), matGrass)
+            add(
+                MeshBuilder.CreateCylinder(`ext-pine-${tx}-${tz}-${i}`, {
+                    height: 2.4 - i * 0.3,
+                    diameterTop: 0,
+                    diameterBottom: 4.0 - i * 0.9,
+                    tessellation: 8
+                }, scene),
+                matGrass
+            )
                 .position.set(tx, 3.0 + i * 1.6, tz);
         }
     }
@@ -169,28 +217,38 @@ export function createCastleExteriorScene(scene: Scene): readonly Mesh[] {
 
 export function createWizardHost(scene: Scene): WizardHostResult {
     const meshes: Mesh[] = [];
-    const add = (m: Mesh, material: PBRMaterial) => { m.material = material; meshes.push(m); return m; };
+    const add = (m: Mesh, material: PBRMaterial) => {
+        m.material = material;
+        meshes.push(m);
+        return m;
+    };
 
-    const matHitatare = mat(scene, 'wiz-hitatare', '#131826', 0.0,   0,    0.72);
-    const matHakama   = mat(scene, 'wiz-hakama',   '#0d0f18', 0.0,   0,    0.82);
-    const matDo       = mat(scene, 'wiz-do',       '#180c07', 0.018, 0.14, 0.50);
-    const matDoTrim   = mat(scene, 'wiz-dotrim',   '#c8901a', 0.28,  0.82, 0.22);
-    const matInner    = mat(scene, 'wiz-inner',    '#5c0e13', 0.04,  0,    0.68);
-    const matSkin     = mat(scene, 'wiz-skin',     '#cdb092', 0.06,  0,    0.82);
-    const matHair     = mat(scene, 'wiz-hair',     '#e2ddd8', 0.06,  0.06, 0.64);
-    const matEboshi   = mat(scene, 'wiz-eboshi',   '#0b0d1a', 0.0,   0,    0.80);
-    const matStaff    = mat(scene, 'wiz-staff',    '#d8c898', 0.04,  0,    0.54);
-    const matShide    = mat(scene, 'wiz-shide',    '#f0ece4', 0.06,  0,    0.94);
-    const matOfuda    = mat(scene, 'wiz-ofuda',    '#ff8c14', 0.90,  0,    0.46);
-    const matEye      = mat(scene, 'wiz-eye',      '#ffaa18', 0.88,  0,    0.36);
-    const matSeal     = mat(scene, 'wiz-seal',     '#d07818', 0.72,  0,    0.52);
+    const matHitatare = mat(scene, 'wiz-hitatare', '#131826', 0.0, 0, 0.72);
+    const matHakama = mat(scene, 'wiz-hakama', '#0d0f18', 0.0, 0, 0.82);
+    const matDo = mat(scene, 'wiz-do', '#180c07', 0.018, 0.14, 0.50);
+    const matDoTrim = mat(scene, 'wiz-dotrim', '#c8901a', 0.28, 0.82, 0.22);
+    const matInner = mat(scene, 'wiz-inner', '#5c0e13', 0.04, 0, 0.68);
+    const matSkin = mat(scene, 'wiz-skin', '#cdb092', 0.06, 0, 0.82);
+    const matHair = mat(scene, 'wiz-hair', '#e2ddd8', 0.06, 0.06, 0.64);
+    const matEboshi = mat(scene, 'wiz-eboshi', '#0b0d1a', 0.0, 0, 0.80);
+    const matStaff = mat(scene, 'wiz-staff', '#d8c898', 0.04, 0, 0.54);
+    const matShide = mat(scene, 'wiz-shide', '#f0ece4', 0.06, 0, 0.94);
+    const matOfuda = mat(scene, 'wiz-ofuda', '#ff8c14', 0.90, 0, 0.46);
+    const matEye = mat(scene, 'wiz-eye', '#ffaa18', 0.88, 0, 0.36);
+    const matSeal = mat(scene, 'wiz-seal', '#d07818', 0.72, 0, 0.52);
 
     const baseY = 0.22;
 
     // Wide hakama (flowing pleated trousers/skirt)
-    add(MeshBuilder.CreateCylinder('wiz-hakama', {
-        height: 1.06, diameterTop: 0.76, diameterBottom: 1.16, tessellation: 10,
-    }, scene), matHakama).position.set(0, baseY + 0.53, 0);
+    add(
+        MeshBuilder.CreateCylinder('wiz-hakama', {
+            height: 1.06,
+            diameterTop: 0.76,
+            diameterBottom: 1.16,
+            tessellation: 10
+        }, scene),
+        matHakama
+    ).position.set(0, baseY + 0.53, 0);
 
     // Crimson inner robe lining at lower front
     add(MeshBuilder.CreateBox('wiz-lining-l', { width: 0.22, height: 0.58, depth: 0.04 }, scene), matInner)
@@ -199,9 +257,15 @@ export function createWizardHost(scene: Scene): WizardHostResult {
         .position.set(0.17, baseY + 0.29, -0.51);
 
     // Upper hitatare robe body
-    add(MeshBuilder.CreateCylinder('wiz-torso', {
-        height: 0.76, diameterTop: 0.60, diameterBottom: 0.74, tessellation: 10,
-    }, scene), matHitatare).position.set(0, baseY + 1.45, 0);
+    add(
+        MeshBuilder.CreateCylinder('wiz-torso', {
+            height: 0.76,
+            diameterTop: 0.60,
+            diameterBottom: 0.74,
+            tessellation: 10
+        }, scene),
+        matHitatare
+    ).position.set(0, baseY + 1.45, 0);
 
     // Lacquered dō chest armor
     add(MeshBuilder.CreateBox('wiz-do', { width: 0.54, height: 0.44, depth: 0.20 }, scene), matDo)
@@ -216,10 +280,16 @@ export function createWizardHost(scene: Scene): WizardHostResult {
         .position.set(0, baseY + 1.84, 0);
 
     // Wide hanging sleeves (kariginu style — broad, gently drooping)
-    const slR = add(MeshBuilder.CreateBox('wiz-sleeve-r', { width: 0.36, height: 0.68, depth: 0.24 }, scene), matHitatare);
+    const slR = add(
+        MeshBuilder.CreateBox('wiz-sleeve-r', { width: 0.36, height: 0.68, depth: 0.24 }, scene),
+        matHitatare
+    );
     slR.position.set(0.55, baseY + 1.40, 0.04);
     slR.rotation.z = -0.2;
-    const slL = add(MeshBuilder.CreateBox('wiz-sleeve-l', { width: 0.36, height: 0.68, depth: 0.24 }, scene), matHitatare);
+    const slL = add(
+        MeshBuilder.CreateBox('wiz-sleeve-l', { width: 0.36, height: 0.68, depth: 0.24 }, scene),
+        matHitatare
+    );
     slL.position.set(-0.55, baseY + 1.40, 0.04);
     slL.rotation.z = 0.2;
 
@@ -268,22 +338,42 @@ export function createWizardHost(scene: Scene): WizardHostResult {
         .position.set(0.19, baseY + 2.06, 0.14);
 
     // Eboshi court cap — round base + tall forward-leaning cylinder
-    add(MeshBuilder.CreateCylinder('wiz-eboshi-base', {
-        height: 0.13, diameterTop: 0.50, diameterBottom: 0.52, tessellation: 16,
-    }, scene), matEboshi).position.set(0, baseY + 2.53, 0);
-    const eboshiTop = add(MeshBuilder.CreateCylinder('wiz-eboshi-top', {
-        height: 0.60, diameterTop: 0.26, diameterBottom: 0.42, tessellation: 12,
-    }, scene), matEboshi);
+    add(
+        MeshBuilder.CreateCylinder('wiz-eboshi-base', {
+            height: 0.13,
+            diameterTop: 0.50,
+            diameterBottom: 0.52,
+            tessellation: 16
+        }, scene),
+        matEboshi
+    ).position.set(0, baseY + 2.53, 0);
+    const eboshiTop = add(
+        MeshBuilder.CreateCylinder('wiz-eboshi-top', {
+            height: 0.60,
+            diameterTop: 0.26,
+            diameterBottom: 0.42,
+            tessellation: 12
+        }, scene),
+        matEboshi
+    );
     eboshiTop.position.set(0, baseY + 2.88, 0);
     eboshiTop.rotation.x = -0.2;
     // Gold cord at cap base
-    add(MeshBuilder.CreateTorus('wiz-eboshi-cord', { diameter: 0.44, thickness: 0.026, tessellation: 20 }, scene), matDoTrim)
+    add(
+        MeshBuilder.CreateTorus('wiz-eboshi-cord', { diameter: 0.44, thickness: 0.026, tessellation: 20 }, scene),
+        matDoTrim
+    )
         .position.set(0, baseY + 2.56, 0);
 
     // Gohei ritual staff — pale wood, slightly angled
-    const staffRod = add(MeshBuilder.CreateCylinder('wiz-gohei', {
-        height: 2.52, diameter: 0.046, tessellation: 7,
-    }, scene), matStaff);
+    const staffRod = add(
+        MeshBuilder.CreateCylinder('wiz-gohei', {
+            height: 2.52,
+            diameter: 0.046,
+            tessellation: 7
+        }, scene),
+        matStaff
+    );
     staffRod.position.set(0.52, baseY + 1.26, -0.22);
     staffRod.rotation.z = 0.12;
 
@@ -292,16 +382,28 @@ export function createWizardHost(scene: Scene): WizardHostResult {
     const staffTopY = baseY + 1.26 + Math.cos(0.12) * 1.26;
 
     // Shide zigzag paper strips fanning from staff top
-    const shL = add(MeshBuilder.CreateBox('wiz-shide-ll', { width: 0.055, height: 0.36, depth: 0.016 }, scene), matShide);
+    const shL = add(
+        MeshBuilder.CreateBox('wiz-shide-ll', { width: 0.055, height: 0.36, depth: 0.016 }, scene),
+        matShide
+    );
     shL.position.set(staffTopX - 0.08, staffTopY + 0.19, -0.22);
     shL.rotation.z = -0.44;
-    const shR = add(MeshBuilder.CreateBox('wiz-shide-rr', { width: 0.055, height: 0.36, depth: 0.016 }, scene), matShide);
+    const shR = add(
+        MeshBuilder.CreateBox('wiz-shide-rr', { width: 0.055, height: 0.36, depth: 0.016 }, scene),
+        matShide
+    );
     shR.position.set(staffTopX + 0.08, staffTopY + 0.19, -0.22);
     shR.rotation.z = 0.44;
-    const sh2L = add(MeshBuilder.CreateBox('wiz-shide2-l', { width: 0.048, height: 0.26, depth: 0.016 }, scene), matShide);
+    const sh2L = add(
+        MeshBuilder.CreateBox('wiz-shide2-l', { width: 0.048, height: 0.26, depth: 0.016 }, scene),
+        matShide
+    );
     sh2L.position.set(staffTopX - 0.06, staffTopY + 0.05, -0.22);
     sh2L.rotation.z = -0.58;
-    const sh2R = add(MeshBuilder.CreateBox('wiz-shide2-r', { width: 0.048, height: 0.26, depth: 0.016 }, scene), matShide);
+    const sh2R = add(
+        MeshBuilder.CreateBox('wiz-shide2-r', { width: 0.048, height: 0.26, depth: 0.016 }, scene),
+        matShide
+    );
     sh2R.position.set(staffTopX + 0.06, staffTopY + 0.05, -0.22);
     sh2R.rotation.z = 0.58;
 
@@ -309,15 +411,20 @@ export function createWizardHost(scene: Scene): WizardHostResult {
     const staffOrbPos = new Vector3(staffTopX, staffTopY + 0.46, -0.22);
     add(MeshBuilder.CreateBox('wiz-ofuda', { width: 0.16, height: 0.22, depth: 0.038 }, scene), matOfuda)
         .position.copyFrom(staffOrbPos);
-    add(MeshBuilder.CreateTorus('wiz-ofuda-ring', { diameter: 0.26, thickness: 0.022, tessellation: 20 }, scene), matDoTrim)
+    add(
+        MeshBuilder.CreateTorus('wiz-ofuda-ring', { diameter: 0.26, thickness: 0.022, tessellation: 20 }, scene),
+        matDoTrim
+    )
         .position.copyFrom(staffOrbPos);
 
     // Floating mystical seals drifting around body
-    for (const [sx, sy, sz] of [
-        [-0.44, baseY + 1.70, -0.35],
-        [ 0.42, baseY + 1.64, -0.33],
-        [ 0.06, baseY + 2.02, -0.43],
-    ] as [number, number, number][]) {
+    for (
+        const [sx, sy, sz] of [
+            [-0.44, baseY + 1.70, -0.35],
+            [0.42, baseY + 1.64, -0.33],
+            [0.06, baseY + 2.02, -0.43]
+        ] as [number, number, number][]
+    ) {
         add(MeshBuilder.CreateBox(`wiz-seal-${sx}`, { width: 0.10, height: 0.14, depth: 0.012 }, scene), matSeal)
             .position.set(sx, sy, sz);
     }
@@ -328,7 +435,7 @@ export function createWizardHost(scene: Scene): WizardHostResult {
 export function createWizardAmbientParticles(
     scene: Scene,
     hostPos: Vector3,
-    flameTexture: DynamicTexture,
+    flameTexture: DynamicTexture
 ): readonly ParticleSystem[] {
     const systems: ParticleSystem[] = [];
 

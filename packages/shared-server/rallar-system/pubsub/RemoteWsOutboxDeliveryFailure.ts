@@ -1,17 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import {
     EntityStatus,
     isExpiredResourceEntry,
     isKeysEqual,
-    type ResourceEntry,
+    type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     retryAfterAttempt,
-    type ResourceInboxRetryPolicy,
+    type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import { PSqlQueueBox } from '../../postgres/queuebox/PSqlQueueBox.ts';
 
 export async function requeueRemoteWsOutboxDeliveryFailure(
@@ -20,13 +20,13 @@ export async function requeueRemoteWsOutboxDeliveryFailure(
     options: Readonly<{
         retryPolicy?: ResourceInboxRetryPolicy;
         jitterUnit?: () => number;
-    }> = {},
+    }> = {}
 ): Promise<ResourceEntry | undefined> {
     const policy = options.retryPolicy ?? DEFAULT_RESOURCE_INBOX_RETRY_POLICY;
     const decision = retryAfterAttempt(
         policy,
         observed.dequeueAudit.attempts,
-        (options.jitterUnit ?? Math.random)(),
+        (options.jitterUnit ?? Math.random)()
     );
     const disposition = decision.status === 'retry'
         ? { status: EntityStatus.RETRY, delayMs: decision.delayMs } as const
@@ -40,7 +40,9 @@ export async function requeueRemoteWsOutboxDeliveryFailure(
     }
     const releasedAt = Temporal.Now.instant();
     const result = await repository.enqueueOrUpdate(observed, (current) => {
-        if (!hasSameObservedDelivery(current, observed)) return undefined;
+        if (!hasSameObservedDelivery(current, observed)) {
+            return undefined;
+        }
         return {
             ...current,
             status: disposition.status,
@@ -49,8 +51,8 @@ export async function requeueRemoteWsOutboxDeliveryFailure(
                 endTs: releasedAt,
                 nextTs: disposition.delayMs === null
                     ? undefined
-                    : releasedAt.add({ milliseconds: disposition.delayMs }),
-            },
+                    : releasedAt.add({ milliseconds: disposition.delayMs })
+            }
         };
     });
     return result.action === 'updated' ? result.entry : undefined;

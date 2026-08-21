@@ -77,10 +77,12 @@ GitHub Actions, Hetzner distributed manifests.
 ### Task 1: Expose actual bridge subscription readiness
 
 **Files:**
+
 - Modify: `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
 - Modify: `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`
 
 **Interfaces:**
+
 - Produces: `installQueueBoxPubSubBridge(options): Promise<void>`.
 - Produces: bounded `listener-subscribe` and `cluster-receive` timing events.
 
@@ -132,11 +134,13 @@ fix(shared-server): expose queue bridge readiness
 ### Task 2: Make shared middleware own bridge readiness
 
 **Files:**
+
 - Modify: `packages/tests/shared-server/rallar-middleware.test.ts`
 - Modify: `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`
 - Modify: `apps/api-v1/src/middleware.ts`
 
 **Interfaces:**
+
 - Consumes: `installQueueBoxPubSubBridge(options): Promise<void>`.
 - Produces: optional `queuePubSubBridge` construction input without the already-owned `wsQBoxServerService`.
 - Produces: one `runtime.readiness` that resolves only after existing readiness and queue subscription readiness both resolve.
@@ -199,9 +203,11 @@ fix(api-v1): await distributed queue listener startup
 ### Task 3: Prove first-publication cross-process delivery
 
 **Files:**
+
 - Modify: `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
 
 **Interfaces:**
+
 - Consumes: returned queue bridge readiness promises.
 - Proves: after both process listeners are ready, the first claimant publication reaches the remote socket owner.
 
@@ -240,10 +246,12 @@ test(shared): prove first distributed outbox delivery after readiness
 ### Task 4: Align active architecture documentation
 
 **Files:**
+
 - Modify: `packages/shared-server/README.md`
 - Modify: `docs/rallar-convergent-state-and-rtc-topology.md`
 
 **Interfaces:**
+
 - Documents: PostgreSQL notification is a wake/delivery signal, durable WS outbox is the source record, and startup readiness includes the actual listener.
 - Preserves: no claim of durable per-process replay after a post-start notification loss.
 
@@ -273,6 +281,7 @@ docs(realtime): document queue listener readiness
 ### Task 5: Verify and publish exact feature evidence
 
 **Files:**
+
 - Modify only if verification exposes an in-scope defect.
 
 - [ ] **Step 1: Run focused server and API verification**

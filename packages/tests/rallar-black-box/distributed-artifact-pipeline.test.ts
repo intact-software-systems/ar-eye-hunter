@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { projectDistributedArtifactEnvelope } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-envelope.ts';
 import {
     distributedArtifactPipelineFile,
     parseDistributedArtifactPipeline,
-    type DistributedRunArtifactFiles,
+    type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
-import { projectDistributedArtifactEnvelope } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-envelope.ts';
 
 function jsonParseError(text: string): string {
     try {
         JSON.parse(text);
-    } catch (error) {
+    }
+    catch (error) {
         return error instanceof Error ? error.message : String(error);
     }
     throw new Error('Expected malformed JSON.');
@@ -20,7 +21,7 @@ function envelope(distributedRunId: string, files: Record<string, unknown>): str
         artifactSchemaVersion: 2,
         distributedRunId,
         generatedAtEpochMs: 7,
-        files,
+        files
     });
 }
 
@@ -32,7 +33,7 @@ describe('distributed artifact parse pipeline', () => {
             'failures.json': '{',
             'results.jsonl': '  \n{"id":"first"}\r\nnot-json\n\n42\n',
             'events.jsonl': ' \r\n\t',
-            'target-resolution.json': undefined,
+            'target-resolution.json': undefined
         };
         const pipeline = parseDistributedArtifactPipeline(files);
 
@@ -47,40 +48,49 @@ describe('distributed artifact parse pipeline', () => {
                 'distributed-run.json': 1,
                 'metadata.json': 0,
                 'failures.json': 1,
-                'target-resolution.json': 0,
+                'target-resolution.json': 0
             },
             jsonlFilePassCount: 2,
             jsonlFilePassCountByFile: {
                 'results.jsonl': 1,
-                'events.jsonl': 1,
+                'events.jsonl': 1
             },
             jsonlRowParseCount: 3,
             jsonlRowParseCountByFile: {
                 'results.jsonl': 3,
-                'events.jsonl': 0,
-            },
+                'events.jsonl': 0
+            }
         });
         expect(pipeline.files['distributed-run.json']).toMatchObject({
             format: 'json',
             status: 'parsed',
             text: files['distributed-run.json'],
-            value: { distributedRunId: 'dist-scale' },
+            value: { distributedRunId: 'dist-scale' }
         });
         expect(pipeline.files['metadata.json']).toMatchObject({
-            format: 'json', status: 'empty', text: files['metadata.json'],
+            format: 'json',
+            status: 'empty',
+            text: files['metadata.json']
         });
         expect(pipeline.files['failures.json']).toMatchObject({
-            format: 'json', status: 'malformed', text: files['failures.json'],
-            message: `failures.json is not valid JSON: ${jsonParseError('{')}`,
+            format: 'json',
+            status: 'malformed',
+            text: files['failures.json'],
+            message: `failures.json is not valid JSON: ${jsonParseError('{')}`
         });
         expect(pipeline.files['results.jsonl']).toMatchObject({
-            format: 'jsonl', text: files['results.jsonl'],
+            format: 'jsonl',
+            text: files['results.jsonl']
         });
         expect(pipeline.files['events.jsonl']).toMatchObject({
-            format: 'jsonl', status: 'empty', rows: [], text: files['events.jsonl'],
+            format: 'jsonl',
+            status: 'empty',
+            rows: [],
+            text: files['events.jsonl']
         });
         expect(pipeline.files['target-resolution.json']).toMatchObject({
-            format: 'json', status: 'missing',
+            format: 'json',
+            status: 'missing'
         });
     });
 
@@ -99,9 +109,9 @@ describe('distributed artifact parse pipeline', () => {
             {
                 lineNumber: 5,
                 status: 'malformed',
-                message: `events.jsonl:5 is not valid JSON: ${jsonParseError('invalid')}`,
+                message: `events.jsonl:5 is not valid JSON: ${jsonParseError('invalid')}`
             },
-            { lineNumber: 6, status: 'parsed', value: null },
+            { lineNumber: 6, status: 'parsed', value: null }
         ]);
     });
 
@@ -110,10 +120,10 @@ describe('distributed artifact parse pipeline', () => {
         const envelopeText = envelope('dist-envelope', {
             'distributed-run.json': '{"distributedRunId":"dist-envelope"}',
             'events.jsonl': '{"kind":"diagnostic"}\n',
-            'invalid.json': { not: 'text' },
+            'invalid.json': { not: 'text' }
         });
         const pipeline = parseDistributedArtifactPipeline({
-            [envelopeFileName]: envelopeText,
+            [envelopeFileName]: envelopeText
         });
 
         expect(pipeline.source).toBe('bundle-envelope');
@@ -125,12 +135,12 @@ describe('distributed artifact parse pipeline', () => {
             value: {
                 artifactSchemaVersion: 2,
                 distributedRunId: 'dist-envelope',
-                generatedAtEpochMs: 7,
-            },
+                generatedAtEpochMs: 7
+            }
         });
         expect(pipeline.projectedFiles).toEqual({
             'distributed-run.json': '{"distributedRunId":"dist-envelope"}',
-            'events.jsonl': '{"kind":"diagnostic"}\n',
+            'events.jsonl': '{"kind":"diagnostic"}\n'
         });
         expect(pipeline.projection).toMatchObject({
             source: 'bundle-envelope',
@@ -139,9 +149,9 @@ describe('distributed artifact parse pipeline', () => {
             generatedAtEpochMs: 7,
             distributedRunId: 'dist-envelope',
             invalidFiles: {
-                'invalid.json': 'invalid.json must contain text in the artifact envelope.',
+                'invalid.json': 'invalid.json must contain text in the artifact envelope.'
             },
-            outerIgnoredFiles: [],
+            outerIgnoredFiles: []
         });
         expect(pipeline.telemetry).toEqual({
             pipelinePassCount: 1,
@@ -151,50 +161,50 @@ describe('distributed artifact parse pipeline', () => {
             jsonDocumentParseCountByFile: {
                 [envelopeFileName]: 1,
                 'distributed-run.json': 1,
-                'invalid.json': 0,
+                'invalid.json': 0
             },
             jsonlFilePassCount: 1,
             jsonlFilePassCountByFile: { 'events.jsonl': 1 },
             jsonlRowParseCount: 1,
-            jsonlRowParseCountByFile: { 'events.jsonl': 1 },
+            jsonlRowParseCountByFile: { 'events.jsonl': 1 }
         });
         expect(pipeline.files['invalid.json']).toMatchObject({
             format: 'json',
             status: 'malformed',
-            message: 'invalid.json must contain text in the artifact envelope.',
+            message: 'invalid.json must contain text in the artifact envelope.'
         });
         expect(distributedArtifactPipelineFile(pipeline, 'results.jsonl')).toEqual({
             fileName: 'results.jsonl',
             format: 'jsonl',
             status: 'missing',
-            rows: [],
+            rows: []
         });
     });
 
     it('semantically matches envelope projection for escaped keys and reuses a single JSONL row parse', () => {
         const escapedEnvelopeText = envelope('dist-escaped', {
-            'distributed-run.json': '{"distributedRunId":"dist-escaped"}',
+            'distributed-run.json': '{"distributedRunId":"dist-escaped"}'
         }).replace('"files"', '"f\\u0069les"');
         const escapedFiles = { 'artifact-envelope': escapedEnvelopeText };
         const escaped = parseDistributedArtifactPipeline(escapedFiles);
 
         expect(escaped.projection).toEqual(
-            projectDistributedArtifactEnvelope(escapedFiles),
+            projectDistributedArtifactEnvelope(escapedFiles)
         );
         expect(escaped).toMatchObject({
             source: 'bundle-envelope',
-            envelope: { fileName: 'artifact-envelope', text: escapedEnvelopeText },
+            envelope: { fileName: 'artifact-envelope', text: escapedEnvelopeText }
         });
 
         const jsonlEnvelopeText = envelope('dist-jsonl', {
-            'events.jsonl': '{"kind":"diagnostic"}\n',
+            'events.jsonl': '{"kind":"diagnostic"}\n'
         });
         const jsonl = parseDistributedArtifactPipeline({
-            'artifact-envelope.jsonl': jsonlEnvelopeText,
+            'artifact-envelope.jsonl': jsonlEnvelopeText
         });
         expect(jsonl).toMatchObject({
             source: 'bundle-envelope',
-            envelope: { fileName: 'artifact-envelope.jsonl', text: jsonlEnvelopeText },
+            envelope: { fileName: 'artifact-envelope.jsonl', text: jsonlEnvelopeText }
         });
         expect(jsonl.telemetry).toMatchObject({
             jsonDocumentParseCount: 0,
@@ -202,51 +212,57 @@ describe('distributed artifact parse pipeline', () => {
             jsonlRowParseCount: 2,
             jsonlFilePassCountByFile: {
                 'artifact-envelope.jsonl': 1,
-                'events.jsonl': 1,
+                'events.jsonl': 1
             },
             jsonlRowParseCountByFile: {
                 'artifact-envelope.jsonl': 1,
-                'events.jsonl': 1,
-            },
+                'events.jsonl': 1
+            }
         });
     });
 
     it('matches semantic projection for a pretty JSONL envelope without probing multiple JSONL records', () => {
-        const prettyEnvelopeText = JSON.stringify({
-            artifactSchemaVersion: 2,
-            distributedRunId: 'dist-pretty-}-\\"-{',
-            generatedAtEpochMs: 7,
-            files: {
-                'distributed-run.json': '{"note":"quoted \\\" } { braces"}',
+        const prettyEnvelopeText = JSON.stringify(
+            {
+                artifactSchemaVersion: 2,
+                distributedRunId: 'dist-pretty-}-\\"-{',
+                generatedAtEpochMs: 7,
+                files: {
+                    'distributed-run.json': '{"note":"quoted \\" } { braces"}'
+                }
             },
-        }, null, 2);
+            null,
+            2
+        );
         const prettyFiles = { 'artifact-envelope.jsonl': prettyEnvelopeText };
         const pretty = parseDistributedArtifactPipeline(prettyFiles);
 
         expect(pretty.projection).toEqual(
-            projectDistributedArtifactEnvelope(prettyFiles),
+            projectDistributedArtifactEnvelope(prettyFiles)
         );
         expect(pretty).toMatchObject({
             source: 'bundle-envelope',
             envelope: {
                 fileName: 'artifact-envelope.jsonl',
-                text: prettyEnvelopeText,
+                text: prettyEnvelopeText
             },
             telemetry: {
                 jsonDocumentParseCount: 1,
                 jsonlFilePassCountByFile: { 'artifact-envelope.jsonl': 1 },
-                jsonlRowParseCountByFile: { 'artifact-envelope.jsonl': 1 },
-            },
+                jsonlRowParseCountByFile: { 'artifact-envelope.jsonl': 1 }
+            }
         });
-        expect(pretty.telemetry.jsonDocumentParseCountByFile[
-            'artifact-envelope.jsonl'
-        ]).toBeUndefined();
+        expect(
+            pretty.telemetry.jsonDocumentParseCountByFile[
+                'artifact-envelope.jsonl'
+            ]
+        ).toBeUndefined();
 
         const twoRecords = `${envelope('dist-first', {})}\n${envelope('dist-second', {})}`;
         const multipleFiles = { 'not-an-envelope.jsonl': twoRecords };
         const multiple = parseDistributedArtifactPipeline(multipleFiles);
         expect(multiple.projection).toEqual(
-            projectDistributedArtifactEnvelope(multipleFiles),
+            projectDistributedArtifactEnvelope(multipleFiles)
         );
         expect(multiple).toMatchObject({
             source: 'loose-files',
@@ -255,44 +271,44 @@ describe('distributed artifact parse pipeline', () => {
                 jsonlFilePassCount: 1,
                 jsonlRowParseCount: 2,
                 jsonlFilePassCountByFile: { 'not-an-envelope.jsonl': 1 },
-                jsonlRowParseCountByFile: { 'not-an-envelope.jsonl': 2 },
-            },
+                jsonlRowParseCountByFile: { 'not-an-envelope.jsonl': 2 }
+            }
         });
     });
 
     it('preserves deterministic mixed, multiple, and invalid-envelope projection diagnostics', () => {
         const mixed = parseDistributedArtifactPipeline({
             'bundle.json': envelope('dist-mixed', {}),
-            'loose.json': '{}',
+            'loose.json': '{}'
         });
         expect(mixed.projection).toMatchObject({
             source: 'bundle-envelope',
             envelopeFileName: 'bundle.json',
             outerIgnoredFiles: ['loose.json'],
             fatalCode: 'ambiguous-envelope',
-            fatalMessage: 'Artifact envelope bundle.json cannot be combined with loose files in one import.',
+            fatalMessage: 'Artifact envelope bundle.json cannot be combined with loose files in one import.'
         });
 
         const multiple = parseDistributedArtifactPipeline({
             'z-envelope.json': envelope('dist-z', {}),
-            'a-envelope.json': envelope('dist-a', {}),
+            'a-envelope.json': envelope('dist-a', {})
         });
         expect(multiple.projection).toMatchObject({
             source: 'bundle-envelope',
             envelopeFileName: 'a-envelope.json',
             outerIgnoredFiles: ['z-envelope.json'],
             fatalCode: 'ambiguous-envelope',
-            fatalMessage: 'Select exactly one artifact envelope; found a-envelope.json, z-envelope.json.',
+            fatalMessage: 'Select exactly one artifact envelope; found a-envelope.json, z-envelope.json.'
         });
 
         const invalidText = JSON.stringify({
             artifactSchemaVersion: 2,
             distributedRunId: 'dist-invalid',
             generatedAtEpochMs: 7,
-            files: [],
+            files: []
         });
         const invalid = parseDistributedArtifactPipeline({
-            'invalid-envelope.json': invalidText,
+            'invalid-envelope.json': invalidText
         });
         expect(invalid.envelope).toMatchObject({ status: 'parsed', text: invalidText });
         expect(invalid.projectedFiles).toEqual({});
@@ -300,7 +316,7 @@ describe('distributed artifact parse pipeline', () => {
             source: 'bundle-envelope',
             envelopeFileName: 'invalid-envelope.json',
             fatalCode: 'incompatible-file',
-            fatalMessage: 'invalid-envelope.json is not a compatible artifact envelope: files must be an object of artifact filename to text.',
+            fatalMessage: 'invalid-envelope.json is not a compatible artifact envelope: files must be an object of artifact filename to text.'
         });
     });
 
@@ -308,10 +324,10 @@ describe('distributed artifact parse pipeline', () => {
         const responseText = '{ "error": "denied" }';
         const pipeline = parseDistributedArtifactPipeline({
             'control-post-error-metadata.json': JSON.stringify({
-                responseFile: 'control-response',
+                responseFile: 'control-response'
             }),
             'control-response': responseText,
-            'operator-notes.txt': 'canonical operator notes',
+            'operator-notes.txt': 'canonical operator notes'
         });
 
         expect(pipeline.files['control-response']).toEqual({
@@ -319,14 +335,14 @@ describe('distributed artifact parse pipeline', () => {
             format: 'json',
             status: 'parsed',
             text: responseText,
-            value: { error: 'denied' },
+            value: { error: 'denied' }
         });
         expect(pipeline.files['operator-notes.txt']).toEqual({
             fileName: 'operator-notes.txt',
             format: 'text',
             status: 'parsed',
             text: 'canonical operator notes',
-            value: 'canonical operator notes',
+            value: 'canonical operator notes'
         });
         expect(pipeline.telemetry.jsonDocumentParseCountByFile['control-response']).toBe(1);
         expect(pipeline.telemetry.jsonDocumentParseCountByFile['operator-notes.txt']).toBe(1);
@@ -338,7 +354,7 @@ describe('distributed artifact parse pipeline', () => {
         const responseText = '{ "error": "denied" }';
         const pipeline = parseDistributedArtifactPipeline({
             'control-post-error-metadata.json': JSON.stringify({ responseFile }),
-            [responseFile]: responseText,
+            [responseFile]: responseText
         });
 
         expect(pipeline.files[responseFile]).toEqual({
@@ -346,7 +362,7 @@ describe('distributed artifact parse pipeline', () => {
             format: 'json',
             status: 'parsed',
             text: responseText,
-            value: { error: 'denied' },
+            value: { error: 'denied' }
         });
         expect(pipeline.telemetry.jsonDocumentParseCountByFile[responseFile]).toBe(1);
         expect(pipeline.telemetry.jsonlFilePassCountByFile[responseFile]).toBeUndefined();
@@ -354,7 +370,7 @@ describe('distributed artifact parse pipeline', () => {
         expect(pipeline.telemetry).toMatchObject({
             jsonDocumentParseCount: 2,
             jsonlFilePassCount: 0,
-            jsonlRowParseCount: 0,
+            jsonlRowParseCount: 0
         });
     });
 
@@ -364,18 +380,18 @@ describe('distributed artifact parse pipeline', () => {
             artifactSchemaVersion: 2,
             distributedRunId: 'error-payload-run',
             generatedAtEpochMs: 7,
-            files: {},
+            files: {}
         });
         const pipeline = parseDistributedArtifactPipeline({
             'control-post-error-metadata.json': JSON.stringify({ responseFile }),
-            [responseFile]: responseText,
+            [responseFile]: responseText
         });
 
         expect(pipeline.source).toBe('loose-files');
         expect(pipeline.projection.fatalMessage).toBeUndefined();
         expect(pipeline.files[responseFile]).toMatchObject({
             format: 'json',
-            status: 'parsed',
+            status: 'parsed'
         });
     });
 
@@ -384,33 +400,41 @@ describe('distributed artifact parse pipeline', () => {
         Object.defineProperties(files, {
             'control-post-error-metadata.json': {
                 enumerable: true,
-                value: JSON.stringify({ responseFile: 'constructor' }),
+                value: JSON.stringify({ responseFile: 'constructor' })
             },
             constructor: { enumerable: true, value: '{"key":"constructor"}' },
             'toString.json': { enumerable: true, value: '{"key":"toString"}' },
-            '__proto__.json': { enumerable: true, value: '{"key":"__proto__"}' },
+            '__proto__.json': { enumerable: true, value: '{"key":"__proto__"}' }
         });
 
         const pipeline = parseDistributedArtifactPipeline(
-            files satisfies DistributedRunArtifactFiles,
+            files satisfies DistributedRunArtifactFiles
         );
 
         expect(Object.getPrototypeOf(pipeline.files)).toBeNull();
         expect(Object.getPrototypeOf(pipeline.projectedFiles)).toBeNull();
         expect(Object.getPrototypeOf(
-            pipeline.telemetry.jsonDocumentParseCountByFile,
+            pipeline.telemetry.jsonDocumentParseCountByFile
         )).toBeNull();
         expect(distributedArtifactPipelineFile(pipeline, 'constructor')).toMatchObject({
-            format: 'json', status: 'parsed', value: { key: 'constructor' },
+            format: 'json',
+            status: 'parsed',
+            value: { key: 'constructor' }
         });
         expect(distributedArtifactPipelineFile(pipeline, 'toString.json')).toMatchObject({
-            format: 'json', status: 'parsed', value: { key: 'toString' },
+            format: 'json',
+            status: 'parsed',
+            value: { key: 'toString' }
         });
         expect(distributedArtifactPipelineFile(pipeline, '__proto__.json')).toMatchObject({
-            format: 'json', status: 'parsed', value: { key: '__proto__' },
+            format: 'json',
+            status: 'parsed',
+            value: { key: '__proto__' }
         });
         expect(distributedArtifactPipelineFile(pipeline, 'toString')).toEqual({
-            fileName: 'toString', format: 'text', status: 'missing',
+            fileName: 'toString',
+            format: 'text',
+            status: 'missing'
         });
     });
 });

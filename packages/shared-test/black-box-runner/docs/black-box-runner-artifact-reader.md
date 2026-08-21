@@ -33,16 +33,16 @@ server:
 
 ```ts
 const parsed = parseBlackBoxRunnerArtifactBundle({
-  'report.json': reportText,
-  'events.jsonl': eventsText,
-  'failures.json': failuresText,
-  'metadata.json': metadataText,
-  'artifact-index.json': artifactIndexText,
-  'expanded-recipe.json': expandedRecipeText,
-  'preflight-report.json': preflightReportText,
-  'expanded-plan.json': expandedPlanText,
-  'reduced-plan.json': reducedPlanText,
-  'matrix-summary.json': matrixSummaryText,
+    'report.json': reportText,
+    'events.jsonl': eventsText,
+    'failures.json': failuresText,
+    'metadata.json': metadataText,
+    'artifact-index.json': artifactIndexText,
+    'expanded-recipe.json': expandedRecipeText,
+    'preflight-report.json': preflightReportText,
+    'expanded-plan.json': expandedPlanText,
+    'reduced-plan.json': reducedPlanText,
+    'matrix-summary.json': matrixSummaryText
 });
 ```
 

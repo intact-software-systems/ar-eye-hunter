@@ -4,12 +4,12 @@ import {
     RallarAiError,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult,
+    type RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
 
 export type RallarAiOllamaFetch = (
     input: RequestInfo | URL,
-    init?: RequestInit,
+    init?: RequestInit
 ) => Promise<Response>;
 
 export type CreateRallarAiOllamaProviderOptions = Readonly<{
@@ -27,22 +27,22 @@ const DEFAULT_OLLAMA_ENDPOINT_PATH = '/api/generate';
 const DEFAULT_ALLOWED_OLLAMA_BASE_URLS = [
     'http://127.0.0.1:11434',
     'http://localhost:11434',
-    'http://[::1]:11434',
+    'http://[::1]:11434'
 ] as const;
 
 export function createRallarAiOllamaProvider(
-    options: CreateRallarAiOllamaProviderOptions,
+    options: CreateRallarAiOllamaProviderOptions
 ): RallarAiJsonProvider {
     const baseUrl = normalizeBaseUrl(options.baseUrl ?? DEFAULT_OLLAMA_BASE_URL);
     assertAllowedBaseUrl(
         baseUrl,
-        options.allowedBaseUrls ?? DEFAULT_ALLOWED_OLLAMA_BASE_URLS,
+        options.allowedBaseUrls ?? DEFAULT_ALLOWED_OLLAMA_BASE_URLS
     );
     const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis);
     if (!fetchImpl) {
         throw new RallarAiError(
             'invalid-configuration',
-            'A fetch implementation is required for the Ollama provider.',
+            'A fetch implementation is required for the Ollama provider.'
         );
     }
 
@@ -54,10 +54,10 @@ export function createRallarAiOllamaProvider(
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'server',
+            target: 'server'
         },
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             const startedAtEpochMs = Date.now();
             const response = await fetchImpl(
@@ -65,7 +65,7 @@ export function createRallarAiOllamaProvider(
                 {
                     method: 'POST',
                     headers: {
-                        'content-type': 'application/json',
+                        'content-type': 'application/json'
                     },
                     body: JSON.stringify({
                         model: options.model,
@@ -74,17 +74,17 @@ export function createRallarAiOllamaProvider(
                         format: request.schema,
                         options: {
                             temperature: request.temperature,
-                            num_predict: request.maxOutputTokens,
-                        },
+                            num_predict: request.maxOutputTokens
+                        }
                     }),
-                    signal: request.signal,
-                },
+                    signal: request.signal
+                }
             );
 
             if (!response.ok) {
                 throw new RallarAiError(
                     'provider-failed',
-                    `Ollama failed with HTTP ${response.status}.`,
+                    `Ollama failed with HTTP ${response.status}.`
                 );
             }
 
@@ -97,7 +97,7 @@ export function createRallarAiOllamaProvider(
                 throw new RallarAiError(
                     'invalid-json',
                     'Ollama returned a response that was not valid JSON.',
-                    parsed.validation,
+                    parsed.validation
                 );
             }
 
@@ -107,9 +107,9 @@ export function createRallarAiOllamaProvider(
                 value: parsed.value as TValue,
                 rawText,
                 startedAtEpochMs,
-                completedAtEpochMs: Date.now(),
+                completedAtEpochMs: Date.now()
             });
-        },
+        }
     };
 }
 
@@ -120,25 +120,24 @@ function normalizeBaseUrl(baseUrl: string): URL {
             throw new Error('unsupported protocol');
         }
         return url;
-    } catch {
+    }
+    catch {
         throw new RallarAiError(
             'invalid-configuration',
-            `Invalid Ollama base URL: ${baseUrl}.`,
+            `Invalid Ollama base URL: ${baseUrl}.`
         );
     }
 }
 
 function assertAllowedBaseUrl(
     baseUrl: URL,
-    allowedBaseUrls: readonly string[],
+    allowedBaseUrls: readonly string[]
 ): void {
-    const normalizedAllowed = allowedBaseUrls.map((allowed) =>
-        normalizeAllowedBaseUrl(allowed)
-    );
+    const normalizedAllowed = allowedBaseUrls.map((allowed) => normalizeAllowedBaseUrl(allowed));
     if (!normalizedAllowed.includes(baseUrl.origin)) {
         throw new RallarAiError(
             'invalid-configuration',
-            `Ollama base URL is not allowed: ${baseUrl.origin}.`,
+            `Ollama base URL is not allowed: ${baseUrl.origin}.`
         );
     }
 }
@@ -146,17 +145,18 @@ function assertAllowedBaseUrl(
 function normalizeAllowedBaseUrl(baseUrl: string): string {
     try {
         return new URL(baseUrl).origin;
-    } catch {
+    }
+    catch {
         throw new RallarAiError(
             'invalid-configuration',
-            `Invalid allowed Ollama base URL: ${baseUrl}.`,
+            `Invalid allowed Ollama base URL: ${baseUrl}.`
         );
     }
 }
 
 function toOllamaPrompt(
     request: RallarAiJsonRequest,
-    systemPrompt?: string,
+    systemPrompt?: string
 ): string {
     const parts = [
         systemPrompt,
@@ -164,8 +164,7 @@ function toOllamaPrompt(
         request.prompt,
         request.context === undefined
             ? undefined
-            : `Context JSON: ${JSON.stringify(request.context)}`,
+            : `Context JSON: ${JSON.stringify(request.context)}`
     ];
     return parts.filter((part): part is string => Boolean(part)).join('\n\n');
 }
-

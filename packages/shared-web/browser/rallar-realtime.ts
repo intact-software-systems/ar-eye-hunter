@@ -1,21 +1,21 @@
 export * from '@shared-web/browser/rallar-core.ts';
 
 export {
-    createRallarRealtimeFacade,
+    createRallarRealtimeFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 
 export {
-    createRallarRtcFacade,
+    createRallarRtcFacade
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 
 export type {
     CreateRallarRealtimeFacadeOptions,
-    RallarRealtimeFacade,
+    RallarRealtimeFacade
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 
 export type {
     CreateRallarRtcFacadeOptions,
-    RallarRtcFacade,
+    RallarRtcFacade
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 
 export type {
@@ -64,5 +64,5 @@ export type {
     RallarRtcWaitForOpenOptions,
     RallarRtcWaitForOpenResult,
     RallarWaitForOpenOptions,
-    RallarWaitForOpenStatus,
+    RallarWaitForOpenStatus
 } from '@shared-web/browser/rallar.ts';

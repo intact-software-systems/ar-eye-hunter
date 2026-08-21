@@ -1,18 +1,17 @@
-import { deriveDistributedRunFailureEvidenceDestinations } from
-    '../../distributed-recipes.ts';
+import { deriveDistributedRunFailureEvidenceDestinations } from '../../distributed-recipes.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import { MonitorDiagnosticHandoffs } from './MonitorDiagnosticHandoffs.tsx';
-import { MonitorFailureDestinationsWindow } from './MonitorInspectorWindow.tsx';
 import type { MonitorEvidenceSelection } from './monitor-selection.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
+import { MonitorDiagnosticHandoffs } from './MonitorDiagnosticHandoffs.tsx';
 import styles from './MonitorInspector.module.css';
+import { MonitorFailureDestinationsWindow } from './MonitorInspectorWindow.tsx';
 
 export type MonitorFailureEvidenceProps = Readonly<{
     failureKey: string;
     model: MonitorWorkspaceModel;
     onSelectEvidence(
         selection: MonitorEvidenceSelection,
-        patch?: Partial<RecipeConsoleUrlState>,
+        patch?: Partial<RecipeConsoleUrlState>
     ): void;
     sourceSearch: string;
     urlState: RecipeConsoleUrlState;
@@ -23,9 +22,9 @@ export function MonitorFailureEvidence({
     model,
     onSelectEvidence,
     sourceSearch,
-    urlState,
+    urlState
 }: MonitorFailureEvidenceProps) {
-    const failure = model.monitor.failures.find(row => row.key === failureKey);
+    const failure = model.monitor.failures.find((row) => row.key === failureKey);
     if (!failure) {
         return (
             <p className={styles.empty}>
@@ -33,12 +32,10 @@ export function MonitorFailureEvidence({
             </p>
         );
     }
-    const explanation = model.report.nextActions.find(action =>
-        action.evidence.includes(failure.key)
-    );
+    const explanation = model.report.nextActions.find((action) => action.evidence.includes(failure.key));
     const destinations = deriveDistributedRunFailureEvidenceDestinations({
         failure,
-        monitor: model.monitor,
+        monitor: model.monitor
     });
 
     return (
@@ -52,7 +49,7 @@ export function MonitorFailureEvidence({
                         ['Recipe', failure.recipeId ?? 'Run rollup'],
                         ['Command', failure.commandId ?? 'No command link'],
                         ['Code', failure.code ?? 'No error code'],
-                        ['Observed', formatEpoch(failure.atEpochMs)],
+                        ['Observed', formatEpoch(failure.atEpochMs)]
                     ].map(([label, value]) => (
                         <div key={label}>
                             <dt>{label}</dt>
@@ -79,27 +76,31 @@ export function MonitorFailureEvidence({
                 state={urlState}
             />
             <section className={styles.section}>
-                <h3>Correlated destinations <span>{destinations.length}</span></h3>
-                {destinations.length > 0 ? (
-                    <MonitorFailureDestinationsWindow
-                        contentClassName={styles.destinations}
-                        contextKey={model.source.contextKey}
-                        destinations={destinations}
-                        onSelect={onSelectEvidence}
-                        scopeId={failureKey}
-                    />
-                ) : (
-                    <p className={styles.empty}>
-                        No directly correlated destination is available.
-                    </p>
-                )}
+                <h3>
+                    Correlated destinations <span>{destinations.length}</span>
+                </h3>
+                {destinations.length > 0
+                    ? (
+                        <MonitorFailureDestinationsWindow
+                            contentClassName={styles.destinations}
+                            contextKey={model.source.contextKey}
+                            destinations={destinations}
+                            onSelect={onSelectEvidence}
+                            scopeId={failureKey}
+                        />
+                    )
+                    : (
+                        <p className={styles.empty}>
+                            No directly correlated destination is available.
+                        </p>
+                    )}
             </section>
         </>
     );
 }
 
 function fallbackFailureAction(
-    failure: MonitorWorkspaceModel['monitor']['failures'][number],
+    failure: MonitorWorkspaceModel['monitor']['failures'][number]
 ): string {
     const scope = failure.commandId ?? failure.recipeId ??
         failure.agentId ?? failure.key;

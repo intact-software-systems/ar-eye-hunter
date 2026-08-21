@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebRtcHeartbeatService } from '@shared/services/WebRtcHeartbeatService.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('WebRtcHeartbeatService', () => {
     afterEach(() => {
@@ -23,12 +23,12 @@ describe('WebRtcHeartbeatService', () => {
             peerSessionId: 'peer-1',
             channel: channel.channel as never,
             maxMissedPings: 3,
-            pingFrequencyMsecs: 10,
+            pingFrequencyMsecs: 10
         });
 
         service.start({
             onHeartbeat,
-            onMissedHeartbeat,
+            onMissedHeartbeat
         });
 
         expect(channel.messageType).toBe('ping');
@@ -39,33 +39,33 @@ describe('WebRtcHeartbeatService', () => {
         expect(JSON.parse(channel.sentJsonStrings[0])).toEqual({
             type: 'ping',
             pingType: 'ping',
-            ts: 1_000,
+            ts: 1_000
         });
 
         await channel.onMessageCallback?.onMessage({
             type: 'ping',
             pingType: 'ping',
-            ts: 123,
+            ts: 123
         });
 
         expect(JSON.parse(channel.sentJsonStrings[1])).toEqual({
             type: 'ping',
             pingType: 'pong',
-            ts: 123,
+            ts: 123
         });
 
         now = 1_042;
         await channel.onMessageCallback?.onMessage({
             type: 'ping',
             pingType: 'pong',
-            ts: 1_000,
+            ts: 1_000
         });
 
         expect(onHeartbeat).toHaveBeenCalledOnce();
         expect(onHeartbeat).toHaveBeenCalledWith({
             peerSessionId: 'peer-1',
             rttMsecs: 42,
-            version: 2,
+            version: 2
         });
         expect(onMissedHeartbeat).not.toHaveBeenCalled();
         expect((service as any).status.missedPings).toBe(0);
@@ -82,13 +82,13 @@ describe('WebRtcHeartbeatService', () => {
             peerSessionId: 'peer-1',
             channel: channel.channel as never,
             maxMissedPings: 2,
-            pingFrequencyMsecs: 5,
+            pingFrequencyMsecs: 5
         });
 
         service.start({
             onHeartbeat: async () => {
             },
-            onMissedHeartbeat,
+            onMissedHeartbeat
         });
 
         await vi.advanceTimersByTimeAsync(5);
@@ -113,14 +113,14 @@ describe('WebRtcHeartbeatService', () => {
             peerSessionId: 'peer-1',
             channel: channel.channel as never,
             maxMissedPings: 2,
-            pingFrequencyMsecs: 5,
+            pingFrequencyMsecs: 5
         });
 
         service.start({
             onHeartbeat: async () => {
             },
             onMissedHeartbeat: async () => {
-            },
+            }
         });
 
         await vi.advanceTimersByTimeAsync(5);
@@ -141,14 +141,14 @@ describe('WebRtcHeartbeatService', () => {
             peerSessionId: 'peer-1',
             channel: channel.channel as never,
             maxMissedPings: 2,
-            pingFrequencyMsecs: 5,
+            pingFrequencyMsecs: 5
         });
 
         service.start({
             onHeartbeat: async () => {
             },
             onMissedHeartbeat: async () => {
-            },
+            }
         });
 
         expect(channel.messageCallbackCount).toBe(1);
@@ -156,7 +156,7 @@ describe('WebRtcHeartbeatService', () => {
         service.stop();
 
         expect(channel.removeOnRtcMessageCallbackById).toHaveBeenCalledWith(
-            'peer-1-heartbeat',
+            'peer-1-heartbeat'
         );
         expect(channel.messageCallbackCount).toBe(0);
     });
@@ -167,8 +167,8 @@ function createDataChannelHarness(initiallyOpen = true) {
     let messageType: string | undefined;
     let onMessageCallback:
         | {
-        onMessage: (data: unknown) => Promise<void>;
-    }
+            onMessage: (data: unknown) => Promise<void>;
+        }
         | undefined;
     const callbacks = new Map<string, typeof onMessageCallback>();
 
@@ -178,7 +178,7 @@ function createDataChannelHarness(initiallyOpen = true) {
         onRtcMessageDo: vi.fn(function (
             _id: string,
             callback: typeof onMessageCallback,
-            type: string,
+            type: string
         ) {
             onMessageCallback = callback;
             messageType = type;
@@ -194,7 +194,7 @@ function createDataChannelHarness(initiallyOpen = true) {
         sendAsJsonString: vi.fn(async (data: string) => {
             sentJsonStrings.push(data);
         }),
-        isOpen: vi.fn(() => open),
+        isOpen: vi.fn(() => open)
     };
 
     return {
@@ -214,6 +214,6 @@ function createDataChannelHarness(initiallyOpen = true) {
         },
         get messageCallbackCount() {
             return callbacks.size;
-        },
+        }
     };
 }

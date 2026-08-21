@@ -5,7 +5,7 @@ export type RtcDataChannelQueuedSend<TPayload> = {
     key?: string;
     maxAgeMs?: number;
     createdAtEpochMs: number;
-}
+};
 
 export type RtcDataChannelSendQueuePolicy = Readonly<{
     overflow: RtcDataChannelOverflowMode;
@@ -34,7 +34,7 @@ export class RtcDataChannelSendQueue<TPayload> {
 
     offer(
         queued: RtcDataChannelQueuedSend<TPayload>,
-        policy: RtcDataChannelSendQueuePolicy,
+        policy: RtcDataChannelSendQueuePolicy
     ): RtcDataChannelSendQueueOfferResult {
         switch (policy.overflow) {
             case 'drop-new':
@@ -42,7 +42,7 @@ export class RtcDataChannelSendQueue<TPayload> {
                     'dropped',
                     'Back pressure',
                     queued.key,
-                    false,
+                    false
                 );
             case 'replace-by-key':
                 if (queued.key && this.replaceByKey(queued.key, queued)) {
@@ -50,7 +50,7 @@ export class RtcDataChannelSendQueue<TPayload> {
                         'replaced',
                         'Replaced queued payload',
                         queued.key,
-                        false,
+                        false
                     );
                 }
 
@@ -65,7 +65,7 @@ export class RtcDataChannelSendQueue<TPayload> {
                     queued,
                     policy.maxQueueItems,
                     'Queued payload after dropping oldest',
-                    droppedOldest,
+                    droppedOldest
                 );
             }
             case 'queue':
@@ -86,14 +86,14 @@ export class RtcDataChannelSendQueue<TPayload> {
         queued: RtcDataChannelQueuedSend<TPayload>,
         maxQueueItems: number,
         reason: string,
-        droppedOldest: boolean,
+        droppedOldest: boolean
     ): RtcDataChannelSendQueueOfferResult {
         if (this.items.length >= maxQueueItems) {
             return this.toOfferResult(
                 'dropped',
                 'Queue full',
                 queued.key,
-                droppedOldest,
+                droppedOldest
             );
         }
 
@@ -104,7 +104,7 @@ export class RtcDataChannelSendQueue<TPayload> {
 
     private replaceByKey(
         key: string,
-        queued: RtcDataChannelQueuedSend<TPayload>,
+        queued: RtcDataChannelQueuedSend<TPayload>
     ): boolean {
         const index = this.findIndexByKey(key);
         if (index === undefined) {
@@ -131,7 +131,7 @@ export class RtcDataChannelSendQueue<TPayload> {
 
     private replaceAt(
         index: number,
-        queued: RtcDataChannelQueuedSend<TPayload>,
+        queued: RtcDataChannelQueuedSend<TPayload>
     ): void {
         const previous = this.items[index];
         this.items[index] = queued;
@@ -157,7 +157,7 @@ export class RtcDataChannelSendQueue<TPayload> {
 
     private indexQueuedSend(
         queued: RtcDataChannelQueuedSend<TPayload>,
-        index: number,
+        index: number
     ): void {
         if (!queued.key || this.indexByKey.has(queued.key)) {
             return;
@@ -177,13 +177,13 @@ export class RtcDataChannelSendQueue<TPayload> {
         status: RtcDataChannelSendQueueOfferResult['status'],
         reason: string,
         key: string | undefined,
-        droppedOldest: boolean,
+        droppedOldest: boolean
     ): RtcDataChannelSendQueueOfferResult {
         return {
             status,
             reason,
             key,
-            droppedOldest,
+            droppedOldest
         };
     }
 }

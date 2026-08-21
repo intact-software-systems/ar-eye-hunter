@@ -1,12 +1,12 @@
 import {
     BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT,
     type BlackBoxRunnerArtifactFileName,
-    type BlackBoxRunnerExpectedResult,
     type BlackBoxRunnerExecutionMode,
+    type BlackBoxRunnerExpectedResult,
     type BlackBoxRunnerLiveSupport,
     type BlackBoxRunnerProviderMode,
     type BlackBoxRunnerRecipeCatalog,
-    type BlackBoxRunnerRecipeCatalogEntry,
+    type BlackBoxRunnerRecipeCatalogEntry
 } from './handoff-contract.ts';
 
 export const BLACK_BOX_RUNNER_ARTIFACT_SCHEMA_VERSION = 1;
@@ -14,8 +14,7 @@ export const BLACK_BOX_RUNNER_RECIPE_CATALOG_SCHEMA_VERSION = 1;
 export const BLACK_BOX_RUNNER_SUPPORTED_ARTIFACT_SCHEMA_VERSIONS = [0, 1] as const;
 export const BLACK_BOX_RUNNER_SUPPORTED_RECIPE_CATALOG_SCHEMA_VERSIONS = [0, 1] as const;
 
-export type BlackBoxRunnerArtifactSchemaVersion =
-    typeof BLACK_BOX_RUNNER_SUPPORTED_ARTIFACT_SCHEMA_VERSIONS[number];
+export type BlackBoxRunnerArtifactSchemaVersion = typeof BLACK_BOX_RUNNER_SUPPORTED_ARTIFACT_SCHEMA_VERSIONS[number];
 
 export type BlackBoxRunnerRecipeCatalogSchemaVersion =
     typeof BLACK_BOX_RUNNER_SUPPORTED_RECIPE_CATALOG_SCHEMA_VERSIONS[number];
@@ -143,10 +142,12 @@ export type BlackBoxRunnerExpandedPlan = Readonly<{
     }>;
 }>;
 
-export type BlackBoxRunnerReducedPlan = BlackBoxRunnerExpandedPlan & Readonly<{
-    kind?: 'black-box-runner.reduced-plan';
-    reduction?: Record<string, unknown>;
-}>;
+export type BlackBoxRunnerReducedPlan =
+    & BlackBoxRunnerExpandedPlan
+    & Readonly<{
+        kind?: 'black-box-runner.reduced-plan';
+        reduction?: Record<string, unknown>;
+    }>;
 
 export type BlackBoxRunnerMatrixRun = Readonly<{
     id: string;
@@ -219,7 +220,7 @@ export type BlackBoxRunnerRecipeCatalogEntryFixture = Readonly<{
 type JsonRecord = Record<string, unknown>;
 
 const ALLOWED_EVENT_KINDS = new Set<string>(
-    BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.eventStream.eventKinds,
+    BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.eventStream.eventKinds
 );
 
 const REDACTION_PLACEHOLDER_PATTERN = /^<redacted:[A-Za-z0-9_.-]+>$/;
@@ -254,13 +255,13 @@ function issue(
     severity: BlackBoxRunnerArtifactValidationSeverity,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    message: string,
+    message: string
 ): BlackBoxRunnerArtifactValidationIssue {
     return {
         severity,
         file,
         path,
-        message,
+        message
     };
 }
 
@@ -268,7 +269,7 @@ function addError(
     issues: BlackBoxRunnerArtifactValidationIssue[],
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    message: string,
+    message: string
 ): void {
     issues.push(issue('error', file, path, message));
 }
@@ -277,24 +278,24 @@ function addWarning(
     issues: BlackBoxRunnerArtifactValidationIssue[],
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    message: string,
+    message: string
 ): void {
     issues.push(issue('warning', file, path, message));
 }
 
 function toResult<T>(
     value: T | undefined,
-    issues: readonly BlackBoxRunnerArtifactValidationIssue[],
+    issues: readonly BlackBoxRunnerArtifactValidationIssue[]
 ): BlackBoxRunnerArtifactValidationResult<T> {
-    const errors = issues.filter(item => item.severity === 'error');
-    const warnings = issues.filter(item => item.severity === 'warning');
+    const errors = issues.filter((item) => item.severity === 'error');
+    const warnings = issues.filter((item) => item.severity === 'warning');
 
     return {
         ok: errors.length === 0,
         ...(errors.length === 0 && value !== undefined ? { value } : {}),
         issues,
         errors,
-        warnings,
+        warnings
     };
 }
 
@@ -302,7 +303,7 @@ function requireRecord(
     value: unknown,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): JsonRecord | undefined {
     if (!isRecord(value)) {
         addError(issues, file, path, 'Expected an object.');
@@ -317,7 +318,7 @@ function requireNumber(
     key: string,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): number | undefined {
     const value = record[key];
     if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -333,7 +334,7 @@ function requireString(
     key: string,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): string | undefined {
     const value = record[key];
     if (typeof value !== 'string' || value.length <= 0) {
@@ -349,7 +350,7 @@ function requireArray(
     key: string,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): unknown[] | undefined {
     const value = record[key];
     if (!Array.isArray(value)) {
@@ -364,7 +365,7 @@ function requireSummary(
     value: unknown,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
     path: string,
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): BlackBoxRunnerArtifactSummary | undefined {
     const summary = requireRecord(value, file, path, issues);
     if (!summary) {
@@ -383,7 +384,7 @@ function requireSummary(
         ...summary,
         total,
         success,
-        failure,
+        failure
     };
 }
 
@@ -408,17 +409,17 @@ function visitStrings(value: unknown, callback: (text: string, path: string) => 
 function validateRedactionPlaceholders(
     value: unknown,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): void {
     visitStrings(value, (text, path) => {
         const placeholders = text.match(/<redacted[^>]*>/g) || [];
-        placeholders.forEach(placeholder => {
+        placeholders.forEach((placeholder) => {
             if (!REDACTION_PLACEHOLDER_PATTERN.test(placeholder)) {
                 addError(
                     issues,
                     file,
                     path,
-                    `Invalid redaction placeholder ${placeholder}; expected <redacted:name>.`,
+                    `Invalid redaction placeholder ${placeholder}; expected <redacted:name>.`
                 );
             }
         });
@@ -432,18 +433,19 @@ function parseJson(text: string, file: BlackBoxRunnerArtifactValidationIssue['fi
     try {
         return {
             value: JSON.parse(text),
-            issues: [],
+            issues: []
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             issues: [
                 issue(
                     'error',
                     file,
                     '$',
-                    'Invalid JSON: ' + (error instanceof Error ? error.message : String(error)),
-                ),
-            ],
+                    'Invalid JSON: ' + (error instanceof Error ? error.message : String(error))
+                )
+            ]
         };
     }
 }
@@ -453,7 +455,7 @@ function validateSchemaVersion(
     supportedVersions: readonly number[],
     currentVersion: number,
     file: BlackBoxRunnerArtifactValidationIssue['file'],
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): number {
     const normalized = version === undefined ? 0 : numberValue(version);
     if (normalized === undefined || !supportedVersions.includes(normalized)) {
@@ -461,7 +463,7 @@ function validateSchemaVersion(
             issues,
             file,
             '$.schemaVersion',
-            `Unsupported schema version ${String(version)}; supported versions are ${supportedVersions.join(', ')}.`,
+            `Unsupported schema version ${String(version)}; supported versions are ${supportedVersions.join(', ')}.`
         );
         return currentVersion;
     }
@@ -471,14 +473,17 @@ function validateSchemaVersion(
             issues,
             file,
             '$.schemaVersion',
-            'No explicit schemaVersion was found; treating this as legacy compatible v0.',
+            'No explicit schemaVersion was found; treating this as legacy compatible v0.'
         );
     }
 
     return normalized;
 }
 
-function reportSchemaVersion(report: BlackBoxRunnerReport, metadata?: BlackBoxRunnerArtifactMetadata): number | undefined {
+function reportSchemaVersion(
+    report: BlackBoxRunnerReport,
+    metadata?: BlackBoxRunnerArtifactMetadata
+): number | undefined {
     return metadata?.artifactSchemaVersion ??
         metadata?.schemaVersion ??
         report.artifactSchemaVersion ??
@@ -506,7 +511,7 @@ export function parseBlackBoxRunnerReport(text: string): BlackBoxRunnerArtifactV
             ...record,
             summary,
             resultsList: resultsList.filter(isRecord),
-            outputs,
+            outputs
         } satisfies BlackBoxRunnerReport
         : undefined;
 
@@ -514,17 +519,17 @@ export function parseBlackBoxRunnerReport(text: string): BlackBoxRunnerArtifactV
 }
 
 export function parseBlackBoxRunnerEventsJsonl(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<readonly BlackBoxRunnerArtifactEvent[]> {
     const issues: BlackBoxRunnerArtifactValidationIssue[] = [];
     const events = text
         .split(/\r?\n/g)
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
         .flatMap((line, index) => {
             const linePath = `$[${index + 1}]`;
             const parsed = parseJson(line, 'events.jsonl');
-            issues.push(...parsed.issues.map(item => ({ ...item, path: linePath })));
+            issues.push(...parsed.issues.map((item) => ({ ...item, path: linePath })));
             const record = requireRecord(parsed.value, 'events.jsonl', linePath, issues);
             if (!record) {
                 return [];
@@ -536,7 +541,7 @@ export function parseBlackBoxRunnerEventsJsonl(
                     issues,
                     'events.jsonl',
                     `${linePath}.kind`,
-                    `Unsupported event kind ${String(record.kind)}.`,
+                    `Unsupported event kind ${String(record.kind)}.`
                 );
                 return [];
             }
@@ -553,7 +558,7 @@ export function parseBlackBoxRunnerEventsJsonl(
 function validateArtifactEvent(
     event: JsonRecord,
     line: number,
-    issues: BlackBoxRunnerArtifactValidationIssue[],
+    issues: BlackBoxRunnerArtifactValidationIssue[]
 ): void {
     const path = `$[${line}]`;
     if (event.kind === 'step-result') {
@@ -587,7 +592,7 @@ function validateArtifactEvent(
 }
 
 export function parseBlackBoxRunnerFailures(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerFailureBundle> {
     const parsed = parseJson(text, 'failures.json');
     const issues = [...parsed.issues];
@@ -616,7 +621,7 @@ export function parseBlackBoxRunnerFailures(
             failures: failures.filter(isRecord),
             ...(postRunAssertionFailures ? { postRunAssertionFailures } : {}),
             ...(postRunAssertions ? { postRunAssertions } : {}),
-            outputs,
+            outputs
         }
         : undefined;
 
@@ -624,7 +629,7 @@ export function parseBlackBoxRunnerFailures(
 }
 
 export function parseBlackBoxRunnerMetadata(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerArtifactMetadata> {
     const parsed = parseJson(text, 'metadata.json');
     const issues = [...parsed.issues];
@@ -645,7 +650,7 @@ export function parseBlackBoxRunnerMetadata(
             ...record,
             generatedAtEpochMs,
             summary,
-            command: stringList(record.command),
+            command: stringList(record.command)
         } satisfies BlackBoxRunnerArtifactMetadata
         : undefined;
 
@@ -653,7 +658,7 @@ export function parseBlackBoxRunnerMetadata(
 }
 
 export function parseBlackBoxRunnerArtifactIndex(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerArtifactIndex> {
     const parsed = parseJson(text, 'artifact-index.json');
     const issues = [...parsed.issues];
@@ -696,7 +701,7 @@ export function parseBlackBoxRunnerArtifactIndex(
             perConnection: perConnection.filter(isRecord),
             compaction: isRecord(record.compaction) ? record.compaction : undefined,
             truncation,
-            firstFailure: isRecord(record.firstFailure) ? record.firstFailure : undefined,
+            firstFailure: isRecord(record.firstFailure) ? record.firstFailure : undefined
         } satisfies BlackBoxRunnerArtifactIndex
         : undefined;
 
@@ -704,7 +709,7 @@ export function parseBlackBoxRunnerArtifactIndex(
 }
 
 export function parseBlackBoxRunnerExpandedRecipe(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedRecipe> {
     const parsed = parseJson(text, 'expanded-recipe.json');
     const issues = [...parsed.issues];
@@ -726,7 +731,7 @@ export function parseBlackBoxRunnerExpandedRecipe(
             generatedAtEpochMs,
             sourceConfig: stringValue(record.sourceConfig),
             includeMetadata: isRecord(record.includeMetadata) ? record.includeMetadata : undefined,
-            recipe,
+            recipe
         } satisfies BlackBoxRunnerExpandedRecipe
         : undefined;
 
@@ -734,7 +739,7 @@ export function parseBlackBoxRunnerExpandedRecipe(
 }
 
 export function parseBlackBoxRunnerLivePreflightReport(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerLivePreflightReport> {
     const parsed = parseJson(text, 'preflight-report.json');
     const issues = [...parsed.issues];
@@ -773,7 +778,7 @@ export function parseBlackBoxRunnerLivePreflightReport(
             summary,
             checks: checks.filter(isRecord),
             issues: issuesList.filter(isRecord),
-            skipReasons,
+            skipReasons
         } satisfies BlackBoxRunnerLivePreflightReport
         : undefined;
 
@@ -782,7 +787,7 @@ export function parseBlackBoxRunnerLivePreflightReport(
 
 function parseBlackBoxRunnerTrafficPlanArtifact(
     text: string,
-    file: BlackBoxRunnerArtifactFileName,
+    file: BlackBoxRunnerArtifactFileName
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedPlan> {
     const parsed = parseJson(text, file);
     const issues = [...parsed.issues];
@@ -808,38 +813,39 @@ function parseBlackBoxRunnerTrafficPlanArtifact(
                 issues,
                 file,
                 '$.replayRecipe.execution.trafficPlan',
-                'Expected replayFrom or expandedPlan replay data.',
+                'Expected replayFrom or expandedPlan replay data.'
             );
         }
     }
     validateRedactionPlaceholders(record, file, issues);
 
     const replaySteps = replayRecipe ? asArray(replayRecipe.steps).filter(isRecord) : undefined;
-    const value = seed !== undefined && typeof record.replay === 'boolean' && decisions && steps && replayRecipe && replaySteps
-        ? {
-            ...record,
-            seed,
-            replay: record.replay,
-            decisions: decisions.filter(isRecord),
-            steps: steps.filter(isRecord),
-            replayRecipe: {
-                ...replayRecipe,
-                steps: replaySteps,
-            },
-        } satisfies BlackBoxRunnerExpandedPlan
-        : undefined;
+    const value =
+        seed !== undefined && typeof record.replay === 'boolean' && decisions && steps && replayRecipe && replaySteps
+            ? {
+                ...record,
+                seed,
+                replay: record.replay,
+                decisions: decisions.filter(isRecord),
+                steps: steps.filter(isRecord),
+                replayRecipe: {
+                    ...replayRecipe,
+                    steps: replaySteps
+                }
+            } satisfies BlackBoxRunnerExpandedPlan
+            : undefined;
 
     return toResult(value, issues);
 }
 
 export function parseBlackBoxRunnerExpandedPlan(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerExpandedPlan> {
     return parseBlackBoxRunnerTrafficPlanArtifact(text, 'expanded-plan.json');
 }
 
 export function parseBlackBoxRunnerReducedPlan(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerReducedPlan> {
     const parsed = parseBlackBoxRunnerTrafficPlanArtifact(text, 'reduced-plan.json');
     if (!parsed.value) {
@@ -848,17 +854,20 @@ export function parseBlackBoxRunnerReducedPlan(
 
     const rawPlan = parsed.value as BlackBoxRunnerExpandedPlan & JsonRecord;
 
-    return toResult({
-        ...parsed.value,
-        kind: rawPlan.kind === 'black-box-runner.reduced-plan'
-            ? rawPlan.kind
-            : undefined,
-        reduction: isRecord(rawPlan.reduction) ? rawPlan.reduction : undefined,
-    } satisfies BlackBoxRunnerReducedPlan, parsed.issues);
+    return toResult(
+        {
+            ...parsed.value,
+            kind: rawPlan.kind === 'black-box-runner.reduced-plan'
+                ? rawPlan.kind
+                : undefined,
+            reduction: isRecord(rawPlan.reduction) ? rawPlan.reduction : undefined
+        } satisfies BlackBoxRunnerReducedPlan,
+        parsed.issues
+    );
 }
 
 export function parseBlackBoxRunnerMatrixSummary(
-    text: string,
+    text: string
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerMatrixSummary> {
     const parsed = parseJson(text, 'matrix-summary.json');
     const issues = [...parsed.issues];
@@ -889,8 +898,8 @@ export function parseBlackBoxRunnerMatrixSummary(
                 ...summary,
                 PASSED: Number(summary.PASSED),
                 FAILED: Number(summary.FAILED),
-                SKIPPED: Number(summary.SKIPPED),
-            },
+                SKIPPED: Number(summary.SKIPPED)
+            }
         } satisfies BlackBoxRunnerMatrixSummary
         : undefined;
 
@@ -905,11 +914,11 @@ function isMatrixRun(value: unknown): value is BlackBoxRunnerMatrixRun {
 }
 
 export function parseBlackBoxRunnerArtifactBundle(
-    files: BlackBoxRunnerArtifactBundleFiles,
+    files: BlackBoxRunnerArtifactBundleFiles
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerParsedArtifactBundle> {
     const issues: BlackBoxRunnerArtifactValidationIssue[] = [];
 
-    BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.requiredFiles.forEach(file => {
+    BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.requiredFiles.forEach((file) => {
         if (typeof files[file] !== 'string') {
             addError(issues, file, '$', `Missing required artifact file ${file}.`);
         }
@@ -956,8 +965,8 @@ export function parseBlackBoxRunnerArtifactBundle(
         preflightReport,
         expandedPlan,
         reducedPlan,
-        matrixSummary,
-    ].forEach(result => {
+        matrixSummary
+    ].forEach((result) => {
         if (result) {
             issues.push(...result.issues);
         }
@@ -972,21 +981,21 @@ export function parseBlackBoxRunnerArtifactBundle(
         BLACK_BOX_RUNNER_SUPPORTED_ARTIFACT_SCHEMA_VERSIONS,
         BLACK_BOX_RUNNER_ARTIFACT_SCHEMA_VERSION,
         'metadata.json',
-        issues,
+        issues
     ) as BlackBoxRunnerArtifactSchemaVersion;
 
     const views: BlackBoxRunnerArtifactViews = {
         eventStream: events.value,
-        postRunAssertions: events.value.filter(event => event.kind === 'post-run-assertion'),
-        rtcDiagnostics: events.value.filter(event => event.kind === 'rtc-diagnostic'),
-        rtcMessages: events.value.filter(event => event.kind === 'rtc-message'),
-        wsMessages: events.value.filter(event => event.kind === 'ws-message'),
+        postRunAssertions: events.value.filter((event) => event.kind === 'post-run-assertion'),
+        rtcDiagnostics: events.value.filter((event) => event.kind === 'rtc-diagnostic'),
+        rtcMessages: events.value.filter((event) => event.kind === 'rtc-message'),
+        wsMessages: events.value.filter((event) => event.kind === 'ws-message'),
         failures: failures.value.failures,
         ...(artifactIndex?.value ? { artifactIndex: artifactIndex.value } : {}),
         ...(expandedRecipe?.value ? { expandedRecipe: expandedRecipe.value } : {}),
         ...(expandedPlan?.value?.replayRecipe ? { replayRecipe: expandedPlan.value.replayRecipe } : {}),
         ...(reducedPlan?.value ? { reducedPlan: reducedPlan.value } : {}),
-        ...(reducedPlan?.value?.replayRecipe ? { reducedReplayRecipe: reducedPlan.value.replayRecipe } : {}),
+        ...(reducedPlan?.value?.replayRecipe ? { reducedReplayRecipe: reducedPlan.value.replayRecipe } : {})
     };
 
     const value: BlackBoxRunnerParsedArtifactBundle = {
@@ -1005,8 +1014,8 @@ export function parseBlackBoxRunnerArtifactBundle(
         compatibility: {
             sourceSchemaVersion: schemaVersion,
             currentSchemaVersion: BLACK_BOX_RUNNER_ARTIFACT_SCHEMA_VERSION,
-            legacy: schemaVersion < BLACK_BOX_RUNNER_ARTIFACT_SCHEMA_VERSION,
-        },
+            legacy: schemaVersion < BLACK_BOX_RUNNER_ARTIFACT_SCHEMA_VERSION
+        }
     };
 
     return toResult(value, issues);
@@ -1016,7 +1025,7 @@ function titleFromId(id: string): string {
     return id
         .split(/[-_]/g)
         .filter(Boolean)
-        .map(part => part.slice(0, 1).toUpperCase() + part.slice(1))
+        .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
         .join(' ');
 }
 
@@ -1029,7 +1038,7 @@ function providerMode(value: unknown): BlackBoxRunnerProviderMode {
         'rallar-signaling',
         'dry-run',
         'mixed',
-        'unknown',
+        'unknown'
     ];
 
     return allowed.includes(value as BlackBoxRunnerProviderMode)
@@ -1045,34 +1054,41 @@ function expectedResult(value: unknown): BlackBoxRunnerExpectedResult {
     return value === 'expected-failure' ? 'expected-failure' : 'pass';
 }
 
-function liveSupport(value: unknown, profiles: readonly string[], mode: BlackBoxRunnerExecutionMode): BlackBoxRunnerLiveSupport {
+function liveSupport(
+    value: unknown,
+    profiles: readonly string[],
+    mode: BlackBoxRunnerExecutionMode
+): BlackBoxRunnerLiveSupport {
     if (value === 'offline' || value === 'dry-run-only' || value === 'gated-live') {
         return value;
     }
 
-    if (profiles.includes('live') || profiles.some(profile => profile.endsWith('-live'))) {
+    if (profiles.includes('live') || profiles.some((profile) => profile.endsWith('-live'))) {
         return 'gated-live';
     }
 
     return mode === 'dry-run' ? 'dry-run-only' : 'offline';
 }
 
-function defaultCommands(recipePath: string, mode: BlackBoxRunnerExecutionMode): BlackBoxRunnerRecipeCatalogEntry['commands'] {
+function defaultCommands(
+    recipePath: string,
+    mode: BlackBoxRunnerExecutionMode
+): BlackBoxRunnerRecipeCatalogEntry['commands'] {
     return [
         {
             label: 'Direct scenario',
             command: [
                 'deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts',
                 `-c packages/shared-test/black-box-runner/${recipePath}`,
-                mode === 'dry-run' ? '--dry-run' : '',
+                mode === 'dry-run' ? '--dry-run' : ''
             ].filter(Boolean).join(' '),
-            description: 'Runs this recipe with the scenario CLI.',
-        },
+            description: 'Runs this recipe with the scenario CLI.'
+        }
     ];
 }
 
 export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
-    value: unknown,
+    value: unknown
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerRecipeCatalogEntryFixture> {
     const issues: BlackBoxRunnerArtifactValidationIssue[] = [];
     const root = requireRecord(value, 'recipe-catalog', '$', issues);
@@ -1086,7 +1102,7 @@ export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
         BLACK_BOX_RUNNER_SUPPORTED_RECIPE_CATALOG_SCHEMA_VERSIONS,
         BLACK_BOX_RUNNER_RECIPE_CATALOG_SCHEMA_VERSION,
         'recipe-catalog',
-        issues,
+        issues
     ) as BlackBoxRunnerRecipeCatalogSchemaVersion;
     const entryRecord = isRecord(root.entry) ? root.entry : root;
 
@@ -1122,14 +1138,14 @@ export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
             prerequisites: {
                 requiredEnvVars: stringList(prerequisites.requiredEnvVars),
                 httpServices: Array.isArray(prerequisites.httpServices)
-                    ? prerequisites.httpServices.filter(isRecord).map(service => ({
+                    ? prerequisites.httpServices.filter(isRecord).map((service) => ({
                         name: stringValue(service.name) ?? 'HTTP service',
                         env: stringValue(service.env) ?? '',
-                        ...(stringValue(service.default) ? { default: stringValue(service.default) } : {}),
-                    })).filter(service => service.env.length > 0)
+                        ...(stringValue(service.default) ? { default: stringValue(service.default) } : {})
+                    })).filter((service) => service.env.length > 0)
                     : [],
                 requiresPlaywright: prerequisites.requiresPlaywright === true,
-                injectedEnv: asRecord(prerequisites.injectedEnv) as Record<string, string>,
+                injectedEnv: asRecord(prerequisites.injectedEnv) as Record<string, string>
             },
             support: {
                 deterministic: support.deterministic === true || profiles.includes('deterministic'),
@@ -1140,26 +1156,26 @@ export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
                 artifacts: support.artifacts !== false,
                 replayArtifacts: support.replayArtifacts === true ||
                     profiles.includes('traffic') ||
-                    id.includes('traffic'),
+                    id.includes('traffic')
             },
             commands: Array.isArray(entryRecord.commands)
-                ? entryRecord.commands.filter(isRecord).map(command => ({
+                ? entryRecord.commands.filter(isRecord).map((command) => ({
                     label: stringValue(command.label) ?? 'Command',
                     command: stringValue(command.command) ?? '',
-                    description: stringValue(command.description) ?? '',
-                })).filter(command => command.command.length > 0)
+                    description: stringValue(command.description) ?? ''
+                })).filter((command) => command.command.length > 0)
                 : defaultCommands(recipePath, mode),
             uiHints: {
                 badges: stringList(uiHints.badges).length > 0
                     ? stringList(uiHints.badges)
                     : [mode, ...profiles],
                 recommendedSurface: uiHints.recommendedSurface === 'artifact-browser' ||
-                    uiHints.recommendedSurface === 'live-runbook'
+                        uiHints.recommendedSurface === 'live-runbook'
                     ? uiHints.recommendedSurface
                     : live === 'gated-live'
                     ? 'live-runbook'
-                    : 'recipe-catalog',
-            },
+                    : 'recipe-catalog'
+            }
         } satisfies BlackBoxRunnerRecipeCatalogEntry
         : undefined;
 
@@ -1168,7 +1184,7 @@ export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
             issues,
             'recipe-catalog',
             '$.schemaVersion',
-            'Legacy catalog entry was normalized to the current command-center entry shape.',
+            'Legacy catalog entry was normalized to the current command-center entry shape.'
         );
     }
 
@@ -1176,7 +1192,7 @@ export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
         ? {
             schemaVersion,
             kind: 'black-box-runner.recipe-catalog-entry',
-            entry: normalizedEntry,
+            entry: normalizedEntry
         } satisfies BlackBoxRunnerRecipeCatalogEntryFixture
         : undefined;
 
@@ -1184,7 +1200,7 @@ export function validateBlackBoxRunnerRecipeCatalogEntryFixture(
 }
 
 export function validateBlackBoxRunnerRecipeCatalog(
-    value: unknown,
+    value: unknown
 ): BlackBoxRunnerArtifactValidationResult<BlackBoxRunnerRecipeCatalog> {
     const issues: BlackBoxRunnerArtifactValidationIssue[] = [];
     const root = requireRecord(value, 'recipe-catalog', '$', issues);
@@ -1202,11 +1218,11 @@ export function validateBlackBoxRunnerRecipeCatalog(
         const result = validateBlackBoxRunnerRecipeCatalogEntryFixture({
             schemaVersion: version,
             kind: 'black-box-runner.recipe-catalog-entry',
-            entry,
+            entry
         });
-        issues.push(...result.issues.map(item => ({
+        issues.push(...result.issues.map((item) => ({
             ...item,
-            path: item.path.replace('$.entry', `$.entries[${index}]`),
+            path: item.path.replace('$.entry', `$.entries[${index}]`)
         })));
         return result.value ? [result.value.entry] : [];
     });
@@ -1214,7 +1230,7 @@ export function validateBlackBoxRunnerRecipeCatalog(
     const catalog = {
         version,
         generatedFrom: root.generatedFrom === 'recipe-matrix' ? 'recipe-matrix' : 'static-fixture',
-        entries: normalizedEntries,
+        entries: normalizedEntries
     } satisfies BlackBoxRunnerRecipeCatalog;
 
     return toResult(catalog, issues);

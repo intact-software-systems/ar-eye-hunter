@@ -1,17 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    rallar,
-    type RallarDirectorStatus,
-    type RallarRoomSummary,
-} from '@shared-web/browser/rallar.ts';
+import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { rallar, type RallarDirectorStatus, type RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
-import {
-    readWebSocketTicketBackoffState,
-} from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AvatarProfile } from '../../avatarProfile.ts';
 import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type { ArenaLinkState, ArenaPresenceNotice, ArenaPresencePlayerSummary } from '../../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaSnapshot,
@@ -19,42 +14,37 @@ import type {
     PlayerHitAccepted,
     RemotePlayer,
     RemoteShot,
-    RtcLaneStatus,
+    RtcLaneStatus
 } from '../../types.ts';
 import type {
     ArenaAiStatus,
     ArenaConnectionState,
     ArenaHttpDiagnostics,
     ArenaTransportDiagnostics,
-    DirectorAttemptState,
+    DirectorAttemptState
 } from '../arena-connection-contracts.ts';
-import type {
-    ArenaLinkState,
-    ArenaPresenceNotice,
-    ArenaPresencePlayerSummary,
-} from '../../squadLink.ts';
 
 export function useArenaRuntimeState() {
     const [session, setSession] = useState<AuthSession | undefined>(() => rallar.auth.restore());
     const [connectionState, setConnectionState] = useState<ArenaConnectionState>(
-        () => session ? 'connecting' : 'signed-out',
+        () => session ? 'connecting' : 'signed-out'
     );
     const [error, setError] = useState<string | undefined>();
     const [roomId, setRoomId] = useState<string | undefined>();
     const [rooms, setRooms] = useState<readonly RallarRoomSummary[]>([]);
     const [directorStatus, setDirectorStatus] = useState<RallarDirectorStatus>(
-        () => rallar.director.status(),
+        () => rallar.director.status()
     );
     const [directorAttempt, setDirectorAttempt] = useState<DirectorAttemptState>(
-        () => ({ status: 'idle' }),
+        () => ({ status: 'idle' })
     );
     const [gameDiagnostics, setGameDiagnostics] = useState<RallarGameDiagnostics | undefined>();
     const [transportDiagnostics, setTransportDiagnostics] = useState<ArenaTransportDiagnostics>({
-        realtimeHealth: [],
+        realtimeHealth: []
     });
     const [httpDiagnostics, setHttpDiagnostics] = useState<ArenaHttpDiagnostics>({
         apiConfig: { status: 'idle' },
-        ice: { status: 'idle' },
+        ice: { status: 'idle' }
     });
     const [rtcLanes, setRtcLanes] = useState<readonly RtcLaneStatus[]>([]);
     const [aiStatus, setAiStatus] = useState<ArenaAiStatus>('idle');
@@ -63,7 +53,7 @@ export function useArenaRuntimeState() {
     const [remoteEvents, setRemoteEvents] = useState<readonly ArenaEvent[]>([]);
     const [activeEvent, setActiveEvent] = useState<ArenaEvent | undefined>();
     const [remotePlayers, setRemotePlayers] = useState<ReadonlyMap<string, RemotePlayer>>(
-        new Map(),
+        new Map()
     );
     const [remoteShots, setRemoteShots] = useState<readonly RemoteShot[]>([]);
     const [remotePlayerHits, setRemotePlayerHits] = useState<readonly PlayerHitAccepted[]>([]);
@@ -119,12 +109,12 @@ export function useArenaRuntimeState() {
 
     const isCurrentNetworkGeneration = useCallback(
         (generation: number) => networkGenerationRef.current === generation,
-        [],
+        []
     );
     const currentNetworkSignal = useCallback(() => networkAbortRef.current.signal, []);
     const isNetworkEnabled = useCallback(
         () => Boolean(sessionRef.current && roomIdRef.current && arenaMatchRef.current),
-        [],
+        []
     );
 
     const clearRoomScopedArenaState = useCallback(() => {
@@ -164,7 +154,7 @@ export function useArenaRuntimeState() {
         const nextDirectorAttempt: DirectorAttemptState = { status: 'idle' };
         const nextTransportDiagnostics: ArenaTransportDiagnostics = {
             realtimeHealth: [],
-            wsTicketBackoff: readWebSocketTicketBackoffState(),
+            wsTicketBackoff: readWebSocketTicketBackoffState()
         };
         directorStatusRef.current = nextDirectorStatus;
         directorAttemptRef.current = nextDirectorAttempt;
@@ -179,17 +169,22 @@ export function useArenaRuntimeState() {
         setConnectionState('signed-out');
     }, [bumpNetworkGeneration, clearRoomScopedArenaState]);
 
-    useEffect(() => rallar.auth.onChange((state) => {
-        if (state.authenticated) setSession(state.session);
-        else resetForSignedOutAuth();
-    }, { emitCurrent: true }), [resetForSignedOutAuth]);
+    useEffect(() =>
+        rallar.auth.onChange((state) => {
+            if (state.authenticated) {
+                setSession(state.session);
+            }
+            else {
+                resetForSignedOutAuth();
+            }
+        }, { emitCurrent: true }), [resetForSignedOutAuth]);
     useEffect(() => () => clearPendingReliableArenaSnapshot(), [clearPendingReliableArenaSnapshot]);
     useEffect(() => void (sessionRef.current = session), [session]);
     useEffect(() => void (roomIdRef.current = roomId), [roomId]);
     useEffect(() => void (directorStatusRef.current = directorStatus), [directorStatus]);
     useEffect(() => void (directorAttemptRef.current = directorAttempt), [directorAttempt]);
     useEffect(() => void (transportDiagnosticsRef.current = transportDiagnostics), [
-        transportDiagnostics,
+        transportDiagnostics
     ]);
     useEffect(() => void (remotePlayersRef.current = remotePlayers), [remotePlayers]);
     useEffect(() => void (arenaSnapshotRef.current = arenaSnapshot), [arenaSnapshot]);
@@ -265,6 +260,6 @@ export function useArenaRuntimeState() {
         setTransportDiagnostics,
         snapshotLaneReadySyncKeyRef,
         transportDiagnostics,
-        transportDiagnosticsRef,
+        transportDiagnosticsRef
     };
 }

@@ -1,8 +1,7 @@
-import { useMemo } from 'react';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { useMemo } from 'react';
 import { SearchableWindowedListbox } from '../ui/SearchableWindowedListbox.tsx';
-import { createExecuteControlRunListboxModel } from
-    './execute-control-run-listbox-model.ts';
+import { createExecuteControlRunListboxModel } from './execute-control-run-listbox-model.ts';
 import styles from './ExecuteTargets.module.css';
 
 export function ExecuteControlRunPicker({
@@ -10,7 +9,7 @@ export function ExecuteControlRunPicker({
     controlRuns,
     disabled,
     issueId,
-    onSelect,
+    onSelect
 }: Readonly<{
     controlRunId?: string;
     controlRuns: readonly ControlRunSnapshot[];
@@ -20,11 +19,11 @@ export function ExecuteControlRunPicker({
 }>) {
     const model = useMemo(
         () => createExecuteControlRunListboxModel(controlRuns),
-        [controlRuns],
+        [controlRuns]
     );
     const revision = useMemo(
         () => ({ key: model.revisionKey }),
-        [model.revisionKey],
+        [model.revisionKey]
     );
     return (
         <div className={styles.runChoice} data-execute-control-run-picker>
@@ -36,7 +35,7 @@ export function ExecuteControlRunPicker({
                 label="Control run"
                 layout="inline"
                 invalid={issueId !== undefined}
-                onSelect={option => onSelect(option.value)}
+                onSelect={(option) => onSelect(option.value)}
                 options={model.options}
                 placeholder={controlRuns.length === 0
                     ? 'Control runs unavailable'

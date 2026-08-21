@@ -1,14 +1,12 @@
-import type { FleetReportWindow } from
-    '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
-import type { ControlFleetRegionSummary } from
-    '@shared-test/rallar-bb-test/fleet-report.ts';
+import type { FleetReportWindow } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
+import type { ControlFleetRegionSummary } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import { fleetRegionProviderKey } from './fleet-region-key.ts';
 import styles from './FleetEvidence.module.css';
 
 export function FleetRegions({
     onSelectRegion,
     regions,
-    selectedRegion,
+    selectedRegion
 }: Readonly<{
     onSelectRegion(region: string | undefined, trigger: HTMLButtonElement): void;
     regions: FleetReportWindow<ControlFleetRegionSummary>;
@@ -23,35 +21,42 @@ export function FleetRegions({
                 </div>
                 <p>{windowTruth(regions.items.length, regions.total, 'regions')}</p>
             </header>
-            {regions.items.length === 0 ? <p className={styles.empty}>No regional evidence.</p> : (
-                <div className={styles.cards}>{regions.items.map(region => {
-                    const selected = region.region === selectedRegion;
-                    return (
-                        <button
-                            aria-pressed={selected}
-                            className={styles.cardButton}
-                            data-fleet-region={region.region}
-                            key={fleetRegionProviderKey(
-                                region.region,
-                                region.provider,
-                            )}
-                            onClick={(event) => onSelectRegion(
-                                selected ? undefined : region.region,
-                                event.currentTarget,
-                            )}
-                            type="button"
-                        >
-                            <bdi className={styles.cardTitle} dir="auto">
-                                {region.region}
-                            </bdi>
-                            <bdi dir="auto">{region.provider ?? 'Unknown provider'}</bdi>
-                            <strong>{percent(region.passRate)} pass</strong>
-                            <span>{region.failed} failed · {region.missing} missing · {region.stale} stale</span>
-                            <span>p95 {milliseconds(region.timing.p95Ms)}</span>
-                        </button>
-                    );
-                })}</div>
-            )}
+            {regions.items.length === 0
+                ? <p className={styles.empty}>No regional evidence.</p>
+                : (
+                    <div className={styles.cards}>
+                        {regions.items.map((region) => {
+                            const selected = region.region === selectedRegion;
+                            return (
+                                <button
+                                    aria-pressed={selected}
+                                    className={styles.cardButton}
+                                    data-fleet-region={region.region}
+                                    key={fleetRegionProviderKey(
+                                        region.region,
+                                        region.provider
+                                    )}
+                                    onClick={(event) =>
+                                        onSelectRegion(
+                                            selected ? undefined : region.region,
+                                            event.currentTarget
+                                        )}
+                                    type="button"
+                                >
+                                    <bdi className={styles.cardTitle} dir="auto">
+                                        {region.region}
+                                    </bdi>
+                                    <bdi dir="auto">{region.provider ?? 'Unknown provider'}</bdi>
+                                    <strong>{percent(region.passRate)} pass</strong>
+                                    <span>
+                                        {region.failed} failed · {region.missing} missing · {region.stale} stale
+                                    </span>
+                                    <span>p95 {milliseconds(region.timing.p95Ms)}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
         </section>
     );
 }

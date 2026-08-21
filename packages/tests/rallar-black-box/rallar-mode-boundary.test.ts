@@ -6,103 +6,103 @@ const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', impo
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
 const legacyExperienceSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const legacyRunHeaderSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/shell/LegacyRunHeader.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerRecipesPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerRecipesControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/recipes/use-runner-recipes-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const runnerAgentActionsSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/recipes/runner-agent-launch-actions.ts',
-    import.meta.url,
+    import.meta.url
 );
 const runnerDistributedAnalysisSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerRunsControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/runs/use-runner-runs-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const runnerRunsPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const flowBuilderPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerFleetControlsSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetControls.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerFleetControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/use-runner-fleet-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const runnerFleetOverviewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetOverview.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerFleetAnalysisSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetReportAnalysis.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerFleetDetailsSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetSelectedDetails.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const runnerFleetTimingSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/FleetTimingGroupList.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const actionFeedbackPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const rtcDiagnosticsControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc/use-rtc-diagnostics-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const rtcDiagnosticsPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const topologyGraphPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const quickControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const quickPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const quickViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const rtcRealtimeViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimeView.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const rtcRealtimeControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const rtcRealtimePanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimePanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const webSocketSupportSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts',
@@ -110,47 +110,47 @@ const webSocketSupportSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts'
 ].map((path) => new URL(path, import.meta.url));
 const webSocketViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const webSocketControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const webSocketPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const mediaConsolePanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const rallarDataPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const authPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const roomsClientsRequestSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts',
-    import.meta.url,
+    import.meta.url
 );
 const roomsClientsControllerSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts',
-    import.meta.url,
+    import.meta.url
 );
 const roomsClientsViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsView.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const roomsClientsPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx',
-    import.meta.url,
+    import.meta.url
 );
 const rallarServerOwnerSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-contracts.ts',
@@ -158,7 +158,7 @@ const rallarServerOwnerSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerRequestFeedbackPanel.tsx',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerView.tsx',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx'
 ].map((path) => new URL(path, import.meta.url));
 const crdtOwnerSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/crdt-contracts.ts',
@@ -167,21 +167,21 @@ const crdtOwnerSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorEntitiesView.tsx',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorView.tsx',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-health-controller.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtHealthPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtHealthPanel.tsx'
 ].map((path) => new URL(path, import.meta.url));
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
-        import.meta.url,
+        import.meta.url
     ),
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipeCatalogList.tsx',
-        import.meta.url,
+        import.meta.url
     ),
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipeDetail.tsx',
-        import.meta.url,
-    ),
+        import.meta.url
+    )
 ] as const;
 
 function appSource(): string {
@@ -212,94 +212,87 @@ function diagnosticOwnerSources(source: string): Readonly<{
     topologyPanel: string;
     quickPanel: string;
 }> {
-    const rtcFallback =
-        existsSync(rtcDiagnosticsControllerSourcePath) &&
-        existsSync(rtcDiagnosticsPanelSourcePath)
-            ? ''
-            : sourceBetween(
-                  source,
-                  'function RtcDiagnosticsPanel',
-                  'function TopologyGraphPanel',
-              );
+    const rtcFallback = existsSync(rtcDiagnosticsControllerSourcePath) &&
+            existsSync(rtcDiagnosticsPanelSourcePath)
+        ? ''
+        : sourceBetween(
+            source,
+            'function RtcDiagnosticsPanel',
+            'function TopologyGraphPanel'
+        );
     const topologyFallback = existsSync(topologyGraphPanelSourcePath)
         ? ''
         : sourceBetween(
-              source,
-              'function TopologyGraphPanel',
-              'function WebSocketCommandCenterPanel',
-          );
-    const extracted =
-        existsSync(rtcDiagnosticsControllerSourcePath) &&
+            source,
+            'function TopologyGraphPanel',
+            'function WebSocketCommandCenterPanel'
+        );
+    const extracted = existsSync(rtcDiagnosticsControllerSourcePath) &&
         existsSync(rtcDiagnosticsPanelSourcePath) &&
         existsSync(topologyGraphPanelSourcePath);
-    const quickFallback =
-        existsSync(quickControllerSourcePath) && existsSync(quickPanelSourcePath)
-            ? ''
-            : sourceBetween(
-                  source,
-                  'function QuickRallarTestPanel',
-                  extracted
-                      ? 'function WebSocketCommandCenterPanel'
-                      : 'function RtcDiagnosticsPanel',
-              );
+    const quickFallback = existsSync(quickControllerSourcePath) && existsSync(quickPanelSourcePath)
+        ? ''
+        : sourceBetween(
+            source,
+            'function QuickRallarTestPanel',
+            extracted
+                ? 'function WebSocketCommandCenterPanel'
+                : 'function RtcDiagnosticsPanel'
+        );
     return {
         rtcController: sourceOrFallback(
             rtcDiagnosticsControllerSourcePath,
-            rtcFallback,
+            rtcFallback
         ),
         rtcPanel: sourceOrFallback(rtcDiagnosticsPanelSourcePath, rtcFallback),
         topologyPanel: sourceOrFallback(
             topologyGraphPanelSourcePath,
-            topologyFallback,
+            topologyFallback
         ),
         quickPanel: [
             sourceOrFallback(quickControllerSourcePath, quickFallback),
             sourceOrFallback(quickPanelSourcePath, ''),
-            sourceOrFallback(quickViewSourcePath, ''),
-        ].join('\n'),
+            sourceOrFallback(quickViewSourcePath, '')
+        ].join('\n')
     };
 }
 
 function rtcRealtimeOwnerSource(source: string): string {
-    const controllerFallback =
-        existsSync(rtcRealtimeControllerSourcePath) &&
-        existsSync(rtcRealtimePanelSourcePath)
-            ? ''
-            : sourceBetween(
-                  source,
-                  'function RtcRealtimePanel',
-                  'function RallarDataPanel',
-              );
+    const controllerFallback = existsSync(rtcRealtimeControllerSourcePath) &&
+            existsSync(rtcRealtimePanelSourcePath)
+        ? ''
+        : sourceBetween(
+            source,
+            'function RtcRealtimePanel',
+            'function RallarDataPanel'
+        );
     return [
         sourceOrFallback(rtcRealtimeControllerSourcePath, controllerFallback),
         sourceOrFallback(rtcRealtimePanelSourcePath, ''),
-        sourceOrFallback(rtcRealtimeViewSourcePath, ''),
+        sourceOrFallback(rtcRealtimeViewSourcePath, '')
     ].join('\n');
 }
 
 function webSocketCommandCenterOwnerSource(source: string): string {
-    const controllerFallback =
-        existsSync(webSocketControllerSourcePath) &&
-        existsSync(webSocketPanelSourcePath)
-            ? ''
-            : sourceBetween(
-                  source,
-                  'function WebSocketCommandCenterPanel',
-                  existsSync(rtcRealtimeControllerSourcePath) &&
-                          existsSync(rtcRealtimePanelSourcePath)
-                      ? 'function RallarDataPanel'
-                      : 'function RtcRealtimePanel',
-              );
+    const controllerFallback = existsSync(webSocketControllerSourcePath) &&
+            existsSync(webSocketPanelSourcePath)
+        ? ''
+        : sourceBetween(
+            source,
+            'function WebSocketCommandCenterPanel',
+            existsSync(rtcRealtimeControllerSourcePath) &&
+                existsSync(rtcRealtimePanelSourcePath)
+                ? 'function RallarDataPanel'
+                : 'function RtcRealtimePanel'
+        );
     return [
         sourceOrFallback(
             webSocketControllerSourcePath,
-            controllerFallback,
+            controllerFallback
         ),
         sourceOrFallback(webSocketPanelSourcePath, ''),
-        ...webSocketSupportSourcePaths.map((path) =>
-            sourceOrFallback(path, ''),
-        ),
-        sourceOrFallback(webSocketViewSourcePath, ''),
+        ...webSocketSupportSourcePaths.map((path) => sourceOrFallback(path, '')),
+        sourceOrFallback(webSocketViewSourcePath, '')
     ].join('\n');
 }
 
@@ -307,10 +300,10 @@ function mediaConsoleOwnerSource(source: string): string {
     const fallback = existsSync(mediaConsolePanelSourcePath)
         ? ''
         : sourceBetween(
-              source,
-              'function MediaConsolePanel',
-              'function AuthCommandCenterPanel',
-          );
+            source,
+            'function MediaConsolePanel',
+            'function AuthCommandCenterPanel'
+        );
     return sourceOrFallback(mediaConsolePanelSourcePath, fallback);
 }
 
@@ -318,12 +311,12 @@ function rallarDataOwnerSource(source: string): string {
     const fallback = existsSync(rallarDataPanelSourcePath)
         ? ''
         : sourceBetween(
-              source,
-              'function RallarDataPanel',
-              existsSync(mediaConsolePanelSourcePath)
-                  ? 'function AuthCommandCenterPanel'
-                  : 'function MediaConsolePanel',
-          );
+            source,
+            'function RallarDataPanel',
+            existsSync(mediaConsolePanelSourcePath)
+                ? 'function AuthCommandCenterPanel'
+                : 'function MediaConsolePanel'
+        );
     return sourceOrFallback(rallarDataPanelSourcePath, fallback);
 }
 
@@ -331,12 +324,12 @@ function authCommandCenterOwnerSource(source: string): string {
     const fallback = existsSync(authPanelSourcePath)
         ? ''
         : sourceBetween(
-              source,
-              'function AuthCommandCenterPanel',
-              existsSync(roomsClientsPanelSourcePath)
-                  ? 'function RallarServerRequestFeedbackPanel'
-                  : 'function RoomsClientsPanel',
-          );
+            source,
+            'function AuthCommandCenterPanel',
+            existsSync(roomsClientsPanelSourcePath)
+                ? 'function RallarServerRequestFeedbackPanel'
+                : 'function RoomsClientsPanel'
+        );
     return sourceOrFallback(authPanelSourcePath, fallback);
 }
 
@@ -345,41 +338,37 @@ function roomsClientsOwnerSource(source: string): string {
         roomsClientsRequestSourcePath,
         roomsClientsControllerSourcePath,
         roomsClientsViewSourcePath,
-        roomsClientsPanelSourcePath,
+        roomsClientsPanelSourcePath
     ].every((path) => existsSync(path));
     const fallback = extracted
         ? ''
         : sourceBetween(
-              source,
-              'function RoomsClientsPanel',
-              'function RallarServerRequestFeedbackPanel',
-          );
+            source,
+            'function RoomsClientsPanel',
+            'function RallarServerRequestFeedbackPanel'
+        );
     return [
         sourceOrFallback(roomsClientsRequestSourcePath, fallback),
         sourceOrFallback(roomsClientsControllerSourcePath, ''),
         sourceOrFallback(roomsClientsViewSourcePath, ''),
-        sourceOrFallback(roomsClientsPanelSourcePath, ''),
+        sourceOrFallback(roomsClientsPanelSourcePath, '')
     ].join('\n');
 }
 
 function rallarServerOwnerSource(source: string): string {
-    const extracted = rallarServerOwnerSourcePaths.every((path) =>
-        existsSync(path),
-    );
+    const extracted = rallarServerOwnerSourcePaths.every((path) => existsSync(path));
     const fallback = extracted
         ? ''
         : sourceBetween(
-              source,
-              'function RallarServerRequestFeedbackPanel',
-              existsSync(flowBuilderPanelSourcePath)
-                  ? 'export default function App'
-                  : 'function parseVariablesText',
-          );
+            source,
+            'function RallarServerRequestFeedbackPanel',
+            existsSync(flowBuilderPanelSourcePath)
+                ? 'export default function App'
+                : 'function parseVariablesText'
+        );
     return [
-        ...rallarServerOwnerSourcePaths.map((path) =>
-            sourceOrFallback(path, '')
-        ),
-        fallback,
+        ...rallarServerOwnerSourcePaths.map((path) => sourceOrFallback(path, '')),
+        fallback
     ].join('\n');
 }
 
@@ -388,28 +377,28 @@ function crdtOwnerSource(source: string): string {
     const fallback = extracted || !source.includes('type CrdtAdminDocumentStatus')
         ? ''
         : sourceBetween(
-              source,
-              'type CrdtAdminDocumentStatus',
-              existsSync(flowBuilderPanelSourcePath)
-                  ? 'export default function App'
-                  : 'function parseVariablesText',
-          );
+            source,
+            'type CrdtAdminDocumentStatus',
+            existsSync(flowBuilderPanelSourcePath)
+                ? 'export default function App'
+                : 'function parseVariablesText'
+        );
     return [
         ...crdtOwnerSourcePaths.map((path) => sourceOrFallback(path, '')),
-        fallback,
+        fallback
     ].join('\n');
 }
 
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
-        expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
+        expect(appTabsForMode('rallar').map((tab) => tab.id)).not.toEqual(
             expect.arrayContaining([
                 'manual-rallar',
                 'local-workbench',
                 'flow-builder',
                 'run-manager',
-                'shared-test',
-            ]),
+                'shared-test'
+            ])
         );
     });
 
@@ -420,13 +409,13 @@ describe('rallar-black-box Rallar mode boundary', () => {
             ? readFileSync(legacyRunHeaderSourcePath, 'utf8')
             : sourceBetween(source, 'function Header', 'function AppTabs');
 
-        expect(header).toContain("mode === 'black-box-runner'");
+        expect(header).toContain('mode === \'black-box-runner\'');
         expect(header).toContain('rallarBlackBoxRuntimeStore.runSample()');
         expect(legacyExperience).toContain(
-            "if (canBootstrap && navigation.activeMode === 'black-box-runner')",
+            'if (canBootstrap && navigation.activeMode === \'black-box-runner\')'
         );
         expect(legacyExperience).toContain(
-            '}, [canBootstrap, navigation.activeMode]);',
+            '}, [canBootstrap, navigation.activeMode]);'
         );
         expect(legacyExperience).toContain('bootstrapMatchesAuthSession');
     });
@@ -435,21 +424,21 @@ describe('rallar-black-box Rallar mode boundary', () => {
         const legacyExperience = readFileSync(legacyExperienceSourcePath, 'utf8');
         const runtimeBootstrap = readFileSync(
             new URL('../../../apps/rallar-black-box/src/runtime-store.ts', import.meta.url),
-            'utf8',
+            'utf8'
         );
         const configureLocalWorkbenchOnly = sourceBetween(
             runtimeBootstrap,
             'async configureLocalWorkbenchOnly(): Promise<void>',
-            'async bootstrapControlAgent(): Promise<void>',
+            'async bootstrapControlAgent(): Promise<void>'
         );
 
         expect(configureLocalWorkbenchOnly).toContain('await this.configureRuntime(runNumber)');
         expect(configureLocalWorkbenchOnly).not.toContain('resetForRun');
         expect(legacyExperience).toContain(
-            "if (canBootstrap && navigation.activeMode === 'black-box-runner')",
+            'if (canBootstrap && navigation.activeMode === \'black-box-runner\')'
         );
         expect(legacyExperience).toContain(
-            '}, [canBootstrap, navigation.activeMode]);',
+            '}, [canBootstrap, navigation.activeMode]);'
         );
     });
 
@@ -468,7 +457,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             authCommandCenterOwnerSource(source),
             roomsClientsOwnerSource(source),
             rallarServerOwnerSource(source),
-            crdtOwnerSource(source),
+            crdtOwnerSource(source)
         ].join('\n');
 
         expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);
@@ -495,11 +484,11 @@ describe('rallar-black-box Rallar mode boundary', () => {
         const source = appSource();
         const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
 
-        expect(rtcRealtimePanel).toContain("'rallar.direct.rtc_realtime.phase'");
+        expect(rtcRealtimePanel).toContain('\'rallar.direct.rtc_realtime.phase\'');
         expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
-        expect(rtcRealtimePanel).toContain("status: 'skipped'");
+        expect(rtcRealtimePanel).toContain('status: \'skipped\'');
         expect(rtcRealtimePanel).toMatch(
-            /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/,
+            /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/
         );
     });
 
@@ -507,17 +496,17 @@ describe('rallar-black-box Rallar mode boundary', () => {
         const source = appSource();
         const diagnostics = diagnosticOwnerSources(source);
         const actionFeedbackPanelFallback = existsSync(
-            actionFeedbackPanelSourcePath,
-        )
+                actionFeedbackPanelSourcePath
+            )
             ? ''
             : sourceBetween(
-                  source,
-                  'function CommandCenterActionFeedbackPanel',
-                  'function RallarServerRequestFeedbackPanel',
-              );
+                source,
+                'function CommandCenterActionFeedbackPanel',
+                'function RallarServerRequestFeedbackPanel'
+            );
         const actionFeedbackPanel = sourceOrFallback(
             actionFeedbackPanelSourcePath,
-            actionFeedbackPanelFallback,
+            actionFeedbackPanelFallback
         );
         const roomsClientsPanel = roomsClientsOwnerSource(source);
         const websocketPanel = webSocketCommandCenterOwnerSource(source);
@@ -539,55 +528,53 @@ describe('rallar-black-box Rallar mode boundary', () => {
         const diagnostics = diagnosticOwnerSources(source);
         const styles = styleSource();
         const recipesControllerFallback = existsSync(
-            runnerRecipesControllerSourcePath,
-        )
+                runnerRecipesControllerSourcePath
+            )
             ? ''
             : sourceBetween(
-                  source,
-                  'function RunnerRecipesPanel',
-                  'function RunnerRunsPanel',
-              );
+                source,
+                'function RunnerRecipesPanel',
+                'function RunnerRunsPanel'
+            );
         const recipesController = sourceOrFallback(
             runnerRecipesControllerSourcePath,
-            recipesControllerFallback,
+            recipesControllerFallback
         );
         const recipesPanel = [
             sourceOrFallback(runnerAgentActionsSourcePath, recipesControllerFallback),
             recipesController,
             sourceOrFallback(runnerRecipesPanelSourcePath, recipesControllerFallback),
-            ...runnerRecipeViewSourcePaths.map((path) =>
-                sourceOrFallback(path, recipesControllerFallback),
-            ),
+            ...runnerRecipeViewSourcePaths.map((path) => sourceOrFallback(path, recipesControllerFallback))
         ].join('\n');
         const runsControllerFallback = existsSync(runnerRunsControllerSourcePath)
             ? ''
             : sourceBetween(
-                  source,
-                  'function RunnerRunsPanel',
-                  'function RunnerFleetPanel',
-              );
+                source,
+                'function RunnerRunsPanel',
+                'function RunnerFleetPanel'
+            );
         const runsController = sourceOrFallback(
             runnerRunsControllerSourcePath,
-            runsControllerFallback,
+            runsControllerFallback
         );
         const runsPanel = sourceOrFallback(
             runnerRunsPanelSourcePath,
-            runsControllerFallback,
+            runsControllerFallback
         );
         const runsDistributedView = sourceOrFallback(
             runnerDistributedAnalysisSourcePath,
-            runsPanel,
+            runsPanel
         );
         const fleetControllerFallback = existsSync(runnerFleetControllerSourcePath)
             ? ''
             : sourceBetween(
-                  source,
-                  'function RunnerFleetPanel',
-                  'function RtcDiagnosticsPanel',
-              );
+                source,
+                'function RunnerFleetPanel',
+                'function RtcDiagnosticsPanel'
+            );
         const fleetController = sourceOrFallback(
             runnerFleetControllerSourcePath,
-            fleetControllerFallback,
+            fleetControllerFallback
         );
         const fleetViewsFallback = fleetControllerFallback;
         const fleetViews = [
@@ -595,7 +582,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceOrFallback(runnerFleetOverviewSourcePath, fleetViewsFallback),
             sourceOrFallback(runnerFleetAnalysisSourcePath, fleetViewsFallback),
             sourceOrFallback(runnerFleetDetailsSourcePath, fleetViewsFallback),
-            sourceOrFallback(runnerFleetTimingSourcePath, fleetViewsFallback),
+            sourceOrFallback(runnerFleetTimingSourcePath, fleetViewsFallback)
         ].join('\n');
         const rtcDiagnosticsPanel = diagnostics.rtcPanel;
 
@@ -604,7 +591,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsPanel).toContain('RtcPerformancePanel');
         expect(runsDistributedView).toContain('title="Run Participants"');
         expect(runsController).toContain(
-            'monitorAgentProgress: selectedMonitor?.agentProgress',
+            'monitorAgentProgress: selectedMonitor?.agentProgress'
         );
         expect(runsController).toContain('distributedRunSeed');
         expect(runsDistributedView).toContain('DISTRIBUTED_RUN_SEEDS');
@@ -631,31 +618,31 @@ describe('rallar-black-box Rallar mode boundary', () => {
             runsPanel.indexOf(
                 existsSync(runnerDistributedAnalysisSourcePath)
                     ? '<RunnerDistributedAnalysisSection'
-                    : 'runner-distributed-analysis',
-            ),
+                    : 'runner-distributed-analysis'
+            )
         );
         expect(runsDistributedView.indexOf('Synthetic seed')).toBeLessThan(
-            runsDistributedView.indexOf('title="Run Participants"'),
+            runsDistributedView.indexOf('title="Run Participants"')
         );
         expect(runsController).toContain('selectedMonitor');
         expect(runsController).toContain(
-            'distributedMonitor: selectedMonitor',
+            'distributedMonitor: selectedMonitor'
         );
         expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(
-            recipesPanel.indexOf('<RunnerReadinessPanel'),
+            recipesPanel.indexOf('<RunnerReadinessPanel')
         );
         expect(recipesPanel.indexOf('<RunnerReadinessPanel')).toBeLessThan(
-            recipesPanel.indexOf('title="Targetable Agents"'),
+            recipesPanel.indexOf('title="Targetable Agents"')
         );
         expect(recipesPanel.indexOf('title="Targetable Agents"')).toBeLessThan(
-            recipesPanel.indexOf('<RunnerAgentSetupPanel'),
+            recipesPanel.indexOf('<RunnerAgentSetupPanel')
         );
         expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
         expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
-            rtcDiagnosticsPanel.indexOf('<RtcDiagnosticsTimeseriesPanel'),
+            rtcDiagnosticsPanel.indexOf('<RtcDiagnosticsTimeseriesPanel')
         );
         expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
-            rtcDiagnosticsPanel.indexOf('rtc-stage-list'),
+            rtcDiagnosticsPanel.indexOf('rtc-stage-list')
         );
         expect(styles).toContain('.run-verdict-band');
         expect(styles).toContain('.causal-trail-panel');

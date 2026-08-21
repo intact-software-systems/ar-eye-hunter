@@ -1,6 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { constants as fsConstants } from 'node:fs';
 import { access, mkdir, writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { createAnalyzeArtifactModel } from '../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import { searchDistributedArtifactEvidence } from '../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
@@ -37,14 +37,16 @@ type SearchProbe = Readonly<{
     query: string;
 }>;
 
-type SearchObservation = SearchProbe & Readonly<{
-    retainedByCurrentIndex: boolean;
-    totalMatches: number;
-    returnedCount: number;
-    omittedMatchCount: number;
-    upstreamOmittedEntryCount: number;
-    totalMatchesIsComplete: boolean;
-}>;
+type SearchObservation =
+    & SearchProbe
+    & Readonly<{
+        retainedByCurrentIndex: boolean;
+        totalMatches: number;
+        returnedCount: number;
+        omittedMatchCount: number;
+        upstreamOmittedEntryCount: number;
+        totalMatchesIsComplete: boolean;
+    }>;
 
 type RunSample = Readonly<{
     run: number;
@@ -94,11 +96,11 @@ async function main(): Promise<void> {
     const sizeResults = [];
     for (const requestedSourceRows of options.sizes) {
         const fixture = createRecipeConsoleScaleFixture({
-            artifactRowCount: requestedSourceRows,
+            artifactRowCount: requestedSourceRows
         });
         const fixtureMetadata = validateAndProjectFixture(
             fixture,
-            requestedSourceRows,
+            requestedSourceRows
         );
         for (let warmup = 0; warmup < options.warmupCount; warmup += 1) {
             measurePipeline(fixture, 0);
@@ -111,11 +113,11 @@ async function main(): Promise<void> {
         const parseClassifier = createParseClassifier(fixture.files);
         const pipelineCounters = collectPipelineCounters(
             fixture,
-            parseClassifier,
+            parseClassifier
         );
-        const samples = timedSamples.map(sample => ({
+        const samples = timedSamples.map((sample) => ({
             ...sample,
-            pipelineCounters,
+            pipelineCounters
         }));
 
         sizeResults.push({
@@ -124,19 +126,19 @@ async function main(): Promise<void> {
             searchMatrix: createSearchProbes(fixture),
             samples,
             summary: {
-                modelDurationMs: summarize(samples.map(sample => sample.modelDurationMs)),
-                searchDurationMs: summarize(samples.map(sample => sample.searchDurationMs)),
-                totalDurationMs: summarize(samples.map(sample => sample.totalDurationMs)),
+                modelDurationMs: summarize(samples.map((sample) => sample.modelDurationMs)),
+                searchDurationMs: summarize(samples.map((sample) => sample.searchDurationMs)),
+                totalDurationMs: summarize(samples.map((sample) => sample.totalDurationMs)),
                 modelHeapDeltaBytes: summarize(
-                    samples.map(sample => sample.modelHeapDeltaBytes),
+                    samples.map((sample) => sample.modelHeapDeltaBytes)
                 ),
                 searchHeapDeltaBytes: summarize(
-                    samples.map(sample => sample.searchHeapDeltaBytes),
+                    samples.map((sample) => sample.searchHeapDeltaBytes)
                 ),
                 totalHeapDeltaBytes: summarize(
-                    samples.map(sample => sample.totalHeapDeltaBytes),
-                ),
-            },
+                    samples.map((sample) => sample.totalHeapDeltaBytes)
+                )
+            }
         });
     }
 
@@ -157,35 +159,33 @@ async function main(): Promise<void> {
                 exposed: typeof exposedGarbageCollector() === 'function',
                 exposeGcFlagPresent: process.execArgv.includes('--expose-gc'),
                 forcedBeforeEachHeapReading: true,
-                heapMetric: 'process.memoryUsage().heapUsed',
-            },
+                heapMetric: 'process.memoryUsage().heapUsed'
+            }
         },
         flags: {
             sizes: options.sizes,
             warmup: options.warmupCount,
             runs: options.runCount,
             output: options.outputPath,
-            heapMeasurement:
-                'forced-gc retained-heap estimate; deltas may be negative',
-            parseCounterMethod:
-                'one separate post-timing instrumented pass per size, copied to each sample',
+            heapMeasurement: 'forced-gc retained-heap estimate; deltas may be negative',
+            parseCounterMethod: 'one separate post-timing instrumented pass per size, copied to each sample',
             pipelineCounterSemantics:
                 'one model-pipeline invocation; source enumerations, file reads, JSONL whole-file split passes, JSON document parses, and nonempty JSONL row parses are distinct',
-            p95Method: 'nearest-rank-approximation; five runs report the maximum',
+            p95Method: 'nearest-rank-approximation; five runs report the maximum'
         },
-        sizes: sizeResults,
+        sizes: sizeResults
     };
 
     await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, {
         encoding: 'utf8',
-        flag: 'wx',
+        flag: 'wx'
     });
     console.log(`Wrote advisory Recipe Console scale benchmark to ${outputPath}`);
 }
 
 function measurePipeline(
     fixture: ScaleFixture,
-    run: number,
+    run: number
 ): RunSample {
     const heapBeforeBytes = retainedHeapBytes();
     const modelStart = performance.now();
@@ -194,9 +194,9 @@ function measurePipeline(
     const heapAfterModelBytes = retainedHeapBytes();
 
     const searchStart = performance.now();
-    const searchObservations = createSearchProbes(fixture).map(probe => {
+    const searchObservations = createSearchProbes(fixture).map((probe) => {
         const result = searchDistributedArtifactEvidence(model.evidenceIndex, {
-            query: probe.query,
+            query: probe.query
         });
         return {
             ...probe,
@@ -205,7 +205,7 @@ function measurePipeline(
             returnedCount: result.entries.length,
             omittedMatchCount: result.omittedMatchCount,
             upstreamOmittedEntryCount: result.upstreamOmittedEntryCount,
-            totalMatchesIsComplete: result.totalMatchesIsComplete,
+            totalMatchesIsComplete: result.totalMatchesIsComplete
         };
     });
     const searchDurationMs = performance.now() - searchStart;
@@ -231,7 +231,7 @@ function measurePipeline(
         indexTotalEntries: model.evidenceIndex.totalEntries,
         indexOmittedEntryCount: model.evidenceIndex.omittedEntryCount,
         searchObservations,
-        pipelineCounters: emptyPipelineCounters(),
+        pipelineCounters: emptyPipelineCounters()
     };
     assertFiniteSample(sample);
     return sample;
@@ -244,57 +244,57 @@ function createSearchProbes(fixture: ScaleFixture): readonly SearchProbe[] {
             'control',
             'actionable',
             'known-retained-control',
-            fixture.needles.actionableFailure,
+            fixture.needles.actionableFailure
         ),
         searchProbe(
             'actionable-diagnostic-control',
             'control',
             'actionable',
             'known-retained-control',
-            fixture.needles.actionableDiagnostic,
+            fixture.needles.actionableDiagnostic
         ),
         searchProbe(
             'events-first',
             'event',
             'first',
             'known-omitted',
-            fixture.needles.events.first,
+            fixture.needles.events.first
         ),
         searchProbe(
             'events-middle',
             'event',
             'middle',
             'coverage-probe',
-            fixture.needles.events.middle,
+            fixture.needles.events.middle
         ),
         searchProbe(
             'events-last',
             'event',
             'last',
             'coverage-probe',
-            fixture.needles.events.last,
+            fixture.needles.events.last
         ),
         searchProbe(
             'results-first',
             'result',
             'first',
             'known-omitted',
-            fixture.needles.results.first,
+            fixture.needles.results.first
         ),
         searchProbe(
             'results-middle',
             'result',
             'middle',
             'coverage-probe',
-            fixture.needles.results.middle,
+            fixture.needles.results.middle
         ),
         searchProbe(
             'results-last',
             'result',
             'last',
             'known-retained-control',
-            fixture.needles.results.last,
-        ),
+            fixture.needles.results.last
+        )
     ];
 }
 
@@ -303,7 +303,7 @@ function searchProbe(
     sourceKind: SearchProbe['sourceKind'],
     position: SearchProbe['position'],
     baselineRole: SearchProbe['baselineRole'],
-    query: string,
+    query: string
 ): SearchProbe {
     return { id, sourceKind, position, baselineRole, query };
 }
@@ -314,20 +314,20 @@ function createScaleAnalyzeModel(fixture: ScaleFixture) {
         source: 'local-files',
         label: `Synthetic ${fixture.counts.sourceRows}-row scale artifact`,
         generatedAtEpochMs: fixture.generatedAtEpochMs,
-        artifactSchemaVersion: fixture.artifactSchemaVersion,
+        artifactSchemaVersion: fixture.artifactSchemaVersion
     });
 }
 
 function collectPipelineCounters(
     fixture: ScaleFixture,
-    classifier: ParseClassifier,
+    classifier: ParseClassifier
 ): PipelineCounters {
     const originalParse = JSON.parse;
     const nativeSplit = String.prototype.split;
     const originalSplit = nativeSplit as (
         this: string,
         separator?: string | RegExp,
-        limit?: number,
+        limit?: number
     ) => string[];
     let jsonDocumentCalls = 0;
     let jsonlRowCalls = 0;
@@ -335,30 +335,31 @@ function collectPipelineCounters(
     let sourceCollectionEnumerationCalls = 0;
     const sourceFileReadsByFile: Record<string, number> = {};
     const jsonlFilePassesByFile: Record<string, number> = Object.fromEntries(
-        [...classifier.jsonlFilesByContents.values()].map(fileName => [fileName, 0]),
+        [...classifier.jsonlFilesByContents.values()].map((fileName) => [fileName, 0])
     );
 
     const files = new Proxy(fixture.files, {
         get(target, property, receiver) {
             if (typeof property === 'string' && Object.hasOwn(target, property)) {
-                sourceFileReadsByFile[property] =
-                    (sourceFileReadsByFile[property] ?? 0) + 1;
+                sourceFileReadsByFile[property] = (sourceFileReadsByFile[property] ?? 0) + 1;
             }
             return Reflect.get(target, property, receiver);
         },
         ownKeys(target) {
             sourceCollectionEnumerationCalls += 1;
             return Reflect.ownKeys(target);
-        },
+        }
     });
     const instrumentedFixture = { ...fixture, files };
 
     JSON.parse = ((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
         if (classifier.jsonDocuments.has(text)) {
             jsonDocumentCalls += 1;
-        } else if (classifier.jsonlRows.has(text)) {
+        }
+        else if (classifier.jsonlRows.has(text)) {
             jsonlRowCalls += 1;
-        } else {
+        }
+        else {
             otherCalls += 1;
         }
         return originalParse(text, reviver);
@@ -366,12 +367,11 @@ function collectPipelineCounters(
     String.prototype.split = (function (
         this: string,
         separator?: string | RegExp,
-        limit?: number,
+        limit?: number
     ): string[] {
         const fileName = classifier.jsonlFilesByContents.get(String(this));
         if (fileName) {
-            jsonlFilePassesByFile[fileName] =
-                (jsonlFilePassesByFile[fileName] ?? 0) + 1;
+            jsonlFilePassesByFile[fileName] = (jsonlFilePassesByFile[fileName] ?? 0) + 1;
         }
         return originalSplit.call(this, separator, limit);
     }) as typeof String.prototype.split;
@@ -386,9 +386,10 @@ function collectPipelineCounters(
             jsonDocumentParseCalls: jsonDocumentCalls,
             nonemptyJsonlRowParseCalls: jsonlRowCalls,
             otherJsonParseCalls: otherCalls,
-            totalJsonParseCalls: jsonDocumentCalls + jsonlRowCalls + otherCalls,
+            totalJsonParseCalls: jsonDocumentCalls + jsonlRowCalls + otherCalls
         };
-    } finally {
+    }
+    finally {
         JSON.parse = originalParse;
         String.prototype.split = nativeSplit;
     }
@@ -403,32 +404,37 @@ function emptyPipelineCounters(): PipelineCounters {
         jsonDocumentParseCalls: 0,
         nonemptyJsonlRowParseCalls: 0,
         otherJsonParseCalls: 0,
-        totalJsonParseCalls: 0,
+        totalJsonParseCalls: 0
     };
 }
 
 function sortedNumericRecord(
-    values: Readonly<Record<string, number>>,
+    values: Readonly<Record<string, number>>
 ): Readonly<Record<string, number>> {
     return Object.fromEntries(
-        Object.entries(values).sort(([left], [right]) => left.localeCompare(right)),
+        Object.entries(values).sort(([left], [right]) => left.localeCompare(right))
     );
 }
 
 function createParseClassifier(
-    files: Readonly<Record<string, unknown>>,
+    files: Readonly<Record<string, unknown>>
 ): ParseClassifier {
     const jsonDocuments = new Set<string>();
     const jsonlRows = new Set<string>();
     const jsonlFilesByContents = new Map<string, string>();
     for (const [fileName, contents] of Object.entries(files)) {
-        if (typeof contents !== 'string') continue;
+        if (typeof contents !== 'string') {
+            continue;
+        }
         if (/\.jsonl$/iu.test(fileName)) {
             jsonlFilesByContents.set(contents, fileName);
             for (const row of contents.split(/\r?\n/u)) {
-                if (row.trim().length > 0) jsonlRows.add(row);
+                if (row.trim().length > 0) {
+                    jsonlRows.add(row);
+                }
             }
-        } else if (/\.json$/iu.test(fileName)) {
+        }
+        else if (/\.json$/iu.test(fileName)) {
             jsonDocuments.add(contents);
         }
     }
@@ -437,7 +443,7 @@ function createParseClassifier(
 
 function validateAndProjectFixture(
     fixture: ScaleFixture,
-    requestedSourceRows: number,
+    requestedSourceRows: number
 ): Readonly<{
     counts: ScaleFixture['counts'];
     bytes: ScaleFixture['bytes'];
@@ -448,7 +454,7 @@ function validateAndProjectFixture(
 }> {
     if (fixture.counts.sourceRows !== requestedSourceRows) {
         throw new Error(
-            `Scale fixture requested ${requestedSourceRows} source rows but produced ${fixture.counts.sourceRows}.`,
+            `Scale fixture requested ${requestedSourceRows} source rows but produced ${fixture.counts.sourceRows}.`
         );
     }
     if (fixture.counts.events + fixture.counts.results !== fixture.counts.sourceRows) {
@@ -460,19 +466,24 @@ function validateAndProjectFixture(
     let jsonDocumentFileCount = 0;
     let jsonlFileCount = 0;
     let nonemptyJsonlRowCount = 0;
-    for (const [fileName, contents] of Object.entries(fixture.files).sort(
-        ([left], [right]) => left.localeCompare(right),
-    )) {
-        if (typeof contents !== 'string') continue;
+    for (
+        const [fileName, contents] of Object.entries(fixture.files).sort(
+            ([left], [right]) => left.localeCompare(right)
+        )
+    ) {
+        if (typeof contents !== 'string') {
+            continue;
+        }
         const byteCount = Buffer.byteLength(contents, 'utf8');
         measuredByFile[fileName] = byteCount;
         measuredTotal += byteCount;
         if (/\.jsonl$/iu.test(fileName)) {
             jsonlFileCount += 1;
             nonemptyJsonlRowCount += contents.split(/\r?\n/u).filter(
-                row => row.trim().length > 0,
+                (row) => row.trim().length > 0
             ).length;
-        } else if (/\.json$/iu.test(fileName)) {
+        }
+        else if (/\.json$/iu.test(fileName)) {
             jsonDocumentFileCount += 1;
         }
     }
@@ -489,13 +500,13 @@ function validateAndProjectFixture(
         fileCount: Object.keys(fixture.files).length,
         jsonDocumentFileCount,
         jsonlFileCount,
-        nonemptyJsonlRowCount,
+        nonemptyJsonlRowCount
     };
 }
 
 function equalByteRecords(
     left: Readonly<Record<string, number>>,
-    right: Readonly<Record<string, number>>,
+    right: Readonly<Record<string, number>>
 ): boolean {
     const leftEntries = Object.entries(left);
     return leftEntries.length === Object.keys(right).length &&
@@ -504,7 +515,9 @@ function equalByteRecords(
 
 function retainedHeapBytes(): number {
     const gc = exposedGarbageCollector();
-    if (!gc) throw new Error('Garbage collector became unavailable during benchmark.');
+    if (!gc) {
+        throw new Error('Garbage collector became unavailable during benchmark.');
+    }
     gc();
     return process.memoryUsage().heapUsed;
 }
@@ -512,18 +525,20 @@ function retainedHeapBytes(): number {
 function requireExposedGarbageCollector(): void {
     if (typeof exposedGarbageCollector() !== 'function') {
         throw new Error(
-            'This benchmark requires global.gc; invoke Node with --expose-gc --import tsx.',
+            'This benchmark requires global.gc; invoke Node with --expose-gc --import tsx.'
         );
     }
 }
 
 function exposedGarbageCollector(): (() => void) | undefined {
-    return (globalThis as typeof globalThis & { gc?: () => void }).gc;
+    return (globalThis as typeof globalThis & { gc?: () => void; }).gc;
 }
 
 function summarize(values: readonly number[]): MetricSummary {
     const sorted = [...values].sort((left, right) => left - right);
-    if (sorted.length === 0) throw new Error('Cannot summarize an empty sample set.');
+    if (sorted.length === 0) {
+        throw new Error('Cannot summarize an empty sample set.');
+    }
     const middle = Math.floor(sorted.length / 2);
     const median = sorted.length % 2 === 0
         ? (sorted[middle - 1] + sorted[middle]) / 2
@@ -532,7 +547,7 @@ function summarize(values: readonly number[]): MetricSummary {
     return {
         median,
         approximateP95,
-        max: sorted[sorted.length - 1],
+        max: sorted[sorted.length - 1]
     };
 }
 
@@ -551,7 +566,7 @@ function parseCliOptions(args: readonly string[]): CliOptions {
         const match = /^--([^=]+)=(.*)$/u.exec(argument);
         if (!match || !supported.has(match[1])) {
             throw new Error(
-                `Unsupported argument "${argument}"; use --sizes=, --warmup=, --runs=, and --out=.`,
+                `Unsupported argument "${argument}"; use --sizes=, --warmup=, --runs=, and --out=.`
             );
         }
         if (values.has(match[1])) {
@@ -565,21 +580,21 @@ function parseCliOptions(args: readonly string[]): CliOptions {
         : [...DEFAULT_SIZES];
     const warmupCount = parseNonnegativeInteger(
         'warmup',
-        values.get('warmup') ?? String(DEFAULT_WARMUP_COUNT),
+        values.get('warmup') ?? String(DEFAULT_WARMUP_COUNT)
     );
     const runCount = parsePositiveInteger(
         'runs',
-        values.get('runs') ?? String(DEFAULT_RUN_COUNT),
+        values.get('runs') ?? String(DEFAULT_RUN_COUNT)
     );
     const outputPath = values.get('out') ?? DEFAULT_OUTPUT;
-    if (outputPath.trim().length === 0) throw new Error('--out must not be empty.');
+    if (outputPath.trim().length === 0) {
+        throw new Error('--out must not be empty.');
+    }
     return { sizes, warmupCount, runCount, outputPath };
 }
 
 function parseSizes(value: string): readonly number[] {
-    const sizes = value.split(',').map((part, index) =>
-        parsePositiveInteger(`sizes[${index}]`, part)
-    );
+    const sizes = value.split(',').map((part, index) => parsePositiveInteger(`sizes[${index}]`, part));
     if (sizes.length === 0 || new Set(sizes).size !== sizes.length) {
         throw new Error('--sizes must contain one or more unique positive integers.');
     }
@@ -588,7 +603,9 @@ function parseSizes(value: string): readonly number[] {
 
 function parsePositiveInteger(name: string, value: string): number {
     const parsed = parseNonnegativeInteger(name, value);
-    if (parsed === 0) throw new Error(`--${name} must be greater than zero.`);
+    if (parsed === 0) {
+        throw new Error(`--${name} must be greater than zero.`);
+    }
     return parsed;
 }
 
@@ -606,8 +623,11 @@ function parseNonnegativeInteger(name: string, value: string): number {
 async function refuseExistingOutput(outputPath: string): Promise<void> {
     try {
         await access(outputPath, fsConstants.F_OK);
-    } catch (error) {
-        if (isNodeError(error) && error.code === 'ENOENT') return;
+    }
+    catch (error) {
+        if (isNodeError(error) && error.code === 'ENOENT') {
+            return;
+        }
         throw error;
     }
     throw new Error(`Refusing to overwrite existing benchmark output: ${outputPath}`);
@@ -625,21 +645,23 @@ function readGitMetadata(): Readonly<{
     return {
         ...(commit ? { commit } : {}),
         ...(branch ? { branch } : {}),
-        ...(dirty === undefined ? {} : { dirty }),
+        ...(dirty === undefined ? {} : { dirty })
     };
 }
 
 function readGitValue(
     args: readonly string[],
-    preserveEmpty = false,
+    preserveEmpty = false
 ): string | undefined {
     const result = spawnSync('git', args, {
         cwd: process.cwd(),
         encoding: 'utf8',
         timeout: 2_000,
-        stdio: ['ignore', 'pipe', 'ignore'],
+        stdio: ['ignore', 'pipe', 'ignore']
     });
-    if (result.status !== 0 || typeof result.stdout !== 'string') return undefined;
+    if (result.status !== 0 || typeof result.stdout !== 'string') {
+        return undefined;
+    }
     const value = result.stdout.trim();
     return value.length > 0 || preserveEmpty ? value : undefined;
 }
@@ -648,7 +670,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
     return error instanceof Error && 'code' in error;
 }
 
-void main().catch(error => {
+void main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Recipe Console scale benchmark failed: ${message}`);
     process.exitCode = 1;

@@ -1,23 +1,8 @@
-import type {
-    ControlDistributedRunSnapshot,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
-    type Dispatch,
-    type SetStateAction,
-} from 'react';
-import type {
-    RecipeConsoleControlConnection,
-} from '../control/ControlConnectionProvider.tsx';
-import {
-    downloadDistributedRunArtifact,
-} from '../control/distributed-run-artifact-download.ts';
-import {
-    projectControlOperationError,
-} from '../control/control-operation-error.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { projectControlOperationError } from '../control/control-operation-error.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+import { downloadDistributedRunArtifact } from '../control/distributed-run-artifact-download.ts';
 import type { MonitorActionPolicy } from './monitor-action-policy.ts';
 import {
     beginMonitorOperation,
@@ -27,49 +12,56 @@ import {
     projectMonitorMutation,
     type MonitorOperationAuthority,
     type MonitorWorkspaceContext,
-    type MonitorWorkspaceState,
+    type MonitorWorkspaceState
 } from './monitor-workspace-state.ts';
 
-export function useMonitorOperations(input: Readonly<{
-    connection: RecipeConsoleControlConnection;
-    context?: MonitorWorkspaceContext;
-    policy: MonitorActionPolicy;
-    run?: ControlDistributedRunSnapshot;
-    state: MonitorWorkspaceState;
-    setState: Dispatch<SetStateAction<MonitorWorkspaceState>>;
-}>) {
+export function useMonitorOperations(
+    input: Readonly<{
+        connection: RecipeConsoleControlConnection;
+        context?: MonitorWorkspaceContext;
+        policy: MonitorActionPolicy;
+        run?: ControlDistributedRunSnapshot;
+        state: MonitorWorkspaceState;
+        setState: Dispatch<SetStateAction<MonitorWorkspaceState>>;
+    }>
+) {
     const [cancelOpen, setCancelOpen] = useState(false);
     const requestRef = useRef<AbortController | undefined>(undefined);
     const generationRef = useRef(input.state.operationGeneration);
     const contextKeyRef = useRef(input.context?.key);
     generationRef.current = Math.max(
         generationRef.current,
-        input.state.operationGeneration,
+        input.state.operationGeneration
     );
     contextKeyRef.current = input.context?.key;
 
     useEffect(() => {
         requestRef.current?.abort();
         requestRef.current = undefined;
-        input.setState(previous => previous.activeOperation
-            ? failMonitorOperation(
-                previous,
-                previous.activeOperation,
-                new DOMException(
-                    'Monitor operation interrupted by a control context change.',
-                    'AbortError',
-                ),
-            )
-            : previous);
+        input.setState((previous) =>
+            previous.activeOperation
+                ? failMonitorOperation(
+                    previous,
+                    previous.activeOperation,
+                    new DOMException(
+                        'Monitor operation interrupted by a control context change.',
+                        'AbortError'
+                    )
+                )
+                : previous
+        );
         setCancelOpen(false);
         return () => {
             const pending = requestRef.current;
             pending?.abort();
-            if (requestRef.current === pending) requestRef.current = undefined;
+            if (requestRef.current === pending) {
+                requestRef.current = undefined;
+            }
         };
     }, [input.connection.execution, input.context?.key, input.setState]);
     useEffect(() => {
-        if (!input.policy.cancel.enabled &&
+        if (
+            !input.policy.cancel.enabled &&
             input.state.activeOperation?.action !== 'cancel'
         ) {
             setCancelOpen(false);
@@ -80,12 +72,14 @@ export function useMonitorOperations(input: Readonly<{
         action: MonitorOperationAuthority['action'],
         operation: (
             signal: AbortSignal,
-            authority: MonitorOperationAuthority,
+            authority: MonitorOperationAuthority
         ) => Promise<void>,
-        refreshAfter = false,
+        refreshAfter = false
     ): Promise<boolean> => {
         const context = input.context;
-        if (!context || requestRef.current) return false;
+        if (!context || requestRef.current) {
+            return false;
+        }
         const controller = new AbortController();
         requestRef.current = controller;
         const generation = ++generationRef.current;
@@ -93,42 +87,53 @@ export function useMonitorOperations(input: Readonly<{
             input.state,
             context.key,
             action,
-            generation,
+            generation
         );
         const authority = started.authority;
-        input.setState(previous => beginMonitorOperation(
-            previous,
-            context.key,
-            action,
-            authority.generation,
-        ).state);
+        input.setState((previous) =>
+            beginMonitorOperation(
+                previous,
+                context.key,
+                action,
+                authority.generation
+            ).state
+        );
         let succeeded = false;
         try {
             await operation(controller.signal, authority);
             succeeded = true;
-        } catch (error) {
-            if (!controller.signal.aborted &&
+        }
+        catch (error) {
+            if (
+                !controller.signal.aborted &&
                 contextKeyRef.current === context.key
             ) {
-                input.setState(previous => failMonitorOperation(
-                    previous,
-                    authority,
-                    error,
-                ));
+                input.setState((previous) =>
+                    failMonitorOperation(
+                        previous,
+                        authority,
+                        error
+                    )
+                );
             }
-        } finally {
-            if (refreshAfter && !controller.signal.aborted &&
+        }
+        finally {
+            if (
+                refreshAfter && !controller.signal.aborted &&
                 contextKeyRef.current === context.key
             ) {
                 await input.connection.refreshAfterCurrent();
             }
-            if (succeeded && !controller.signal.aborted &&
+            if (
+                succeeded && !controller.signal.aborted &&
                 contextKeyRef.current === context.key
             ) {
-                input.setState(previous => completeMonitorOperation(
-                    previous,
-                    authority,
-                ));
+                input.setState((previous) =>
+                    completeMonitorOperation(
+                        previous,
+                        authority
+                    )
+                );
             }
             if (requestRef.current === controller) {
                 requestRef.current = undefined;
@@ -139,85 +144,99 @@ export function useMonitorOperations(input: Readonly<{
         input.connection.refreshAfterCurrent,
         input.context,
         input.setState,
-        input.state,
+        input.state
     ]);
 
     const loadArtifact = useCallback(async (): Promise<void> => {
-        if (!input.policy['load-artifact'].enabled || !input.run) return;
+        if (!input.policy['load-artifact'].enabled || !input.run) {
+            return;
+        }
         await perform('load-artifact', async (signal, authority) => {
             const artifact = await requiredExecution(input.connection)
                 .exportRunArtifact({
                     distributedRunId: input.run!.distributedRunId,
-                    signal,
+                    signal
                 });
             assertCurrentOperation(
                 signal,
                 contextKeyRef,
-                authority.contextKey,
+                authority.contextKey
             );
             assertArtifactIdentity(artifact.distributedRunId, input.run!);
-            input.setState(previous => completeMonitorArtifactOperation(
-                previous,
-                authority,
-                artifact,
-            ));
+            input.setState((previous) =>
+                completeMonitorArtifactOperation(
+                    previous,
+                    authority,
+                    artifact
+                )
+            );
         });
     }, [
         input.connection,
         input.policy,
         input.run,
         input.setState,
-        perform,
+        perform
     ]);
 
     const exportArtifact = useCallback(async (): Promise<void> => {
-        if (!input.policy['export-artifact'].enabled || !input.run) return;
+        if (!input.policy['export-artifact'].enabled || !input.run) {
+            return;
+        }
         await perform('export-artifact', async (signal, authority) => {
             const artifact = await requiredExecution(input.connection)
                 .exportRunArtifact({
                     distributedRunId: input.run!.distributedRunId,
-                    signal,
+                    signal
                 });
             assertCurrentOperation(
                 signal,
                 contextKeyRef,
-                authority.contextKey,
+                authority.contextKey
             );
             assertArtifactIdentity(artifact.distributedRunId, input.run!);
             downloadDistributedRunArtifact(
                 artifact,
-                input.run!.distributedRunId,
+                input.run!.distributedRunId
             );
-            input.setState(previous => completeMonitorArtifactOperation(
-                previous,
-                authority,
-                artifact,
-            ));
+            input.setState((previous) =>
+                completeMonitorArtifactOperation(
+                    previous,
+                    authority,
+                    artifact
+                )
+            );
         });
     }, [input.connection, input.policy, input.run, input.setState, perform]);
 
     const confirmCancel = useCallback(async (): Promise<void> => {
-        if (!input.policy.cancel.enabled || !input.run) return;
+        if (!input.policy.cancel.enabled || !input.run) {
+            return;
+        }
         const succeeded = await perform('cancel', async (signal, authority) => {
             const run = await requiredExecution(input.connection).cancelRun({
                 distributedRunId: input.run!.distributedRunId,
                 reason: 'Cancelled by Recipe Console Monitor operator.',
-                signal,
+                signal
             });
             assertCurrentOperation(
                 signal,
                 contextKeyRef,
-                authority.contextKey,
+                authority.contextKey
             );
             assertRunIdentity(run, input.run!);
             assertCancelResponse(run, input.run!);
-            input.setState(previous => projectMonitorMutation(
-                previous,
-                authority.contextKey,
-                run,
-            ));
+            input.setState((previous) =>
+                projectMonitorMutation(
+                    previous,
+                    authority.contextKey,
+                    run
+                )
+            );
         }, true);
-        if (succeeded) setCancelOpen(false);
+        if (succeeded) {
+            setCancelOpen(false);
+        }
     }, [input.connection, input.policy.cancel.enabled, input.run, input.setState, perform]);
 
     return {
@@ -230,10 +249,12 @@ export function useMonitorOperations(input: Readonly<{
         loadArtifact,
         exportArtifact,
         requestCancel: () => {
-            if (input.policy.cancel.enabled) setCancelOpen(true);
+            if (input.policy.cancel.enabled) {
+                setCancelOpen(true);
+            }
         },
         closeCancel: () => setCancelOpen(false),
-        confirmCancel,
+        confirmCancel
     } as const;
 }
 
@@ -246,8 +267,8 @@ function requiredExecution(connection: RecipeConsoleControlConnection) {
 
 function assertCurrentOperation(
     signal: AbortSignal,
-    contextRef: Readonly<{ current: string | undefined }>,
-    expectedContextKey: string,
+    contextRef: Readonly<{ current: string | undefined; }>,
+    expectedContextKey: string
 ): void {
     if (signal.aborted) {
         throw new DOMException('Monitor action aborted.', 'AbortError');
@@ -259,38 +280,39 @@ function assertCurrentOperation(
 
 function assertRunIdentity(
     value: ControlDistributedRunSnapshot,
-    expected: ControlDistributedRunSnapshot,
+    expected: ControlDistributedRunSnapshot
 ): void {
-    if (value.distributedRunId !== expected.distributedRunId ||
+    if (
+        value.distributedRunId !== expected.distributedRunId ||
         value.controlRunId !== expected.controlRunId
     ) {
         throw new Error(
-            'Control response identity does not match the requested Monitor run.',
+            'Control response identity does not match the requested Monitor run.'
         );
     }
 }
 
 function assertCancelResponse(
     value: ControlDistributedRunSnapshot,
-    expected: ControlDistributedRunSnapshot,
+    expected: ControlDistributedRunSnapshot
 ): void {
     if (value.updatedAtEpochMs < expected.updatedAtEpochMs) {
         throw new Error('Cancel response is older than current Monitor truth.');
     }
     if (value.state !== 'cancelled') {
         throw new Error(
-            `Cancel returned authoritative state ${value.state} instead of cancelled.`,
+            `Cancel returned authoritative state ${value.state} instead of cancelled.`
         );
     }
 }
 
 function assertArtifactIdentity(
     distributedRunId: string,
-    expected: ControlDistributedRunSnapshot,
+    expected: ControlDistributedRunSnapshot
 ): void {
     if (distributedRunId !== expected.distributedRunId) {
         throw new Error(
-            'Artifact response belongs to a different distributed run.',
+            'Artifact response belongs to a different distributed run.'
         );
     }
 }

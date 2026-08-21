@@ -12,7 +12,7 @@ function isRecord(value: any): value is Record<string, any> {
 function toLowercaseHeaderNames(expectedHeaders: Record<string, any>): Record<string, any> {
     return Object.fromEntries(
         Object.entries(expectedHeaders)
-            .map(([name, value]) => [String(name).toLowerCase(), value]),
+            .map(([name, value]) => [String(name).toLowerCase(), value])
     );
 }
 
@@ -28,8 +28,8 @@ function compareExpectedHeaders(interaction: any, response: any): any | undefine
         toConfig(
             interaction.response?.comparison || COMPARISON.COMPATIBLE,
             interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || [],
-        ),
+            interaction.response?.ignoreJsonPaths || []
+        )
     );
 }
 
@@ -41,7 +41,7 @@ function toOutputReportFields(interaction: any): any {
         transform: interaction.request.transform,
         secret: interaction.request.secret,
         redact: interaction.request.redact,
-        redactAs: interaction.request.redactAs,
+        redactAs: interaction.request.redactAs
     };
 }
 
@@ -54,7 +54,7 @@ function toCorrelationReportFields(interaction: any): any {
     return {
         runnerRunId: correlation.runnerRunId,
         runnerStepId: correlation.runnerStepId,
-        correlation,
+        correlation
     };
 }
 
@@ -64,7 +64,7 @@ export function toStatus(
     actualJson: any,
     res: any,
     interaction: any,
-    results: any = {},
+    results: any = {}
 ): any {
     return {
         name: config.interactionName,
@@ -84,10 +84,10 @@ export function toStatus(
             body: actualJson,
             headers: normalizeBlackBoxResponseHeaders(res.headers),
             statusCode: res.status,
-            statusText: res.statusText,
+            statusText: res.statusText
         },
         details: results,
-        ...config,
+        ...config
     };
 }
 
@@ -109,18 +109,18 @@ function toSuccessStatus(config: any, actualJson: any, response: any, interactio
             body: actualJson,
             headers: normalizeBlackBoxResponseHeaders(response.headers),
             statusCode: response.status,
-            statusText: response.statusText,
+            statusText: response.statusText
         },
         ...toOutputReportFields(interaction),
-        input: interaction.request.input,
+        input: interaction.request.input
     };
 }
 
 function toNumberList(value: unknown): number[] {
     if (Array.isArray(value)) {
         return value
-            .map(item => Number.parseInt(String(item), 10))
-            .filter(item => Number.isFinite(item));
+            .map((item) => Number.parseInt(String(item), 10))
+            .filter((item) => Number.isFinite(item));
     }
 
     if (typeof value === 'string' && value.includes(',')) {
@@ -142,7 +142,7 @@ function expectedHttpStatusCodes(response: any): number[] {
         ...toNumberList(response?.statusCode),
         ...toNumberList(response?.status),
         ...toNumberList(response?.statusCodes),
-        ...toNumberList(response?.allowedStatusCodes),
+        ...toNumberList(response?.allowedStatusCodes)
     ];
 }
 
@@ -161,8 +161,8 @@ function compareExpectedBody(expectedBody: any, actualJson: any, interaction: an
         toConfig(
             interaction.response?.comparison || COMPARISON.COMPATIBLE,
             interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || [],
-        ),
+            interaction.response?.ignoreJsonPaths || []
+        )
     );
 }
 
@@ -170,7 +170,7 @@ export function toHttpInteractionStatus(
     config: any,
     interaction: any,
     response: any,
-    actualJson: any,
+    actualJson: any
 ): any {
     const expectedStatuses = expectedHttpStatusCodes(interaction.response);
     const hasExpectedStatus = expectedStatuses.length > 0;
@@ -184,8 +184,8 @@ export function toHttpInteractionStatus(
             response,
             interaction,
             {
-                expectedStatusCodes: expectedStatuses,
-            },
+                expectedStatusCodes: expectedStatuses
+            }
         );
     }
 
@@ -203,8 +203,8 @@ export function toHttpInteractionStatus(
             interaction,
             {
                 expectedHeaders: interaction.response.headers,
-                headerComparison,
-            },
+                headerComparison
+            }
         );
     }
 
@@ -216,13 +216,14 @@ export function toHttpInteractionStatus(
                 'Server with no body in response. Expects a body.',
                 actualJson,
                 response,
-                interaction,
+                interaction
             );
         }
 
-        const comparisons = bodyAlternatives.map(expectedBody =>
-            compareExpectedBody(expectedBody, actualJson, interaction));
-        const matchedIndex = comparisons.findIndex(result => result.isEqual);
+        const comparisons = bodyAlternatives.map((expectedBody) =>
+            compareExpectedBody(expectedBody, actualJson, interaction)
+        );
+        const matchedIndex = comparisons.findIndex((result) => result.isEqual);
         if (matchedIndex < 0) {
             return toStatus(
                 config,
@@ -232,18 +233,19 @@ export function toHttpInteractionStatus(
                 interaction,
                 {
                     bodyAnyOf: bodyAlternatives,
-                    comparisons,
-                },
+                    comparisons
+                }
             );
         }
-    } else if (interaction?.response?.body !== undefined) {
+    }
+    else if (interaction?.response?.body !== undefined) {
         if (actualJson === undefined || actualJson === null) {
             return toStatus(
                 config,
                 'Server with no body in response. Expects a body.',
                 actualJson,
                 response,
-                interaction,
+                interaction
             );
         }
 
@@ -256,7 +258,7 @@ export function toHttpInteractionStatus(
                 actualJson,
                 response,
                 interaction,
-                results,
+                results
             );
         }
     }

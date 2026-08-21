@@ -3,9 +3,8 @@ import '../design/tokens.css';
 import '../design/reset.css';
 import { ControlConnectionProvider } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleControlBootstrap } from '../control/ControlConnectionProvider.tsx';
+import { RecipeConsolePreferencesController } from './RecipeConsolePreferencesController.tsx';
 import { RecipeConsoleWorkspace } from './RecipeConsoleWorkspace.tsx';
-import { RecipeConsolePreferencesController } from
-    './RecipeConsolePreferencesController.tsx';
 
 export type RecipeConsoleAppProps = Readonly<{
     authSession?: AuthSession;
@@ -20,13 +19,13 @@ export default function RecipeConsoleApp({
     authBusy,
     authError,
     controlBootstrap,
-    onLogout,
+    onLogout
 }: RecipeConsoleAppProps) {
     return (
         <RecipeConsolePreferencesController
             bootstrap={controlBootstrap}
         >
-            {preferences => (
+            {(preferences) => (
                 <ControlConnectionProvider
                     authSession={authSession}
                     bootstrap={preferences.state.effectiveBootstrap}
@@ -38,7 +37,7 @@ export default function RecipeConsoleApp({
                             authError,
                             authSession,
                             onLogout,
-                            preferences,
+                            preferences
                         }}
                     />
                 </ControlConnectionProvider>

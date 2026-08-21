@@ -1,21 +1,21 @@
-import type { PSqlSql } from '../PostgresSqlClient.ts';
-import {
-  RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
-} from '../../rallar-system/topology/replay/rtc-topology-replay-policy.ts';
 import type {
-  RtcTopologyReplayCursorRetirementInput,
-  RtcTopologyReplayCursorRetirementResult,
-  RtcTopologyReplayStreamRetirementInput,
-  RtcTopologyReplayStreamRetirementResult,
+    RtcTopologyReplayCursorRetirementInput,
+    RtcTopologyReplayCursorRetirementResult,
+    RtcTopologyReplayStreamRetirementInput,
+    RtcTopologyReplayStreamRetirementResult
 } from '../../rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
+import {
+    RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+} from '../../rallar-system/topology/replay/rtc-topology-replay-policy.ts';
+import type { PSqlSql } from '../PostgresSqlClient.ts';
 
 export async function retireExpiredRtcTopologyReplayConsumerCursors(
-  sql: PSqlSql,
-  input: RtcTopologyReplayCursorRetirementInput,
+    sql: PSqlSql,
+    input: RtcTopologyReplayCursorRetirementInput
 ): Promise<RtcTopologyReplayCursorRetirementResult> {
-  validatePositiveSafeInteger(input.retentionMs, 'retention');
-  validateRetirementPageSize(input.pageSize);
-  const deleted = await sql<Readonly<{ consumer_stream_id: string }>[]>`
+    validatePositiveSafeInteger(input.retentionMs, 'retention');
+    validateRetirementPageSize(input.pageSize);
+    const deleted = await sql<Readonly<{ consumer_stream_id: string; }>[]>`
     delete from rtc_topology_replay_cursor
     where (consumer_stream_id, publisher_stream_id) in (
       select cursor.consumer_stream_id, cursor.publisher_stream_id
@@ -29,17 +29,17 @@ export async function retireExpiredRtcTopologyReplayConsumerCursors(
     )
     returning consumer_stream_id::text
   `;
-  return { deletedCursorCount: deleted.length };
+    return { deletedCursorCount: deleted.length };
 }
 
 export async function retireRtcTopologyReplayEmptyStreams(
-  sql: PSqlSql,
-  input: RtcTopologyReplayStreamRetirementInput,
+    sql: PSqlSql,
+    input: RtcTopologyReplayStreamRetirementInput
 ): Promise<RtcTopologyReplayStreamRetirementResult> {
-  validateRetirementPageSize(input.pageSize);
-  return await sql.begin(async (transaction) => {
-    await releaseSafePublisherCursors(transaction, input.pageSize);
-    const deleted = await transaction<Readonly<{ stream_id: string }>[]>`
+    validateRetirementPageSize(input.pageSize);
+    return await sql.begin(async (transaction) => {
+        await releaseSafePublisherCursors(transaction, input.pageSize);
+        const deleted = await transaction<Readonly<{ stream_id: string; }>[]>`
       delete from rtc_topology_delivery_stream
       where stream_id in (
         select stream.stream_id
@@ -62,12 +62,12 @@ export async function retireRtcTopologyReplayEmptyStreams(
       )
       returning stream_id::text
     `;
-    return { deletedStreamCount: deleted.length };
-  });
+        return { deletedStreamCount: deleted.length };
+    });
 }
 
 async function releaseSafePublisherCursors(sql: PSqlSql, pageSize: number): Promise<void> {
-  await sql`
+    await sql`
     delete from rtc_topology_replay_cursor
     where (consumer_stream_id, publisher_stream_id) in (
       select cursor.consumer_stream_id, cursor.publisher_stream_id
@@ -92,20 +92,20 @@ async function releaseSafePublisherCursors(sql: PSqlSql, pageSize: number): Prom
 }
 
 function validateRetirementPageSize(pageSize: number): void {
-  if (
-    !Number.isSafeInteger(pageSize) ||
-    pageSize <= 0 ||
-    pageSize > RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
-  ) {
-    throw new TypeError(
-      `RTC topology retirement page size must be from 1 to ` +
-        RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
-    );
-  }
+    if (
+        !Number.isSafeInteger(pageSize) ||
+        pageSize <= 0 ||
+        pageSize > RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+    ) {
+        throw new TypeError(
+            `RTC topology retirement page size must be from 1 to ` +
+                RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+        );
+    }
 }
 
 function validatePositiveSafeInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new TypeError(`RTC topology replay ${label} must be a positive safe integer`);
-  }
+    if (!Number.isSafeInteger(value) || value <= 0) {
+        throw new TypeError(`RTC topology replay ${label} must be a positive safe integer`);
+    }
 }

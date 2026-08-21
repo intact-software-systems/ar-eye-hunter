@@ -196,8 +196,7 @@ published the superseded sixteen-path Task 1 split. [PR #126](https://github.com
 published the superseded twenty-five-path Task 1 split. [PR #130](https://github.com/intact-software-systems/ar-eye-hunter/pull/130)
 published the exact thirty-nine-path Task 1 split, and [PR #147](https://github.com/intact-software-systems/ar-eye-hunter/pull/147)
 published its controller-protocol correction without changing that split or its
-reservation. [RTC Task 0 approval comment
-5237125583](https://github.com/intact-software-systems/ar-eye-hunter/pull/147#issuecomment-5237125583)
+reservation. [RTC Task 0 approval comment 5237125583](https://github.com/intact-software-systems/ar-eye-hunter/pull/147#issuecomment-5237125583)
 is an OWNER-authored GitHub User record naming current plan blob
 `d977a6495cffee240d7484a7f238533afc5feacf`. PR #79 published the ontology
 activation; PR #89 completed Ontology Task 1; and this revision separately
@@ -211,8 +210,7 @@ revision reaches `main`.
   `aad315c7626245ab7e1b24d4687456858422aad9`, plan blob
   `7e142365f9b18f59966aa440cb5b9cdd228935b0`; independent content review and
   full local gates passed; Branch Release Gate 31171494388, attempt 1, job
-  `92844080043`, succeeded on the exact commit. [PR #80 comment
-  5218917814](https://github.com/intact-software-systems/ar-eye-hunter/pull/80#issuecomment-5218917814)
+  `92844080043`, succeeded on the exact commit. [PR #80 comment 5218917814](https://github.com/intact-software-systems/ar-eye-hunter/pull/80#issuecomment-5218917814)
   records human approval of that exact blob. It merged as
   `978e05c4f0d654ddd425952b97533d42ca5b488a`, tree
   `123043f4173683288c462ca03a41deaebff63ba9`; resulting-main run 31201689431,
@@ -222,15 +220,13 @@ revision reaches `main`.
   `697bf4f3ad5cee08af345c03dbbd5890bc668ce1`, plan blob
   `c819a3f3d939bfa5a83196455053d226509da9bb`; independent specification and
   quality review and full local gates passed; Branch Release Gate 31194886604,
-  attempt 1, job `92920574211`, succeeded on the exact linear head. [PR #82
-  comment 5219512616](https://github.com/intact-software-systems/ar-eye-hunter/pull/82#issuecomment-5219512616)
+  attempt 1, job `92920574211`, succeeded on the exact linear head. [PR #82 comment 5219512616](https://github.com/intact-software-systems/ar-eye-hunter/pull/82#issuecomment-5219512616)
   records the protected-ref history repair and exact evidence. It merged as
   resulting commit `e949e670e9867124806bd352cbf132d397c7ee5a`, tree
   `b97b9f52600cd788dc7b3d84c53a432650ea16a0`, with the exact plan blob retained.
   Resulting-main run 31201721914, attempt 1, subsequently succeeded with jobs
   `92945207654`, `92945239814`, `92945606459`, `92945985211`, `92946391846`,
-  `92946691885`, and `92947093952`. [Human approval comment
-  5220439312](https://github.com/intact-software-systems/ar-eye-hunter/pull/82#issuecomment-5220439312)
+  `92946691885`, and `92947093952`. [Human approval comment 5220439312](https://github.com/intact-software-systems/ar-eye-hunter/pull/82#issuecomment-5220439312)
   is an OWNER-authored GitHub User record that names this exact plan blob and
   preserves separate coordinator activation.
 - RTC amendment PR #91: feature commit
@@ -246,8 +242,7 @@ revision reaches `main`.
   `8abbac7da2bfab842f3df383b3c26178646eeb4b`; resulting-main run 31246356732
   attempt 1 failed only RTC smoke job `93075898725` with two RTC readiness
   timeouts on the unchanged runtime tree. Failed-job retry attempt 2 succeeded
-  as exact RTC smoke job `93076590106` on the same commit. [Human approval comment
-  5225152426](https://github.com/intact-software-systems/ar-eye-hunter/pull/91#issuecomment-5225152426)
+  as exact RTC smoke job `93076590106` on the same commit. [Human approval comment 5225152426](https://github.com/intact-software-systems/ar-eye-hunter/pull/91#issuecomment-5225152426)
   is an OWNER-authored GitHub User record naming the amended exact blob and
   preserving separate coordinator activation.
 - RTC nine-path amendment PR #96: feature commit
@@ -271,8 +266,7 @@ revision reaches `main`.
   as `05cec262b838fb661dcb923152991ce88a28ceac`, tree
   `5816137f7587cc581c405680994b1ecf62ef875b`, with the plan blob retained.
   Resulting-main run 31271274737 attempt 1 succeeded on that exact commit.
-  [Human approval comment
-  5227422413](https://github.com/intact-software-systems/ar-eye-hunter/pull/109#issuecomment-5227422413)
+  [Human approval comment 5227422413](https://github.com/intact-software-systems/ar-eye-hunter/pull/109#issuecomment-5227422413)
   is an OWNER-authored GitHub User record naming this exact blob and preserving
   separate coordinator activation.
 - RTC thirteen-path activation PR #111: feature commit
@@ -294,8 +288,7 @@ revision reaches `main`.
   `574dd5a621f76d6a3c926a331bc2c5847dfde6c4`, with the exact plan blob retained.
   Resulting-main run 31295299260 attempt 1 succeeded with jobs `93199305724`,
   `93199319282`, `93199443601`, `93199556015`, `93199654700`, `93199762848`,
-  and `93199913722`. [Human approval comment
-  5230123447](https://github.com/intact-software-systems/ar-eye-hunter/pull/117#issuecomment-5230123447)
+  and `93199913722`. [Human approval comment 5230123447](https://github.com/intact-software-systems/ar-eye-hunter/pull/117#issuecomment-5230123447)
   is an OWNER-authored GitHub User record naming this exact blob and preserving
   separate coordinator activation.
 - RTC twenty-five-path amendment PR #126: feature commit
@@ -309,8 +302,7 @@ revision reaches `main`.
   `5e384bfd26a295637c37ae4e7f18fb8b75a89c12`, with the exact plan blob retained.
   Resulting-main run 31309299549 attempt 1 succeeded on that exact commit with
   jobs `93234509430`, `93234525994`, `93234676877`, `93234818954`,
-  `93234918853`, `93235065769`, and `93235217935` all successful. [Human approval comment
-  5231118287](https://github.com/intact-software-systems/ar-eye-hunter/pull/126#issuecomment-5231118287)
+  `93234918853`, `93235065769`, and `93235217935` all successful. [Human approval comment 5231118287](https://github.com/intact-software-systems/ar-eye-hunter/pull/126#issuecomment-5231118287)
   is an OWNER-authored GitHub User record naming this exact blob and preserving
   separate coordinator activation. Its exact API path is
   `/repos/intact-software-systems/ar-eye-hunter/issues/comments/5231118287`, and
@@ -329,8 +321,7 @@ revision reaches `main`.
   attempt 1, completed successfully at `2026-08-09T14:10:39Z` on that exact
   merge commit with jobs `93254667294`, `93254685331`, `93254834256`,
   `93254974961`, `93255128683`, `93255301860`, and `93255486019` all
-  successful; it is recorded separately from activation. [Human approval comment
-  5231825686](https://github.com/intact-software-systems/ar-eye-hunter/pull/130#issuecomment-5231825686)
+  successful; it is recorded separately from activation. [Human approval comment 5231825686](https://github.com/intact-software-systems/ar-eye-hunter/pull/130#issuecomment-5231825686)
   is an OWNER-authored GitHub User record naming this exact blob and preserving
   separate coordinator activation. Its exact API path is
   `/repos/intact-software-systems/ar-eye-hunter/issues/comments/5231825686`, and
@@ -350,8 +341,7 @@ revision reaches `main`.
   attempt 1, completed successfully at `2026-08-10T07:33:40Z` on that exact
   merge commit with jobs `93383420770`, `93383478739`, `93383791691`,
   `93384081554`, `93384374387`, `93384711142`, and `93385105464` all
-  successful; it is recorded separately from activation. [Human approval comment
-  5237125583](https://github.com/intact-software-systems/ar-eye-hunter/pull/147#issuecomment-5237125583)
+  successful; it is recorded separately from activation. [Human approval comment 5237125583](https://github.com/intact-software-systems/ar-eye-hunter/pull/147#issuecomment-5237125583)
   is an OWNER-authored GitHub User record naming this exact blob and preserving
   separate coordinator activation. Its exact API path is
   `/repos/intact-software-systems/ar-eye-hunter/issues/comments/5237125583`, and

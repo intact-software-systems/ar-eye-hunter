@@ -51,7 +51,7 @@ agent:
 ```ts
 const context = await browser.newContext();
 const page = await context.newPage();
-await page.goto(agent.url, { waitUntil: "domcontentloaded" });
+await page.goto(agent.url, { waitUntil: 'domcontentloaded' });
 ```
 
 The generated agent URL in `apps/rallar-black-box/src/headless-worker-config.ts` sets:
@@ -149,25 +149,25 @@ passed, with Vite warning about large chunks.
 
 Current production output:
 
-| Asset | Minified | Gzip |
-| --- | ---: | ---: |
-| `index-*.js` | 994.16 kB | 232.84 kB |
+| Asset         |  Minified |      Gzip |
+| ------------- | --------: | --------: |
+| `index-*.js`  | 994.16 kB | 232.84 kB |
 | `rallar-*.js` | 641.30 kB | 159.46 kB |
-| `react-*.js` | 189.63 kB | 59.65 kB |
-| `index-*.css` | 105.58 kB | 16.33 kB |
+| `react-*.js`  | 189.63 kB |  59.65 kB |
+| `index-*.css` | 105.58 kB |  16.33 kB |
 
 Module-level esbuild metafile analysis showed the eager SPA entry pulls in these large groups:
 
-| Group | Source bytes |
-| --- | ---: |
-| `apps/rallar-black-box` | 1,485,230 |
-| `node_modules/react-dom` | 1,086,103 |
-| `packages/shared` | 1,081,206 |
-| `packages/shared-test` | 889,608 |
-| `packages/shared-web` | 635,863 |
-| `node_modules/sigma` | 212,770 |
-| `node_modules/graphology` | 178,150 |
-| `node_modules/@js-temporal` | 128,868 |
+| Group                       | Source bytes |
+| --------------------------- | -----------: |
+| `apps/rallar-black-box`     |    1,485,230 |
+| `node_modules/react-dom`    |    1,086,103 |
+| `packages/shared`           |    1,081,206 |
+| `packages/shared-test`      |      889,608 |
+| `packages/shared-web`       |      635,863 |
+| `node_modules/sigma`        |      212,770 |
+| `node_modules/graphology`   |      178,150 |
+| `node_modules/@js-temporal` |      128,868 |
 
 Top individual inputs included:
 
@@ -191,15 +191,15 @@ Chromium. They are not a direct Hetzner VM measurement, so absolute RSS can diff
 scaling shape is still useful because it isolates browser baseline, SPA load, agent registration,
 and recipe execution.
 
-| Scenario | Browser RSS | JS heap | DOM nodes |
-| --- | ---: | ---: | ---: |
-| Blank Chromium | 255.3 MiB | 0.5 MiB | 4 |
-| Browser-rallar login gate | 332.4 MiB | 3.9 MiB | 80 |
-| Simulated control-agent full UI | 408.4 MiB | 8.0 MiB | 9,045 |
-| Browser-rallar registered agent x1 | 420.8 MiB | 9.1 MiB | 9,046 |
-| Browser-rallar registered agents x2 | 656.7 MiB | 18.3 MiB | 18,092 |
-| Browser-rallar registered agents x3 | 892.7 MiB | 27.6 MiB | 27,138 |
-| x2 after health recipe passed | 680.5 MiB | 18.8 MiB | 18,886 |
+| Scenario                            | Browser RSS |  JS heap | DOM nodes |
+| ----------------------------------- | ----------: | -------: | --------: |
+| Blank Chromium                      |   255.3 MiB |  0.5 MiB |         4 |
+| Browser-rallar login gate           |   332.4 MiB |  3.9 MiB |        80 |
+| Simulated control-agent full UI     |   408.4 MiB |  8.0 MiB |     9,045 |
+| Browser-rallar registered agent x1  |   420.8 MiB |  9.1 MiB |     9,046 |
+| Browser-rallar registered agents x2 |   656.7 MiB | 18.3 MiB |    18,092 |
+| Browser-rallar registered agents x3 |   892.7 MiB | 27.6 MiB |    27,138 |
+| x2 after health recipe passed       |   680.5 MiB | 18.8 MiB |    18,886 |
 
 Important observations:
 
@@ -228,27 +228,27 @@ The local two-agent health run exercised:
 
 The distributed run passed. Control-server counts after the run:
 
-| Item | Count |
-| --- | ---: |
-| Agents | 2 |
-| Commands | 4 |
-| Results | 6 |
-| Events | 28 |
-| Stats | 6 |
-| Reports | 2 |
+| Item     | Count |
+| -------- | ----: |
+| Agents   |     2 |
+| Commands |     4 |
+| Results  |     6 |
+| Events   |    28 |
+| Stats    |     6 |
+| Reports  |     2 |
 
 Exported artifact payload sizes:
 
-| File | Bytes |
-| --- | ---: |
-| `control-run.json` | 251,956 |
-| `events.jsonl` | 67,174 |
-| `report.json` | 24,775 |
-| `results.jsonl` | 6,856 |
-| `distributed-run.json` | 3,278 |
-| `manifest.json` | 1,277 |
-| `failures.json` | 542 |
-| `metadata.json` | 467 |
+| File                   |   Bytes |
+| ---------------------- | ------: |
+| `control-run.json`     | 251,956 |
+| `events.jsonl`         |  67,174 |
+| `report.json`          |  24,775 |
+| `results.jsonl`        |   6,856 |
+| `distributed-run.json` |   3,278 |
+| `manifest.json`        |   1,277 |
+| `failures.json`        |     542 |
+| `metadata.json`        |     467 |
 
 This confirms the existing reporting path works and can be preserved by a thinner entry.
 

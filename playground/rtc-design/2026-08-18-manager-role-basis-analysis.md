@@ -37,7 +37,7 @@ cleared by a below-floor return. So whichever basis wins, an epoch-advancing tra
 
 Pinning has a degenerate but correct consequence worth stating: the epoch-0 boundary is group
 creation, so a `phased` group's FORMING electorate is `[creator]` and elected selection collapses to
-the creator for the *first* establishment. Genuine election begins at the first epoch advance, when
+the creator for the _first_ establishment. Genuine election begins at the first epoch advance, when
 the electorate is the members present at establish time. This is not a defect — it is exactly the
 stability correction 4 buys, and the alternative (electing over live membership during FORMING) is
 the flapping manager the correction exists to kill.
@@ -91,7 +91,7 @@ the constraint by construction.
 **Option A.** It is the straight-line continuation of decision 2.2 — the elected variants replace
 their `lifecycle-manager-unavailable` rejection with a real answer derived from recorded state, and
 nothing else about authorization moves. The plan's `GROUP_DIRECTOR_APPOINT` sentence should be
-amended to record what survives of it: the *pattern* (aggregate-metadata appointment under
+amended to record what survives of it: the _pattern_ (aggregate-metadata appointment under
 compare-and-set) is reused; the lease semantics are deliberately not, because manager liveness is
 membership, not heartbeats. The director remains the session-scoped work delegate it is.
 

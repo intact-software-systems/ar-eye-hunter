@@ -2,22 +2,24 @@ import { expect, test } from '@playwright/test';
 import {
     installRecipeConsoleMonitorFixture,
     MONITOR_FAILURE_AGENT_ID,
-    MONITOR_FAILURE_COMMAND_ID,
     MONITOR_FAILURE_CODE,
+    MONITOR_FAILURE_COMMAND_ID,
     MONITOR_FAILURE_MESSAGE,
-    MONITOR_ROUTE,
+    MONITOR_ROUTE
 } from './recipe-console-monitor-fixture.ts';
 
 type Rgb = readonly [red: number, green: number, blue: number];
 
 function parseCssRgb(value: string): Rgb {
     const match = /^rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)/u.exec(value);
-    if (!match) throw new Error(`Unsupported CSS RGB color: ${value}`);
+    if (!match) {
+        throw new Error(`Unsupported CSS RGB color: ${value}`);
+    }
     return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
 function relativeLuminance([red, green, blue]: Rgb): number {
-    const linear = [red, green, blue].map(channel => {
+    const linear = [red, green, blue].map((channel) => {
         const normalized = channel / 255;
         return normalized <= 0.04045
             ? normalized / 12.92
@@ -41,13 +43,55 @@ function renderedContrast(first: string, second: string): number {
 test('pairs every operational status with text and shape', async ({ page }) => {
     await page.goto('/test/fixtures/recipe-console-css-isolation.html?mode=recipe-console');
     const contracts = {
-        running: { shape: 'notched-ring', part: 'notch', background: 'rgb(228, 245, 247)', foreground: 'rgb(6, 93, 107)', border: 'rgb(22, 128, 143)' },
-        passed: { shape: 'check-circle', part: 'check', background: 'rgb(231, 245, 237)', foreground: 'rgb(20, 99, 63)', border: 'rgb(46, 129, 92)' },
-        failed: { shape: 'x-octagon', part: 'x', background: 'rgb(252, 235, 237)', foreground: 'rgb(152, 31, 44)', border: 'rgb(195, 66, 79)' },
-        warning: { shape: 'warning-triangle', part: 'mark', background: 'rgb(255, 242, 213)', foreground: 'rgb(119, 70, 0)', border: 'rgb(168, 102, 0)' },
-        stale: { shape: 'clock', part: 'hands', background: 'rgb(238, 241, 244)', foreground: 'rgb(78, 89, 106)', border: 'rgb(112, 123, 140)' },
-        partial: { shape: 'half-circle', part: 'fill', background: 'rgb(241, 235, 255)', foreground: 'rgb(89, 55, 154)', border: 'rgb(122, 85, 184)' },
-        disabled: { shape: 'barred-square', part: 'bar', background: 'rgb(238, 241, 244)', foreground: 'rgb(97, 107, 121)', border: 'rgb(122, 132, 146)' },
+        running: {
+            shape: 'notched-ring',
+            part: 'notch',
+            background: 'rgb(228, 245, 247)',
+            foreground: 'rgb(6, 93, 107)',
+            border: 'rgb(22, 128, 143)'
+        },
+        passed: {
+            shape: 'check-circle',
+            part: 'check',
+            background: 'rgb(231, 245, 237)',
+            foreground: 'rgb(20, 99, 63)',
+            border: 'rgb(46, 129, 92)'
+        },
+        failed: {
+            shape: 'x-octagon',
+            part: 'x',
+            background: 'rgb(252, 235, 237)',
+            foreground: 'rgb(152, 31, 44)',
+            border: 'rgb(195, 66, 79)'
+        },
+        warning: {
+            shape: 'warning-triangle',
+            part: 'mark',
+            background: 'rgb(255, 242, 213)',
+            foreground: 'rgb(119, 70, 0)',
+            border: 'rgb(168, 102, 0)'
+        },
+        stale: {
+            shape: 'clock',
+            part: 'hands',
+            background: 'rgb(238, 241, 244)',
+            foreground: 'rgb(78, 89, 106)',
+            border: 'rgb(112, 123, 140)'
+        },
+        partial: {
+            shape: 'half-circle',
+            part: 'fill',
+            background: 'rgb(241, 235, 255)',
+            foreground: 'rgb(89, 55, 154)',
+            border: 'rgb(122, 85, 184)'
+        },
+        disabled: {
+            shape: 'barred-square',
+            part: 'bar',
+            background: 'rgb(238, 241, 244)',
+            foreground: 'rgb(97, 107, 121)',
+            border: 'rgb(122, 132, 146)'
+        }
     } as const;
     for (const [status, contract] of Object.entries(contracts)) {
         const mark = page.locator(`[data-status="${status}"]`);
@@ -58,21 +102,23 @@ test('pairs every operational status with text and shape', async ({ page }) => {
         await expect(mark).toHaveCSS('background-color', contract.background);
         await expect(mark).toHaveCSS('color', contract.foreground);
         await expect(mark).toHaveCSS('border-top-color', contract.border);
-        const rendered = await mark.evaluate(element => {
+        const rendered = await mark.evaluate((element) => {
             const style = getComputedStyle(element);
             return {
                 background: style.backgroundColor,
                 border: style.borderTopColor,
-                foreground: style.color,
+                foreground: style.color
             };
         });
         expect(
             renderedContrast(rendered.foreground, rendered.background),
-            `${status} status text contrast is ${renderedContrast(rendered.foreground, rendered.background).toFixed(3)}:1`,
+            `${status} status text contrast is ${
+                renderedContrast(rendered.foreground, rendered.background).toFixed(3)
+            }:1`
         ).toBeGreaterThanOrEqual(4.5);
         expect(
             renderedContrast(rendered.border, rendered.background),
-            `${status} status border contrast is ${renderedContrast(rendered.border, rendered.background).toFixed(3)}:1`,
+            `${status} status border contrast is ${renderedContrast(rendered.border, rendered.background).toFixed(3)}:1`
         ).toBeGreaterThanOrEqual(3);
     }
     await expect(page.locator('[data-status="failed"]')).toHaveCSS('border-left-width', '4px');
@@ -80,12 +126,12 @@ test('pairs every operational status with text and shape', async ({ page }) => {
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
     const primaryNavigation = page.locator('[data-primary-navigation]');
     const selectedNavigation = primaryNavigation.locator(
-        'button[aria-current="page"]',
+        'button[aria-current="page"]'
     );
     await selectedNavigation.focus();
     await expect(selectedNavigation).toHaveCSS('outline-style', 'solid');
     await expect(selectedNavigation).toHaveCSS('outline-width', '2px');
-    const navigationColors = await selectedNavigation.evaluate(element => {
+    const navigationColors = await selectedNavigation.evaluate((element) => {
         const style = getComputedStyle(element);
         const navigationStyle = getComputedStyle(element.parentElement as HTMLElement);
         return {
@@ -93,33 +139,30 @@ test('pairs every operational status with text and shape', async ({ page }) => {
             border: style.borderTopColor,
             foreground: style.color,
             outline: style.outlineColor,
-            surroundingBackground: navigationStyle.backgroundColor,
+            surroundingBackground: navigationStyle.backgroundColor
         };
     });
     expect(
         renderedContrast(
             navigationColors.foreground,
-            navigationColors.background,
+            navigationColors.background
         ),
-        'selected primary navigation text contrast',
+        'selected primary navigation text contrast'
     ).toBeGreaterThanOrEqual(4.5);
     expect(
         renderedContrast(navigationColors.border, navigationColors.background),
-        'selected primary navigation border contrast',
+        'selected primary navigation border contrast'
     ).toBeGreaterThanOrEqual(3);
     expect(
         renderedContrast(
             navigationColors.outline,
-            navigationColors.surroundingBackground,
+            navigationColors.surroundingBackground
         ),
-        'selected primary navigation focus outline contrast',
+        'selected primary navigation focus outline contrast'
     ).toBeGreaterThanOrEqual(3);
 });
 
-test('keeps empty stale and error states explicit without discarding evidence', async ({
-    context,
-    page,
-}) => {
+test('keeps empty stale and error states explicit without discarding evidence', async ({ context, page }) => {
     const monitorFixture = await installRecipeConsoleMonitorFixture(context);
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=analyze');
     const analyze = page.locator('[data-analyze-workspace]');
@@ -131,7 +174,7 @@ test('keeps empty stale and error states explicit without discarding evidence', 
     const empty = page.locator('[data-state="empty"]');
     await expect(empty).toHaveAttribute('aria-live', 'polite');
     await expect(empty.getByRole('heading', {
-        name: 'Import distributed-run evidence',
+        name: 'Import distributed-run evidence'
     })).toBeVisible();
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
@@ -141,10 +184,10 @@ test('keeps empty stale and error states explicit without discarding evidence', 
     const partialState = partialFleet.locator('[data-state="stale"]');
     await expect(partialState).toHaveAttribute('aria-live', 'polite');
     await expect(partialState.getByRole('heading', {
-        name: 'Fleet evidence is partial',
+        name: 'Fleet evidence is partial'
     })).toBeVisible();
     await expect(partialState).toContainText(
-        'Some root control collections are unavailable; supported evidence remains visible.',
+        'Some root control collections are unavailable; supported evidence remains visible.'
     );
     await expect(partialState).toContainText('Fleet report collection unavailable.');
     await expect(partialFleet.locator('[data-fleet-retained-evidence]'))
@@ -153,7 +196,7 @@ test('keeps empty stale and error states explicit without discarding evidence', 
     await page.goto(MONITOR_ROUTE);
     const verdict = page.locator('[data-monitor-section="verdict"]');
     const failure = page.locator(
-        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`
     );
     await expect(verdict).toHaveAttribute('aria-live', 'polite');
     await expect(verdict).toHaveAttribute('data-evidence-freshness', 'current');

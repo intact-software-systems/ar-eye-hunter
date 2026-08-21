@@ -1,9 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
-import {
-    insertMinimumDiameterDegreeLimitedEdge,
-    insertTryReplaceMddlNaive,
-} from '@shared-graph/tree/insert-dynamics-mddl.ts';
+import { insertMinimumDiameterDegreeLimitedEdge, insertTryReplaceMddlNaive } from '@shared-graph/tree/insert-dynamics-mddl.ts';
+import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph dynamic mddl insertion', () => {
@@ -11,21 +8,21 @@ describe('shared-graph dynamic mddl insertion', () => {
         const tree = createGraph(
             [
                 ['b', VertexState.MEMBER, 4],
-                ['c', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4]
             ],
-            [['b', 'c', 5]],
+            [['b', 'c', 5]]
         );
         const globalGraph = createGraph(
             [
                 ['a', VertexState.MEMBER, 4],
                 ['b', VertexState.MEMBER, 4],
-                ['c', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'b', 1],
                 ['a', 'c', 2],
-                ['b', 'c', 5],
-            ],
+                ['b', 'c', 5]
+            ]
         );
 
         const result = insertMinimumDiameterDegreeLimitedEdge(tree, globalGraph, 'a');
@@ -41,27 +38,27 @@ describe('shared-graph dynamic mddl insertion', () => {
             [
                 ['b', VertexState.MEMBER, 4],
                 ['c', VertexState.MEMBER, 3],
-                ['d', VertexState.MEMBER, 4],
+                ['d', VertexState.MEMBER, 4]
             ],
             [
                 ['b', 'c', 5],
-                ['c', 'd', 5],
-            ],
+                ['c', 'd', 5]
+            ]
         );
         const globalGraph = createGraph(
             [
                 ['a', VertexState.MEMBER, 4],
                 ['b', VertexState.MEMBER, 4],
                 ['c', VertexState.MEMBER, 3],
-                ['d', VertexState.MEMBER, 4],
+                ['d', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'b', 1],
                 ['a', 'c', 1],
                 ['a', 'd', 1],
                 ['b', 'c', 5],
-                ['c', 'd', 5],
-            ],
+                ['c', 'd', 5]
+            ]
         );
 
         const result = insertTryReplaceMddlNaive(tree, globalGraph, 'a');
@@ -78,12 +75,12 @@ describe('shared-graph dynamic mddl insertion', () => {
             [
                 ['b', VertexState.MEMBER, 4],
                 ['c', VertexState.MEMBER, 3],
-                ['d', VertexState.MEMBER, 4],
+                ['d', VertexState.MEMBER, 4]
             ],
             [
                 ['b', 'c', 5],
-                ['c', 'd', 5],
-            ],
+                ['c', 'd', 5]
+            ]
         );
         const globalGraph = createGraph(
             [
@@ -91,7 +88,7 @@ describe('shared-graph dynamic mddl insertion', () => {
                 ['b', VertexState.MEMBER, 4],
                 ['c', VertexState.MEMBER, 3],
                 ['d', VertexState.MEMBER, 4],
-                ['s', VertexState.STEINER, 4],
+                ['s', VertexState.STEINER, 4]
             ],
             [
                 ['a', 'b', 1],
@@ -102,15 +99,15 @@ describe('shared-graph dynamic mddl insertion', () => {
                 ['b', 's', 1],
                 ['c', 'd', 5],
                 ['c', 's', 1],
-                ['d', 's', 1],
-            ],
+                ['d', 's', 1]
+            ]
         );
 
         const result = insertTryReplaceMddlNaive(
             tree,
             globalGraph,
             'a',
-            () => 's',
+            () => 's'
         );
 
         expect(result.getNodeAttribute('s', 'state')).toBe(VertexState.STEINER);

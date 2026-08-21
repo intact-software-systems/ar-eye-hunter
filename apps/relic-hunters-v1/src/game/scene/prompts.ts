@@ -9,7 +9,7 @@ export function computeScenePrompt({
     room,
     roamOffset,
     forward,
-    inspection,
+    inspection
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -39,7 +39,7 @@ export function computeScenePrompt({
             hotspotId: inspection.hotspot.id,
             label: inspection.hotspot.promptLabel,
             detail: `${inspection.hotspot.inspectionDetail} Esc or back away to leave inspection.`,
-            inspecting: true,
+            inspecting: true
         };
     }
 
@@ -80,8 +80,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Search the altar',
                     promptLabel: 'Inspect altar runes',
                     detail: 'Prime a Search plan for this room',
-                    inspectionDetail: 'The altar glyphs pulse in uneven beats, hinting at a relic sealed beneath old vows.',
-                    discoveredLabel: 'Altar runes',
+                    inspectionDetail:
+                        'The altar glyphs pulse in uneven beats, hinting at a relic sealed beneath old vows.',
+                    discoveredLabel: 'Altar runes'
                 },
                 {
                     id: `${room.id}-rune-wall`,
@@ -90,8 +91,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Read the rune wall',
                     promptLabel: 'Inspect rune wall',
                     detail: 'Prime a Search plan from the rune marks',
-                    inspectionDetail: 'A broken rune line bends toward the next chamber like a sentence left unfinished.',
-                    discoveredLabel: 'Rune wall',
+                    inspectionDetail:
+                        'A broken rune line bends toward the next chamber like a sentence left unfinished.',
+                    discoveredLabel: 'Rune wall'
                 },
                 {
                     id: `${room.id}-cracked-statue`,
@@ -100,9 +102,10 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the cracked statue',
                     promptLabel: 'Inspect cracked statue',
                     detail: 'Prime a Search plan from the statue clue',
-                    inspectionDetail: 'The statue face is split cleanly, revealing a bright thread of dust in the crack.',
-                    discoveredLabel: 'Cracked statue',
-                },
+                    inspectionDetail:
+                        'The statue face is split cleanly, revealing a bright thread of dust in the crack.',
+                    discoveredLabel: 'Cracked statue'
+                }
             ];
         case 'storage':
             return [
@@ -113,8 +116,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Search the crates',
                     promptLabel: 'Inspect map fragment',
                     detail: 'Look for relic signs among the supplies',
-                    inspectionDetail: 'Fresh dust breaks around one marked crate, and a torn map points deeper into the castle.',
-                    discoveredLabel: 'Torn supply map',
+                    inspectionDetail:
+                        'Fresh dust breaks around one marked crate, and a torn map points deeper into the castle.',
+                    discoveredLabel: 'Torn supply map'
                 },
                 {
                     id: `${room.id}-wax-seal`,
@@ -123,8 +127,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the wax seal',
                     promptLabel: 'Inspect wax seal',
                     detail: 'Prime a Search plan from the marked seal',
-                    inspectionDetail: 'The red wax bears the same crest as the far castle doors, pressed over a supply ledger.',
-                    discoveredLabel: 'Marked wax seal',
+                    inspectionDetail:
+                        'The red wax bears the same crest as the far castle doors, pressed over a supply ledger.',
+                    discoveredLabel: 'Marked wax seal'
                 },
                 {
                     id: `${room.id}-broken-crate`,
@@ -133,9 +138,10 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the broken crate',
                     promptLabel: 'Inspect broken crate',
                     detail: 'Prime a Search plan from the splintered crate',
-                    inspectionDetail: 'The crate was opened from inside; splinters point along the route the thief took.',
-                    discoveredLabel: 'Broken crate',
-                },
+                    inspectionDetail:
+                        'The crate was opened from inside; splinters point along the route the thief took.',
+                    discoveredLabel: 'Broken crate'
+                }
             ];
         case 'treasure':
             return [
@@ -146,8 +152,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the chest',
                     promptLabel: 'Inspect chest latch',
                     detail: 'Prime a Search plan before others steal the lead',
-                    inspectionDetail: 'Coin scratches trail away from the chest, and the mirror plaque reflects a hidden latch.',
-                    discoveredLabel: 'Chest latch',
+                    inspectionDetail:
+                        'Coin scratches trail away from the chest, and the mirror plaque reflects a hidden latch.',
+                    discoveredLabel: 'Chest latch'
                 },
                 {
                     id: `${room.id}-mirror`,
@@ -156,8 +163,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the mirror',
                     promptLabel: 'Inspect mirror plaque',
                     detail: 'Prime a Search plan from the reflected clue',
-                    inspectionDetail: 'The mirror does not reflect the doorway; it reflects a coin trail that is not in the room.',
-                    discoveredLabel: 'Mirror plaque',
+                    inspectionDetail:
+                        'The mirror does not reflect the doorway; it reflects a coin trail that is not in the room.',
+                    discoveredLabel: 'Mirror plaque'
                 },
                 {
                     id: `${room.id}-coin-trail`,
@@ -166,9 +174,10 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Follow the coin trail',
                     promptLabel: 'Inspect coin trail',
                     detail: 'Prime a Search plan from the scattered coins',
-                    inspectionDetail: 'The coins are arranged in careful half-steps, each one cleaner on its north edge.',
-                    discoveredLabel: 'Coin trail',
-                },
+                    inspectionDetail:
+                        'The coins are arranged in careful half-steps, each one cleaner on its north edge.',
+                    discoveredLabel: 'Coin trail'
+                }
             ];
         case 'trap':
             return [
@@ -179,8 +188,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Study the pressure plates',
                     promptLabel: 'Study pressure plates',
                     detail: 'Search carefully; the ruin hears noise',
-                    inspectionDetail: 'The plate corners carry worn boot marks; the center stone is clean enough to be dangerous.',
-                    discoveredLabel: 'Safe plate edges',
+                    inspectionDetail:
+                        'The plate corners carry worn boot marks; the center stone is clean enough to be dangerous.',
+                    discoveredLabel: 'Safe plate edges'
                 },
                 {
                     id: `${room.id}-wall-scratches`,
@@ -189,8 +199,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Read the wall scratches',
                     promptLabel: 'Inspect wall scratches',
                     detail: 'Prime a Search plan from the warning marks',
-                    inspectionDetail: 'Three scrape lines end before the center tile; someone learned the safe path late.',
-                    discoveredLabel: 'Wall scratches',
+                    inspectionDetail:
+                        'Three scrape lines end before the center tile; someone learned the safe path late.',
+                    discoveredLabel: 'Wall scratches'
                 },
                 {
                     id: `${room.id}-loose-tile`,
@@ -199,9 +210,10 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the loose tile',
                     promptLabel: 'Inspect loose tile',
                     detail: 'Prime a Search plan from the loose stone',
-                    inspectionDetail: 'The tile shifts under the toe, exposing a brass pin and a thin shadow beneath it.',
-                    discoveredLabel: 'Loose tile',
-                },
+                    inspectionDetail:
+                        'The tile shifts under the toe, exposing a brass pin and a thin shadow beneath it.',
+                    discoveredLabel: 'Loose tile'
+                }
             ];
         case 'monster':
             return [
@@ -212,8 +224,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Search the bone altar',
                     promptLabel: 'Inspect bone altar',
                     detail: 'Dangerous rooms can hold the richest relics',
-                    inspectionDetail: 'Broken chains and claw marks circle the bones, but a gold glint sits beneath the ash.',
-                    discoveredLabel: 'Bone altar',
+                    inspectionDetail:
+                        'Broken chains and claw marks circle the bones, but a gold glint sits beneath the ash.',
+                    discoveredLabel: 'Bone altar'
                 },
                 {
                     id: `${room.id}-claw-marks`,
@@ -222,8 +235,9 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Inspect the claw marks',
                     promptLabel: 'Inspect claw marks',
                     detail: 'Prime a Search plan from the clawed wall',
-                    inspectionDetail: 'The claw marks are not random; their spacing narrows toward the exit side of the room.',
-                    discoveredLabel: 'Claw marks',
+                    inspectionDetail:
+                        'The claw marks are not random; their spacing narrows toward the exit side of the room.',
+                    discoveredLabel: 'Claw marks'
                 },
                 {
                     id: `${room.id}-ash-pile`,
@@ -232,9 +246,10 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Sift the ash pile',
                     promptLabel: 'Inspect ash pile',
                     detail: 'Prime a Search plan from the ash',
-                    inspectionDetail: 'The ash is cold, but a curved clean line shows where something was recently lifted away.',
-                    discoveredLabel: 'Ash pile',
-                },
+                    inspectionDetail:
+                        'The ash is cold, but a curved clean line shows where something was recently lifted away.',
+                    discoveredLabel: 'Ash pile'
+                }
             ];
         case 'exit':
             return [
@@ -246,7 +261,7 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     promptLabel: 'Read exit runes',
                     detail: 'Escape is a plan, not free movement',
                     inspectionDetail: 'The runes brighten toward daylight, but they demand a committed escape plan.',
-                    discoveredLabel: 'Exit runes',
+                    discoveredLabel: 'Exit runes'
                 },
                 {
                     id: `${room.id}-daylight-slit`,
@@ -256,7 +271,7 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     promptLabel: 'Inspect daylight slit',
                     detail: 'Prime a Search plan from the daylight mark',
                     inspectionDetail: 'Dust floats outward through the narrow split, proving the route still breathes.',
-                    discoveredLabel: 'Daylight slit',
+                    discoveredLabel: 'Daylight slit'
                 },
                 {
                     id: `${room.id}-threshold`,
@@ -266,8 +281,8 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     promptLabel: 'Inspect threshold glyphs',
                     detail: 'Prime a Search plan from the threshold',
                     inspectionDetail: 'The threshold glyphs brighten only where carried relics cross the stone.',
-                    discoveredLabel: 'Threshold glyphs',
-                },
+                    discoveredLabel: 'Threshold glyphs'
+                }
             ];
         default:
             return [
@@ -278,9 +293,10 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
                     label: 'Search for clues',
                     promptLabel: 'Inspect room clue',
                     detail: 'Prime a Search plan for the next reveal',
-                    inspectionDetail: 'Scuffed stone and old candle soot suggest something in this room has been disturbed.',
-                    discoveredLabel: 'Room clue',
-                },
+                    inspectionDetail:
+                        'Scuffed stone and old candle soot suggest something in this room has been disturbed.',
+                    discoveredLabel: 'Room clue'
+                }
             ];
     }
 }
@@ -288,7 +304,7 @@ export function roomClueHotspots(room: RelicRoom): readonly ClueHotspot[] {
 export function chooseLookRoom(
     snapshot: RelicPublicSnapshot,
     room: RelicRoom,
-    selectedRoomId: string | undefined,
+    selectedRoomId: string | undefined
 ): RelicRoom | undefined {
     const selectedRoom = selectedRoomId
         ? snapshot.map.find((candidate) => candidate.id === selectedRoomId)
@@ -319,7 +335,7 @@ function findDoorwayPrompt(
     snapshot: RelicPublicSnapshot,
     room: RelicRoom,
     roamOffset: Vector3,
-    forward: Vector3,
+    forward: Vector3
 ): ScenePrompt | undefined {
     const limit = ROOM_SIZE / 2 - ROAM_MARGIN;
     const prompts = room.neighbors
@@ -343,10 +359,10 @@ function findDoorwayPrompt(
                 kind: 'move',
                 roomId: neighbor.id,
                 roomName: neighbor.name,
-                direction,
+                direction
             } satisfies ScenePrompt;
         })
-        .filter((prompt): prompt is Extract<ScenePrompt, { kind: 'move' }> => !!prompt);
+        .filter((prompt): prompt is Extract<ScenePrompt, { kind: 'move'; }> => !!prompt);
 
     return prompts[0];
 }
@@ -354,9 +370,9 @@ function findDoorwayPrompt(
 function findCluePrompt(
     room: RelicRoom,
     roamOffset: Vector3,
-    forward: Vector3,
+    forward: Vector3
 ): ScenePrompt | undefined {
-    const prompts: Array<Readonly<{ distance: number; prompt: ScenePrompt }>> = [];
+    const prompts: Array<Readonly<{ distance: number; prompt: ScenePrompt; }>> = [];
     for (const clue of roomClueHotspots(room)) {
         const toClue = new Vector3(clue.x - roamOffset.x, 0, clue.z - roamOffset.z);
         const distance = toClue.length();
@@ -377,8 +393,8 @@ function findCluePrompt(
                 kind: 'search',
                 hotspotId: clue.id,
                 label: clue.promptLabel,
-                detail: clue.detail,
-            },
+                detail: clue.detail
+            }
         });
     }
 

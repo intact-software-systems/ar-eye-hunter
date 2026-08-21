@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-    allRoomIdentities,
-    roomIdentityForKind,
-    ROOM_KIND_ORDER,
-} from '../src/game/scene/roomIdentity.ts';
+import { allRoomIdentities, ROOM_KIND_ORDER, roomIdentityForKind } from '../src/game/scene/roomIdentity.ts';
 
 describe('room identity mapping', () => {
     it('maps every public room kind to one visual identity', () => {
@@ -15,7 +11,7 @@ describe('room identity mapping', () => {
             'trap',
             'treasure',
             'monster',
-            'exit',
+            'exit'
         ]);
         expect(allRoomIdentities()).toHaveLength(ROOM_KIND_ORDER.length);
     });
@@ -23,19 +19,19 @@ describe('room identity mapping', () => {
     it('keeps the planned Japanese castle role for each room kind', () => {
         expect(roomIdentityForKind('entrance')).toMatchObject({
             castleRole: 'Gatehouse / front gate',
-            silhouette: 'gatehouse',
+            silhouette: 'gatehouse'
         });
         expect(roomIdentityForKind('storage')).toMatchObject({
             castleRole: 'Armory / storage room',
-            silhouette: 'armory-storage',
+            silhouette: 'armory-storage'
         });
         expect(roomIdentityForKind('trap')).toMatchObject({
             castleRole: 'Secret passage / jail-cell trap room',
-            silhouette: 'secret-cell',
+            silhouette: 'secret-cell'
         });
         expect(roomIdentityForKind('exit')).toMatchObject({
             castleRole: 'Watch tower / garden gate',
-            silhouette: 'garden-watchtower',
+            silhouette: 'garden-watchtower'
         });
     });
 

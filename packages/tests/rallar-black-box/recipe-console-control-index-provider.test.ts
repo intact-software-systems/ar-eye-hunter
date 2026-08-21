@@ -2,22 +2,16 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-    ControlRunSnapshot,
-    ControlServerSnapshot,
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import type { ControlRunSnapshot, ControlServerSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import { TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
+import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
 import {
     ControlConnectionProvider,
-    type RecipeConsoleControlConnection,
+    type RecipeConsoleControlConnection
 } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import { TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
-import { useRecipeConsoleControlWorkspace } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/use-control-workspace.ts';
-import type { RecipeConsoleControlSelection } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
+import { useRecipeConsoleControlWorkspace } from '../../../apps/rallar-black-box/src/recipe-console/control/use-control-workspace.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 type Observation = Readonly<{
     connection: RecipeConsoleControlConnection;
@@ -31,7 +25,7 @@ type Deferred<Value> = Readonly<{
 
 function deferred<Value>(): Deferred<Value> {
     let resolve!: (value: Value) => void;
-    const promise = new Promise<Value>(onResolve => {
+    const promise = new Promise<Value>((onResolve) => {
         resolve = onResolve;
     });
     return { promise, resolve };
@@ -55,21 +49,21 @@ function snapshot(status = 'connected'): ControlServerSnapshot {
                 sessionId: 'session-a',
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
             connectionSequence: 1,
             reconnectCount: 0,
             receivedResultCount: 0,
             receivedEventCount: 0,
             completedCommandIds: [],
-            resumeCompletedCommandIds: [],
+            resumeCompletedCommandIds: []
         }],
         commands: [],
         results: [],
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
     return { runs: [run], distributedRuns: [] };
 }
@@ -88,14 +82,14 @@ describe('Recipe Console indexed provider projection', () => {
                 experience: 'recipe-console',
                 view: 'monitor',
                 controlRunId: 'control-a',
-                agentId: 'agent-a',
+                agentId: 'agent-a'
             },
             navigate: vi.fn(),
-            replace: vi.fn(),
+            replace: vi.fn()
         });
         observed = {
             connection: workspace.connection,
-            selection: workspace.selection,
+            selection: workspace.selection
         };
         return null;
     }
@@ -107,12 +101,17 @@ describe('Recipe Console indexed provider projection', () => {
         observed = undefined;
         pending = undefined;
         nextDocument = JSON.stringify(snapshot());
-        vi.stubGlobal('fetch', vi.fn(async () => {
-            if (pending) return pending.promise;
-            return new Response(nextDocument, {
-                headers: { 'content-type': 'application/json' },
-            });
-        }));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => {
+                if (pending) {
+                    return pending.promise;
+                }
+                return new Response(nextDocument, {
+                    headers: { 'content-type': 'application/json' }
+                });
+            })
+        );
     });
 
     afterEach(async () => {
@@ -123,23 +122,25 @@ describe('Recipe Console indexed provider projection', () => {
     });
 
     it('skips attempt-start derivation, hits exact revisions, and rebuilds deep changes', async () => {
-        await act(async () => root.render(createElement(
-            ControlConnectionProvider,
-            {
-                bootstrap: {
-                    controlUrl: 'https://control.test',
-                    apiBaseUrl: 'https://api.test',
-                    providerMode: 'browser-rallar',
-                    credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-                    bootstrapGroup: {
-                        applicationId: 'app-a',
-                        workspaceId: 'workspace-a',
-                        groupId: 'group-a',
+        await act(async () =>
+            root.render(createElement(
+                ControlConnectionProvider,
+                {
+                    bootstrap: {
+                        controlUrl: 'https://control.test',
+                        apiBaseUrl: 'https://api.test',
+                        providerMode: 'browser-rallar',
+                        credentialPolicy: TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
+                        bootstrapGroup: {
+                            applicationId: 'app-a',
+                            workspaceId: 'workspace-a',
+                            groupId: 'group-a'
+                        }
                     },
-                },
-                children: createElement(Harness),
-            },
-        )));
+                    children: createElement(Harness)
+                }
+            ))
+        );
         await vi.waitFor(() => expect(observed?.connection.query.status).toBe('live'));
 
         const firstIndex = observed!.connection.selectionIndex;
@@ -148,7 +149,7 @@ describe('Recipe Console indexed provider projection', () => {
         expect(firstIndex).toBeDefined();
         expect(observed!.connection.selectionIndexWork).toMatchObject({
             cacheHit: false,
-            indexBuildCount: 1,
+            indexBuildCount: 1
         });
         expect(Object.isFrozen(observed!.connection.selectionIndexWork)).toBe(true);
 
@@ -156,16 +157,14 @@ describe('Recipe Console indexed provider projection', () => {
         let refresh!: Promise<void>;
         await act(async () => {
             refresh = observed!.connection.refresh();
-            await vi.waitFor(() =>
-                expect(observed!.connection.query.isRefreshing).toBe(true)
-            );
+            await vi.waitFor(() => expect(observed!.connection.query.isRefreshing).toBe(true));
         });
         expect(observed!.selection).toBe(firstSelection);
         expect(observed!.selection.boardRows).toBe(firstRows);
 
         const sameRaw = nextDocument;
         const response = new Response(sameRaw, {
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json' }
         });
         const active = pending;
         pending = undefined;
@@ -178,7 +177,7 @@ describe('Recipe Console indexed provider projection', () => {
             indexBuildCount: 0,
             controlRunVisitCount: 0,
             distributedRunVisitCount: 0,
-            selectionIndexLoopVisitCount: 0,
+            selectionIndexLoopVisitCount: 0
         });
         expect(observed!.selection.controlRun)
             .toBe(observed!.connection.query.snapshot!.runs[0]);
@@ -192,7 +191,7 @@ describe('Recipe Console indexed provider projection', () => {
         expect(observed!.connection.selectionIndex).not.toBe(firstIndex);
         expect(observed!.connection.selectionIndexWork).toMatchObject({
             cacheHit: false,
-            indexBuildCount: 1,
+            indexBuildCount: 1
         });
     });
 });

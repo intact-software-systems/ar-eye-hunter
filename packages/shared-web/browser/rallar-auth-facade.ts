@@ -2,14 +2,14 @@ import type { RallarOperationOptions } from '@shared-web/browser/rallar-operatio
 import type {
     RallarOnChangeOptions,
     RallarStateListener,
-    RallarUnsubscribe,
+    RallarUnsubscribe
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     AuthSession,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
-    RegisterResponse,
+    RegisterResponse
 } from '@shared/api/api-config.ts';
 
 export type RallarAuthChangeReason =
@@ -25,63 +25,60 @@ export type RallarAuthState = Readonly<{
     session?: AuthSession;
 }>;
 
-export type RallarAuthChangeListener =
-    RallarStateListener<RallarAuthState>;
+export type RallarAuthChangeListener = RallarStateListener<RallarAuthState>;
 
 export type RallarRegisterOptions =
     & RallarOperationOptions
     & Readonly<{
-    adminSession?: AuthSession | null;
-}>;
+        adminSession?: AuthSession | null;
+    }>;
 
 export type RallarAuthFacade = Readonly<{
     login(
         request: LoginRequest,
-        options?: RallarOperationOptions,
+        options?: RallarOperationOptions
     ): Promise<LoginResponse>;
     register(
         request: RegisterRequest,
-        options?: RallarRegisterOptions,
+        options?: RallarRegisterOptions
     ): Promise<RegisterResponse>;
     registerAndLogin(
         request: RegisterRequest,
-        options?: RallarRegisterOptions,
+        options?: RallarRegisterOptions
     ): Promise<LoginResponse>;
     logout(options?: RallarOperationOptions): Promise<void>;
     restore(): AuthSession | undefined;
     isLoggedIn(): boolean;
     onChange(
         listener: RallarAuthChangeListener,
-        options?: RallarOnChangeOptions,
+        options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
 }>;
 
 export type CreateRallarAuthFacadeOptions = RallarAuthFacade;
 
 export function createRallarAuthFacade(
-    operations: CreateRallarAuthFacadeOptions,
+    operations: CreateRallarAuthFacadeOptions
 ): RallarAuthFacade {
     return {
         login: async (
             request,
-            options = {},
+            options = {}
         ): Promise<LoginResponse> => await operations.login(request, options),
         register: async (
             request,
-            options = {},
+            options = {}
         ): Promise<RegisterResponse> => await operations.register(request, options),
         registerAndLogin: async (
             request,
-            options = {},
-        ): Promise<LoginResponse> =>
-            await operations.registerAndLogin(request, options),
-        logout: async (options = {}): Promise<void> =>
-            await operations.logout(options),
+            options = {}
+        ): Promise<LoginResponse> => await operations.registerAndLogin(request, options),
+        logout: async (options = {}): Promise<void> => await operations.logout(options),
         restore: (): AuthSession | undefined => operations.restore(),
         isLoggedIn: (): boolean => operations.isLoggedIn(),
         onChange: (
             listener,
-            options = {},
-        ): RallarUnsubscribe => operations.onChange(listener, options),
+            options = {}
+        ): RallarUnsubscribe => operations.onChange(listener, options)
     };
 }

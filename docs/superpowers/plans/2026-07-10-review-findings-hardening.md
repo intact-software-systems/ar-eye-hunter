@@ -39,6 +39,7 @@
 ### Task 1: Reject Invalid CRDT Lifecycle And Erasure Enums
 
 **Files:**
+
 - Create: `packages/shared-server/rallar-system/admin-operations/crdt-admin-validation.ts`
 - Modify: `packages/shared-server/rallar-system/admin-operations/AdminOperationsService.ts`
 - Modify: `packages/shared-server/postgres/crdt/PSqlCrdtLogRepository.ts`
@@ -47,6 +48,7 @@
 - Test: `packages/shared-test/black-box-runner/tests/api-v1/api-v1-admin-operations.json`
 
 **Interfaces:**
+
 - Produces: `readAdminCrdtLifecycle(value: unknown): RallarCrdtDocumentLifecycleState`
 - Produces: `readAdminCrdtErasureMode(value: unknown): RallarCrdtErasureRequest['mode']`
 - Invariant: invalid values throw before audit, document creation, or lifecycle update.
@@ -57,39 +59,43 @@ Add a shared document fixture and tests equivalent to:
 
 ```ts
 const document: RallarCrdtDocumentRef = {
-  applicationId: 'app-1',
-  workspaceId: 'workspace-1',
-  documentScope: 'group',
-  documentType: 'map',
-  documentId: 'doc-1',
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    documentScope: 'group',
+    documentType: 'map',
+    documentId: 'doc-1'
 };
 
 it('rejects invalid CRDT lifecycle and erase mode before repository calls', async () => {
-  const lifecycleCalls: unknown[] = [];
-  const auditCalls: unknown[] = [];
-  const service = createService({
-    crdtAdminRepository: {
-      updateDocumentLifecycle: (input) => {
-        lifecycleCalls.push(input);
-        return Promise.resolve({} as never);
-      },
-      exportDebugBundle: () => Promise.resolve({}),
-    },
-    crdtAuditSink: { record: (event) => { auditCalls.push(event); } },
-  });
+    const lifecycleCalls: unknown[] = [];
+    const auditCalls: unknown[] = [];
+    const service = createService({
+        crdtAdminRepository: {
+            updateDocumentLifecycle: (input) => {
+                lifecycleCalls.push(input);
+                return Promise.resolve({} as never);
+            },
+            exportDebugBundle: () => Promise.resolve({})
+        },
+        crdtAuditSink: {
+            record: (event) => {
+                auditCalls.push(event);
+            }
+        }
+    });
 
-  await expect(service.updateCrdtLifecycle({
-    adminSession: createAdminSession(),
-    request: { document, lifecycle: 'destroy' } as never,
-  })).rejects.toThrow('Unsupported CRDT lifecycle: destroy');
+    await expect(service.updateCrdtLifecycle({
+        adminSession: createAdminSession(),
+        request: { document, lifecycle: 'destroy' } as never
+    })).rejects.toThrow('Unsupported CRDT lifecycle: destroy');
 
-  await expect(service.eraseCrdt({
-    adminSession: createAdminSession(),
-    request: { document, mode: 'redact-payload' },
-  })).rejects.toThrow('Unsupported CRDT erasure mode: redact-payload');
+    await expect(service.eraseCrdt({
+        adminSession: createAdminSession(),
+        request: { document, mode: 'redact-payload' }
+    })).rejects.toThrow('Unsupported CRDT erasure mode: redact-payload');
 
-  expect(lifecycleCalls).toEqual([]);
-  expect(auditCalls).toEqual([]);
+    expect(lifecycleCalls).toEqual([]);
+    expect(auditCalls).toEqual([]);
 });
 ```
 
@@ -117,32 +123,36 @@ Create the helper with these complete functions:
 
 ```ts
 import type {
-  RallarCrdtDocumentLifecycleState,
-  RallarCrdtErasureRequest,
+    RallarCrdtDocumentLifecycleState,
+    RallarCrdtErasureRequest
 } from '@shared/crdt/mod.ts';
 
 const LIFECYCLES = new Set<RallarCrdtDocumentLifecycleState>([
-  'active',
-  'archived',
-  'destroyed',
-  'quarantined',
+    'active',
+    'archived',
+    'destroyed',
+    'quarantined'
 ]);
 
 export function readAdminCrdtLifecycle(
-  value: unknown,
+    value: unknown
 ): RallarCrdtDocumentLifecycleState {
-  if (typeof value === 'string' && LIFECYCLES.has(value as RallarCrdtDocumentLifecycleState)) {
-    return value as RallarCrdtDocumentLifecycleState;
-  }
-  throw new Error(`Unsupported CRDT lifecycle: ${String(value)}`);
+    if (typeof value === 'string' && LIFECYCLES.has(value as RallarCrdtDocumentLifecycleState)) {
+        return value as RallarCrdtDocumentLifecycleState;
+    }
+    throw new Error(`Unsupported CRDT lifecycle: ${String(value)}`);
 }
 
 export function readAdminCrdtErasureMode(
-  value: unknown,
+    value: unknown
 ): RallarCrdtErasureRequest['mode'] {
-  if (value === undefined) return 'destroy-document';
-  if (value === 'destroy-document' || value === 'redact-payloads') return value;
-  throw new Error(`Unsupported CRDT erasure mode: ${String(value)}`);
+    if (value === undefined) {
+        return 'destroy-document';
+    }
+    if (value === 'destroy-document' || value === 'redact-payloads') {
+        return value;
+    }
+    throw new Error(`Unsupported CRDT erasure mode: ${String(value)}`);
 }
 ```
 
@@ -181,11 +191,13 @@ git commit -m "fix: validate admin crdt mutations"
 ### Task 2: Repair Match Result Public Typing And Canonical Keys
 
 **Files:**
+
 - Modify: `packages/shared/rallar-match/results.ts`
 - Create: `packages/shared/rallar-match/results.typecheck.ts`
 - Modify: `packages/tests/shared/rallar-match.test.ts`
 
 **Interfaces:**
+
 - Produces: callable overload `createRallarMatchResult<TSummary>(input: RallarMatchResultInput<TSummary>)`.
 - Invariant: omitted and empty workspace IDs generate the same collision-safe idempotency key.
 
@@ -195,7 +207,7 @@ git commit -m "fix: validate admin crdt mutations"
 import { createRallarMatchResult } from './results.ts';
 import type { RallarMatchResultInput } from './types.ts';
 
-declare const input: RallarMatchResultInput<{ readonly reason: string }>;
+declare const input: RallarMatchResultInput<{ readonly reason: string; }>;
 const result = createRallarMatchResult(input);
 void result;
 ```
@@ -212,7 +224,7 @@ Insert this declaration before the implementation signature:
 
 ```ts
 export function createRallarMatchResult<TSummary>(
-  input: RallarMatchResultInput<TSummary>,
+    input: RallarMatchResultInput<TSummary>
 ): RallarLocalMatchResult<TSummary> | RallarRoomTrustedMatchResult<TSummary>;
 ```
 
@@ -253,6 +265,7 @@ git commit -m "fix: align match result contracts"
 ### Task 3: Isolate Browser Traffic By Match Identity
 
 **Files:**
+
 - Modify: `packages/shared-web/game/types.ts`
 - Modify: `packages/shared-web/game/envelopes.ts`
 - Modify: `packages/shared-web/game/match.ts`
@@ -262,6 +275,7 @@ git commit -m "fix: align match result contracts"
 - Modify: `packages/tests/shared-web/rallar-browser-match-support.test.ts`
 
 **Interfaces:**
+
 - Adds optional `matchId?: string` to generic config and envelopes.
 - Adds optional acceptance constraint `matchId?: string` and rejection reason `wrong-match`.
 - Browser match configuration remains source-compatible and always enables the constraint.
@@ -321,10 +335,12 @@ git commit -m "fix: isolate browser matches by identity"
 ### Task 4: Make Operational Statistics Time-Accurate
 
 **Files:**
+
 - Modify: `packages/shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts`
 - Modify: `apps/api-v1/test/db/admin-operations-postgres-reader.test.ts`
 
 **Interfaces:**
+
 - Adds option `recentEventWindowMs?: number`, default `900_000`.
 - `readState` recent event fields count only events at or after `now() - window`.
 - `readSystem.stateEvents` remains an all-time total.
@@ -389,10 +405,12 @@ git commit -m "fix: bound admin operational statistics"
 ### Task 5: Tie API Black-Box Readiness To Its Spawned Child
 
 **Files:**
+
 - Modify: `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`
 - Modify: `packages/tests/shared-test/api-v1-black-box-run.test.ts`
 
 **Interfaces:**
+
 - Produces exported `waitForManagedApiReady(input)` with injected fetch, clock, sleep, and log reader for unit coverage.
 - Readiness requires both the child startup marker and a successful `/api/config` response while racing child exit.
 
@@ -435,12 +453,14 @@ git commit -m "fix: verify managed api process readiness"
 ### Task 6: Redact Every Headless Log And Retry Poll Transport Failures
 
 **Files:**
+
 - Create: `apps/rallar-black-box/src/headless-worker-runtime.ts`
 - Modify: `apps/rallar-black-box/scripts/headless-worker.ts`
 - Create: `packages/tests/rallar-black-box/headless-worker-runtime.test.ts`
 - Modify: `packages/tests/rallar-black-box/headless-worker-script.test.ts`
 
 **Interfaces:**
+
 - Produces `redactHeadlessWorkerLogText(message, secrets)`.
 - Produces `waitForDistributedRunTerminal(input)` with injected `fetch`, `sleep`, `now`, and logger.
 - Network rejection is retryable; HTTP 401/403 and three consecutive malformed payloads remain fatal.
@@ -488,11 +508,13 @@ git commit -m "fix: harden headless worker runtime"
 ### Task 7: Trust GitHub-Free Code And Provision Unique Principals
 
 **Files:**
+
 - Modify: `.github/workflows/github-free-distributed-recipe.yml`
 - Modify: `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`
 - Modify: `plans/github-actions-rallar-black-box-headless-runbook.md`
 
 **Interfaces:**
+
 - GitHub-free checkout uses `${{ github.sha }}` and has no secondary `ref` input.
 - `github-agents` targets `environment: production`.
 - Multi-agent runs require registration and export explicit per-agent username/password variables.
@@ -535,6 +557,7 @@ git commit -m "fix: protect github hosted agent runs"
 ### Task 8: Propagate Prepare Failures And Lock Complete Runs
 
 **Files:**
+
 - Modify: `.github/workflows/hetzner-distributed-recipe-runner.yml`
 - Modify: `.github/workflows/hetzner-distributed-recipe.yml`
 - Modify: `.github/workflows/hetzner-supported-distributed-manifests.yml`
@@ -543,6 +566,7 @@ git commit -m "fix: protect github hosted agent runs"
 - Modify: `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`
 
 **Interfaces:**
+
 - The reusable phase runner owns no workflow-level concurrency group.
 - Every complete production caller owns the shared group `hetzner-production-distributed-recipe`, `cancel-in-progress: false`, and `queue: max`.
 - Any non-successful remote recipe step fails prepare, run, and full phases after applicable artifacts are handled.
@@ -596,10 +620,12 @@ git commit -m "fix: serialize complete distributed runs"
 ### Task 9: Full Verification And Finding-By-Finding Audit
 
 **Files:**
+
 - Verify all files changed in Tasks 1-8.
 - Modify documentation only if an executable contract changed and is not already represented.
 
 **Interfaces:**
+
 - Produces evidence for every completion criterion in the approved design.
 
 - [ ] **Step 1: Run the complete focused regression set**

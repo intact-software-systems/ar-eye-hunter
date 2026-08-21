@@ -1,8 +1,4 @@
-import type {
-    RelicEvent,
-    RelicPlayer,
-    RelicPublicSnapshot,
-} from '@relic-hunters/mod.ts';
+import type { RelicEvent, RelicPlayer, RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 import type { Lang } from './lang.ts';
 
 export type TurnSummaryKind = 'empty' | 'lobby' | 'planning' | 'locked' | 'watching' | 'finished';
@@ -28,7 +24,7 @@ export function deriveCurrentTurnSummaryModel({
     snapshot,
     localPlayerId,
     events,
-    lang,
+    lang
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -45,15 +41,14 @@ export function deriveCurrentTurnSummaryModel({
         ? []
         : events.filter((event) => event.round === lastTurnRound && isTurnTimelineEvent(event));
     const personalCount = lastRoundEvents.filter((event) => isPersonalEvent(event, localPlayerId)).length;
-    const castleCount = lastRoundEvents.filter((event) =>
-        turnTimelineCategory(event, localPlayerId).kind === 'castle'
-    ).length;
+    const castleCount =
+        lastRoundEvents.filter((event) => turnTimelineCategory(event, localPlayerId).kind === 'castle').length;
     const stats = [
         `${submittedCount}/${activePlayers.length} locked`,
         `${waitingCount} waiting`,
         ...(lastTurnRound !== undefined ? [`R${lastTurnRound} results`] : []),
         ...(personalCount > 0 ? [`${personalCount} yours`] : []),
-        ...(castleCount > 0 ? [`${castleCount} castle`] : []),
+        ...(castleCount > 0 ? [`${castleCount} castle`] : [])
     ];
 
     return {
@@ -62,9 +57,9 @@ export function deriveCurrentTurnSummaryModel({
             localPlayer,
             localSubmitted,
             waitingCount,
-            lang,
+            lang
         }),
-        stats,
+        stats
     };
 }
 
@@ -73,7 +68,7 @@ function deriveCurrentTurnSummaryCopy({
     localPlayer,
     localSubmitted,
     waitingCount,
-    lang,
+    lang
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayer?: RelicPlayer;
@@ -88,7 +83,7 @@ function deriveCurrentTurnSummaryCopy({
             title: lang === 'no' ? 'Velg et rom' : 'Choose a room',
             detail: lang === 'no'
                 ? 'Opprett eller bli med i et Relic Hunters-rom.'
-                : 'Create or join a Relic Hunters room to start the loop.',
+                : 'Create or join a Relic Hunters room to start the loop.'
         };
     }
 
@@ -99,7 +94,7 @@ function deriveCurrentTurnSummaryCopy({
             title: lang === 'no' ? 'Samle ekspedisjonen' : 'Gather the expedition',
             detail: lang === 'no'
                 ? 'Bli med som jeger, vent på rommedlemmer, og la Vokteren starte.'
-                : 'Join as a hunter, wait for room members, then the Keeper starts.',
+                : 'Join as a hunter, wait for room members, then the Keeper starts.'
         };
     }
 
@@ -116,7 +111,7 @@ function deriveCurrentTurnSummaryCopy({
                 ? (lang === 'no'
                     ? `${winnerNames} tok Hjerterelikkiet.`
                     : `${winnerNames} claimed the Heart Relic.`)
-                : (lang === 'no' ? 'Ruinen har stilnet.' : 'The ruin has gone quiet.'),
+                : (lang === 'no' ? 'Ruinen har stilnet.' : 'The ruin has gone quiet.')
         };
     }
 
@@ -127,7 +122,7 @@ function deriveCurrentTurnSummaryCopy({
             title: lang === 'no' ? 'Planene avsløres' : 'Plans revealed',
             detail: lang === 'no'
                 ? 'Se hver jegers handling før neste runde starter.'
-                : "Watch each hunter's action before the next turn begins.",
+                : 'Watch each hunter\'s action before the next turn begins.'
         };
     }
 
@@ -138,7 +133,7 @@ function deriveCurrentTurnSummaryCopy({
             title: lang === 'no' ? 'Ekspedisjonen er i gang' : 'Expedition in progress',
             detail: lang === 'no'
                 ? 'Nye jegere kan ikke bli med etter at jakten har startet.'
-                : 'Late joins are closed after the hunt starts.',
+                : 'Late joins are closed after the hunt starts.'
         };
     }
 
@@ -151,7 +146,7 @@ function deriveCurrentTurnSummaryCopy({
                 : (lang === 'no' ? 'Du er ute' : 'You are down'),
             detail: lang === 'no'
                 ? 'Følg tidslinjen mens resten av ekspedisjonen avslutter.'
-                : 'Follow the timeline while the remaining hunters finish.',
+                : 'Follow the timeline while the remaining hunters finish.'
         };
     }
 
@@ -166,7 +161,7 @@ function deriveCurrentTurnSummaryCopy({
                     : `Waiting for ${waitingCount} hunter${waitingCount === 1 ? '' : 's'} to lock a plan.`)
                 : (lang === 'no'
                     ? 'Alle planer er låst. Ruinen svarer snart.'
-                    : 'All plans are locked. The castle is about to answer.'),
+                    : 'All plans are locked. The castle is about to answer.')
         };
     }
 
@@ -176,7 +171,7 @@ function deriveCurrentTurnSummaryCopy({
         title: lang === 'no' ? 'Velg én plan' : 'Choose one plan',
         detail: lang === 'no'
             ? 'Velg Flytt, Søk, Stjel eller Unnslipp. Alle planer løses samtidig.'
-            : 'Pick Move, Search, Steal, or Escape. All plans resolve together.',
+            : 'Pick Move, Search, Steal, or Escape. All plans resolve together.'
     };
 }
 
@@ -189,7 +184,7 @@ export function isTurnTimelineEvent(event: RelicEvent): boolean {
 
 export function turnTimelineCategory(
     event: RelicEvent,
-    localPlayerId: string | undefined,
+    localPlayerId: string | undefined
 ): TurnTimelineCategory {
     if (event.type === 'action_revealed') {
         return { kind: 'reveal', label: 'Reveal' };
@@ -232,7 +227,9 @@ export function isTurnResultEvent(event: RelicEvent): boolean {
 }
 
 export function isPersonalEvent(event: RelicEvent, localPlayerId: string | undefined): boolean {
-    if (!localPlayerId) return false;
+    if (!localPlayerId) {
+        return false;
+    }
     return event.animationCue?.playerId === localPlayerId ||
         event.animationCue?.targetPlayerId === localPlayerId;
 }

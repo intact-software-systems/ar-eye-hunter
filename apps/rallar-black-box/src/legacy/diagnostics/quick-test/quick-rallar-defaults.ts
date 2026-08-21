@@ -10,7 +10,7 @@ export const QUICK_RALLAR_DEFAULT_VALUES: QuickRallarValues = {
     resourceId: '',
     payloadText: json({
         text: 'hello from quick Rallar test',
-        seq: 1,
+        seq: 1
     }),
-    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+    timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
 };

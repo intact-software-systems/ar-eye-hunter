@@ -1,10 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
-import {
-    RELIC_LIGHTING_PRESETS,
-    RELIC_ROOM_LIGHTING_PRESETS,
-    selectRelicLightingPreset,
-} from '../src/game/scene/lightingPresets.ts';
+import { describe, expect, it } from 'vitest';
+import { RELIC_LIGHTING_PRESETS, RELIC_ROOM_LIGHTING_PRESETS, selectRelicLightingPreset } from '../src/game/scene/lightingPresets.ts';
 
 describe('lighting presets', () => {
     it('maps exterior, interior, danger, and exit rooms to distinct presets', () => {
@@ -20,22 +16,30 @@ describe('lighting presets', () => {
 
     it('uses day for opening/lobby, room presets for planning, and sunset for finished', () => {
         expect(selectRelicLightingPreset({ snapshot: undefined, currentRoom: undefined }).id).toBe('day');
-        expect(selectRelicLightingPreset({
-            snapshot: snapshot('lobby'),
-            currentRoom: room('monster', 'monster'),
-        }).id).toBe('day');
-        expect(selectRelicLightingPreset({
-            snapshot: snapshot('planning'),
-            currentRoom: room('storage', 'storage'),
-        }).id).toBe('lantern');
-        expect(selectRelicLightingPreset({
-            snapshot: snapshot('planning'),
-            currentRoom: room('monster', 'monster'),
-        }).id).toBe('lantern');
-        expect(selectRelicLightingPreset({
-            snapshot: snapshot('finished'),
-            currentRoom: room('storage', 'storage'),
-        }).id).toBe('sunset');
+        expect(
+            selectRelicLightingPreset({
+                snapshot: snapshot('lobby'),
+                currentRoom: room('monster', 'monster')
+            }).id
+        ).toBe('day');
+        expect(
+            selectRelicLightingPreset({
+                snapshot: snapshot('planning'),
+                currentRoom: room('storage', 'storage')
+            }).id
+        ).toBe('lantern');
+        expect(
+            selectRelicLightingPreset({
+                snapshot: snapshot('planning'),
+                currentRoom: room('monster', 'monster')
+            }).id
+        ).toBe('lantern');
+        expect(
+            selectRelicLightingPreset({
+                snapshot: snapshot('finished'),
+                currentRoom: room('storage', 'storage')
+            }).id
+        ).toBe('sunset');
     });
 
     it('keeps every preset bright with modest fog, almost no vignette, and light contact shadows', () => {
@@ -69,7 +73,7 @@ function snapshot(phase: RelicPublicSnapshot['phase']): RelicPublicSnapshot {
         players: [],
         submittedPlayerIds: [],
         events: [],
-        winnerIds: [],
+        winnerIds: []
     };
 }
 
@@ -80,6 +84,6 @@ function room(id: string, kind: RelicRoom['kind']): RelicRoom {
         kind,
         x: 0,
         z: 0,
-        neighbors: [],
+        neighbors: []
     };
 }

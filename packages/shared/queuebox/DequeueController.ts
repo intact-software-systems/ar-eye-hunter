@@ -11,11 +11,13 @@ export interface Logger {
 const defaultLogger: Logger = {
     debug: (m, ...a) => console.debug(m, ...a),
     warn: (m, ...a) => console.warn(m, ...a),
-    error: (m, ...a) => console.error(m, ...a),
+    error: (m, ...a) => console.error(m, ...a)
 };
 
 function requireNonNull<T>(v: T | null | undefined, message = 'Value was null/undefined'): T {
-    if (v === null || v === undefined) throw new Error(message);
+    if (v === null || v === undefined) {
+        throw new Error(message);
+    }
     return v;
 }
 
@@ -39,7 +41,7 @@ export const Reservator = {
     RETRY: 'RETRY',
     FAILED: 'FAILED',
     FAIRNESS: 'FAIRNESS',
-    TIMEOUT: 'TIMEOUT',
+    TIMEOUT: 'TIMEOUT'
 } as const;
 
 export type Reservator = (typeof Reservator)[keyof typeof Reservator];
@@ -52,7 +54,7 @@ export class FailureDto<K, V> {
     constructor(
         key: K,
         value: V,
-        exception: Error,
+        exception: Error
     ) {
         this.key = key;
         this.value = value;
@@ -68,7 +70,7 @@ export class SuccessDto<K, V, T> {
     constructor(
         key: K,
         value: V,
-        computedValue: T,
+        computedValue: T
     ) {
         this.key = key;
         this.value = value;
@@ -154,18 +156,22 @@ export class DequeueController<K, V, T> {
         return this;
     }
 
-    onFairnessEntriesReserveDo(fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
+    onFairnessEntriesReserveDo(
+        fairnessReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>
+    ): this {
         this.fairnessReservator = fairnessReservator ?? undefined;
         return this;
     }
 
-    onTimeoutEntriesReserveDo(timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>): this {
+    onTimeoutEntriesReserveDo(
+        timeoutReservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>
+    ): this {
         this.timeoutReservator = timeoutReservator ?? undefined;
         return this;
     }
 
     onFinalizationEntriesReserveDo(
-        reservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
+        reservator?: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>
     ): this {
         this.finalizationReservator = reservator ?? undefined;
         return this;
@@ -178,7 +184,7 @@ export class DequeueController<K, V, T> {
 
     onReleaseEntriesDo(
         successReleaser: (m: Map<K, SuccessDto<K, V, T>>) => Promise<Map<K, SuccessDto<K, V, T>>>,
-        failureReleaser: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>,
+        failureReleaser: (m: Map<K, FailureDto<K, V>>) => Promise<Map<K, FailureDto<K, V>>>
     ): this {
         this.successReleaser = requireNonNull(successReleaser);
         this.failureReleaser = requireNonNull(failureReleaser);
@@ -201,7 +207,7 @@ export class DequeueController<K, V, T> {
     }
 
     async dequeueForCompute(
-        computer: (key: K, value: V) => Promise<T>,
+        computer: (key: K, value: V) => Promise<T>
     ): Promise<Map<Reservator, Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>>> {
         if (this.typesToDequeue().size === 0) {
             this.log.warn('No types provided for callbacks: [newReservator, retryReservator, fairnessReservator].');
@@ -218,10 +224,7 @@ export class DequeueController<K, V, T> {
         const successReleaser = requireNonNull(this.successReleaser, 'successReleaser is required');
         const failureReleaser = requireNonNull(this.failureReleaser, 'failureReleaser is required');
 
-        const byReservator = new Map<
-            Reservator,
-            Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>
-        >();
+        const byReservator = new Map<Reservator, Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>>();
 
         byReservator.set(
             Reservator.FINALIZATION,
@@ -232,9 +235,9 @@ export class DequeueController<K, V, T> {
                     this.finalizationReservator,
                     this.finalizationComputer,
                     this.returnDequeuedEntries,
-                    this.log,
+                    this.log
                 )
-                : new Map(),
+                : new Map()
         );
 
         byReservator.set(
@@ -252,8 +255,8 @@ export class DequeueController<K, V, T> {
                 this.onCompleted,
                 this.onFailed,
                 this.onPreProcessingReserved,
-                this.log,
-            ),
+                this.log
+            )
         );
 
         byReservator.set(
@@ -272,9 +275,9 @@ export class DequeueController<K, V, T> {
                     this.onCompleted,
                     this.onFailed,
                     this.onPreProcessingReserved,
-                    this.log,
+                    this.log
                 )
-                : new Map(),
+                : new Map()
         );
 
         byReservator.set(
@@ -293,9 +296,9 @@ export class DequeueController<K, V, T> {
                     this.onCompleted,
                     this.onFailed,
                     this.onPreProcessingReserved,
-                    this.log,
+                    this.log
                 )
-                : new Map(),
+                : new Map()
         );
 
         byReservator.set(
@@ -314,9 +317,9 @@ export class DequeueController<K, V, T> {
                     this.onCompleted,
                     this.onFailed,
                     this.onPreProcessingReserved,
-                    this.log,
+                    this.log
                 )
-                : new Map(),
+                : new Map()
         );
 
         return byReservator;
@@ -328,19 +331,27 @@ export class DequeueController<K, V, T> {
         reservator: (types: Set<string>, numToReserve: number) => Promise<Map<K, V>>,
         computer: (key: K, value: V) => Promise<T>,
         returnDequeuedEntries: boolean,
-        log: Logger,
+        log: Logger
     ): Promise<Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>> {
         const computed = new Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>();
-        if (maxNumToReserve <= 0) return computed;
+        if (maxNumToReserve <= 0) {
+            return computed;
+        }
         const reserved = await reservator(types, maxNumToReserve);
         for (const [key, value] of reserved) {
             try {
-                computed.set(key, Either.ofRight(new SuccessDto(
+                computed.set(
                     key,
-                    value,
-                    await computer(key, value),
-                )));
-            } catch (error) {
+                    Either.ofRight(
+                        new SuccessDto(
+                            key,
+                            value,
+                            await computer(key, value)
+                        )
+                    )
+                );
+            }
+            catch (error) {
                 const exception = error instanceof Error ? error : new Error(String(error));
                 log.error(`Finalization recovery failed on dequeued key ${String(key)}.`, exception);
                 computed.set(key, Either.ofLeft(new FailureDto(key, value, exception)));
@@ -362,7 +373,7 @@ export class DequeueController<K, V, T> {
         onCompleted?: (m: Map<K, SuccessDto<K, V, T>>) => void,
         onFailed?: (m: Map<K, FailureDto<K, V>>) => void,
         onPreProcessingReservedEntries?: (m: Map<K, V>) => Promise<Map<K, V>>,
-        log: Logger = defaultLogger,
+        log: Logger = defaultLogger
     ): Promise<Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>> {
         let consecutiveFailureCounter = 0;
         let nonProgressionCounter = 0;
@@ -370,19 +381,25 @@ export class DequeueController<K, V, T> {
 
         const allComputed = new Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>();
 
-        while (isWorkForTypes(typesToDequeue()) && consecutiveFailureCounter < DequeueController.MAX_CONSECUTIVE_FAILURE_RETRY) {
+        while (
+            isWorkForTypes(typesToDequeue()) &&
+            consecutiveFailureCounter < DequeueController.MAX_CONSECUTIVE_FAILURE_RETRY
+        ) {
             try {
                 const numToReserve = maxNumToReserve();
                 if (numToReserve <= 0) {
-                    log.debug(`Number to reserve for ${Array.from(typesToDequeue()).join(',')} was ${numToReserve}. Returning.`);
+                    log.debug(
+                        `Number to reserve for ${
+                            Array.from(typesToDequeue()).join(',')
+                        } was ${numToReserve}. Returning.`
+                    );
                     return allComputed;
                 }
 
                 const reserved = await reservator(typesToDequeue(), numToReserve) ?? new Map<K, V>();
-                const preProcessed =
-                    onPreProcessingReservedEntries
-                        ? await onPreProcessingReservedEntries(reserved)
-                        : reserved;
+                const preProcessed = onPreProcessingReservedEntries
+                    ? await onPreProcessingReservedEntries(reserved)
+                    : reserved;
 
                 // Compute results
                 const computed = new Map<K, Either<FailureDto<K, V>, SuccessDto<K, V, T>>>();
@@ -390,7 +407,8 @@ export class DequeueController<K, V, T> {
                     try {
                         const computedValue = await computer(k, v);
                         computed.set(k, Either.ofRight(new SuccessDto(k, v, computedValue)));
-                    } catch (e) {
+                    }
+                    catch (e) {
                         const err = e instanceof Error ? e : new Error(String(e));
                         log.error(`Computer failed on dequeued key ${String(k)}.`, err);
                         computed.set(k, Either.ofLeft(new FailureDto(k, v, err)));
@@ -409,7 +427,8 @@ export class DequeueController<K, V, T> {
                             computed.set(k, Either.ofRight(successDto));
                         }
                         nonProgressionCounter = 0;
-                    } else {
+                    }
+                    else {
                         nonProgressionCounter += 1;
                     }
 
@@ -448,14 +467,16 @@ export class DequeueController<K, V, T> {
 
                     if (dequeuedCounter >= maxNumDequeue) {
                         log.debug(
-                            `Dequeued ${allComputed.size} entries, dequeuedCounter ${dequeuedCounter} >= maxNumDequeue ${maxNumDequeue}. Returning ...`,
+                            `Dequeued ${allComputed.size} entries, dequeuedCounter ${dequeuedCounter} >= maxNumDequeue ${maxNumDequeue}. Returning ...`
                         );
                         break;
                     }
                 }
 
                 if (nonProgressionCounter > DequeueController.MAX_NO_PROGRESSION) {
-                    log.warn(`No progression (no success or failures) last ${nonProgressionCounter} times. Returning quietly.`);
+                    log.warn(
+                        `No progression (no success or failures) last ${nonProgressionCounter} times. Returning quietly.`
+                    );
                     break;
                 }
 
@@ -465,9 +486,15 @@ export class DequeueController<K, V, T> {
                     // log.debug(`No more work to do on ${Array.from(typesToDequeue()).join(",")}. Returning.`);
                     return allComputed;
                 }
-            } catch (e) {
+            }
+            catch (e) {
                 const err = e instanceof Error ? e : new Error(String(e));
-                log.error(`Exception caught while working on queue with these types: ${Array.from(typesToDequeue()).join(',')}`, err);
+                log.error(
+                    `Exception caught while working on queue with these types: ${
+                        Array.from(typesToDequeue()).join(',')
+                    }`,
+                    err
+                );
                 consecutiveFailureCounter += 1;
 
                 const ok = await DequeueController.backoffWithSleep(consecutiveFailureCounter, log);
@@ -491,7 +518,8 @@ export class DequeueController<K, V, T> {
             log.warn(`${failureCounter} attempt. Backoff sleeping ${sleepSeconds} secs`);
             await sleep(sleepSeconds * 1000);
             return true;
-        } catch (e) {
+        }
+        catch (e) {
             log.warn('Exception caught in backoff', e);
             return false;
         }

@@ -1,9 +1,5 @@
-import type {
-    RallarAiJsonProvider,
-    RallarAiJsonRequest,
-    RallarAiJsonResult,
-} from './rallar-ai-types.ts';
 import { createRallarAiJsonResult } from './rallar-ai-envelope.ts';
+import type { RallarAiJsonProvider, RallarAiJsonRequest, RallarAiJsonResult } from './rallar-ai-types.ts';
 
 export type CreateRallarAiMockProviderOptions = Readonly<{
     providerId?: string;
@@ -13,7 +9,7 @@ export type CreateRallarAiMockProviderOptions = Readonly<{
 }>;
 
 export function createRallarAiMockProvider(
-    options: CreateRallarAiMockProviderOptions = {},
+    options: CreateRallarAiMockProviderOptions = {}
 ): RallarAiJsonProvider {
     return {
         providerId: options.providerId ?? 'mock',
@@ -23,10 +19,10 @@ export function createRallarAiMockProvider(
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'shared',
+            target: 'shared'
         },
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             if (request.signal?.aborted) {
                 throw request.signal.reason instanceof Error
@@ -47,8 +43,8 @@ export function createRallarAiMockProvider(
                 createdAtEpochMs: startedAtEpochMs,
                 generationId: request.requestId
                     ? `mock:${request.requestId}`
-                    : undefined,
+                    : undefined
             });
-        },
+        }
     };
 }

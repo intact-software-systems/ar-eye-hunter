@@ -1,10 +1,7 @@
-import type {
-    RallarGameAuthorityDiagnostics,
-    RallarGameAuthorityDiagnosticsInput,
-} from './types.ts';
+import type { RallarGameAuthorityDiagnostics, RallarGameAuthorityDiagnosticsInput } from './types.ts';
 
 export function deriveRallarGameAuthorityDiagnostics(
-    input: RallarGameAuthorityDiagnosticsInput,
+    input: RallarGameAuthorityDiagnosticsInput
 ): RallarGameAuthorityDiagnostics {
     const generatedAtEpochMs = input.nowEpochMs ?? Date.now();
     const status = input.status;
@@ -24,14 +21,14 @@ export function deriveRallarGameAuthorityDiagnostics(
             : Math.max(0, generatedAtEpochMs - status.lastEventAtEpochMs),
         issues: uniqueSorted([
             ...deriveIssues(status, generatedAtEpochMs),
-            ...(input.issues ?? []),
-        ]),
+            ...(input.issues ?? [])
+        ])
     };
 }
 
 function deriveIssues(
     status: RallarGameAuthorityDiagnosticsInput['status'],
-    nowEpochMs: number,
+    nowEpochMs: number
 ): readonly string[] {
     const issues: string[] = [];
 

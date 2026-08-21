@@ -1,10 +1,10 @@
 import type {
     RallarRtcCandidateDiagnostics,
-    RallarRtcCandidatePairDiagnostics,
+    RallarRtcCandidatePairDiagnostics
 } from '@shared-web/browser/rtc-diagnostics/rallar-rtc-diagnostics-contracts.ts';
 
 export async function readSelectedCandidatePairDiagnostics(
-    pc: RTCPeerConnection | undefined,
+    pc: RTCPeerConnection | undefined
 ): Promise<RallarRtcCandidatePairDiagnostics | undefined> {
     if (!pc || typeof pc.getStats !== 'function') {
         return undefined;
@@ -35,17 +35,17 @@ export async function readSelectedCandidatePairDiagnostics(
         nominated: toOptionalBoolean(selectedPair.nominated),
         selected: toOptionalBoolean(selectedPair.selected),
         currentRoundTripTime: toOptionalNumber(
-            selectedPair.currentRoundTripTime,
+            selectedPair.currentRoundTripTime
         ),
         availableOutgoingBitrate: toOptionalNumber(
-            selectedPair.availableOutgoingBitrate,
+            selectedPair.availableOutgoingBitrate
         ),
         bytesSent: toOptionalNumber(selectedPair.bytesSent),
         bytesReceived: toOptionalNumber(selectedPair.bytesReceived),
         local,
         remote,
         usesRelay: local?.candidateType === 'relay' ||
-            remote?.candidateType === 'relay',
+            remote?.candidateType === 'relay'
     };
 }
 
@@ -60,7 +60,7 @@ function toStatsArray(report: RTCStatsReport): Array<Record<string, unknown>> {
 }
 
 function toCandidateDiagnostics(
-    stat: Record<string, unknown> | undefined,
+    stat: Record<string, unknown> | undefined
 ): RallarRtcCandidateDiagnostics | undefined {
     if (!stat) {
         return undefined;
@@ -75,7 +75,7 @@ function toCandidateDiagnostics(
         port: toOptionalNumber(stat.port),
         relayProtocol: toOptionalString(stat.relayProtocol),
         networkType: toOptionalString(stat.networkType),
-        url: toOptionalString(stat.url),
+        url: toOptionalString(stat.url)
     };
 }
 

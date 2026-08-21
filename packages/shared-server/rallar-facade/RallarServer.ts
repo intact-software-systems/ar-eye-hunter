@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { AppDataRepositoryLike } from '../app-data/AppDataRepository.ts';
@@ -8,18 +8,18 @@ import {
     RallarServerAppDataFacade,
     type RallarServerAppDataStore,
     type RallarServerAppDataStoreDefinition,
-    type RallarServerAppDataStoreOptions,
+    type RallarServerAppDataStoreOptions
 } from '../app-data/RallarServerAppData.ts';
 import {
     RallarServerWsFacade,
     type RallarServerWsFacadeOptions,
     type RallarServerWsFanout,
     type RallarServerWsHandler,
-    type RallarServerWsPublishResult,
     type RallarServerWsProxyRule,
+    type RallarServerWsPublishResult,
     type RallarServerWsSelector,
     type RallarServerWsStatus,
-    type RallarServerWsTopicDefinition,
+    type RallarServerWsTopicDefinition
 } from './ws-topic-router.ts';
 
 export type RallarServerRuntime = Readonly<{
@@ -30,21 +30,18 @@ export type RallarServerRuntime = Readonly<{
     }>;
 }>;
 
-export type RallarServerSystemInstallers<TRuntime extends RallarServerRuntime> =
-    Readonly<{
-        installDefaultMiddlewareTopics?: (
-            runtime: TRuntime,
-            ws: RallarServerWsFacade,
-        ) => void;
-        installWebSocketLifecycle?: (
-            runtime: TRuntime,
-            ws: RallarServerWsFacade,
-        ) => void;
-    }>;
+export type RallarServerSystemInstallers<TRuntime extends RallarServerRuntime> = Readonly<{
+    installDefaultMiddlewareTopics?: (
+        runtime: TRuntime,
+        ws: RallarServerWsFacade
+    ) => void;
+    installWebSocketLifecycle?: (
+        runtime: TRuntime,
+        ws: RallarServerWsFacade
+    ) => void;
+}>;
 
-export type CreateRallarServerFacadeOptions<
-    TRuntime extends RallarServerRuntime,
-> = Readonly<{
+export type CreateRallarServerFacadeOptions<TRuntime extends RallarServerRuntime> = Readonly<{
     runtime: TRuntime;
     repositories?: RepositoryManager;
     ws?: RallarServerWsFacadeOptions;
@@ -66,22 +63,22 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
         repositories: RepositoryManager = defaultRepositoryManager,
         wsOptions: RallarServerWsFacadeOptions = {},
         systemInstallers: RallarServerSystemInstallers<TRuntime> = {},
-        appDataRepository?: AppDataRepositoryLike,
+        appDataRepository?: AppDataRepositoryLike
     ) {
         this.runtime = runtime;
         const wsTopicsFacade = new RallarServerWsFacade(
             runtime.wsQBoxServerService,
             {
                 ...wsOptions,
-                wakeOutbox: () => runtime.qboxEngine?.wake?.(),
-            },
+                wakeOutbox: () => runtime.qboxEngine?.wake?.()
+            }
         );
 
         this.ws = new RallarServerWebSocketFacade(wsTopicsFacade);
         this.system = new RallarServerSystemFacade(
             runtime,
             wsTopicsFacade,
-            systemInstallers,
+            systemInstallers
         );
         this.data = new RallarServerDataFacade(repositories, appDataRepository);
     }
@@ -91,23 +88,19 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
     }
 }
 
-export function createRallarServerFacade<
-    TRuntime extends RallarServerRuntime,
->(
-    options: CreateRallarServerFacadeOptions<TRuntime>,
+export function createRallarServerFacade<TRuntime extends RallarServerRuntime>(
+    options: CreateRallarServerFacadeOptions<TRuntime>
 ): RallarServer<TRuntime> {
     return new RallarServer(
         options.runtime,
         options.repositories ?? defaultRepositoryManager,
         options.ws,
         options.system,
-        options.appData?.repository,
+        options.appData?.repository
     );
 }
 
-export class RallarServerSystemFacade<
-    TRuntime extends RallarServerRuntime = RallarServerRuntime,
-> {
+export class RallarServerSystemFacade<TRuntime extends RallarServerRuntime = RallarServerRuntime> {
     private defaultTopicsInstalled = false;
     private lifecycleInstalled = false;
 
@@ -118,7 +111,7 @@ export class RallarServerSystemFacade<
     constructor(
         runtime: TRuntime,
         ws: RallarServerWsFacade,
-        installers: RallarServerSystemInstallers<TRuntime>,
+        installers: RallarServerSystemInstallers<TRuntime>
     ) {
         this.runtime = runtime;
         this.ws = ws;
@@ -170,7 +163,7 @@ export class RallarServerWebSocketFacade {
 
     on<T>(
         selector: RallarServerWsSelector,
-        handler: RallarServerWsHandler<T>,
+        handler: RallarServerWsHandler<T>
     ): () => boolean {
         return this.topics.on(selector, handler);
     }
@@ -181,7 +174,7 @@ export class RallarServerWebSocketFacade {
 
     publish(
         message: ALMessage,
-        fanout?: RallarServerWsFanout,
+        fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult> {
         return this.topics.publish(message, fanout);
     }
@@ -198,39 +191,39 @@ export class RallarServerDataFacade {
 
     constructor(
         repositories: RepositoryManager,
-        appDataRepository?: AppDataRepositoryLike,
+        appDataRepository?: AppDataRepositoryLike
     ) {
         this.repositories = repositories;
         this.appData = new RallarServerAppDataFacade(
             repositories,
-            appDataRepository,
+            appDataRepository
         );
     }
 
     define<V>(
         name: string,
-        options?: RallarServerAppDataStoreOptions<V>,
+        options?: RallarServerAppDataStoreOptions<V>
     ): RallarServerAppDataStoreDefinition<V> {
         return this.appData.define(name, options);
     }
 
     open<V>(
         input: string | RallarServerAppDataStoreDefinition<V>,
-        options?: RallarServerAppDataStoreOptions<V>,
+        options?: RallarServerAppDataStoreOptions<V>
     ): Promise<RallarServerAppDataStore<V>> {
         return this.appData.open(input, options);
     }
 
     lookupStore<V>(
         input: string | RallarServerAppDataStoreDefinition<V>,
-        options?: RallarServerAppDataStoreOptions<V>,
+        options?: RallarServerAppDataStoreOptions<V>
     ): RallarServerAppDataStore<V> | undefined {
         return this.appData.lookup(input, options);
     }
 
     closeStore<V>(
         input: string | RallarServerAppDataStoreDefinition<V>,
-        options?: RallarServerAppDataStoreOptions<V>,
+        options?: RallarServerAppDataStoreOptions<V>
     ): Promise<boolean> {
         return this.appData.close(input, options);
     }

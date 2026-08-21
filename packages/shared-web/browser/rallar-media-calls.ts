@@ -1,19 +1,19 @@
 export {
-    createRallarCallsFacade,
+    createRallarCallsFacade
 } from '@shared-web/browser/rallar-calls-facade.ts';
 
 export {
-    createRallarMediaFacade,
+    createRallarMediaFacade
 } from '@shared-web/browser/rallar-media-facade.ts';
 
 export type {
     CreateRallarCallsFacadeOptions,
-    RallarCallsFacade,
+    RallarCallsFacade
 } from '@shared-web/browser/rallar-calls-facade.ts';
 
 export type {
     CreateRallarMediaFacadeOptions,
-    RallarMediaFacade,
+    RallarMediaFacade
 } from '@shared-web/browser/rallar-media-facade.ts';
 
 export type {
@@ -41,11 +41,11 @@ export type {
     RallarMediaSourceController,
     RallarMediaSourceHandle,
     RallarMediaSourceKind,
+    RallarMediaSourcesFacade,
     RallarMediaSourceState,
     RallarMediaSourceStatus,
-    RallarMediaSourcesFacade,
     RallarMicrophoneSourceStartOptions,
     RallarRemoteStream,
     RallarScreenSourceStartOptions,
-    RallarUnsubscribe,
+    RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';

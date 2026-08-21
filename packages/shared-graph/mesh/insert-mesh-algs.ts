@@ -1,11 +1,4 @@
-import {
-    compareVertexIds,
-    MeshGraph,
-    VertexId,
-    VertexState,
-    VertexType,
-    WeightedGraph,
-} from '../graph-props.ts';
+import { compareVertexIds, MeshGraph, VertexId, VertexState, VertexType, WeightedGraph } from '../graph-props.ts';
 import { cloneGraph, isValidMesh, worstCaseDist } from '../graph/graph-algs.ts';
 import { DynamicMeshAlgo } from './group-dynamics-mesh-types.ts';
 
@@ -16,13 +9,13 @@ export type InsertToMeshInputDto = {
     numberOfMembers: number;
     k: number;
     algo: DynamicMeshAlgo;
-}
+};
 
 export type InsertToMeshComputedDto = {
-    input: InsertToMeshInputDto
-    elapsedMs: number
-    validMesh: boolean
-    groupGraph: WeightedGraph
+    input: InsertToMeshInputDto;
+    elapsedMs: number;
+    validMesh: boolean;
+    groupGraph: WeightedGraph;
 };
 
 export function insertToMesh(input: InsertToMeshInputDto): InsertToMeshComputedDto {
@@ -61,7 +54,7 @@ export function insertMeshAlgorithm(input: InsertToMeshInputDto): WeightedGraph 
                 ...attrs,
                 type: VertexType.CLIENT,
                 state: VertexState.MEMBER,
-                degreeLimit: groupGraph.getAttributes().degreeLimitMember,
+                degreeLimit: groupGraph.getAttributes().degreeLimitMember
             }
         );
 
@@ -92,7 +85,7 @@ export function kInsertMCandMDDL(
     globalGraph: MeshGraph,
     groupGraph: MeshGraph,
     actionVertexId: VertexId,
-    k: number,
+    k: number
 ): void {
     let mcEdges = 0;
     let mddlEdges = 0;
@@ -100,7 +93,8 @@ export function kInsertMCandMDDL(
     if (k % 2 === 0) {
         mcEdges = k / 2;
         mddlEdges = k / 2;
-    } else {
+    }
+    else {
         mcEdges = (k + 1) / 2;
         mddlEdges = k - mcEdges;
     }
@@ -113,12 +107,14 @@ export function kInsertMDDL(
     globalGraph: MeshGraph,
     groupGraph: MeshGraph,
     actionVertexId: VertexId,
-    k: number,
+    k: number
 ): void {
-    const ranked: Array<{ score: number; node: VertexId }> = [];
+    const ranked: Array<{ score: number; node: VertexId; }> = [];
 
     for (const candidate of groupGraph.nodes() as VertexId[]) {
-        if (candidate === actionVertexId) continue;
+        if (candidate === actionVertexId) {
+            continue;
+        }
 
         if (getOutDegree(groupGraph, candidate) >= getDegreeConstraint(globalGraph, candidate)) {
             continue;
@@ -134,7 +130,7 @@ export function kInsertMDDL(
 
         ranked.push({
             score: resultingEccentricity,
-            node: candidate,
+            node: candidate
         });
     }
 
@@ -148,7 +144,9 @@ export function kInsertMDDL(
 
     let inserted = 0;
     for (const entry of ranked) {
-        if (inserted >= k) break;
+        if (inserted >= k) {
+            break;
+        }
 
         if (entry.node === actionVertexId) {
             throw new Error('kInsertMDDL: self-loop target selected unexpectedly.');
@@ -163,12 +161,14 @@ export function kInsertMC(
     globalGraph: MeshGraph,
     groupGraph: MeshGraph,
     actionVertexId: VertexId,
-    k: number,
+    k: number
 ): void {
-    const ranked: Array<{ score: number; node: VertexId }> = [];
+    const ranked: Array<{ score: number; node: VertexId; }> = [];
 
     for (const candidate of groupGraph.nodes() as VertexId[]) {
-        if (candidate === actionVertexId) continue;
+        if (candidate === actionVertexId) {
+            continue;
+        }
 
         if (getOutDegree(groupGraph, candidate) >= getDegreeConstraint(globalGraph, candidate)) {
             continue;
@@ -177,7 +177,7 @@ export function kInsertMC(
         const edgeWeight = getRequiredEdgeWeight(globalGraph, actionVertexId, candidate);
         ranked.push({
             score: edgeWeight,
-            node: candidate,
+            node: candidate
         });
     }
 
@@ -191,7 +191,9 @@ export function kInsertMC(
 
     let inserted = 0;
     for (const entry of ranked) {
-        if (inserted >= k) break;
+        if (inserted >= k) {
+            break;
+        }
 
         if (entry.node === actionVertexId) {
             throw new Error('kInsertMC: self-loop target selected unexpectedly.');
@@ -208,7 +210,7 @@ function ensureEmptyFirstInsert(groupGraph: MeshGraph): void {
         groupGraph.edges().length !== 0
     ) {
         throw new Error(
-            'Expected empty group graph on first insert, but graph is not empty.',
+            'Expected empty group graph on first insert, but graph is not empty.'
         );
     }
 }
@@ -216,9 +218,11 @@ function ensureEmptyFirstInsert(groupGraph: MeshGraph): void {
 function insertMemberVertexFromGlobal(
     groupGraph: MeshGraph,
     globalGraph: MeshGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (groupGraph.hasNode(vertexId)) return;
+    if (groupGraph.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
 
@@ -226,7 +230,7 @@ function insertMemberVertexFromGlobal(
         ...attrs,
         type: VertexType.CLIENT,
         state: VertexState.MEMBER,
-        degreeLimit: groupGraph.getAttributes().degreeLimitMember,
+        degreeLimit: groupGraph.getAttributes().degreeLimitMember
     });
 }
 
@@ -234,22 +238,24 @@ function insertEdgeFromGlobal(
     groupGraph: MeshGraph,
     globalGraph: MeshGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): void {
-    if (groupGraph.hasEdge(a, b)) return;
+    if (groupGraph.hasEdge(a, b)) {
+        return;
+    }
 
     const weight = getRequiredEdgeWeight(globalGraph, a, b);
     groupGraph.addEdge(a, b, {
         from: a,
         to: b,
-        weight,
+        weight
     });
 }
 
 function getRequiredEdgeWeight(
     graph: MeshGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): number {
     const edgeKey = graph.edge(a, b);
     if (edgeKey === undefined) {
@@ -260,14 +266,14 @@ function getRequiredEdgeWeight(
 
 function getDegreeConstraint(
     graph: MeshGraph,
-    node: VertexId,
+    node: VertexId
 ): number {
     return graph.getNodeAttributes(node).degreeLimit;
 }
 
 function getOutDegree(
     graph: MeshGraph,
-    node: VertexId,
+    node: VertexId
 ): number {
     return graph.degree(node);
 }

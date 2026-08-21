@@ -1,12 +1,9 @@
+import { parseRecipeConsoleUrl, serializeRecipeConsoleUrl } from './url-state-codec.ts';
 import {
     RECIPE_CONSOLE_URL_VERSION,
     type ParsedRecipeConsoleUrl,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleUrlState
 } from './url-state-contract.ts';
-import {
-    parseRecipeConsoleUrl,
-    serializeRecipeConsoleUrl,
-} from './url-state-codec.ts';
 
 export type RecipeConsoleHistoryPort = Readonly<{
     readSearch(): string;
@@ -16,19 +13,18 @@ export type RecipeConsoleHistoryPort = Readonly<{
 }>;
 
 export function createRecipeConsoleUrlHistory(
-    port: RecipeConsoleHistoryPort,
+    port: RecipeConsoleHistoryPort
 ): Readonly<{
     read(): ParsedRecipeConsoleUrl;
     push(patch: Partial<RecipeConsoleUrlState>): ParsedRecipeConsoleUrl;
     replace(patch: Partial<RecipeConsoleUrlState>): ParsedRecipeConsoleUrl;
     subscribe(listener: (value: ParsedRecipeConsoleUrl) => void): () => void;
 }> {
-    const read = (): ParsedRecipeConsoleUrl =>
-        parseRecipeConsoleUrl(port.readSearch());
+    const read = (): ParsedRecipeConsoleUrl => parseRecipeConsoleUrl(port.readSearch());
 
     const write = (
         method: 'push' | 'replace',
-        patch: Partial<RecipeConsoleUrlState>,
+        patch: Partial<RecipeConsoleUrlState>
     ): ParsedRecipeConsoleUrl => {
         const currentSearch = port.readSearch();
         const current = parseRecipeConsoleUrl(currentSearch);
@@ -36,7 +32,7 @@ export function createRecipeConsoleUrlHistory(
             ...current.state,
             ...patch,
             v: RECIPE_CONSOLE_URL_VERSION,
-            experience: 'recipe-console',
+            experience: 'recipe-console'
         };
         const search = serializeRecipeConsoleUrl(state, currentSearch);
         if (search !== currentSearch) {
@@ -47,8 +43,8 @@ export function createRecipeConsoleUrlHistory(
 
     return {
         read,
-        push: patch => write('push', patch),
-        replace: patch => write('replace', patch),
-        subscribe: listener => port.subscribe(() => listener(read())),
+        push: (patch) => write('push', patch),
+        replace: (patch) => write('replace', patch),
+        subscribe: (listener) => port.subscribe(() => listener(read()))
     };
 }

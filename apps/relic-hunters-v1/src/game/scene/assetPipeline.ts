@@ -22,7 +22,7 @@ export const RELIC_ASSET_PIPELINE_BUDGETS = {
     babylonChunkKb: 3_200,
     activeMeshCount: 900,
     drawCalls: 1_100,
-    frameTimeMs: 22.5,
+    frameTimeMs: 22.5
 } as const;
 
 export const CURRENT_RELIC_ASSET_PIPELINE: RelicAssetPipelineDecision = {
@@ -31,13 +31,13 @@ export const CURRENT_RELIC_ASSET_PIPELINE: RelicAssetPipelineDecision = {
     rationale: [
         'The current procedural kit is covered by deterministic tests and scene baselines.',
         'The Babylon chunk is already large enough that imported gameplay assets should not be added blindly.',
-        'No approved modular glTF set exists yet for room pieces, avatars, or relics.',
+        'No approved modular glTF set exists yet for room pieces, avatars, or relics.'
     ],
     nextSteps: [
         'Keep gameplay rooms procedural while improving reusable kit pieces and instancing opportunities.',
         'Prototype imported assets only behind an explicit hybrid asset boundary after production performance work.',
-        'Require naming, scale, origin, material, and fallback conventions before any glTF asset becomes gameplay-critical.',
-    ],
+        'Require naming, scale, origin, material, and fallback conventions before any glTF asset becomes gameplay-critical.'
+    ]
 };
 
 export function recommendRelicAssetPipeline(input: RelicAssetPipelineInput): RelicAssetPipelineDecision {
@@ -57,12 +57,12 @@ export function recommendRelicAssetPipeline(input: RelicAssetPipelineInput): Rel
         rationale: [
             'Measured scene and bundle budgets have headroom.',
             'An approved modular asset set is available.',
-            'The procedural fallback can remain in place while selected repeated pieces move to glTF.',
+            'The procedural fallback can remain in place while selected repeated pieces move to glTF.'
         ],
         nextSteps: [
             'Introduce a dedicated hybrid asset loader boundary.',
             'Start with non-authoritative visual pieces such as room shell variants or avatar skins.',
-            'Keep procedural fallbacks and Playwright render contracts enabled for asset-load failure paths.',
-        ],
+            'Keep procedural fallbacks and Playwright render contracts enabled for asset-load failure paths.'
+        ]
     };
 }

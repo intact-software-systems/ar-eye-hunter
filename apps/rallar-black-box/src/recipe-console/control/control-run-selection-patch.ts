@@ -1,13 +1,15 @@
 import type { ControlDistributedRunSnapshot } from '../../control-run-manager.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
-export function deriveControlRunSelectionPatch(input: Readonly<{
-    state: RecipeConsoleUrlState;
-    controlRunId: string;
-    distributedRuns: readonly ControlDistributedRunSnapshot[];
-}>): Partial<RecipeConsoleUrlState> {
+export function deriveControlRunSelectionPatch(
+    input: Readonly<{
+        state: RecipeConsoleUrlState;
+        controlRunId: string;
+        distributedRuns: readonly ControlDistributedRunSnapshot[];
+    }>
+): Partial<RecipeConsoleUrlState> {
     const distributedRunId = input.state.distributedRunId &&
-            input.distributedRuns.some(run =>
+            input.distributedRuns.some((run) =>
                 run.distributedRunId === input.state.distributedRunId &&
                 run.controlRunId === input.controlRunId
             )
@@ -16,6 +18,6 @@ export function deriveControlRunSelectionPatch(input: Readonly<{
     return {
         controlRunId: input.controlRunId,
         distributedRunId,
-        agentId: undefined,
+        agentId: undefined
     };
 }

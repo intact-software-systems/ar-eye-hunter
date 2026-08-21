@@ -1,46 +1,38 @@
-import {
-    useEffect,
-    useRef,
-    useState,
-    type KeyboardEvent,
-} from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
-import {
-    nextRovingNavigationIndex,
-    type RovingNavigationKey,
-} from '../app/navigation-keyboard.ts';
+import { nextRovingNavigationIndex, type RovingNavigationKey } from '../app/navigation-keyboard.ts';
 import { RECIPE_CONSOLE_NAVIGATION } from '../app/recipe-console-navigation.ts';
 import { claimDiagnosticReturnFocus } from '../routing/diagnostic-return-focus.ts';
 import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { Icon } from '../ui/Icon.tsx';
-import type { RecipeConsolePresentation } from './responsive-presentation.ts';
 import styles from './RecipeConsoleShell.module.css';
+import type { RecipeConsolePresentation } from './responsive-presentation.ts';
 
 function navigationIndexForView(view: RecipeConsoleView): number {
-    const index = RECIPE_CONSOLE_NAVIGATION.findIndex(item => item.view === view);
+    const index = RECIPE_CONSOLE_NAVIGATION.findIndex((item) => item.view === view);
     return index < 0 ? 0 : index;
 }
 
 function isRovingNavigationKey(key: string): key is RovingNavigationKey {
-    return key === 'ArrowUp'
-        || key === 'ArrowDown'
-        || key === 'ArrowLeft'
-        || key === 'ArrowRight'
-        || key === 'Home'
-        || key === 'End';
+    return key === 'ArrowUp' ||
+        key === 'ArrowDown' ||
+        key === 'ArrowLeft' ||
+        key === 'ArrowRight' ||
+        key === 'Home' ||
+        key === 'End';
 }
 
 export function PrimaryNavigation({
     currentView,
     presentation,
-    onNavigate,
+    onNavigate
 }: Readonly<{
     currentView: RecipeConsoleView;
     presentation: RecipeConsolePresentation['navigation'];
     onNavigate(view: RecipeConsoleView): void;
 }>) {
     const [activeIndex, setActiveIndex] = useState(
-        () => navigationIndexForView(currentView),
+        () => navigationIndexForView(currentView)
     );
     const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -50,9 +42,9 @@ export function PrimaryNavigation({
 
     useEffect(() => {
         if (
-            typeof document === 'undefined'
-            || typeof window === 'undefined'
-            || !claimDiagnosticReturnFocus(document, window.location.href)
+            typeof document === 'undefined' ||
+            typeof window === 'undefined' ||
+            !claimDiagnosticReturnFocus(document, window.location.href)
         ) {
             return;
         }
@@ -68,7 +60,7 @@ export function PrimaryNavigation({
 
     const handleKeyDown = (
         event: KeyboardEvent<HTMLButtonElement>,
-        index: number,
+        index: number
     ): void => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
@@ -83,7 +75,7 @@ export function PrimaryNavigation({
         const nextIndex = nextRovingNavigationIndex(
             index,
             event.key,
-            RECIPE_CONSOLE_NAVIGATION.length,
+            RECIPE_CONSOLE_NAVIGATION.length
         );
         setActiveIndex(nextIndex);
         itemRefs.current[nextIndex]?.focus();
@@ -102,8 +94,8 @@ export function PrimaryNavigation({
                     className={styles.navigationItem}
                     key={item.view}
                     onClick={() => activate(index)}
-                    onKeyDown={event => handleKeyDown(event, index)}
-                    ref={button => {
+                    onKeyDown={(event) => handleKeyDown(event, index)}
+                    ref={(button) => {
                         itemRefs.current[index] = button;
                     }}
                     tabIndex={index === activeIndex ? 0 : -1}

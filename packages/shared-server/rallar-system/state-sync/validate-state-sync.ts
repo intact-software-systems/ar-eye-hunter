@@ -1,30 +1,21 @@
-import type {
-    ClientEvent,
-    ClientPrincipalRef,
-    ClientSnapshot,
-} from '@shared/api/client-types.ts';
-import type {
-    GroupEvent,
-    GroupRef,
-    GroupSnapshot,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
 import {
     validateAuthoritativeClientEvent,
     validateAuthoritativeClientSnapshot,
-    validateAuthoritativeGroupSnapshot,
+    validateAuthoritativeGroupSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
+import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import type { GroupEvent, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type {
     ComputedClientStateSync,
     ComputedClientStateSyncEffect,
     ComputedGroupStateSync,
-    ComputedGroupStateSyncEffect,
+    ComputedGroupStateSyncEffect
 } from '../state-sync-publisher.ts';
 
 export function validateComputedStateSyncFacts(
     computed: ComputedClientStateSync | ComputedGroupStateSync,
-    senderId: string,
+    senderId: string
 ): void {
     if (
         typeof computed !== 'object' ||
@@ -77,7 +68,7 @@ export function validateComputedStateSyncFacts(
 
 export function validateClientStateSyncEffect(
     computed: ComputedClientStateSync,
-    effect: ComputedClientStateSyncEffect,
+    effect: ComputedClientStateSyncEffect
 ): void {
     if (
         typeof effect !== 'object' ||
@@ -93,7 +84,7 @@ export function validateClientStateSyncEffect(
             effect.payload.stateRevision !== computed.acceptedCausalRevision
         ) {
             throw new TypeError(
-                'Computed client state sync snapshot differs from accepted authority',
+                'Computed client state sync snapshot differs from accepted authority'
             );
         }
         return;
@@ -105,7 +96,7 @@ export function validateClientStateSyncEffect(
             effect.payload.snapshotVersion !== computed.acceptedCausalRevision
         ) {
             throw new TypeError(
-                'Computed client state sync event differs from accepted authority',
+                'Computed client state sync event differs from accepted authority'
             );
         }
         return;
@@ -115,7 +106,7 @@ export function validateClientStateSyncEffect(
 
 export function validateGroupStateSyncEffect(
     computed: ComputedGroupStateSync,
-    effect: ComputedGroupStateSyncEffect,
+    effect: ComputedGroupStateSyncEffect
 ): void {
     if (typeof effect !== 'object' || effect === null) {
         throw new TypeError('Computed group state sync effect is invalid');
@@ -128,12 +119,14 @@ export function validateGroupStateSyncEffect(
             throw new TypeError('Computed group state sync effect kind is invalid');
         }
         validateAuthoritativeGroupSnapshot(effect.payload, computed.aggregateRef);
-    } else if (effect.payloadKind === 'delta-envelope') {
+    }
+    else if (effect.payloadKind === 'delta-envelope') {
         if (effect.effectKind !== 'member-state') {
             throw new TypeError('Computed group state sync effect kind is invalid');
         }
         validateGroupStateDeltaEnvelope(effect.payload, computed.aggregateRef);
-    } else {
+    }
+    else {
         throw new TypeError('Computed group state sync payload kind is invalid');
     }
     const identity = effect.payloadKind === 'delta-envelope'
@@ -151,7 +144,7 @@ export function validateGroupStateSyncEffect(
 }
 
 export function isValidGroupCausalRevision(
-    revision: GroupStateCausalRevision,
+    revision: GroupStateCausalRevision
 ): boolean {
     return Number.isSafeInteger(revision.groupRevision) &&
         revision.groupRevision >= 0 &&
@@ -161,7 +154,7 @@ export function isValidGroupCausalRevision(
 
 function sameClientRef(
     ref: ClientPrincipalRef,
-    value: ClientSnapshot | ClientEvent,
+    value: ClientSnapshot | ClientEvent
 ): boolean {
     const candidate = 'principal' in value ? value.principal : value;
     return ref.applicationId === candidate.applicationId &&
@@ -171,7 +164,7 @@ function sameClientRef(
 
 function sameGroupRef(
     ref: GroupRef,
-    value: GroupSnapshot | GroupEvent,
+    value: GroupSnapshot | GroupEvent
 ): boolean {
     const candidate = 'group' in value ? value.group : value;
     return ref.applicationId === candidate.applicationId &&

@@ -122,22 +122,22 @@ Suggested V1 hook shape:
 
 ```ts
 export interface RallarAiAuthorizationContext {
-  actorId?: string;
-  roomId?: string;
-  action:
-    | "generate"
-    | "broadcast"
-    | "persist"
-    | "approve"
-    | "reject"
-    | "configure-provider";
-  source: "browser" | "server";
-  schemaId: string;
-  schemaVersion: string;
+    actorId?: string;
+    roomId?: string;
+    action:
+        | 'generate'
+        | 'broadcast'
+        | 'persist'
+        | 'approve'
+        | 'reject'
+        | 'configure-provider';
+    source: 'browser' | 'server';
+    schemaId: string;
+    schemaVersion: string;
 }
 
 export type RallarAiAuthorize = (
-  context: RallarAiAuthorizationContext,
+    context: RallarAiAuthorizationContext
 ) => Promise<boolean> | boolean;
 ```
 
@@ -162,15 +162,15 @@ Suggested shared transport metadata:
 
 ```ts
 export interface RallarAiTransportPolicy {
-  delivery: "ephemeral" | "persisted" | "ephemeral-and-persisted";
-  ordering: "none" | "per-lane" | "server-ordered";
-  acknowledgement: "none" | "sender-only" | "room-quorum";
-  conflictPolicy:
-    | "first-valid-wins"
-    | "latest-valid-wins"
-    | "host-decides"
-    | "server-decides"
-    | "app-defined";
+    delivery: 'ephemeral' | 'persisted' | 'ephemeral-and-persisted';
+    ordering: 'none' | 'per-lane' | 'server-ordered';
+    acknowledgement: 'none' | 'sender-only' | 'room-quorum';
+    conflictPolicy:
+        | 'first-valid-wins'
+        | 'latest-valid-wins'
+        | 'host-decides'
+        | 'server-decides'
+        | 'app-defined';
 }
 ```
 
@@ -202,14 +202,14 @@ The main RallarAI envelope says what was generated. The companion lifecycle says
 
 Suggested lifecycle states:
 
-| State | Meaning |
-| --- | --- |
-| `draft` | Created locally but not shared. |
-| `proposed` | Shared with peers or server, not yet accepted. |
-| `accepted` | Approved for application to domain state. |
-| `rejected` | Explicitly refused by host, server, or app validation. |
-| `expired` | No longer valid because time or base state moved on. |
-| `superseded` | Replaced by a newer generation. |
+| State        | Meaning                                                |
+| ------------ | ------------------------------------------------------ |
+| `draft`      | Created locally but not shared.                        |
+| `proposed`   | Shared with peers or server, not yet accepted.         |
+| `accepted`   | Approved for application to domain state.              |
+| `rejected`   | Explicitly refused by host, server, or app validation. |
+| `expired`    | No longer valid because time or base state moved on.   |
+| `superseded` | Replaced by a newer generation.                        |
 
 Suggested helper package location:
 

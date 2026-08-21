@@ -194,8 +194,18 @@
           "status": "completed",
           "jobId": "string",
           "results": [
-            { "category": "runtime-state", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false },
-            { "category": "resource-inbox-results", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false }
+            {
+              "category": "runtime-state",
+              "expiredRows": "integer",
+              "deletedRows": "integer",
+              "dryRun": false
+            },
+            {
+              "category": "resource-inbox-results",
+              "expiredRows": "integer",
+              "deletedRows": "integer",
+              "dryRun": false
+            }
           ]
         }
       }
@@ -229,8 +239,18 @@
           "completedAppInboxStatus": "COMPLETED",
           "pruneStatus": "completed",
           "boundedPages": [
-            { "category": "runtime-state", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false },
-            { "category": "resource-inbox-results", "expiredRows": "integer", "deletedRows": "integer", "dryRun": false }
+            {
+              "category": "runtime-state",
+              "expiredRows": "integer",
+              "deletedRows": "integer",
+              "dryRun": false
+            },
+            {
+              "category": "resource-inbox-results",
+              "expiredRows": "integer",
+              "deletedRows": "integer",
+              "dryRun": false
+            }
           ]
         }
       }

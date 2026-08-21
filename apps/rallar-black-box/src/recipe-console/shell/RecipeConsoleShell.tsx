@@ -1,15 +1,12 @@
 import { useCallback, useRef, type ReactNode, type RefObject } from 'react';
-import type {
-    RecipeConsoleUrlIssue,
-    RecipeConsoleView,
-} from '../routing/url-state-contract.ts';
+import type { RecipeConsoleUrlIssue, RecipeConsoleView } from '../routing/url-state-contract.ts';
 import type { OperationalStatus } from '../ui/StatusMark.tsx';
+import type { AccountSettingsPanelProps } from './AccountSettingsPanel.tsx';
 import { InspectorHost } from './InspectorHost.tsx';
 import { PrimaryNavigation } from './PrimaryNavigation.tsx';
-import { TopCommandBar } from './TopCommandBar.tsx';
-import type { AccountSettingsPanelProps } from './AccountSettingsPanel.tsx';
-import { useRecipeConsolePresentation } from './use-responsive-presentation.ts';
 import styles from './RecipeConsoleShell.module.css';
+import { TopCommandBar } from './TopCommandBar.tsx';
+import { useRecipeConsolePresentation } from './use-responsive-presentation.ts';
 
 export type RecipeConsoleShellProps = Readonly<{
     accountSettings: AccountSettingsPanelProps;
@@ -50,7 +47,7 @@ export function RecipeConsoleShell({
     inspectorRestoreFocusFallback,
     selectionDockContent,
     onSelectionDockInspect,
-    restoreFocusRef,
+    restoreFocusRef
 }: RecipeConsoleShellProps) {
     const presentation = useRecipeConsolePresentation();
     const workSurfaceRef = useRef<HTMLElement>(null);
@@ -60,11 +57,15 @@ export function RecipeConsoleShell({
     const restoreInspectorFallbacks = useCallback(() => [
         inspectorRestoreFocusFallback,
         restoreFocusRef.current,
-        workSurfaceRef.current,
+        workSurfaceRef.current
     ], [inspectorRestoreFocusFallback, restoreFocusRef]);
     return (
         <div
-            className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${showSelectionDock ? '' : styles.withoutSelectionDock} ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${showInspector && currentView === 'monitor' ? styles.monitorInspector : ''}`}
+            className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${
+                showSelectionDock ? '' : styles.withoutSelectionDock
+            } ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${
+                showInspector && currentView === 'monitor' ? styles.monitorInspector : ''
+            }`}
             data-command-height={presentation.commandBarHeight}
             data-inspector-mode={presentation.inspector}
             data-navigation={presentation.navigation}
@@ -94,27 +95,33 @@ export function RecipeConsoleShell({
             >
                 {workContent}
             </main>
-            {showInspector ? (
-                <InspectorHost
-                    mode={presentation.inspector}
-                    onClose={onInspectorClose}
-                    open
-                    restoreFocusFallbacks={restoreInspectorFallbacks}
-                    restoreFocusTo={inspectorRestoreFocus}
-                >
-                    {inspectorContent}
-                </InspectorHost>
-            ) : null}
-            {showSelectionDock ? (
-                <div className={styles.selectionDock} data-selection-dock>
-                    <span>{selectionDockContent}</span>
-                    <button
-                        onClick={event => onSelectionDockInspect?.(event.currentTarget)}
-                        ref={restoreFocusRef}
-                        type="button"
-                    >Inspect</button>
-                </div>
-            ) : null}
+            {showInspector
+                ? (
+                    <InspectorHost
+                        mode={presentation.inspector}
+                        onClose={onInspectorClose}
+                        open
+                        restoreFocusFallbacks={restoreInspectorFallbacks}
+                        restoreFocusTo={inspectorRestoreFocus}
+                    >
+                        {inspectorContent}
+                    </InspectorHost>
+                )
+                : null}
+            {showSelectionDock
+                ? (
+                    <div className={styles.selectionDock} data-selection-dock>
+                        <span>{selectionDockContent}</span>
+                        <button
+                            onClick={(event) => onSelectionDockInspect?.(event.currentTarget)}
+                            ref={restoreFocusRef}
+                            type="button"
+                        >
+                            Inspect
+                        </button>
+                    </div>
+                )
+                : null}
         </div>
     );
 }

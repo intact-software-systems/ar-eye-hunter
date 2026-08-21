@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { Coordinates } from '@shared-graph/graph/vivaldi-core.ts';
+import { describe, expect, it } from 'vitest';
 
 // Coordinates is the oracle that compute-predicted-rtt-ms.test.ts checks the
 // optimized distance loop against, so the class certifying that function had no
@@ -58,10 +58,12 @@ describe('Coordinates', () => {
             expect(coords.subtract(new Coordinates([0, 0])).norm()).toBe(7);
         });
 
-        it.each([
-            { operation: 'add' },
-            { operation: 'subtract' },
-        ] as const)('rejects a dimension mismatch in $operation', ({ operation }) => {
+        it.each(
+            [
+                { operation: 'add' },
+                { operation: 'subtract' }
+            ] as const
+        )('rejects a dimension mismatch in $operation', ({ operation }) => {
             const two = new Coordinates([1, 2]);
             const three = new Coordinates([1, 2, 3]);
 
@@ -82,8 +84,8 @@ describe('Coordinates', () => {
             {
                 norm: 'L-infinity ahead of L1 when both are set',
                 cfg: { useL1: true, useLInf: true },
-                expected: 4,
-            },
+                expected: 4
+            }
         ])('measures $norm', ({ cfg, expected }) => {
             expect(new Coordinates([3, -4], cfg).norm()).toBe(expected);
         });
@@ -93,7 +95,7 @@ describe('Coordinates', () => {
         it.each([
             { norm: 'L2', cfg: {} },
             { norm: 'L1', cfg: { useL1: true } },
-            { norm: 'L-infinity', cfg: { useLInf: true } },
+            { norm: 'L-infinity', cfg: { useLInf: true } }
         ])('measures an empty vector as zero under $norm', ({ cfg }) => {
             expect(new Coordinates([], cfg).norm()).toBe(0);
         });
@@ -101,7 +103,7 @@ describe('Coordinates', () => {
         it.each([
             { norm: 'L2', cfg: {}, expected: 5 },
             { norm: 'L1', cfg: { useL1: true }, expected: 7 },
-            { norm: 'L-infinity', cfg: { useLInf: true }, expected: 4 },
+            { norm: 'L-infinity', cfg: { useLInf: true }, expected: 4 }
         ])('computes distance as the norm of the difference under $norm', ({ cfg, expected }) => {
             const here = new Coordinates([3, -4], cfg);
             const remote = new Coordinates([0, 0], cfg);
@@ -121,7 +123,7 @@ describe('Coordinates', () => {
         it.each([
             { label: 'NaN', values: [1, Number.NaN] },
             { label: 'positive infinity', values: [Number.POSITIVE_INFINITY, 1] },
-            { label: 'negative infinity', values: [1, Number.NEGATIVE_INFINITY] },
+            { label: 'negative infinity', values: [1, Number.NEGATIVE_INFINITY] }
         ])('rejects $label', ({ values }) => {
             expect(new Coordinates(values).isValid()).toBe(false);
         });
@@ -165,7 +167,7 @@ describe('Coordinates', () => {
         it.each([
             { norm: 'L2', cfg: {} },
             { norm: 'L1', cfg: { useL1: true } },
-            { norm: 'L-infinity', cfg: { useLInf: true } },
+            { norm: 'L-infinity', cfg: { useLInf: true } }
         ])('returns a unit vector under $norm', ({ cfg }) => {
             const here = new Coordinates([3, -4], cfg);
             const remote = new Coordinates([0, 0], cfg);

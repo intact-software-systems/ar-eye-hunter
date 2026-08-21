@@ -1,7 +1,5 @@
-export const RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE =
-    'rallar-black-box-control-server' as const;
-export const RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE =
-    'rallar-black-box:distributed-operator' as const;
+export const RALLAR_BLACK_BOX_OPERATOR_TOKEN_AUDIENCE = 'rallar-black-box-control-server' as const;
+export const RALLAR_BLACK_BOX_OPERATOR_TOKEN_SCOPE = 'rallar-black-box:distributed-operator' as const;
 
 type TokenHeader = Readonly<{
     alg: 'HS256';
@@ -35,7 +33,7 @@ export type VerifyRallarBlackBoxOperatorTokenInput = Readonly<{
 }>;
 
 export type RallarBlackBoxOperatorTokenVerifyResult =
-    | Readonly<{ ok: true; claims: RallarBlackBoxOperatorTokenClaims }>
+    | Readonly<{ ok: true; claims: RallarBlackBoxOperatorTokenClaims; }>
     | Readonly<{
         ok: false;
         reason:
@@ -51,11 +49,11 @@ export type RallarBlackBoxOperatorTokenVerifyResult =
 
 const HEADER: TokenHeader = {
     alg: 'HS256',
-    typ: 'JWT',
+    typ: 'JWT'
 };
 
 export async function signRallarBlackBoxOperatorToken(
-    input: SignRallarBlackBoxOperatorTokenInput,
+    input: SignRallarBlackBoxOperatorTokenInput
 ): Promise<string> {
     const secret = input.secret.trim();
     if (!secret) {
@@ -69,7 +67,7 @@ export async function signRallarBlackBoxOperatorToken(
         iat: input.issuedAtEpochMs,
         exp: input.expiresAtEpochMs,
         jti: input.tokenId ?? randomTokenId(),
-        ...input.claims,
+        ...input.claims
     };
     const encodedHeader = base64UrlEncodeJson(HEADER);
     const encodedClaims = base64UrlEncodeJson(claims);
@@ -80,7 +78,7 @@ export async function signRallarBlackBoxOperatorToken(
 }
 
 export async function verifyRallarBlackBoxOperatorToken(
-    input: VerifyRallarBlackBoxOperatorTokenInput,
+    input: VerifyRallarBlackBoxOperatorTokenInput
 ): Promise<RallarBlackBoxOperatorTokenVerifyResult> {
     const token = input.token?.trim();
     if (!token) {
@@ -104,7 +102,8 @@ export async function verifyRallarBlackBoxOperatorToken(
         header = decodeBase64UrlJson(encodedHeader);
         claims = decodeBase64UrlJson(encodedClaims);
         signature = base64UrlDecodeBytes(encodedSignature);
-    } catch (_error) {
+    }
+    catch (_error) {
         return { ok: false, reason: 'malformed' };
     }
 
@@ -115,7 +114,7 @@ export async function verifyRallarBlackBoxOperatorToken(
     const verified = await verifyHmacSha256(
         secret,
         `${encodedHeader}.${encodedClaims}`,
-        signature,
+        signature
     );
     if (!verified) {
         return { ok: false, reason: 'bad-signature' };
@@ -140,7 +139,7 @@ export async function verifyRallarBlackBoxOperatorToken(
 }
 
 function parseClaims(
-    claims: unknown,
+    claims: unknown
 ): RallarBlackBoxOperatorTokenClaims | undefined {
     if (!isRecord(claims)) {
         return undefined;
@@ -176,7 +175,7 @@ async function hmacSha256(secret: string, value: string): Promise<Uint8Array> {
     const signature = await crypto.subtle.sign(
         'HMAC',
         key,
-        new TextEncoder().encode(value),
+        new TextEncoder().encode(value)
     );
     return new Uint8Array(signature);
 }
@@ -184,20 +183,20 @@ async function hmacSha256(secret: string, value: string): Promise<Uint8Array> {
 async function verifyHmacSha256(
     secret: string,
     value: string,
-    signature: Uint8Array,
+    signature: Uint8Array
 ): Promise<boolean> {
     const key = await importHmacKey(secret, ['verify']);
     return crypto.subtle.verify(
         'HMAC',
         key,
         arrayBufferFromBytes(signature),
-        new TextEncoder().encode(value),
+        new TextEncoder().encode(value)
     );
 }
 
 async function importHmacKey(
     secret: string,
-    usages: KeyUsage[],
+    usages: KeyUsage[]
 ): Promise<CryptoKey> {
     if (!crypto.subtle) {
         throw new Error('Web Crypto HMAC support is required');
@@ -208,10 +207,10 @@ async function importHmacKey(
         new TextEncoder().encode(secret),
         {
             name: 'HMAC',
-            hash: 'SHA-256',
+            hash: 'SHA-256'
         },
         false,
-        usages,
+        usages
     );
 }
 
@@ -239,7 +238,7 @@ function base64UrlDecodeBytes(value: string): Uint8Array {
     const normalized = value.replaceAll('-', '+').replaceAll('_', '/');
     const padded = normalized.padEnd(
         normalized.length + ((4 - normalized.length % 4) % 4),
-        '=',
+        '='
     );
     const binary = atob(padded);
     const bytes = new Uint8Array(binary.length);
@@ -252,7 +251,7 @@ function base64UrlDecodeBytes(value: string): Uint8Array {
 function arrayBufferFromBytes(bytes: Uint8Array): ArrayBuffer {
     return bytes.buffer.slice(
         bytes.byteOffset,
-        bytes.byteOffset + bytes.byteLength,
+        bytes.byteOffset + bytes.byteLength
     ) as ArrayBuffer;
 }
 

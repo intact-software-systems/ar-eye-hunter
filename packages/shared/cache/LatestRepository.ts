@@ -1,11 +1,11 @@
+import { RateLimiter } from '../resilience/Resilience.ts';
 import {
     startExpiredEntryEviction,
     type ExpiredEntryEvictionHandle,
-    type ExpiredEntryEvictionOptions,
+    type ExpiredEntryEvictionOptions
 } from './ExpiredEntryEviction.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
 import { LatestValue, LatestValueOptions, ValueValidityChecker } from './LatestValue.ts';
-import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions, } from './RepositoryInterfaces.ts';
+import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions } from './RepositoryInterfaces.ts';
 
 export interface LatestRepositoryOptions<V> extends ExpiredEntryEvictionOptions {
     ttlMs?: number;
@@ -38,7 +38,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     public constructor(options: LatestRepositoryOptions<V> = {}) {
         this.defaultValueOptions = {
             ttlMs: options.ttlMs,
-            isValid: options.isValid,
+            isValid: options.isValid
         };
         this.evictWindowMs = options.evictWindowMs ?? DEFAULT_EVICT_WINDOW_MS;
         this.evictsPerWindow = options.evictsPerWindow ?? DEFAULT_EVICTS_PER_WINDOW;
@@ -52,7 +52,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
 
         this.expiredEntryEviction = startExpiredEntryEviction(
             options,
-            () => this.deleteExpired(),
+            () => this.deleteExpired()
         );
     }
 
@@ -77,7 +77,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     }
 
     public readOrAcceptAt(
-        input: Omit<AcceptLatestEntryInput<K, V>, 'value'> & { readonly create: () => V },
+        input: Omit<AcceptLatestEntryInput<K, V>, 'value'> & { readonly create: () => V; }
     ): V {
         const existing = this.readAt(input.key, input.nowEpochMs);
         if (existing !== undefined) {
@@ -115,13 +115,13 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
         this.evictLimiter ??= RateLimiter.initWithTs(
             this.evictWindowMs,
             this.evictsPerWindow,
-            nowEpochMs,
+            nowEpochMs
         );
 
         return this.evictLimiter.allowAt(nowEpochMs) ? this.deleteExpiredAt(nowEpochMs) : 0;
     }
 
-    public readEvictionCounts(): Readonly<{ retained: number; evictionRuns: number }> {
+    public readEvictionCounts(): Readonly<{ retained: number; evictionRuns: number; }> {
         return { retained: this.entries.size, evictionRuns: this.evictionRuns };
     }
 
@@ -262,7 +262,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
      */
     public updateOrCreate(
         key: K,
-        updater: (current: V | undefined) => V,
+        updater: (current: V | undefined) => V
     ): boolean {
         const entry = this.getOrCreate(key);
         entry.set(updater(entry.peek() ?? undefined));
@@ -272,7 +272,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     public updateIfNewer(
         key: K,
         next: V,
-        options: UpdateIfNewerOptions<V>,
+        options: UpdateIfNewerOptions<V>
     ): boolean {
         let isUpdated = false;
 

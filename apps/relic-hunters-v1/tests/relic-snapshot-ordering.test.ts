@@ -1,10 +1,6 @@
+import { RELIC_PROTOCOL_VERSION, type RelicEvent, type RelicPublicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    RELIC_PROTOCOL_VERSION,
-    type RelicEvent,
-    type RelicPublicSnapshot,
-} from '@ar-eye-hunter/relic-hunters/mod.ts';
-import { classifyRelicSnapshotAcceptance, shouldAcceptRelicSnapshot, } from '../src/game/relic-snapshot-ordering.ts';
+import { classifyRelicSnapshotAcceptance, shouldAcceptRelicSnapshot } from '../src/game/relic-snapshot-ordering.ts';
 
 describe('relic snapshot ordering', () => {
     it('rejects snapshots for a different expected room', () => {
@@ -14,10 +10,10 @@ describe('relic snapshot ordering', () => {
         expect(classifyRelicSnapshotAcceptance({
             current,
             candidate,
-            expectedRoomId: 'room-1',
+            expectedRoomId: 'room-1'
         })).toEqual({
             accepted: false,
-            reason: 'room-mismatch',
+            reason: 'room-mismatch'
         });
     });
 
@@ -27,7 +23,7 @@ describe('relic snapshot ordering', () => {
 
         expect(classifyRelicSnapshotAcceptance({ current, candidate })).toEqual({
             accepted: false,
-            reason: 'older-updated-at',
+            reason: 'older-updated-at'
         });
     });
 
@@ -37,7 +33,7 @@ describe('relic snapshot ordering', () => {
 
         expect(classifyRelicSnapshotAcceptance({ current, candidate })).toEqual({
             accepted: false,
-            reason: 'older-round',
+            reason: 'older-round'
         });
     });
 
@@ -46,18 +42,18 @@ describe('relic snapshot ordering', () => {
             updatedAtEpochMs: 20,
             round: 1,
             submittedPlayerIds: ['alice-session'],
-            events: [event('event-1'), event('event-2')],
+            events: [event('event-1'), event('event-2')]
         });
         const candidate = snapshot({
             updatedAtEpochMs: 20,
             round: 1,
             submittedPlayerIds: [],
-            events: [event('event-1')],
+            events: [event('event-1')]
         });
 
         expect(classifyRelicSnapshotAcceptance({ current, candidate })).toEqual({
             accepted: false,
-            reason: 'less-complete-same-version',
+            reason: 'less-complete-same-version'
         });
     });
 
@@ -66,13 +62,13 @@ describe('relic snapshot ordering', () => {
             updatedAtEpochMs: 20,
             round: 1,
             submittedPlayerIds: ['alice-session'],
-            events: [event('event-1')],
+            events: [event('event-1')]
         });
         const candidate = snapshot({
             updatedAtEpochMs: 20,
             round: 1,
             submittedPlayerIds: ['alice-session', 'bob-session'],
-            events: [event('event-1'), event('event-2')],
+            events: [event('event-1'), event('event-2')]
         });
 
         expect(shouldAcceptRelicSnapshot({ current, candidate })).toBe(true);
@@ -84,19 +80,19 @@ describe('relic snapshot ordering', () => {
             updatedAtEpochMs: 20,
             round: 1,
             submittedPlayerIds: [],
-            events: [event('reveal'), event('move')],
+            events: [event('reveal'), event('move')]
         });
         const candidate = snapshot({
             phase: 'planning',
             updatedAtEpochMs: 20,
             round: 1,
             submittedPlayerIds: ['alice-session'],
-            events: [event('reveal')],
+            events: [event('reveal')]
         });
 
         expect(classifyRelicSnapshotAcceptance({ current, candidate })).toEqual({
             accepted: false,
-            reason: 'phase-regression',
+            reason: 'phase-regression'
         });
     });
 
@@ -104,18 +100,18 @@ describe('relic snapshot ordering', () => {
         const current = snapshot({
             roomId: 'room-1',
             gameId: 'room-1',
-            updatedAtEpochMs: 20,
+            updatedAtEpochMs: 20
         });
         const candidate = snapshot({
             roomId: 'room-2',
             gameId: 'room-2',
-            updatedAtEpochMs: 10,
+            updatedAtEpochMs: 10
         });
 
         expect(shouldAcceptRelicSnapshot({
             current,
             candidate,
-            expectedRoomId: 'room-2',
+            expectedRoomId: 'room-2'
         })).toBe(true);
     });
 
@@ -125,7 +121,7 @@ describe('relic snapshot ordering', () => {
             updatedAtEpochMs: 20,
             round: 3,
             submittedPlayerIds: ['alice-session'],
-            events: [event('event-1'), event('event-2')],
+            events: [event('event-1'), event('event-2')]
         });
         const candidate = snapshot({
             phase: 'lobby',
@@ -133,19 +129,19 @@ describe('relic snapshot ordering', () => {
             round: 1,
             players: [],
             submittedPlayerIds: [],
-            events: [],
+            events: []
         });
 
         expect(shouldAcceptRelicSnapshot({
             current,
             candidate,
-            allowSemanticRegression: true,
+            allowSemanticRegression: true
         })).toBe(true);
     });
 });
 
 function snapshot(
-    overrides: Partial<RelicPublicSnapshot> = {},
+    overrides: Partial<RelicPublicSnapshot> = {}
 ): RelicPublicSnapshot {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
@@ -169,13 +165,13 @@ function snapshot(
                 escaped: false,
                 defeated: false,
                 score: 0,
-                relicIds: [],
-            },
+                relicIds: []
+            }
         ],
         submittedPlayerIds: [],
         events: [],
         winnerIds: [],
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -186,6 +182,6 @@ function event(id: string): RelicEvent {
         type: 'round_started',
         message: `${id} happened.`,
         tone: 'mystery',
-        createdAtEpochMs: 10,
+        createdAtEpochMs: 10
     };
 }

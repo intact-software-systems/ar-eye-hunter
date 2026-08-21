@@ -11,23 +11,23 @@ describe('executeBlackBox JSON string placeholders', () => {
                             output: 'payload',
                             value: '{"text":"hello","groupId":"group-1"}',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    renderPayload: {},
-                },
+                    renderPayload: {}
+                }
             ],
             0,
             {
                 failFast: true,
-                variables: {},
-            },
+                variables: {}
+            }
         );
 
         expect(report.summary.failure).toBe(0);
         expect(report.outputs.payload).toBe(
-            '{"text":"hello","groupId":"group-1"}',
+            '{"text":"hello","groupId":"group-1"}'
         );
     });
 });

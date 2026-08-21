@@ -1,12 +1,12 @@
-import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
-    type ClientStateSnapshotRepositoryOptions,
     configureClientStateSnapshotRepository,
+    type ClientStateSnapshotRepositoryOptions
 } from './client-state-snapshots-repository.ts';
 import {
     configureGroupStateSnapshotRepository,
-    type GroupStateSnapshotRepositoryOptions,
+    type GroupStateSnapshotRepositoryOptions
 } from './group-state-snapshots-repository.ts';
 
 export interface SharedStateRepositoryCacheConfiguration {
@@ -16,7 +16,7 @@ export interface SharedStateRepositoryCacheConfiguration {
 
 export function configureSharedStateRepositories(
     config: SharedStateRepositoryCacheConfiguration,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): void {
     configureClientStateSnapshotRepository(config.clientSnapshots, manager);
     configureGroupStateSnapshotRepository(config.groupSnapshots, manager);

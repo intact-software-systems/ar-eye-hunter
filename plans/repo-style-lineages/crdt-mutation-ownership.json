@@ -7,7 +7,9 @@
         "path": "packages/shared-server/rallar-system/services/crdt-debug-bundle-exact-codec.ts",
         "blob": "a1a3e835f7232e9d92fb76e9dbc36315e0969947"
       },
-      "targets": ["packages/shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts"]
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/mutation/decode-exact-debug-bundle.ts"
+      ]
     },
     {
       "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",
@@ -15,7 +17,9 @@
         "path": "packages/shared-server/rallar-system/services/crdt-mutation-value-codec.ts",
         "blob": "cdc068b2987b225b7db9e44082ecda2b81bae989"
       },
-      "targets": ["packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts"]
+      "targets": [
+        "packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts"
+      ]
     },
     {
       "mergeBase": "ceaf724216f82e60a74d49d382123415fe40a5c4",

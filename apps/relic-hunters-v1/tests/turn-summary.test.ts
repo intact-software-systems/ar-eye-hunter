@@ -1,17 +1,7 @@
+import type { RelicCharacterId, RelicEvent, RelicGameState, RelicPublicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { applyRelicCommand, createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
 import { describe, expect, it } from 'vitest';
-import type {
-    RelicCharacterId,
-    RelicEvent,
-    RelicGameState,
-    RelicPublicSnapshot,
-} from '@ar-eye-hunter/relic-hunters/mod.ts';
-import {
-    applyRelicCommand,
-    createRelicGame,
-    RELIC_PROTOCOL_VERSION,
-    toPublicRelicSnapshot,
-} from '@ar-eye-hunter/relic-hunters/mod.ts';
-import { deriveCurrentTurnSummaryModel, isPersonalEvent, turnTimelineCategory, } from '../src/game/turn-summary.ts';
+import { deriveCurrentTurnSummaryModel, isPersonalEvent, turnTimelineCategory } from '../src/game/turn-summary.ts';
 
 const NOW = 1_700_000_000_000;
 
@@ -23,13 +13,13 @@ describe('turn summary and timeline derivation', () => {
             snapshot,
             localPlayerId: 'alice-session',
             events: [],
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(summary.copy).toMatchObject({
             kind: 'planning',
             eyebrow: 'Round 1',
-            title: 'Choose one plan',
+            title: 'Choose one plan'
         });
         expect(summary.stats).toEqual(['0/2 locked', '2 waiting']);
     });
@@ -43,23 +33,23 @@ describe('turn summary and timeline derivation', () => {
                 kind: 'submit-action',
                 gameId: 'game-1',
                 username: 'Alice',
-                action: { kind: 'move', targetRoomId: 'hallway' },
+                action: { kind: 'move', targetRoomId: 'hallway' }
             },
-            { senderId: 'alice-session', now: () => NOW + 4 },
+            { senderId: 'alice-session', now: () => NOW + 4 }
         ).state;
 
         const summary = deriveCurrentTurnSummaryModel({
             snapshot: toPublicRelicSnapshot(state),
             localPlayerId: 'alice-session',
             events: [],
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(summary.copy).toMatchObject({
             kind: 'locked',
             eyebrow: 'Plan Locked',
             title: 'Your plan is locked',
-            detail: 'Waiting for 1 hunter to lock a plan.',
+            detail: 'Waiting for 1 hunter to lock a plan.'
         });
         expect(summary.stats).toEqual(['1/2 locked', '1 waiting']);
     });
@@ -68,17 +58,17 @@ describe('turn summary and timeline derivation', () => {
         const events: readonly RelicEvent[] = [
             event('reveal', 'action_revealed', 'Round 1 actions are revealed.'),
             event('search', 'player_searched', 'Alice searched the Entrance.', {
-                animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' },
+                animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' }
             }),
             event('noise', 'noise_pulse', 'The ruin hears 2 noise.'),
-            event('round-2', 'round_started', 'Round 2 begins.'),
+            event('round-2', 'round_started', 'Round 2 begins.')
         ];
 
         const summary = deriveCurrentTurnSummaryModel({
             snapshot: { ...planningSnapshot(), round: 2 },
             localPlayerId: 'alice-session',
             events,
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(summary.stats).toEqual([
@@ -86,16 +76,16 @@ describe('turn summary and timeline derivation', () => {
             '2 waiting',
             'R1 results',
             '1 yours',
-            '1 castle',
+            '1 castle'
         ]);
     });
 
     it('classifies timeline entries for reveal, personal, party, castle, and result rows', () => {
         const personal = event('search', 'player_searched', 'Alice searched.', {
-            animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' },
+            animationCue: { type: 'search_altar', playerId: 'alice-session', roomId: 'entrance' }
         });
         const party = event('move', 'player_moved', 'Bob moved.', {
-            animationCue: { type: 'camera_move', playerId: 'bob-session', roomId: 'hallway' },
+            animationCue: { type: 'camera_move', playerId: 'bob-session', roomId: 'hallway' }
         });
 
         expect(turnTimelineCategory(event('reveal', 'action_revealed', 'Plans revealed.'), 'alice-session').label)
@@ -118,20 +108,20 @@ describe('turn summary and timeline derivation', () => {
                 events: [
                     event('reveal', 'action_revealed', 'Round 1 actions are revealed.'),
                     event('move', 'player_moved', 'Alice moved to Hallway.', {
-                        animationCue: { type: 'camera_move', playerId: 'alice-session', roomId: 'hallway' },
-                    }),
-                ],
+                        animationCue: { type: 'camera_move', playerId: 'alice-session', roomId: 'hallway' }
+                    })
+                ]
             },
             localPlayerId: 'alice-session',
             events: [],
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(summary.copy).toMatchObject({
             kind: 'watching',
             eyebrow: 'Round 1',
             title: 'Plans revealed',
-            detail: "Watch each hunter's action before the next turn begins.",
+            detail: 'Watch each hunter\'s action before the next turn begins.'
         });
     });
 
@@ -139,20 +129,20 @@ describe('turn summary and timeline derivation', () => {
         const snapshot: RelicPublicSnapshot = {
             ...planningSnapshot(),
             phase: 'finished',
-            winnerIds: ['alice-session'],
+            winnerIds: ['alice-session']
         };
 
         const summary = deriveCurrentTurnSummaryModel({
             snapshot,
             localPlayerId: 'alice-session',
             events: [],
-            lang: 'en',
+            lang: 'en'
         });
 
         expect(summary.copy).toMatchObject({
             kind: 'finished',
             title: 'Expedition complete',
-            detail: 'Alice claimed the Heart Relic.',
+            detail: 'Alice claimed the Heart Relic.'
         });
     });
 });
@@ -171,9 +161,9 @@ function planningState(): RelicGameState {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'start-expedition',
             gameId: 'game-1',
-            username: 'Alice',
+            username: 'Alice'
         },
-        { senderId: 'alice-session', now: () => NOW + 3 },
+        { senderId: 'alice-session', now: () => NOW + 3 }
     ).state;
 }
 
@@ -182,7 +172,7 @@ function join(
     senderId: string,
     username: string,
     characterId: RelicCharacterId,
-    now: number,
+    now: number
 ): RelicGameState {
     return applyRelicCommand(
         state,
@@ -191,9 +181,9 @@ function join(
             kind: 'join-expedition',
             gameId: 'game-1',
             username,
-            characterId,
+            characterId
         },
-        { senderId, now: () => now },
+        { senderId, now: () => now }
     ).state;
 }
 
@@ -201,7 +191,7 @@ function event(
     id: string,
     type: RelicEvent['type'],
     message: string,
-    overrides: Partial<RelicEvent> = {},
+    overrides: Partial<RelicEvent> = {}
 ): RelicEvent {
     return {
         id,
@@ -210,6 +200,6 @@ function event(
         message,
         tone: 'mystery',
         createdAtEpochMs: NOW,
-        ...overrides,
+        ...overrides
     } as RelicEvent;
 }

@@ -149,15 +149,15 @@ invariants.
 ## Task 0: Freeze Existing Ownership, Baseline, And Exit Contract
 
 - [x] Audit current legacy extraction, active-only mount, aliases, root query,
-  shared types, app-local derivations, map provenance, URL codec, CSS, and test
-  owners against repository behavior.
+      shared types, app-local derivations, map provenance, URL codec, CSS, and test
+      owners against repository behavior.
 - [x] Record the `LegacyFleetRoute.tsx` plan correction and bind the new
-  canonical acceptance title, window budgets, URL fields, evidence handoffs,
-  and no-cutover rule before code changes.
+      canonical acceptance title, window budgets, URL fields, evidence handoffs,
+      and no-cutover rule before code changes.
 - [x] GREEN the existing Fleet/map/URL/structure unit baseline and exact legacy
-  Fleet browser baseline at a clean head.
+      Fleet browser baseline at a clean head.
 - [x] Record sandbox/unavailable evidence exactly rather than treating it as a
-  product pass or failure.
+      product pass or failure.
 
 ### Task 0 baseline — `7d25ab9`
 
@@ -171,20 +171,20 @@ map-layer URL restoration, and 390×800 mobile operation. No source changed.
 ## Task 1: Add Tolerant Shared Fleet Report Validation
 
 - [x] RED `rallar-bb-test-fleet-report-validation.test.ts` for valid responses,
-  valid single reports and bundles, unknown-field tolerance, legacy labels
-  without inner `agentId`, mixed valid/malformed arrays, unsupported versions,
-  duplicate run identities, invalid coordinates, malformed required
-  collections, wrong bundle identity/files, and UTF-8 file/aggregate limits.
+      valid single reports and bundles, unknown-field tolerance, legacy labels
+      without inner `agentId`, mixed valid/malformed arrays, unsupported versions,
+      duplicate run identities, invalid coordinates, malformed required
+      collections, wrong bundle identity/files, and UTF-8 file/aggregate limits.
 - [x] Add `fleet-report-validation.ts` with the bound 64-issue budget, exact
-  omitted count, and all-duplicates-quarantined policy. Prove input permutation
-  cannot choose a different report or issue order; retain exact source/
-  accepted/quarantined cardinality without mutating input.
+      omitted count, and all-duplicates-quarantined policy. Prove input permutation
+      cannot choose a different report or issue order; retain exact source/
+      accepted/quarantined cardinality without mutating input.
 - [x] Use the validator at the Recipe Console Fleet boundary only; do not make
-  the optional collection a fatal root-query error or change existing server
-  response semantics.
+      the optional collection a fatal root-query error or change existing server
+      response semantics.
 - [x] RED then GREEN `rallar-bb-test-fleet-public-surface.test.ts` importing the
-  new APIs only from `mod.ts`; GREEN shared TypeScript and direct Deno checks of
-  every new Fleet module.
+      new APIs only from `mod.ts`; GREEN shared TypeScript and direct Deno checks of
+      every new Fleet module.
 
 Validation:
 
@@ -198,21 +198,21 @@ deno check packages/shared-test/rallar-bb-test/fleet-report-validation.ts
 ## Task 2: Move Deterministic Fleet Report Analysis To Shared Test
 
 - [x] RED `rallar-bb-test-fleet-report-analysis.test.ts` for shuffled-input
-  determinism, stable tie-breaks, no mutation, all agent states, indexed
-  heatmap joins/missing cells, regional aggregation, repeated signatures,
-  exact affected evidence, nearest-rank timing, missing labels, and bounded
-  agent/run detail.
+      determinism, stable tie-breaks, no mutation, all agent states, indexed
+      heatmap joins/missing cells, regional aggregation, repeated signatures,
+      exact affected evidence, nearest-rank timing, missing labels, and bounded
+      agent/run detail.
 - [x] Add a synthetic multi-report/multi-agent case with exact optional work
-  counters for report/outcome visits, index inserts, and cell lookups. Prove
-  linear source indexing, no per-cell `.find`, and bounded issue/detail output.
+      counters for report/outcome visits, index inserts, and cell lookups. Prove
+      linear source indexing, no per-cell `.find`, and bounded issue/detail output.
 - [x] Add `fleet-report-analysis.ts` with focused public functions and a small
-  composed report-analysis model. Make every display/detail limit explicit.
+      composed report-analysis model. Make every display/detail limit explicit.
 - [x] Preserve the characterized legacy semantics through differential parity
-  fixtures, including first/newest report authority, timing results, failure
-  aggregation, and exact identifiers. Then turn the old derivation/rollup/
-  timing files into thin compatibility adapters over shared-test and replace
-  historical implementation fingerprints with exact delegation plus output-
-  parity locks; preserve every legacy import path and export.
+      fixtures, including first/newest report authority, timing results, failure
+      aggregation, and exact identifiers. Then turn the old derivation/rollup/
+      timing files into thin compatibility adapters over shared-test and replace
+      historical implementation fingerprints with exact delegation plus output-
+      parity locks; preserve every legacy import path and export.
 - [x] Export only the new uniquely named analysis module from `mod.ts`.
 
 Validation:
@@ -229,19 +229,19 @@ deno check packages/shared-test/rallar-bb-test/fleet-report-analysis.ts
 ## Task 3: Add Provenance-Bearing Shared Geographic Evidence
 
 - [x] RED `rallar-bb-test-fleet-geography.test.ts` for explicit-coordinate,
-  documented-datacenter, documented-region, and unresolved precedence; live
-  versus historical field authority; separate live/historical states; stable
-  regional evidence; explicit route aggregation; unresolved endpoints; failed
-  counts; and peer-ID non-inference.
+      documented-datacenter, documented-region, and unresolved precedence; live
+      versus historical field authority; separate live/historical states; stable
+      regional evidence; explicit route aggregation; unresolved endpoints; failed
+      counts; and peer-ID non-inference.
 - [x] Add `fleet-geography.ts` with React-free location, region, agent, route,
-  and summary evidence. Keep SVG projection and rendering app-local.
+      and summary evidence. Keep SVG projection and rendering app-local.
 - [x] Extract route evidence only from documented explicit target-agent event
-  fields. Require both endpoints to have evidence-backed coordinates.
+      fields. Require both endpoints to have evidence-backed coordinates.
 - [x] Make legacy location/route helpers thin compatibility delegates to the
-  shared primitives and differentially prove existing world-map rules. The
-  new shared combined model intentionally keeps current live status separate
-  from historical outcome rather than inheriting the legacy stale-state merge.
-  Preserve every legacy public/import surface.
+      shared primitives and differentially prove existing world-map rules. The
+      new shared combined model intentionally keeps current live status separate
+      from historical outcome rather than inheriting the legacy stale-state merge.
+      Preserve every legacy public/import surface.
 
 Validation:
 
@@ -256,27 +256,27 @@ deno check packages/shared-test/rallar-bb-test/fleet-geography.ts
 ## Task 4: Define The Fleet Workspace State And Handoff Contract
 
 - [x] RED `recipe-console-control-fleet-api.test.ts` for lazy load, existing
-  endpoint delegation, authorized retry, abort/current-generation rejection,
-  selected-report identity validation, per-file/aggregate size bounds, one-
-  bundle retention, explicit clear, and no background request. RED the additive
-  bytes client for declared-length and chunked overflow cancellation, bounded
-  error bodies, exact bytes, HTTP errors, and the unchanged typed client.
+      endpoint delegation, authorized retry, abort/current-generation rejection,
+      selected-report identity validation, per-file/aggregate size bounds, one-
+      bundle retention, explicit clear, and no background request. RED the additive
+      bytes client for declared-length and chunked overflow cancellation, bounded
+      error bodies, exact bytes, HTTP errors, and the unchanged typed client.
 - [x] Add a narrow `control-fleet-api.ts` lazy capability to the existing
-  control connection. It reads only an explicitly requested report bundle and
-  changes no endpoint or credential contract; rebuild/list remain legacy-owned.
+      control connection. It reads only an explicitly requested report bundle and
+      changes no endpoint or credential contract; rebuild/list remain legacy-owned.
 - [x] RED `recipe-console-fleet-model.test.ts` for connecting, live, partial,
-  stale, offline, empty, mixed-valid/schema-error, selected-region, selected-
-  run, and selected-agent states using the root query and indexed selection.
+      stale, offline, empty, mixed-valid/schema-error, selected-region, selected-
+      run, and selected-agent states using the root query and indexed selection.
 - [x] RED `recipe-console-fleet-handoff.test.ts` for exact Monitor, Analyze,
-  Tune/History, and affected-agent URL patches; incompatible fields clear only
-  where required and Fleet URL state survives a return trip.
+      Tune/History, and affected-agent URL patches; incompatible fields clear only
+      where required and Fleet URL state survives a return trip.
 - [x] Add small pure `fleet-workspace-model.ts`, `fleet-url-patches.ts`, and
-  feature-local adapters from `selection.boardRows` to shared live evidence.
+      feature-local adapters from `selection.boardRows` to shared live evidence.
 - [x] Preserve last-known reports in stale state, distinguish absent optional
-  collection from an empty collection, and expose validation issues without
-  suppressing valid evidence.
+      collection from an empty collection, and expose validation issues without
+      suppressing valid evidence.
 - [x] Do not add a feature poll, token field, endpoint duplicate, global store,
-  or hidden retained component tree.
+      or hidden retained component tree.
 
 Validation:
 
@@ -331,21 +331,21 @@ final traversal is possible without re-indexing or app-local aggregation.
 ## Task 5: Replace The Placeholder With A Lazy, Bounded Fleet Workspace
 
 - [x] RED `recipe-console-fleet-structure.test.ts` for the lazy boundary,
-  active-only composition, no legacy imports, no second query/poll, CSS Module
-  ownership, line caps, and focused module DAG.
+      active-only composition, no legacy imports, no second query/poll, CSS Module
+      ownership, line caps, and focused module DAG.
 - [x] RED `recipe-console-fleet-ui.test.ts` for semantic headings, operational
-  state panels, exact counts/ranges, complete windows, selected evidence, and
-  keyboard-operable actions.
+      state panels, exact counts/ranges, complete windows, selected evidence, and
+      keyboard-operable actions.
 - [x] Replace the eager `FleetPreview` branch with lazy `FleetWorkspace` input
-  wiring from `RecipeConsoleWorkspace`; keep `RecipeConsoleActiveWork` and the
-  workspace as routing/composition glue only.
+      wiring from `RecipeConsoleWorkspace`; keep `RecipeConsoleActiveWork` and the
+      workspace as routing/composition glue only.
 - [x] Compose focused live-board, summary, heatmap, region, repeated-failure,
-  timing, and evidence-detail components under `src/recipe-console/fleet/**`.
+      timing, and evidence-detail components under `src/recipe-console/fleet/**`.
 - [x] Reuse `ExplicitWindowControls`/window state and native lists/tables.
-  Slice before per-row/cell projection and expose exact `Showing a–b of n`
-  truth; no native select is silently truncated.
+      Slice before per-row/cell projection and expose exact `Showing a–b of n`
+      truth; no native select is silently truncated.
 - [x] Render complete empty/loading/partial/stale/offline/schema-error states
-  and retain visible refresh/legacy-fallback paths.
+      and retain visible refresh/legacy-fallback paths.
 
 Validation:
 
@@ -360,23 +360,23 @@ npm --workspace rallar-black-box run typecheck
 ## Task 6: Add The Secondary Map And Exact Evidence Links
 
 - [x] RED map component tests for layer semantics, visible provenance,
-  unresolved truth, selected region/agent, keyboard-equivalent HTML controls,
-  no-route state, explicit route evidence, stable selected-item pinning, exact
-  candidate/rendered/omitted counts, and the 40-agent/24-region/32-route/
-  40-failure-mark DOM budgets.
+      unresolved truth, selected region/agent, keyboard-equivalent HTML controls,
+      no-route state, explicit route evidence, stable selected-item pinning, exact
+      candidate/rendered/omitted counts, and the 40-agent/24-region/32-route/
+      40-failure-mark DOM budgets.
 - [x] Add a deterministic feature-local SVG map and CSS Module. Keep it below
-  summary/failure evidence and pair every color/shape with persistent text.
+      summary/failure evidence and pair every color/shape with persistent text.
 - [x] Wire region selection to `fleetRegion`, layer toggles to canonical
-  `fleetMapLayers`, affected agents to `agentId`, exact runs to Monitor/Analyze,
-  and repeated signatures to filtered Tune/History without treating opaque
-  artifact refs as URLs.
+      `fleetMapLayers`, affected agents to `agentId`, exact runs to Monitor/Analyze,
+      and repeated signatures to filtered Tune/History without treating opaque
+      artifact refs as URLs.
 - [x] Add an explicit selected-report artifact action that loads the validated
-  existing Fleet report bundle, shows exact file identities/sizes, and exports
-  it without retaining multiple bundles or issuing an inactive request.
+      existing Fleet report bundle, shows exact file identities/sizes, and exports
+      it without retaining multiple bundles or issuing an inactive request.
 - [x] Preserve exact selected report/control identities and never silently
-  substitute a different run when a URL selection is unavailable.
+      substitute a different run when a URL selection is unavailable.
 - [x] Expose the legacy Fleet fallback for rebuild/report export; do not hide
-  the legacy row after this capability proof.
+      the legacy row after this capability proof.
 
 Validation:
 
@@ -390,25 +390,25 @@ npx vitest run \
 ## Task 7: Prove Browser Behavior, Responsiveness, And CSS Isolation
 
 - [x] RED then GREEN the exact canonical browser title with seeded root-query
-  evidence and no legacy component import.
+      evidence and no legacy component import.
 - [x] Cover desktop 1440×900, tablet 900×900, genuine-touch portrait 430×932,
-  and genuine-touch landscape 932×430 with zero document overflow and bounded
-  internal scrolling.
+      and genuine-touch landscape 932×430 with zero document overflow and bounded
+      internal scrolling.
 - [x] Cover keyboard-only navigation, 44px touch targets, focus recovery after
-  region/window changes, reduced motion, non-hover evidence, long/bidi IDs,
-  all operational states, first/middle/last window traversal, and exact map DOM
-  budgets plus omission truth under a pressured fixture.
+      region/window changes, reduced motion, non-hover evidence, long/bidi IDs,
+      all operational states, first/middle/last window traversal, and exact map DOM
+      budgets plus omission truth under a pressured fixture.
 - [x] Cover `fleetRegion`/`fleetMapLayers` copy/reload/back-forward restoration,
-  including every intermediate state across multiple committed changes; exact
-  failure-to-agent/run/History/Analyze handoffs; selected-report artifact load/
-  export; unresolved geography; and explicit-route-only rendering.
+      including every intermediate state across multiple committed changes; exact
+      failure-to-agent/run/History/Analyze handoffs; selected-report artifact load/
+      export; unresolved geography; and explicit-route-only rendering.
 - [x] Capture and review deterministic Direction A desktop, touch portrait,
-  touch landscape, and degraded operational-state screenshots; update only the
-  approved Fleet baselines and record their evidence in the fidelity ledger.
+      touch landscape, and degraded operational-state screenshots; update only the
+      approved Fleet baselines and record their evidence in the fidelity ledger.
 - [x] Prove both CSS load orders, cold Recipe Console versus legacy-first Fleet,
-  inactive unmount/cleanup, Fleet chunk separation, and exact `tab=fleet`,
-  `tab=fleet-report`, and `tab=fleet-reports` legacy selection/mount without a
-  Recipe Console redirect.
+      inactive unmount/cleanup, Fleet chunk separation, and exact `tab=fleet`,
+      `tab=fleet-report`, and `tab=fleet-reports` legacy selection/mount without a
+      Recipe Console redirect.
 
 Validation:
 
@@ -436,21 +436,21 @@ npx playwright test \
 ## Task 8: Independent Reviews And Fresh Iteration Exit
 
 - [x] Dispatch independent shared validation/analysis, geographic evidence,
-  React/state/accessibility, and strangler/cutover reviews. RED/GREEN every
-  Critical or Important finding and rerun its owner.
+      React/state/accessibility, and strangler/cutover reviews. RED/GREEN every
+      Critical or Important finding and rerun its owner.
 - [x] Run all focused shared/app tests above, complete app Vitest, shared/app
-  TypeScript and all shared Deno entries, app build, reciprocal experience-
-  chunk assertion, complete Recipe Console browser config, and preserved
-  legacy Fleet/navigation cases.
+      TypeScript and all shared Deno entries, app build, reciprocal experience-
+      chunk assertion, complete Recipe Console browser config, and preserved
+      legacy Fleet/navigation cases.
 - [x] Run control-server check/tests only if shared changes affect its imports
-  or server source changes; otherwise record the untouched contract evidence.
+      or server source changes; otherwise record the untouched contract evidence.
 - [x] Try the in-app Browser and record exact availability. Report configured-
-  live/Postgres as skipped with the exact unavailable-environment reason; never
-  treat it as passed.
+      live/Postgres as skipped with the exact unavailable-environment reason; never
+      treat it as passed.
 - [x] Update this child plan, parent iteration ledger/risks, product spec,
-  migration register, and fidelity ledger with commits, test counts, viewport/
-  interaction/CSS proof, skip reasons, no-cutover state, and remaining
-  Iterations 11–12 risks.
+      migration register, and fidelity ledger with commits, test counts, viewport/
+      interaction/CSS proof, skip reasons, no-cutover state, and remaining
+      Iterations 11–12 risks.
 - [x] Make cohesive local green milestone commits. Do not push or open a PR.
 
 ### Tasks 5–8 qualified exit — `0088be0`, `3ab86a9`
@@ -502,23 +502,23 @@ accessibility polish.
 ## Iteration 10 Exit Criteria
 
 - [x] A user can identify repeatedly failing agents and regions, see whether
-  timing is correlated, and reach the exact affected run/agent/artifact/history
-  evidence from visible controls.
+      timing is correlated, and reach the exact affected run/agent/artifact/history
+      evidence from visible controls.
 - [x] Live board, heatmap, region summaries, repeated failure signatures,
-  timing distributions, and the deterministic SVG map derive from validated
-  shared evidence and remain bounded/traversable.
+      timing distributions, and the deterministic SVG map derive from validated
+      shared evidence and remain bounded/traversable.
 - [x] Geography and routes are provenance-bearing and never guessed; unresolved
-  locations and unavailable optional collections remain explicit.
+      locations and unavailable optional collections remain explicit.
 - [x] Fleet URL filters and map layers restore exactly across copy, reload, and
-  browser history.
+      browser history.
 - [x] The new route is lazy/unmounted, CSS-isolated, responsive, keyboard/touch
-  operable, reduced-motion safe, and free of hover-only evidence.
+      operable, reduced-motion safe, and free of hover-only evidence.
 - [x] The legacy Fleet row, behavior, aliases, active-only mount, rebuild,
-  export, public contracts, and rollback URL remain operational. No default or
-  cutover changes.
+      export, public contracts, and rollback URL remain operational. No default or
+      cutover changes.
 - [x] Every available focused, complete, build, chunk, browser, and review gate
-  is green; unavailable live-service evidence is recorded as skipped with its
-  exact reason.
+      is green; unavailable live-service evidence is recorded as skipped with its
+      exact reason.
 
 ## Focused Validation Contract
 

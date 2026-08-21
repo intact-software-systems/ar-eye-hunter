@@ -1,17 +1,17 @@
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 
-import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
-import { withValidatedAvatarProfile } from '../arena-connection-helpers.ts';
 import {
+    GAME_PROTOCOL,
     type ArenaEvent,
     type ArenaSnapshot,
-    GAME_PROTOCOL,
     type GameRealtimeMessage,
     type RemotePlayer,
-    type RemoteShot,
+    type RemoteShot
 } from '../../types.ts';
+import { withValidatedAvatarProfile } from '../arena-connection-helpers.ts';
+import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
 
 interface ArenaPeerMessageHandlersInput
     extends Pick<ArenaStateAcceptance, 'acceptEyeAttack' | 'acceptPickup' | 'acceptPlayerHit'> {
@@ -29,7 +29,7 @@ export interface ArenaPeerMessageHandlers {
 }
 
 export function useArenaPeerMessageHandlers(
-    input: ArenaPeerMessageHandlersInput,
+    input: ArenaPeerMessageHandlersInput
 ): ArenaPeerMessageHandlers {
     const {
         acceptEyeAttack,
@@ -40,12 +40,12 @@ export function useArenaPeerMessageHandlers(
         setArenaSnapshot,
         setRemoteEvents,
         setRemotePlayers,
-        setRemoteShots,
+        setRemoteShots
     } = input;
 
     const acceptMotionMessage = useCallback((
         peerId: string,
-        message: GameRealtimeMessage,
+        message: GameRealtimeMessage
     ) => {
         if (message.protocol !== GAME_PROTOCOL) {
             return;
@@ -67,7 +67,7 @@ export function useArenaPeerMessageHandlers(
 
                 next.set(pose.sessionId, {
                     pose,
-                    lastSeenEpochMs: Date.now(),
+                    lastSeenEpochMs: Date.now()
                 });
                 return next;
             });
@@ -79,7 +79,7 @@ export function useArenaPeerMessageHandlers(
 
     const acceptRealtimeMessage = useCallback((
         peerId: string,
-        message: GameRealtimeMessage,
+        message: GameRealtimeMessage
     ) => {
         if (message.protocol !== GAME_PROTOCOL) {
             return;
@@ -98,8 +98,8 @@ export function useArenaPeerMessageHandlers(
                 {
                     id: `${shot.sessionId}:${shot.seq}`,
                     shot,
-                    receivedAtEpochMs: Date.now(),
-                },
+                    receivedAtEpochMs: Date.now()
+                }
             ]);
             return;
         }
@@ -116,8 +116,8 @@ export function useArenaPeerMessageHandlers(
                     id: `${accepted.shot.sessionId}:${accepted.shot.seq}:${accepted.revision}`,
                     shot: accepted.shot,
                     accepted,
-                    receivedAtEpochMs: Date.now(),
-                },
+                    receivedAtEpochMs: Date.now()
+                }
             ]);
             return;
         }
@@ -140,7 +140,7 @@ export function useArenaPeerMessageHandlers(
         if (message.kind === 'arena-event') {
             setRemoteEvents((previous) => [
                 ...previous.filter((event) => event.id !== message.event.id).slice(-12),
-                message.event,
+                message.event
             ]);
             setActiveEvent(message.event);
             return;

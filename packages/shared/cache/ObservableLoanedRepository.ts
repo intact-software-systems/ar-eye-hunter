@@ -1,19 +1,16 @@
-import {
-    ObservableLoanedValue,
-    type ObservableLoanedValueOptions,
-} from './ObservableLoanedValue.ts';
-import type { ValueEqualityChecker } from './ObservableLatestValue.ts';
 import type { LoanedValueValidityChecker } from './LoanedValue.ts';
+import type { ValueEqualityChecker } from './ObservableLatestValue.ts';
+import { ObservableLoanedValue, type ObservableLoanedValueOptions } from './ObservableLoanedValue.ts';
 import {
+    ObservableValueEventType,
     type LoanedRepositoryRefresh,
     type ObservableKeyedValueErrorHandler,
     type ObservableKeyedValueEvent,
     type ObservableKeyedValueListener,
     type ObservableKeyedValues,
-    ObservableValueEventType,
     type PullKeyedValues,
     type ReadableKeyedValues,
-    type Unsubscribe,
+    type Unsubscribe
 } from './RepositoryInterfaces.ts';
 
 export type ObservableLoanedRepositoryOptions<K, V> = Readonly<{
@@ -23,15 +20,11 @@ export type ObservableLoanedRepositoryOptions<K, V> = Readonly<{
     onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
 }>;
 
-export class ObservableLoanedRepository<K, V>
-    implements PullKeyedValues<K, V>, ObservableKeyedValues<K, V> {
+export class ObservableLoanedRepository<K, V> implements PullKeyedValues<K, V>, ObservableKeyedValues<K, V> {
     private readonly entries = new Map<K, ObservableLoanedValue<V>>();
     private readonly defaultValueOptions: ObservableLoanedValueOptions<V>;
     private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
-    private readonly listenersByType = new Map<
-        ObservableValueEventType,
-        Set<ObservableKeyedValueListener<K, V>>
-    >();
+    private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableKeyedValueListener<K, V>>>();
     private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
     private observerQueue: Promise<void> = Promise.resolve();
 
@@ -39,7 +32,7 @@ export class ObservableLoanedRepository<K, V>
 
     public constructor(
         refresher: LoanedRepositoryRefresh<K, V>,
-        options: ObservableLoanedRepositoryOptions<K, V> = {},
+        options: ObservableLoanedRepositoryOptions<K, V> = {}
     ) {
         this.refresher = refresher;
         if (!refresher) {
@@ -49,7 +42,7 @@ export class ObservableLoanedRepository<K, V>
         this.defaultValueOptions = {
             ttlMs: options.ttlMs,
             isValid: options.isValid,
-            equals: options.equals,
+            equals: options.equals
         };
         this.onObserverError = options.onObserverError;
     }
@@ -72,7 +65,7 @@ export class ObservableLoanedRepository<K, V>
 
     public async getWith(
         key: K,
-        refresher: LoanedRepositoryRefresh<K, V>,
+        refresher: LoanedRepositoryRefresh<K, V>
     ): Promise<V> {
         return this.getOrCreate(key).getWith((current) => refresher(key, current));
     }
@@ -83,7 +76,7 @@ export class ObservableLoanedRepository<K, V>
 
     public async refreshWith(
         key: K,
-        refresher: LoanedRepositoryRefresh<K, V>,
+        refresher: LoanedRepositoryRefresh<K, V>
     ): Promise<V> {
         return this.getOrCreate(key).refreshWith((current) => refresher(key, current));
     }
@@ -250,7 +243,7 @@ export class ObservableLoanedRepository<K, V>
     public async whenIdle(): Promise<void> {
         while (true) {
             const valueQueues = [...this.entries.values()].map(
-                async (entry) => await entry.whenIdle(),
+                async (entry) => await entry.whenIdle()
             );
             await Promise.all(valueQueues);
 
@@ -274,7 +267,7 @@ export class ObservableLoanedRepository<K, V>
         if (!entry) {
             entry = new ObservableLoanedValue<V>(
                 (current) => this.refresher(key, current),
-                this.defaultValueOptions,
+                this.defaultValueOptions
             );
             entry.onChangeDo((event) => {
                 if (this.entries.get(key) !== entry) {
@@ -283,7 +276,7 @@ export class ObservableLoanedRepository<K, V>
 
                 this.emit({
                     ...event,
-                    key,
+                    key
                 });
             });
             this.entries.set(key, entry);
@@ -295,7 +288,7 @@ export class ObservableLoanedRepository<K, V>
     private emitDeletedIfPresent(
         key: K,
         hadValue: boolean,
-        previous: V | undefined,
+        previous: V | undefined
     ): void {
         if (!hadValue) {
             return;
@@ -305,13 +298,13 @@ export class ObservableLoanedRepository<K, V>
             key,
             type: ObservableValueEventType.Deleted,
             previous,
-            atEpochMs: Date.now(),
+            atEpochMs: Date.now()
         });
     }
 
     private onTypeDo(
         type: ObservableValueEventType,
-        listener: ObservableKeyedValueListener<K, V>,
+        listener: ObservableKeyedValueListener<K, V>
     ): Unsubscribe {
         let listeners = this.listenersByType.get(type);
         if (!listeners) {
@@ -331,7 +324,7 @@ export class ObservableLoanedRepository<K, V>
     private emit(event: ObservableKeyedValueEvent<K, V>): void {
         const listeners = [
             ...(this.listenersByType.get(event.type) ?? []),
-            ...this.changeListeners,
+            ...this.changeListeners
         ];
 
         if (listeners.length === 0) {
@@ -343,38 +336,40 @@ export class ObservableLoanedRepository<K, V>
                 await Promise.all(
                     listeners.map(async (listener) => {
                         await this.notifyListener(listener, event);
-                    }),
+                    })
                 );
             },
             async () => {
                 await Promise.all(
                     listeners.map(async (listener) => {
                         await this.notifyListener(listener, event);
-                    }),
+                    })
                 );
-            },
+            }
         );
     }
 
     private async notifyListener(
         listener: ObservableKeyedValueListener<K, V>,
-        event: ObservableKeyedValueEvent<K, V>,
+        event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         try {
             await listener(event);
-        } catch (error) {
+        }
+        catch (error) {
             await this.handleObserverError(error, event);
         }
     }
 
     private async handleObserverError(
         error: unknown,
-        event: ObservableKeyedValueEvent<K, V>,
+        event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (this.onObserverError) {
             try {
                 await this.onObserverError(error, event);
-            } catch (handlerError) {
+            }
+            catch (handlerError) {
                 console.error('Error handling observable loaned keyed value observer failure', handlerError);
             }
             return;
@@ -386,9 +381,13 @@ export class ObservableLoanedRepository<K, V>
 
 function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
     let active = true;
-    return { unsubscribe: () => {
-        if (!active) return;
-        active = false;
-        unsubscribe();
-    } };
+    return {
+        unsubscribe: () => {
+            if (!active) {
+                return;
+            }
+            active = false;
+            unsubscribe();
+        }
+    };
 }

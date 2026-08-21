@@ -1,9 +1,9 @@
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { readRuntimeStateEntriesByPrefix } from './runtime-state-prefix-reader.ts';
 
 export type ALAdmissionMutation =
@@ -44,7 +44,7 @@ export class PSqlAdmissionMutationCollector {
     constructor(
         repository: RuntimeStateOptimisticTransactionalRepositoryLike,
         namespace: string,
-        nowEpochMs: () => number = () => Date.now(),
+        nowEpochMs: () => number = () => Date.now()
     ) {
         this.repository = repository;
         this.namespace = namespace;
@@ -55,21 +55,21 @@ export class PSqlAdmissionMutationCollector {
         return (await this.observe(key)).value as V | undefined;
     }
 
-    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V }>[]> {
-        for await (const entry of readRuntimeStateEntriesByPrefix(
-            this.repository,
-            this.namespace,
-            prefix,
-        )) {
+    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V; }>[]> {
+        for await (
+            const entry of readRuntimeStateEntriesByPrefix(
+                this.repository,
+                this.namespace,
+                prefix
+            )
+        ) {
             if (!this.observations.has(entry.key)) {
                 this.observations.set(entry.key, this.toObservation(entry));
             }
         }
 
         return [...this.observations.entries()]
-            .filter(([key, observation]) =>
-                key.startsWith(prefix) && observation.value !== undefined
-            )
+            .filter(([key, observation]) => key.startsWith(prefix) && observation.value !== undefined)
             .map(([key, observation]) => ({ key, value: observation.value as V }))
             .sort((left, right) => left.key.localeCompare(right.key));
     }
@@ -77,7 +77,7 @@ export class PSqlAdmissionMutationCollector {
     async set<V>(
         key: string,
         value: V,
-        expireAtEpochMs = NEVER_EXPIRE_AT_TIMESTAMP,
+        expireAtEpochMs = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<void> {
         const observation = await this.observe(key);
         observation.value = value;
@@ -93,15 +93,19 @@ export class PSqlAdmissionMutationCollector {
 
     mutations(): readonly ALAdmissionMutation[] {
         const mutations: ALAdmissionMutation[] = [];
-        for (const [key, observation] of [...this.observations.entries()]
-            .sort(([left], [right]) => left.localeCompare(right))) {
-            if (!observation.touched) continue;
+        for (
+            const [key, observation] of [...this.observations.entries()]
+                .sort(([left], [right]) => left.localeCompare(right))
+        ) {
+            if (!observation.touched) {
+                continue;
+            }
             if (observation.value === undefined) {
                 if (observation.entry) {
                     mutations.push({
                         kind: 'delete',
                         key,
-                        expectedRevision: observation.entry.revision,
+                        expectedRevision: observation.entry.revision
                     });
                 }
                 continue;
@@ -113,7 +117,7 @@ export class PSqlAdmissionMutationCollector {
                     key,
                     expected: 'absent',
                     value,
-                    expireAtEpochMs: observation.expireAtEpochMs,
+                    expireAtEpochMs: observation.expireAtEpochMs
                 });
                 continue;
             }
@@ -122,7 +126,7 @@ export class PSqlAdmissionMutationCollector {
                 key,
                 expectedRevision: observation.entry.revision,
                 value,
-                expireAtEpochMs: observation.expireAtEpochMs,
+                expireAtEpochMs: observation.expireAtEpochMs
             });
         }
         return mutations;
@@ -133,28 +137,34 @@ export class PSqlAdmissionMutationCollector {
             for (const mutation of mutations) {
                 switch (mutation.kind) {
                     case 'insert':
-                        requireConditionalWrite(await transaction.insertIfAbsent(
-                            this.namespace,
-                            mutation.key,
-                            mutation.value,
-                            mutation.expireAtEpochMs,
-                        ));
+                        requireConditionalWrite(
+                            await transaction.insertIfAbsent(
+                                this.namespace,
+                                mutation.key,
+                                mutation.value,
+                                mutation.expireAtEpochMs
+                            )
+                        );
                         break;
                     case 'replace':
-                        requireConditionalWrite(await transaction.upsertIfRevision(
-                            this.namespace,
-                            mutation.key,
-                            mutation.value,
-                            mutation.expireAtEpochMs,
-                            mutation.expectedRevision,
-                        ));
+                        requireConditionalWrite(
+                            await transaction.upsertIfRevision(
+                                this.namespace,
+                                mutation.key,
+                                mutation.value,
+                                mutation.expireAtEpochMs,
+                                mutation.expectedRevision
+                            )
+                        );
                         break;
                     case 'delete':
-                        requireConditionalWrite(await transaction.deleteIfRevision(
-                            this.namespace,
-                            mutation.key,
-                            mutation.expectedRevision,
-                        ));
+                        requireConditionalWrite(
+                            await transaction.deleteIfRevision(
+                                this.namespace,
+                                mutation.key,
+                                mutation.expectedRevision
+                            )
+                        );
                         break;
                 }
             }
@@ -163,7 +173,9 @@ export class PSqlAdmissionMutationCollector {
 
     private async observe(key: string): Promise<Observation> {
         const existing = this.observations.get(key);
-        if (existing) return existing;
+        if (existing) {
+            return existing;
+        }
         const entry = await this.repository.findEntry(this.namespace, key);
         const observation = entry
             ? this.toObservation(entry)
@@ -171,7 +183,7 @@ export class PSqlAdmissionMutationCollector {
                 entry: null,
                 value: undefined,
                 expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-                touched: false,
+                touched: false
             };
         this.observations.set(key, observation);
         return observation;
@@ -183,14 +195,14 @@ export class PSqlAdmissionMutationCollector {
                 entry,
                 value: undefined,
                 expireAtEpochMs: entry.expireAtTimestamp,
-                touched: true,
+                touched: true
             };
         }
         return {
             entry,
             value: JSON.parse(entry.value) as unknown,
             expireAtEpochMs: entry.expireAtTimestamp,
-            touched: false,
+            touched: false
         };
     }
 }

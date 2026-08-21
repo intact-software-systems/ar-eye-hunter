@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-    APP_TABS,
-    appModeForTab,
-} from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { APP_TABS, appModeForTab } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 import {
     EXHAUSTIVE_UI_COVERAGE_MATRIX,
     exhaustiveUiCoverageRowsForTab,
-    exhaustiveUiCoverageSpecFiles,
+    exhaustiveUiCoverageSpecFiles
 } from '../../../apps/rallar-black-box/src/exhaustive-ui-coverage.ts';
 
 const EXPECTED_EXHAUSTIVE_SPEC_FILES = [
@@ -18,7 +15,7 @@ const EXPECTED_EXHAUSTIVE_SPEC_FILES = [
     'exhaustive-rallar-server.spec.ts',
     'exhaustive-rtc-realtime.spec.ts',
     'exhaustive-runner-workbench.spec.ts',
-    'exhaustive-shell-navigation.spec.ts',
+    'exhaustive-shell-navigation.spec.ts'
 ];
 
 describe('rallar-black-box exhaustive UI coverage matrix', () => {

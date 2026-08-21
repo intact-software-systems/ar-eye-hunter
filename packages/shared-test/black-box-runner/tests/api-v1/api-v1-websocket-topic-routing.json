@@ -305,7 +305,7 @@
             "traceId": "api-v1-bb-ws-trace-{runId}"
           },
           "route": {
-              "topicId": "chat",
+            "topicId": "chat",
             "resourceId": "api-v1-bb-ws-resource-{runId}"
           },
           "payload": {

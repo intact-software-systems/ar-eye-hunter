@@ -1,34 +1,62 @@
 import { QuickRallarTestView } from './QuickRallarTestView.tsx';
 import {
-    type UseQuickRallarTestControllerInput,
     useQuickRallarTestController,
+    type UseQuickRallarTestControllerInput
 } from './use-quick-rallar-test-controller.ts';
 
-type QuickRallarTestPanelProps = UseQuickRallarTestControllerInput &
-    Readonly<{
+type QuickRallarTestPanelProps =
+    & UseQuickRallarTestControllerInput
+    & Readonly<{
         onOpenAuth(): void;
         onOpenRunnerMode(): void;
     }>;
 
 export function QuickRallarTestPanel({
-    state, bootstrap, authSession, globalValues, browserStatus,
-    onGlobalValueChange, onOpenAuth, onOpenRunnerMode,
+    state,
+    bootstrap,
+    authSession,
+    globalValues,
+    browserStatus,
+    onGlobalValueChange,
+    onOpenAuth,
+    onOpenRunnerMode
 }: QuickRallarTestPanelProps) {
     const {
-        values, busyAction, localError, lastResult, subscription,
-        receivedMessages, waitStatus, providerMode, realBackendReady,
-        canUseDirectRallar, activeGroupId, activeTypeId, activeContextId,
-        selectorLabel, payloadResult, updateValue, updateGroupId, createGroup,
-        joinGroup, subscribeWs, unsubscribeWs, sendWs, waitForReceive,
-        copyDiagnostics, copyRunnerRecipe, setupComplete, subscribed,
-        workflowSteps,
+        values,
+        busyAction,
+        localError,
+        lastResult,
+        subscription,
+        receivedMessages,
+        waitStatus,
+        providerMode,
+        realBackendReady,
+        canUseDirectRallar,
+        activeGroupId,
+        activeTypeId,
+        activeContextId,
+        selectorLabel,
+        payloadResult,
+        updateValue,
+        updateGroupId,
+        createGroup,
+        joinGroup,
+        subscribeWs,
+        unsubscribeWs,
+        sendWs,
+        waitForReceive,
+        copyDiagnostics,
+        copyRunnerRecipe,
+        setupComplete,
+        subscribed,
+        workflowSteps
     } = useQuickRallarTestController({
         state,
         bootstrap,
         authSession,
         globalValues,
         browserStatus,
-        onGlobalValueChange,
+        onGlobalValueChange
     });
 
     return (
@@ -65,7 +93,7 @@ export function QuickRallarTestPanel({
                 copyRunnerRecipe,
                 setupComplete,
                 subscribed,
-                workflowSteps,
+                workflowSteps
             }}
             onOpenAuth={onOpenAuth}
             onOpenRunnerMode={onOpenRunnerMode}

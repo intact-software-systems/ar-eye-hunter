@@ -8,26 +8,24 @@ import {
     type AnalyzeIgnoredFile,
     type AnalyzeSelectedFileMetadata,
     type NormalizedSelectedFile,
-    type PreparedAnalyzeArtifactFileIntake,
+    type PreparedAnalyzeArtifactFileIntake
 } from './analyze-file-contract.ts';
 
 const AUTHORITATIVE_BASENAMES = new Set<string>(
-    ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES,
+    ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES
 );
 const JSON_OR_JSONL_BASENAME = /\.(?:json|jsonl)$/i;
 const UNSAFE_PATH_CHARACTER = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 const UNSAFE_WINDOWS_CHARACTER = /[<>:"|?*]/u;
 const ENCODED_PATH_CHARACTER = /%(?:2e|2f|5c)/iu;
 
-export function prepareAnalyzeArtifactFileIntake<
-    TFile extends AnalyzeSelectedFileMetadata,
->(
-    selectedFiles: readonly TFile[],
+export function prepareAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFileMetadata>(
+    selectedFiles: readonly TFile[]
 ): PreparedAnalyzeArtifactFileIntake<TFile> {
     if (selectedFiles.length > ANALYZE_ARTIFACT_MAX_FILE_COUNT) {
         throw new AnalyzeFileIntakeError(
             'too-many-files',
-            `Select at most ${ANALYZE_ARTIFACT_MAX_FILE_COUNT} files; received ${selectedFiles.length}.`,
+            `Select at most ${ANALYZE_ARTIFACT_MAX_FILE_COUNT} files; received ${selectedFiles.length}.`
         );
     }
 
@@ -39,7 +37,7 @@ export function prepareAnalyzeArtifactFileIntake<
         if (!Number.isSafeInteger(size) || size < 0) {
             throw new AnalyzeFileIntakeError(
                 'invalid-file-size',
-                `File "${selected.basename}" reports an invalid size.`,
+                `File "${selected.basename}" reports an invalid size.`
             );
         }
         if (size > ANALYZE_ARTIFACT_MAX_FILE_BYTES) {
@@ -53,14 +51,14 @@ export function prepareAnalyzeArtifactFileIntake<
     }
 
     const accepted = normalizedFiles
-        .filter(selected => JSON_OR_JSONL_BASENAME.test(selected.basename))
+        .filter((selected) => JSON_OR_JSONL_BASENAME.test(selected.basename))
         .sort(compareSelectedFiles);
     const ignoredFiles = normalizedFiles
-        .filter(selected => !JSON_OR_JSONL_BASENAME.test(selected.basename))
-        .map<AnalyzeIgnoredFile>(selected => ({
+        .filter((selected) => !JSON_OR_JSONL_BASENAME.test(selected.basename))
+        .map<AnalyzeIgnoredFile>((selected) => ({
             basename: selected.basename,
             sourcePath: selected.sourcePath,
-            reason: 'unsupported-extension',
+            reason: 'unsupported-extension'
         }))
         .sort(compareFileMetadata);
 
@@ -69,19 +67,19 @@ export function prepareAnalyzeArtifactFileIntake<
     if (accepted.length === 0) {
         const ignored = ignoredFiles.length === 0
             ? ''
-            : ` Ignored: ${ignoredFiles.map(file => file.basename).join(', ')}.`;
+            : ` Ignored: ${ignoredFiles.map((file) => file.basename).join(', ')}.`;
         throw new AnalyzeFileIntakeError(
             'no-json-files',
-            `No JSON or JSONL artifact files were selected.${ignored}`,
+            `No JSON or JSONL artifact files were selected.${ignored}`
         );
     }
 
     return { accepted, ignoredFiles, totalSelectedBytes };
 }
 
-export function acceptedFileMetadata<
-    TFile extends AnalyzeSelectedFileMetadata,
->(selected: NormalizedSelectedFile<TFile>): AnalyzeAcceptedFile {
+export function acceptedFileMetadata<TFile extends AnalyzeSelectedFileMetadata>(
+    selected: NormalizedSelectedFile<TFile>
+): AnalyzeAcceptedFile {
     return {
         basename: selected.basename,
         sourcePath: selected.sourcePath,
@@ -89,33 +87,33 @@ export function acceptedFileMetadata<
         ...(selected.file.type === undefined ? {} : { type: selected.file.type }),
         kind: AUTHORITATIVE_BASENAMES.has(selected.basename)
             ? 'authoritative'
-            : 'envelope-candidate',
+            : 'envelope-candidate'
     };
 }
 
 export function fileTooLarge(basename: string, size: number): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'file-too-large',
-        `File "${basename}" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${size} bytes).`,
+        `File "${basename}" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${size} bytes).`
     );
 }
 
 export function totalTooLarge(totalBytes: number): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'total-too-large',
-        `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${totalBytes} bytes).`,
+        `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${totalBytes} bytes).`
     );
 }
 
 export function readFailure(basename: string, error: unknown): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'read-failed',
-        `Could not read "${basename}": ${errorMessage(error)}. No files were imported.`,
+        `Could not read "${basename}": ${errorMessage(error)}. No files were imported.`
     );
 }
 
 function normalizeSelectedFile<TFile extends AnalyzeSelectedFileMetadata>(
-    file: TFile,
+    file: TFile
 ): NormalizedSelectedFile<TFile> {
     const namePath = normalizeSafePath(file.name);
     const relativePath = file.webkitRelativePath;
@@ -124,11 +122,13 @@ function normalizeSelectedFile<TFile extends AnalyzeSelectedFileMetadata>(
     }
 
     const normalizedRelativePath = normalizeSafePath(relativePath);
-    if (namePath.basename.toLocaleLowerCase('en-US') !==
-        normalizedRelativePath.basename.toLocaleLowerCase('en-US')) {
+    if (
+        namePath.basename.toLocaleLowerCase('en-US') !==
+            normalizedRelativePath.basename.toLocaleLowerCase('en-US')
+    ) {
         throw unsafePath(
             relativePath,
-            `its basename does not match File.name "${file.name}"`,
+            `its basename does not match File.name "${file.name}"`
         );
     }
     return { file, ...normalizedRelativePath };
@@ -138,11 +138,15 @@ function normalizeSafePath(selectedPath: string): Readonly<{
     basename: string;
     sourcePath: string;
 }> {
-    if (selectedPath.length === 0) throw unsafePath(selectedPath, 'the name is empty');
+    if (selectedPath.length === 0) {
+        throw unsafePath(selectedPath, 'the name is empty');
+    }
     if (
         selectedPath.startsWith('/') || selectedPath.startsWith('\\') ||
         /^[a-z]:[\\/]/iu.test(selectedPath)
-    ) throw unsafePath(selectedPath, 'absolute paths are not allowed');
+    ) {
+        throw unsafePath(selectedPath, 'absolute paths are not allowed');
+    }
     if (UNSAFE_PATH_CHARACTER.test(selectedPath)) {
         throw unsafePath(selectedPath, 'control or bidirectional characters are not allowed');
     }
@@ -175,7 +179,7 @@ function normalizeSafePath(selectedPath: string): Readonly<{
 }
 
 function rejectDuplicateBasenames<TFile extends AnalyzeSelectedFileMetadata>(
-    files: readonly NormalizedSelectedFile<TFile>[],
+    files: readonly NormalizedSelectedFile<TFile>[]
 ): void {
     const firstByBasename = new Map<string, NormalizedSelectedFile<TFile>>();
     for (const selected of files) {
@@ -184,7 +188,7 @@ function rejectDuplicateBasenames<TFile extends AnalyzeSelectedFileMetadata>(
         if (first) {
             throw new AnalyzeFileIntakeError(
                 'duplicate-basename',
-                `Duplicate artifact basename "${duplicateKey}" was selected from "${first.sourcePath}" and "${selected.sourcePath}". Remove one; files are never overwritten.`,
+                `Duplicate artifact basename "${duplicateKey}" was selected from "${first.sourcePath}" and "${selected.sourcePath}". Remove one; files are never overwritten.`
             );
         }
         firstByBasename.set(duplicateKey, selected);
@@ -193,7 +197,7 @@ function rejectDuplicateBasenames<TFile extends AnalyzeSelectedFileMetadata>(
 
 function compareSelectedFiles<TFile extends AnalyzeSelectedFileMetadata>(
     left: NormalizedSelectedFile<TFile>,
-    right: NormalizedSelectedFile<TFile>,
+    right: NormalizedSelectedFile<TFile>
 ): number {
     return compareText(left.basename, right.basename) ||
         compareText(left.sourcePath, right.sourcePath);
@@ -201,22 +205,26 @@ function compareSelectedFiles<TFile extends AnalyzeSelectedFileMetadata>(
 
 function compareFileMetadata(
     left: Pick<AnalyzeIgnoredFile, 'basename' | 'sourcePath'>,
-    right: Pick<AnalyzeIgnoredFile, 'basename' | 'sourcePath'>,
+    right: Pick<AnalyzeIgnoredFile, 'basename' | 'sourcePath'>
 ): number {
     return compareText(left.basename, right.basename) ||
         compareText(left.sourcePath, right.sourcePath);
 }
 
 function compareText(left: string, right: string): number {
-    if (left < right) return -1;
-    if (left > right) return 1;
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
     return 0;
 }
 
 function unsafePath(selectedPath: string, reason: string): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'unsafe-path',
-        `File path "${selectedPath}" is unsafe: ${reason}.`,
+        `File path "${selectedPath}" is unsafe: ${reason}.`
     );
 }
 

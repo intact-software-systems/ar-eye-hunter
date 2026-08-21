@@ -12,22 +12,22 @@ import {
     resolveRelicMotionPosition,
     subscribeRelicScenePositionUpdates,
     type RelicMotionPayload,
-    type RelicScenePositionRuntime,
+    type RelicScenePositionRuntime
 } from '../src/game/scene/networking.ts';
 
 const rallarMock = vi.hoisted(() => ({
     onJson: vi.fn(),
     room: vi.fn(),
-    roomSend: vi.fn(),
+    roomSend: vi.fn()
 }));
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
     rallar: {
         realtime: {
             onJson: rallarMock.onJson,
-            room: rallarMock.room,
-        },
-    },
+            room: rallarMock.room
+        }
+    }
 }));
 
 describe('Relic scene realtime motion networking', () => {
@@ -40,19 +40,19 @@ describe('Relic scene realtime motion networking', () => {
             results: [{
                 peerId: 'bob-session',
                 laneId: RELIC_MOTION_LANE_ID,
-                result: { status: 'sent', bufferedAmount: 0 },
+                result: { status: 'sent', bufferedAmount: 0 }
             }],
             transport: 'rtc',
             laneId: RELIC_MOTION_LANE_ID,
             transportStatus: {
                 rtc: {
                     state: 'open',
-                    readyPeerIds: ['bob-session'],
-                },
-            },
+                    readyPeerIds: ['bob-session']
+                }
+            }
         });
         rallarMock.room.mockReturnValue({
-            send: rallarMock.roomSend,
+            send: rallarMock.roomSend
         });
     });
 
@@ -65,24 +65,27 @@ describe('Relic scene realtime motion networking', () => {
             laneId: RELIC_MOTION_LANE_ID,
             roomId: 'room-1',
             openTimeoutMs: RELIC_MOTION_OPEN_TIMEOUT_MS,
-            waitTimeoutMs: 1000,
+            waitTimeoutMs: 1000
         }));
-        expect(rallarMock.roomSend).toHaveBeenCalledWith(expect.objectContaining({
-            protocol: RELIC_MOTION_PROTOCOL,
-            kind: 'relic-motion',
-            pid: 'alice-session',
-            roomId: 'entrance',
-            x: 1.25,
-            y: 0.65,
-            z: -0.5,
-            ox: 1.25,
-            oz: -0.5,
-            r: 0.75,
-            phase: 'walk',
-        }), expect.objectContaining({
-            key: 'relic-motion:alice-session',
-            maxAgeMs: RELIC_MOTION_MAX_AGE_MS,
-        }));
+        expect(rallarMock.roomSend).toHaveBeenCalledWith(
+            expect.objectContaining({
+                protocol: RELIC_MOTION_PROTOCOL,
+                kind: 'relic-motion',
+                pid: 'alice-session',
+                roomId: 'entrance',
+                x: 1.25,
+                y: 0.65,
+                z: -0.5,
+                ox: 1.25,
+                oz: -0.5,
+                r: 0.75,
+                phase: 'walk'
+            }),
+            expect.objectContaining({
+                key: 'relic-motion:alice-session',
+                maxAgeMs: RELIC_MOTION_MAX_AGE_MS
+            })
+        );
         expect(runtime.motion.diagnostics.lastSendStatus).toBe('sent');
     });
 
@@ -95,8 +98,8 @@ describe('Relic scene realtime motion networking', () => {
             transport: 'rtc',
             laneId: RELIC_MOTION_LANE_ID,
             readiness: {
-                status: 'empty',
-            },
+                status: 'empty'
+            }
         });
         const runtime = sceneRuntime();
 
@@ -115,7 +118,7 @@ describe('Relic scene realtime motion networking', () => {
 
         expect(rallarMock.onJson).toHaveBeenCalledWith(
             RELIC_MOTION_LANE_ID,
-            expect.any(Function),
+            expect.any(Function)
         );
     });
 
@@ -127,9 +130,9 @@ describe('Relic scene realtime motion networking', () => {
                 x: 999,
                 z: 999,
                 ox: 1.2,
-                oz: -0.8,
+                oz: -0.8
             }),
-            sceneRuntime().snapshot.value,
+            sceneRuntime().snapshot.value
         );
 
         expect(position).toEqual([1.2, 0.65, -0.8]);
@@ -146,10 +149,10 @@ describe('Relic scene realtime motion networking', () => {
                 ox: 0.5,
                 oz: 0.75,
                 r: 1.2,
-                seq: 7,
+                seq: 7
             }),
             'bob-peer',
-            1_000,
+            1_000
         )).toBe(true);
 
         const estimate = runtime.motion.buffer.sample('bob-session', 1_100);
@@ -160,8 +163,8 @@ describe('Relic scene realtime motion networking', () => {
             metadata: {
                 roomId: 'entrance',
                 senderPeerId: 'bob-peer',
-                phase: 'walk',
-            },
+                phase: 'walk'
+            }
         });
         expect(runtime.motion.diagnostics.acceptedSamples).toBe(1);
     });
@@ -176,7 +179,7 @@ describe('Relic scene realtime motion networking', () => {
             runtime,
             motionPayload({ pid: 'bob-session', seq: 8 }),
             'bob-peer',
-            1_040,
+            1_040
         )).toBe(false);
 
         expect(runtime.motion.diagnostics.duplicateSamples).toBe(1);
@@ -194,7 +197,7 @@ describe('Relic scene realtime motion networking', () => {
             runtime,
             motionPayload({ pid: 'bob-session', roomId: 'entrance' }),
             'bob-peer',
-            1_000,
+            1_000
         );
 
         const estimate = runtime.motion.buffer.sample('bob-session', 1_100);
@@ -219,7 +222,7 @@ function motionPayload(overrides: Partial<RelicMotionPayload> = {}): RelicMotion
         r: 0,
         phase: 'walk',
         sentAtEpochMs: 900,
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -233,29 +236,29 @@ function sceneRuntime(): RelicScenePositionRuntime {
                         playerId: 'alice-session',
                         roomId: 'entrance',
                         escaped: false,
-                        defeated: false,
+                        defeated: false
                     },
                     {
                         playerId: 'bob-session',
                         roomId: 'entrance',
                         escaped: false,
-                        defeated: false,
-                    },
+                        defeated: false
+                    }
                 ],
                 map: [
                     {
                         id: 'entrance',
                         x: 0,
-                        z: 0,
-                    },
-                ],
-            } as unknown as RelicScenePositionRuntime['snapshot']['value'],
+                        z: 0
+                    }
+                ]
+            } as unknown as RelicScenePositionRuntime['snapshot']['value']
         },
         localPlayerId: { value: 'alice-session' },
         rtcReady: { value: true },
         roamOffset: { x: 1.25, z: -0.5 } as RelicScenePositionRuntime['roamOffset'],
         cameraYaw: { value: 0.75 },
         motionPhase: { value: 'walk' },
-        motion: createRelicMotionState(),
+        motion: createRelicMotionState()
     };
 }

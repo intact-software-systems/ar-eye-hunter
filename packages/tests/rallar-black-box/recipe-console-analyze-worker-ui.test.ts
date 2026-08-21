@@ -2,16 +2,12 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AnalyzeWorkspace } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/AnalyzeWorkspace.tsx';
-import { AnalyzeEvidenceSearch } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/AnalyzeEvidenceSearch.tsx';
-import type { AnalyzeWorkspaceController } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/use-analyze-workspace.ts';
-import { createAnalyzeWorkerWorkspaceCallbacks } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-workspace-callbacks.ts';
+import { createAnalyzeWorkerWorkspaceCallbacks } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-workspace-callbacks.ts';
+import { AnalyzeEvidenceSearch } from '../../../apps/rallar-black-box/src/recipe-console/analyze/AnalyzeEvidenceSearch.tsx';
+import { AnalyzeWorkspace } from '../../../apps/rallar-black-box/src/recipe-console/analyze/AnalyzeWorkspace.tsx';
+import type { AnalyzeWorkspaceController } from '../../../apps/rallar-black-box/src/recipe-console/analyze/use-analyze-workspace.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('Recipe Console Analyze worker UI telemetry', () => {
     let container: HTMLDivElement;
@@ -51,10 +47,10 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
                 retainedEntryCount: 15_003,
                 indexOmittedEntryCount: 0,
                 matchedEntryCount: 321,
-                projectedEntryCount: 64,
+                projectedEntryCount: 64
             },
             evidenceWindow: {
-                entries: Array.from({ length: 64 }, () => ({})),
+                entries: Array.from({ length: 64 }, () => ({}))
             },
             selectedEvidence: undefined,
             controlRunOptions: [],
@@ -70,16 +66,18 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
             selectControlRun: vi.fn(),
             selectDistributedRun: vi.fn(),
             updateFilters: vi.fn(),
-            clearFilters: vi.fn(),
+            clearFilters: vi.fn()
         } as unknown as AnalyzeWorkspaceController;
 
-        await act(async () => root.render(createElement(AnalyzeWorkspace, {
-            controller,
-            urlState: { v: 1, experience: 'recipe-console', view: 'analyze' },
-            onInspect: vi.fn(),
-            onInspectorChange: vi.fn(),
-            onSelectionLabelChange: vi.fn(),
-        })));
+        await act(async () =>
+            root.render(createElement(AnalyzeWorkspace, {
+                controller,
+                urlState: { v: 1, experience: 'recipe-console', view: 'analyze' },
+                onInspect: vi.fn(),
+                onInspectorChange: vi.fn(),
+                onSelectionLabelChange: vi.fn()
+            }))
+        );
 
         const workspace = container.querySelector<HTMLElement>('[data-analyze-workspace]');
         expect(workspace?.dataset).toMatchObject({
@@ -90,7 +88,7 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
             analyzeMatchCount: '321',
             analyzeMountedCount: '0',
             analyzeOperationGeneration: '7',
-            analyzePendingPainted: 'true',
+            analyzePendingPainted: 'true'
         });
         expect(Number(workspace?.dataset.analyzeRenderCount)).toBeGreaterThan(0);
     });
@@ -109,7 +107,7 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
                     kind: 'failure',
                     sourceFile: 'failures.json',
                     summary: 'Prior failure evidence',
-                    payloadSummary: '{}',
+                    payloadSummary: '{}'
                 }],
                 rangeStart: 1,
                 rangeEnd: 1,
@@ -120,10 +118,10 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
                     retainedMatches: 1,
                     queryExcludedEntries: 0,
                     renderedMatches: 1,
-                    renderOmittedMatches: 0,
+                    renderOmittedMatches: 0
                 },
                 totalMatchesIsComplete: true,
-                windowSize: 64,
+                windowSize: 64
             },
             searchResult: {
                 entries: [{
@@ -131,35 +129,39 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
                     kind: 'failure',
                     sourceFile: 'failures.json',
                     summary: 'Prior failure evidence',
-                    payloadSummary: '{}',
+                    payloadSummary: '{}'
                 }],
                 totalMatches: 1,
                 omittedMatchCount: 0,
                 upstreamOmittedEntryCount: 0,
                 totalMatchesIsComplete: true,
-                limit: 64,
+                limit: 64
             },
             selectedEvidence: undefined,
             updateFilters,
             clearFilters,
-            selectEvidence: vi.fn(),
+            selectEvidence: vi.fn()
         } as unknown as AnalyzeWorkspaceController;
 
-        await act(async () => root.render(createElement(AnalyzeEvidenceSearch, {
-            controller,
-            urlState: { v: 1, experience: 'recipe-console', view: 'analyze' },
-        })));
+        await act(async () =>
+            root.render(createElement(AnalyzeEvidenceSearch, {
+                controller,
+                urlState: { v: 1, experience: 'recipe-console', view: 'analyze' }
+            }))
+        );
 
         const query = container.querySelector<HTMLInputElement>(
-            'input[name="query"]',
+            'input[name="query"]'
         )!;
         const form = container.querySelector<HTMLFormElement>('form')!;
         query.value = '界'.repeat(2_000);
         await act(async () => {
-            form.dispatchEvent(new Event('submit', {
-                bubbles: true,
-                cancelable: true,
-            }));
+            form.dispatchEvent(
+                new Event('submit', {
+                    bubbles: true,
+                    cancelable: true
+                })
+            );
         });
 
         expect(updateFilters).not.toHaveBeenCalled();
@@ -168,7 +170,7 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
         expect(container.querySelectorAll('[data-evidence-result]')).toHaveLength(1);
 
         const clear = [...container.querySelectorAll('button')].find(
-            button => button.textContent === 'Clear filters',
+            (button) => button.textContent === 'Clear filters'
         )!;
         await act(async () => clear.click());
         expect(clearFilters).toHaveBeenCalledOnce();
@@ -178,100 +180,100 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
 
         const boundedQuery = '界'.repeat(1_300);
         const resetQuery = container.querySelector<HTMLInputElement>(
-            'input[name="query"]',
+            'input[name="query"]'
         )!;
         resetQuery.value = boundedQuery;
         await act(async () => {
             container.querySelector<HTMLFormElement>('form')?.dispatchEvent(
-                new Event('submit', { bubbles: true, cancelable: true }),
+                new Event('submit', { bubbles: true, cancelable: true })
             );
         });
         expect(updateFilters).toHaveBeenLastCalledWith({
             historyQuery: boundedQuery,
             agentId: undefined,
             recipeId: undefined,
-            commandId: undefined,
+            commandId: undefined
         });
     });
 
-    it('does not mount fingerprintless initial rows for a URL-filtered import',
-        async () => {
-            const controller = {
-                model: {},
-                queryFingerprint: 'artifact-1:filtered-query',
-                evidenceWindowFingerprint: undefined,
-                evidenceWindowPending: true,
-                evidenceWindow: {
-                    entries: [{
-                        id: 'unfiltered-initial-row',
-                        kind: 'event',
-                        sourceFile: 'events.jsonl',
-                        summary: 'Must not flash for filtered URL',
-                        payloadSummary: '{}',
-                    }],
-                    rangeStart: 1,
-                    rangeEnd: 1,
-                    counts: {
-                        totalEntries: 1,
-                        indexedEntries: 1,
-                        indexOmittedEntries: 0,
-                        retainedMatches: 1,
-                        queryExcludedEntries: 0,
-                        renderedMatches: 1,
-                        renderOmittedMatches: 0,
-                    },
-                    totalMatchesIsComplete: true,
-                    windowSize: 64,
+    it('does not mount fingerprintless initial rows for a URL-filtered import', async () => {
+        const controller = {
+            model: {},
+            queryFingerprint: 'artifact-1:filtered-query',
+            evidenceWindowFingerprint: undefined,
+            evidenceWindowPending: true,
+            evidenceWindow: {
+                entries: [{
+                    id: 'unfiltered-initial-row',
+                    kind: 'event',
+                    sourceFile: 'events.jsonl',
+                    summary: 'Must not flash for filtered URL',
+                    payloadSummary: '{}'
+                }],
+                rangeStart: 1,
+                rangeEnd: 1,
+                counts: {
+                    totalEntries: 1,
+                    indexedEntries: 1,
+                    indexOmittedEntries: 0,
+                    retainedMatches: 1,
+                    queryExcludedEntries: 0,
+                    renderedMatches: 1,
+                    renderOmittedMatches: 0
                 },
-                searchResult: undefined,
-                selectedEvidence: undefined,
-                updateFilters: vi.fn(),
-                clearFilters: vi.fn(),
-                selectEvidence: vi.fn(),
-                requestWindow: vi.fn(),
-                retryEvidenceSearch: vi.fn(),
-            } as unknown as AnalyzeWorkspaceController;
+                totalMatchesIsComplete: true,
+                windowSize: 64
+            },
+            searchResult: undefined,
+            selectedEvidence: undefined,
+            updateFilters: vi.fn(),
+            clearFilters: vi.fn(),
+            selectEvidence: vi.fn(),
+            requestWindow: vi.fn(),
+            retryEvidenceSearch: vi.fn()
+        } as unknown as AnalyzeWorkspaceController;
 
-            await act(async () => root.render(createElement(AnalyzeEvidenceSearch, {
+        await act(async () =>
+            root.render(createElement(AnalyzeEvidenceSearch, {
                 controller,
                 urlState: {
                     v: 1,
                     experience: 'recipe-console',
                     view: 'analyze',
-                    historyQuery: 'needle',
-                },
-            })));
+                    historyQuery: 'needle'
+                }
+            }))
+        );
 
-            expect(container.querySelectorAll('[data-evidence-result]')).toHaveLength(0);
-            expect(container.querySelector('[role="status"]')?.textContent)
-                .toBe('Current query range is pending. Updating…');
-            expect(container.querySelector('[data-analyze-matching-truth]')?.textContent)
-                .toContain('Pending current query');
+        expect(container.querySelectorAll('[data-evidence-result]')).toHaveLength(0);
+        expect(container.querySelector('[role="status"]')?.textContent)
+            .toBe('Current query range is pending. Updating…');
+        expect(container.querySelector('[data-analyze-matching-truth]')?.textContent)
+            .toContain('Pending current query');
+    });
+
+    it('scopes request timeout failure without declaring the accepted worker unavailable', () => {
+        const fail = vi.fn();
+        const setWorkerUnavailable = vi.fn();
+        const callbacks = createAnalyzeWorkerWorkspaceCallbacks({
+            pendingRef: { current: undefined },
+            validationErrorRef: { current: undefined },
+            pendingIdentityPatchRef: { current: undefined },
+            setState: vi.fn(),
+            evidence: { fail } as never,
+            setSelectedEvidence: vi.fn(),
+            setTuneFacade: vi.fn(),
+            setTelemetry: vi.fn(),
+            setWorkerUnavailable,
+            setPendingPaintGeneration: vi.fn()
         });
 
-    it('scopes request timeout failure without declaring the accepted worker unavailable',
-        () => {
-            const fail = vi.fn();
-            const setWorkerUnavailable = vi.fn();
-            const callbacks = createAnalyzeWorkerWorkspaceCallbacks({
-                pendingRef: { current: undefined },
-                validationErrorRef: { current: undefined },
-                pendingIdentityPatchRef: { current: undefined },
-                setState: vi.fn(),
-                evidence: { fail } as never,
-                setSelectedEvidence: vi.fn(),
-                setTuneFacade: vi.fn(),
-                setTelemetry: vi.fn(),
-                setWorkerUnavailable,
-                setPendingPaintGeneration: vi.fn(),
-            });
-
-            callbacks.onUnavailable?.('timeout', 'accepted-request', {
-                kind: 'search',
-                requestId: 47,
-            });
-
-            expect(fail).toHaveBeenCalledWith('search', 47);
-            expect(setWorkerUnavailable).not.toHaveBeenCalled();
+        callbacks.onUnavailable?.('timeout', 'accepted-request', {
+            kind: 'search',
+            requestId: 47
         });
+
+        expect(fail).toHaveBeenCalledWith('search', 47);
+        expect(setWorkerUnavailable).not.toHaveBeenCalled();
+    });
 });

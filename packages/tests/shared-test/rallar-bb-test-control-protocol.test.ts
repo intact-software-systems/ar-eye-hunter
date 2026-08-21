@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    type ControlCommandEnvelope,
     parseControlServerMessage,
     validateRallarBlackBoxTestCommand,
+    type ControlCommandEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
@@ -13,7 +13,7 @@ function envelope(commandId: string, command: RallarBlackBoxTestCommand): Contro
         runId: 'run-1',
         agentId: 'agent-1',
         commandId,
-        command,
+        command
     };
 }
 
@@ -21,15 +21,15 @@ describe('rallar-bb-test control protocol', () => {
     it('accepts the RTC diagnostics option on health commands', () => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'health',
-            includeRtcDiagnostics: true,
+            includeRtcDiagnostics: true
         })).toEqual({ ok: true });
 
         expect(validateRallarBlackBoxTestCommand({
             kind: 'health',
-            includeRtcDiagnostics: 'yes',
+            includeRtcDiagnostics: 'yes'
         } as never)).toEqual({
             ok: false,
-            error: 'health.includeRtcDiagnostics must be a boolean.',
+            error: 'health.includeRtcDiagnostics must be a boolean.'
         });
     });
 
@@ -53,13 +53,13 @@ describe('rallar-bb-test control protocol', () => {
                             readiness: {
                                 minReadyPeers: 1,
                                 timeoutMs: 10_000,
-                                intervalMs: 100,
-                            },
-                        },
-                    ],
-                },
+                                intervalMs: 100
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed.ok).toBe(true);
@@ -79,18 +79,18 @@ describe('rallar-bb-test control protocol', () => {
                             commandId: 'rtc-connect-invalid-ready',
                             connection: 'rtc',
                             readiness: {
-                                timeoutMs: 0,
-                            },
-                        },
-                    ],
-                },
+                                timeoutMs: 0
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed).toEqual({
             ok: false,
-            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.',
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.'
         });
     });
 
@@ -119,18 +119,18 @@ describe('rallar-bb-test control protocol', () => {
                                 roomId: 'arena-1',
                                 data: {
                                     topic: 'room.black-box.rtc-realtime.position',
-                                    seq: '{stream.index}',
-                                },
+                                    seq: '{stream.index}'
+                                }
                             },
                             thresholds: {
                                 minSendSuccessRatio: 0.99,
-                                maxDroppedFrames: 0,
-                            },
-                        },
-                    ],
-                },
+                                maxDroppedFrames: 0
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed.ok).toBe(true);
@@ -149,17 +149,17 @@ describe('rallar-bb-test control protocol', () => {
                             kind: 'rtc.stream',
                             commandId: 'stream-invalid',
                             intervalMs: 50,
-                            send: {},
-                        },
-                    ],
-                },
+                            send: {}
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed).toEqual({
             ok: false,
-            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.stream requires count or durationMs.',
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.stream requires count or durationMs.'
         });
     });
 
@@ -179,13 +179,13 @@ describe('rallar-bb-test control protocol', () => {
                             maxStartDriftMs: 50,
                             maxJitterMs: 20,
                             minSendSuccessRatio: 0.95,
-                            failOnBackpressure: true,
+                            failOnBackpressure: true
                         },
-                        commands: [{ kind: 'health' }],
-                    }],
-                },
+                        commands: [{ kind: 'health' }]
+                    }]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed.ok).toBe(true);
@@ -201,16 +201,16 @@ describe('rallar-bb-test control protocol', () => {
                         kind: 'loop',
                         count: 2,
                         thresholds: { minSendSuccessRatio: 1.1 },
-                        commands: [{ kind: 'health' }],
-                    }],
-                },
+                        commands: [{ kind: 'health' }]
+                    }]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(parsed).toEqual({
             ok: false,
-            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: loop.thresholds.minSendSuccessRatio must be between 0 and 1.',
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: loop.thresholds.minSendSuccessRatio must be between 0 and 1.'
         });
     });
 
@@ -220,10 +220,12 @@ describe('rallar-bb-test control protocol', () => {
         [{ minSendSuccessRatio: Number.NaN }, 'loop.thresholds.minSendSuccessRatio must be a finite number.'],
         [{ unknown: 1 }, 'loop.thresholds has unsupported field: unknown.'],
         ['invalid', 'loop.thresholds must be an object.'],
-        [{ failOnBackpressure: 'yes' }, 'loop.thresholds.failOnBackpressure must be a boolean.'],
+        [{ failOnBackpressure: 'yes' }, 'loop.thresholds.failOnBackpressure must be a boolean.']
     ])('rejects direct malformed loop threshold input %#', (thresholds, error) => {
         expect(validateRallarBlackBoxTestCommand({
-            kind: 'loop', commands: [{ kind: 'health' }], thresholds,
+            kind: 'loop',
+            commands: [{ kind: 'health' }],
+            thresholds
         } as never)).toEqual({ ok: false, error });
     });
 });

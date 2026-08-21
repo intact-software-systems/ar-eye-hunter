@@ -17,7 +17,9 @@
         "path": "scripts/perf/rtc-room-graph-no-rtt-bench.ts",
         "blob": "7e5ab89531e9e6f7b2e73068ed71ad944ecd55e3"
       },
-      "targets": ["packages/shared-rtc-bench/diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts"]
+      "targets": [
+        "packages/shared-rtc-bench/diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts"
+      ]
     },
     {
       "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",

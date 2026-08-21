@@ -4,12 +4,12 @@ Rallar Motion smooths received snapshots for presentation. It does not own
 simulation, collision, scoring, or authority.
 
 ```ts
+import { rallar } from '@shared-web/browser/rallar.ts';
 import {
     createRallarMotionAdaptiveDelay,
     createRallarMotionBuffer,
-    createRallarMotionSendGate,
+    createRallarMotionSendGate
 } from '@shared/rallar-motion/mod.ts';
-import { rallar } from '@shared-web/browser/rallar.ts';
 
 type Pose = {
     entityId: string;
@@ -21,25 +21,25 @@ type Pose = {
 const delay = createRallarMotionAdaptiveDelay({
     defaultDelayMs: 100,
     minDelayMs: 60,
-    maxDelayMs: 180,
+    maxDelayMs: 180
 });
 
-const buffer = createRallarMotionBuffer<{ seq: number }>({
+const buffer = createRallarMotionBuffer<{ seq: number; }>({
     interpolationDelayMs: 100,
     readInterpolationDelayMs: delay.currentDelayMs,
-    maxExtrapolationMs: 120,
+    maxExtrapolationMs: 120
 });
 
 const poseGate = createRallarMotionSendGate({
     cadenceMs: 33,
     idleCadenceMs: 500,
-    minPositionDelta: 0.02,
+    minPositionDelta: 0.02
 });
 
 const room = await rallar.rooms.enter('lobby');
 const poses = room.realtime<Pose>({
     laneId: 'game-snapshot',
-    waitTimeoutMs: 500,
+    waitTimeoutMs: 500
 });
 
 poses.on((message) => {
@@ -51,7 +51,7 @@ poses.on((message) => {
         position: pose.position,
         velocity: pose.velocity,
         seq: pose.seq,
-        metadata: { seq: pose.seq },
+        metadata: { seq: pose.seq }
     });
 });
 
@@ -72,7 +72,7 @@ if (gateDecision.shouldSend) {
         entityId: localPlayerId,
         seq: nextSnapshotSeq(),
         position: localPose.position,
-        velocity: localPose.velocity,
+        velocity: localPose.velocity
     });
 }
 ```

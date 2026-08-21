@@ -1,7 +1,7 @@
 import type {
     DistributedRunAnalysis,
     DistributedRunArtifactFiles,
-    DistributedRunArtifactSnapshots,
+    DistributedRunArtifactSnapshots
 } from './distributed-artifact-analysis.ts';
 import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 
@@ -72,9 +72,11 @@ export type DistributedArtifactEvidenceSearchResult = Readonly<{
 
 declare const DISTRIBUTED_ARTIFACT_EVIDENCE_CURSOR: unique symbol;
 
-export type DistributedArtifactEvidenceCursor = string & Readonly<{
-    [DISTRIBUTED_ARTIFACT_EVIDENCE_CURSOR]: true;
-}>;
+export type DistributedArtifactEvidenceCursor =
+    & string
+    & Readonly<{
+        [DISTRIBUTED_ARTIFACT_EVIDENCE_CURSOR]: true;
+    }>;
 
 export type DistributedArtifactEvidenceCatalog = Readonly<{
     entries: readonly DistributedArtifactEvidenceEntry[];
@@ -95,10 +97,7 @@ export type DistributedArtifactEvidenceCollections = Readonly<{
     catalog: DistributedArtifactEvidenceCatalog;
 }>;
 
-export type DistributedArtifactEvidenceWindowQuery = Omit<
-    DistributedArtifactEvidenceSearchQuery,
-    'limit'
->;
+export type DistributedArtifactEvidenceWindowQuery = Omit<DistributedArtifactEvidenceSearchQuery, 'limit'>;
 
 export type DistributedArtifactEvidenceWindowRequest = Readonly<{
     query?: DistributedArtifactEvidenceWindowQuery;
@@ -136,7 +135,7 @@ export type DistributedArtifactEvidenceCursorRejectionCode =
     | 'cursor-out-of-range';
 
 export type DistributedArtifactEvidenceWindowResult =
-    | Readonly<{ ok: true; window: DistributedArtifactEvidenceWindow }>
+    | Readonly<{ ok: true; window: DistributedArtifactEvidenceWindow; }>
     | Readonly<{
         ok: false;
         rejection: Readonly<{

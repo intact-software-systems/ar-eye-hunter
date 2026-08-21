@@ -6,7 +6,7 @@ export type GraphInfo = {
     readonly graph: WeightedGraph;
     readonly groupGraph: WeightedGraph;
     readonly coreNodes: string[];
-}
+};
 
 export type GraphInfoSnapshot = {
     readonly groupRef: GroupRef;
@@ -14,4 +14,4 @@ export type GraphInfoSnapshot = {
     readonly predicted: GraphInfo;
     readonly createdAtEpochMs: number;
     readonly version: number;
-}
+};

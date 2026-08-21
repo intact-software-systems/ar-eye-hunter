@@ -1,7 +1,4 @@
-import type {
-    RecipeConsoleDiagnosticSeverity,
-    RecipeConsoleTransport,
-} from '../routing/url-state-contract.ts';
+import type { RecipeConsoleDiagnosticSeverity, RecipeConsoleTransport } from '../routing/url-state-contract.ts';
 
 export const MONITOR_WINDOW_BUDGETS = {
     failures: 60,
@@ -14,7 +11,7 @@ export const MONITOR_WINDOW_BUDGETS = {
     composites: 40,
     commandEvidence: 16,
     failureDestinations: 40,
-    diagnosticFailureLinks: 40,
+    diagnosticFailureLinks: 40
 } as const;
 
 export type MonitorWindowSection = keyof typeof MONITOR_WINDOW_BUDGETS;
@@ -27,7 +24,7 @@ export type MonitorWindowFingerprintInput = Readonly<{
 }>;
 
 export function createMonitorWindowFingerprint(
-    input: MonitorWindowFingerprintInput,
+    input: MonitorWindowFingerprintInput
 ): string {
     const diagnosticFilters = input.section === 'diagnostics'
         ? [input.diagnosticSeverity ?? null, input.transport ?? null]
@@ -36,7 +33,7 @@ export function createMonitorWindowFingerprint(
         'monitor-window-v1',
         input.contextKey,
         input.section,
-        ...diagnosticFilters,
+        ...diagnosticFilters
     ]);
 }
 

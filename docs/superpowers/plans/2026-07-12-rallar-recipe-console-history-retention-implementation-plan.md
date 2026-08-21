@@ -129,24 +129,24 @@ Files:
 - `apps/rallar-black-box/docs/recipe-console-migration-register.md`
 
 - [x] Audit existing shared filter, legacy History/Compare UI, v1 codec,
-  storage rules, authorized Control transport, retention endpoint/service,
-  OpenAPI, tests, mount policies, and rollback links.
+      storage rules, authorized Control transport, retention endpoint/service,
+      OpenAPI, tests, mount policies, and rollback links.
 - [x] Bind History placement, URL additions, row bounds, saved-preset bounds,
-  preview response, guarded confirmation, and unchanged destructive semantics.
+      preview response, guarded confirmation, and unchanged destructive semantics.
 - [x] Record that the configured server may automatically prune during normal
-  persistence, so manual preview can truthfully be empty.
+      persistence, so manual preview can truthfully be empty.
 - [x] Close independent plan-review gaps for stable full-consequence
-  fingerprints (including fleet and same-timestamp drift), authorization-first
-  route parity, and the stale-old-preview `409` contract. The follow-up review
-  found no remaining Critical or Important gap.
+      fingerprints (including fleet and same-timestamp drift), authorization-first
+      route parity, and the stale-old-preview `409` contract. The follow-up review
+      found no remaining Critical or Important gap.
 - [x] Close the final repository/plan-review gaps: distinct
-  `historyRecipeId` filter state, process/context-bound short-lived tokens,
-  server-internal issued-token consequence truth, synchronous confirm, lazy
-  retention client code, root fallback provenance, bounded new owners, and
-  sole-survivor selection behavior.
+      `historyRecipeId` filter state, process/context-bound short-lived tokens,
+      server-internal issued-token consequence truth, synchronous confirm, lazy
+      retention client code, root fallback provenance, bounded new owners, and
+      sole-survivor selection behavior.
 - [x] Capture fresh Iteration 8 baseline after Iteration 7 commits: focused
-  units, server check/test, app/shared TypeScript, build/chunks, exact History
-  browser baseline, and the configured-live skip or pass.
+      units, server check/test, app/shared TypeScript, build/chunks, exact History
+      browser baseline, and the configured-live skip or pass.
 
 Fresh Task 0 baseline at `382df72`: 194/194 focused tests across ten files;
 control-server check and 57/57 tests; shared-test TypeScript plus all seven Deno
@@ -174,44 +174,44 @@ Files:
 - Add `packages/tests/shared-test/rallar-bb-test-control-retention.test.ts`
 
 - [x] RED-test a pure retention plan for disabled retention, exact cap, ties,
-  insertion-order-compatible candidates, associated distributed/fleet IDs,
-  and no mutation or time advancement.
+      insertion-order-compatible candidates, associated distributed/fleet IDs,
+      and no mutation or time advancement.
 - [x] RED-test that `applyRetentionPlan(...)` applies one exact precomputed plan
-  while legacy/automatic `pruneRuns(...)` preserves its prior unbounded fast
-  path, return order, and deletion behavior beyond preview limits.
+      while legacy/automatic `pruneRuns(...)` preserves its prior unbounded fast
+      path, return order, and deletion behavior beyond preview limits.
 - [x] RED-test authorized `?dryRun=true` through the real route: candidates,
-  current/projected counts, empty `deletedRunIds`, and byte-for-byte unchanged
-  service/persistence/artifact/socket state.
+      current/projected counts, empty `deletedRunIds`, and byte-for-byte unchanged
+      service/persistence/artifact/socket state.
 - [x] RED-test no preview query keeps the existing response shape, destructive
-  default, ignored arbitrary/malformed body behavior, and unknown-query
-  tolerance.
+      default, ignored arbitrary/malformed body behavior, and unknown-query
+      tolerance.
 - [x] RED-test plan-token confirmation success and `409` drift for candidate
-  identity, cap, connected agents, linked distributed state, and linked fleet
-  reports. Include control/distributed/fleet content changes and issued run-
-  token changes that retain the same timestamps. Expose only the safe issued-
-  token count. Bind tokens to a process nonce and expiry; after any asynchronous
-  cryptographic verification, re-plan, byte-compare, and prune synchronously so
-  digest computation cannot introduce a mutation race.
+      identity, cap, connected agents, linked distributed state, and linked fleet
+      reports. Include control/distributed/fleet content changes and issued run-
+      token changes that retain the same timestamps. Expose only the safe issued-
+      token count. Bind tokens to a process nonce and expiry; after any asynchronous
+      cryptographic verification, re-plan, byte-compare, and prune synchronously so
+      digest computation cannot introduce a mutation race.
 - [x] RED-test invalid/duplicate `dryRun` and `planToken`, token with preview,
-  overlong token, and all `400`/`409` paths as non-mutating.
+      overlong token, and all `400`/`409` paths as non-mutating.
 - [x] RED-test the real route's authorization-first parity for preview and
-  guarded confirmation. Unauthorized requests with valid, invalid, duplicate,
-  and overlong query values disclose no candidates/token and never mutate;
-  a valid `planToken` never substitutes for the existing admin authorization.
+      guarded confirmation. Unauthorized requests with valid, invalid, duplicate,
+      and overlong query values disclose no candidates/token and never mutate;
+      a valid `planToken` never substitutes for the existing admin authorization.
 - [x] RED-test that a plan token from another server process, an expired token,
-  and a token whose internal issued-run-token state changed return `409`
-  without mutation or consequence disclosure beyond the existing stale error.
+      and a token whose internal issued-run-token state changed return `409`
+      without mutation or consequence disclosure beyond the existing stale error.
 - [x] Inject clock, process nonce/key, and cryptographic operations into the
-  bounded token adapter so expiry, process change, and digest races are
-  deterministic without weakening production entropy or signatures.
+      bounded token adapter so expiry, process change, and digest races are
+      deterministic without weakening production entropy or signatures.
 - [x] Fix the API-test environment helper that currently overwrites a caller's
-  `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS` with `0`; capture RED first.
+      `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS` with `0`; capture RED first.
 - [x] Update OpenAPI query/response/400/409/413 contracts and test exact schema.
-  The `409` schema remains an error response and does not return a fresh preview
-  or token; clients must request a new authorized dry run.
+      The `409` schema remains an error response and does not return a fresh preview
+      or token; clients must request a new authorized dry run.
 - [x] Update `current-state.md` and `command-execution.md`: retain the bare
-  destructive cleanup example as legacy behavior and add explicit dry-run plus
-  guarded-confirm examples and warnings without implying the preview deletes.
+      destructive cleanup example as legacy behavior and add explicit dry-run plus
+      guarded-confirm examples and warnings without implying the preview deletes.
 
 Task 1 is implemented in `07564df`. Shared-test owns two bounded pure owners
 for stable consequence planning/canonicalization; the control server owns
@@ -272,28 +272,28 @@ Files:
   tests as compatibility regression only
 
 - [x] RED-test low-level request serialization: preview sends only
-  `dryRun=true`; guarded confirm sends only the opaque plan token; legacy
-  cleanup keeps the unmodified endpoint URL and body behavior.
+      `dryRun=true`; guarded confirm sends only the opaque plan token; legacy
+      cleanup keeps the unmodified endpoint URL and body behavior.
 - [x] RED-test malformed 2xx payloads, invalid IDs/counts/cap, inconsistent
-  preview/deletion fields, 400, 409, abort, and non-JSON responses.
+      preview/deletion fields, 400, 409, abort, and non-JSON responses.
 - [x] RED-test existing anonymous/manual/brokered retry policy, credential-origin
-  withholding, and no token/query leakage for retention.
+      withholding, and no token/query leakage for retention.
 - [x] RED-test canonical HTTP-error identity and existing 401/403 authorized
-  retry after the error-class extraction. The lazy request imports the tiny
-  canonical owner directly; the existing public
-  `ControlRunManagerHttpError` export remains identity-compatible.
+      retry after the error-class extraction. The lazy request imports the tiny
+      canonical owner directly; the existing public
+      `ControlRunManagerHttpError` export remains identity-compatible.
 - [x] Expose a narrow `retention.preview(...)` and
-  `retention.confirm(...)` API from the lazy History boundary; do not duplicate
-  transport or endpoint authorization logic.
+      `retention.confirm(...)` API from the lazy History boundary; do not duplicate
+      transport or endpoint authorization logic.
 - [x] RED-test that retention request/validation code is dynamically imported
-  only after History invokes it and remains absent from inactive Recipe Console
-  chunks. An AST/static-import gate forbids value imports or re-exports from
-  `control-run-manager.ts`, the root provider, and eager `control-api.ts`.
-  Endpoint, credential-origin, or connection-generation changes abort and
-  invalidate preview state before a confirmation can be sent.
+      only after History invokes it and remains absent from inactive Recipe Console
+      chunks. An AST/static-import gate forbids value imports or re-exports from
+      `control-run-manager.ts`, the root provider, and eager `control-api.ts`.
+      Endpoint, credential-origin, or connection-generation changes abort and
+      invalidate preview state before a confirmation can be sent.
 - [x] Keep types sourced from shared-test and preserve every existing public
-  manager/API import path. Do not add retention serialization to or re-export
-  it through the eagerly loaded `control-run-manager.ts`.
+      manager/API import path. Do not add retention serialization to or re-export
+      it through the eagerly loaded `control-run-manager.ts`.
 
 Task 2 is implemented in `7197beb`. The legacy manager export and the tiny
 canonical HTTP-error owner share exact constructor identity. A generic
@@ -336,22 +336,22 @@ Files:
 - Update the product-spec URL table and local-storage rules
 
 - [x] RED-test additive semantic `failureCategory` matching against repository
-  failure classification while preserving raw `failureType` behavior. Match
-  actual run/rollup failures, never a synthetic readiness explanation attached
-  only because a run is nonterminal.
+      failure classification while preserving raw `failureType` behavior. Match
+      actual run/rollup failures, never a synthetic readiness explanation attached
+      only because a run is nonterminal.
 - [x] RED-test group, recipe, profile, status, text, semantic failure category,
-  inclusive created-time bounds, combined filters, empty results, malformed
-  manifests, and stable descending order.
+      inclusive created-time bounds, combined filters, empty results, malformed
+      manifests, and stable descending order.
 - [x] RED-test parse/normalize/serialize for `historyGroup`,
-  `historyRecipeId`, `historyProfile`, and `failureCategory` beside valid,
-  invalid, duplicate, sensitive, unknown, and legacy-alias fields.
+      `historyRecipeId`, `historyProfile`, and `failureCategory` beside valid,
+      invalid, duplicate, sensitive, unknown, and legacy-alias fields.
 - [x] RED-test one-push Apply/Reset and popstate/copy-link restoration without
-  clearing comparison, timing, provider, or harmless unknown state.
+      clearing comparison, timing, provider, or harmless unknown state.
 - [x] RED-test filter → Candidate selection → cleanup → copied URL/back-forward
-  so `historyRecipeId` and other filters survive while operational `recipeId`
-  follows the selected run and may be cleared independently.
+      so `historyRecipeId` and other filters survive while operational `recipeId`
+      follows the selected run and may be cleared independently.
 - [x] Keep committed filters shareable and make explicit URL state override any
-  locally saved preset.
+      locally saved preset.
 
 Task 3 filter/codec code is implemented in `48b2fd0`. Shared history filtering
 preserves every legacy raw filter and stable date/order behavior, adds semantic
@@ -381,17 +381,17 @@ Files:
 
 - [x] RED-test storage-disabled, quota/read/write/remove exceptions as nonfatal.
 - [x] RED-test schema version, exact whitelist, caps, deterministic normalized
-  names/order, duplicate replacement, and oldest-entry eviction at 12.
+      names/order, duplicate replacement, and oldest-entry eviction at 12.
 - [x] RED-test that Save serializes committed URL filters rather than transient
-  draft text.
+      draft text.
 - [x] RED-test malformed JSON, future version, non-array values, unknown keys,
-  invalid enum/range values, oversize names/fields/count, and prototype-shaped
-  objects are dropped without losing valid siblings.
+      invalid enum/range values, oversize names/fields/count, and prototype-shaped
+      objects are dropped without losing valid siblings.
 - [x] RED-test that credentials, control URLs/tokens, run selection, compare
-  IDs, artifacts, active preset, and transient drafts can never serialize.
+      IDs, artifacts, active preset, and transient drafts can never serialize.
 - [x] Keep the adapter data-in/data-out with an injected storage port; browser
-  localStorage access belongs only in `use-history-filter-presets.ts`, never
-  `TuneWorkspace`, `HistoryWorkspace`, or a global provider.
+      localStorage access belongs only in `use-history-filter-presets.ts`, never
+      `TuneWorkspace`, `HistoryWorkspace`, or a global provider.
 
 Task 4 is implemented in `1e19dfb`. The pure contract and injected storage
 adapter persist exactly the eight History filters in one versioned envelope,
@@ -419,25 +419,25 @@ Files:
 - Add `packages/tests/rallar-black-box/recipe-console-history-model.test.ts`
 
 - [x] RED-test exact rows from root distributed/control pairs, pairing status,
-  group/recipe/profile/failure labels, created/updated time, control status,
-  partial/stale/offline provenance, total/rendered/omitted counts, and 100-row
-  bound.
+      group/recipe/profile/failure labels, created/updated time, control status,
+      partial/stale/offline provenance, total/rendered/omitted counts, and 100-row
+      bound.
 - [x] RED-test unsafe/duplicate/malformed identities are quarantined from
-  navigation, selection, filenames, and React keys. Every retention candidate
-  remains visibly rendered with a generated key and its exact control ID;
-  retention output/token truth is never filtered through URL-identity policy.
+      navigation, selection, filenames, and React keys. Every retention candidate
+      remains visibly rendered with a generated key and its exact control ID;
+      retention output/token truth is never filtered through URL-identity policy.
 - [x] RED-test visible Baseline action patches `compareLeft` only; Candidate
-  atomically aligns `compareRight`, `distributedRunId`, and `controlRunId` and
-  clears dependent agent/recipe/command fields.
+      atomically aligns `compareRight`, `distributedRunId`, and `controlRunId` and
+      clears dependent agent/recipe/command fields.
 - [x] RED-test cleanup reconciliation against the pre-cleanup association map:
-  deleted focus/right/left/control IDs clear only dependent fields; unrelated
-  filter/comparison/timing/unknown state remains.
+      deleted focus/right/left/control IDs clear only dependent fields; unrelated
+      filter/comparison/timing/unknown state remains.
 - [x] RED-test cleanup leaving one survivor against existing sole-control-run
-  bootstrap. History filters remain stable, deleted selections do not revive,
-  and any authoritative sole-survivor selection is explicit in the expected
-  post-refresh model rather than mistaken for a previous-run auto-selection.
+      bootstrap. History filters remain stable, deleted selections do not revive,
+      and any authoritative sole-survivor selection is explicit in the expected
+      post-refresh model rather than mistaken for a previous-run auto-selection.
 - [x] Reuse Tune's safe identity and selection patch behavior or extract one
-  shared app-local pure helper; never fork its rules.
+      shared app-local pure helper; never fork its rules.
 
 Task 5 is implemented in `13070af` and `caa3980`. The serialized root query now
 retains whether distributed history came from the root snapshot, canonical
@@ -476,20 +476,20 @@ Files:
 - Add/update structure tests
 
 - [x] RED-test one History composition, no History feature state in
-  `RecipeConsoleWorkspace`, no legacy import, no duplicate compare derivation,
-  no global CSS, and no file over 300 lines (`HistoryWorkspace` <= 180;
-  `TuneWorkspace` remains <= 180).
+      `RecipeConsoleWorkspace`, no legacy import, no duplicate compare derivation,
+      no global CSS, and no file over 300 lines (`HistoryWorkspace` <= 180;
+      `TuneWorkspace` remains <= 180).
 - [x] Render exact source/provenance, active filter summary, Apply/Reset,
-  table count/omission, empty/partial/stale/offline/error states, and safe
-  legacy Runs handoff.
+      table count/omission, empty/partial/stale/offline/error states, and safe
+      legacy Runs handoff.
 - [x] Operate filters, baseline/candidate handoff, save/apply/delete preset,
-  copy link, keyboard table/disclosures, and mobile controls through visible
-  labeled elements; no hover-only evidence.
+      copy link, keyboard table/disclosures, and mobile controls through visible
+      labeled elements; no hover-only evidence.
 - [x] Keep current Tune evidence first at desktop, portrait, and short
-  landscape. History tables own contained overflow and never create document
-  X overflow.
+      landscape. History tables own contained overflow and never create document
+      X overflow.
 - [x] Do not auto-select a previous run, fetch artifacts, execute Control
-  recipes, or mutate recipe manifests.
+      recipes, or mutate recipe manifests.
 
 Task 6 is implemented in `055c96f`. `TuneWorkspace` delegates its scoped
 inspection lifecycle to a 75-line hook, then composes exactly one 176-line
@@ -530,26 +530,26 @@ Files:
   props
 
 - [x] RED-test idle/previewing/preview-ready/confirming/succeeded/drift/error/
-  unavailable states, operation generation, stale response suppression, abort,
-  remount reset, and exact request counts.
+      unavailable states, operation generation, stale response suppression, abort,
+      remount reset, and exact request counts.
 - [x] RED-test endpoint/base-URL, credential-origin, and connection-generation
-  changes both before preview resolution and after preview success. They abort
-  work, mark the old consequence list non-current, discard the token, and keep
-  Confirm disabled.
+      changes both before preview resolution and after preview success. They abort
+      work, mark the old consequence list non-current, discard the token, and keep
+      Confirm disabled.
 - [x] Preview must show cap, current/projected counts, exact would-delete IDs,
-  connected-agent/socket consequences, each linked distributed run's state,
-  and the explicit fact that current sockets and artifact files remain.
+      connected-agent/socket consequences, each linked distributed run's state,
+      and the explicit fact that current sockets and artifact files remain.
 - [x] Preview never mutates. Cancel/Escape/outside-dismiss emits no destructive
-  request. Confirm is disabled until a current successful preview exists.
+      request. Confirm is disabled until a current successful preview exists.
 - [x] Alertdialog traps focus, announces destructive scope, supports keyboard
-  confirm/cancel, restores focus, prevents double submit, and exposes visible
-  busy/error/drift status without motion dependence.
+      confirm/cancel, restores focus, prevents double submit, and exposes visible
+      busy/error/drift status without motion dependence.
 - [x] Confirm sends the exact opaque preview token. On success, reconcile URL state,
-  refresh the root serialized query, and show actual deletions. On `409`, keep
-  the prior list visible with an explicit stale marker, discard its token,
-  disable Confirm, and require a new preview request before reopening confirmation.
+      refresh the root serialized query, and show actual deletions. On `409`, keep
+      the prior list visible with an explicit stale marker, discard its token,
+      disable Confirm, and require a new preview request before reopening confirmation.
 - [x] Withhold cleanup entirely when endpoint provenance/credentials are unsafe;
-  never persist preview IDs or authorization material.
+      never persist preview IDs or authorization material.
 
 Task 7 is green through `7256379`. The bounded History retention workspace
 loads its authorized client only after Preview, projects a frozen token-free
@@ -587,21 +587,21 @@ Files:
 - Modify CSS-isolation/responsive/accessibility specs only for real History UI
 
 - [x] GREEN exact Ready-State test:
-  `restores versioned view selection filters comparison and timing metric from a copied URL`.
+      `restores versioned view selection filters comparison and timing metric from a copied URL`.
 - [x] GREEN exact retention test:
-  `previews retention impact before confirmed destructive cleanup`.
+      `previews retention impact before confirmed destructive cleanup`.
 - [x] Add visible-control tests for combined filtering, past-failure discovery,
-  baseline/candidate selection, compare output, saved preset save/apply/delete,
-  cancelled cleanup, drift conflict, auth failure, and post-delete URL cleanup.
+      baseline/candidate selection, compare output, saved preset save/apply/delete,
+      cancelled cleanup, drift conflict, auth failure, and post-delete URL cleanup.
 - [x] Assert preview/confirm HTTP bodies and request counts; a preview or
-  cancelled dialog must never issue a destructive request.
+      cancelled dialog must never issue a destructive request.
 - [x] Cover 1440x900, 900x900, 430x932, and 932x430; keyboard-only filters,
-  table actions, saved presets, dialog, copy link, back/forward, focus restore,
-  reduced motion, 44px coarse targets, announcements, zero document overflow,
-  and both legacy/Tune CSS load orders.
+      table actions, saved presets, dialog, copy link, back/forward, focus restore,
+      reduced motion, 44px coarse targets, announcements, zero document overflow,
+      and both legacy/Tune CSS load orders.
 - [x] Prove History/retention code remains absent when Tune never opens and is
-  unmounted with Tune when inactive. The chunk assertion includes retention
-  request/validation implementation, not only History React components.
+      unmounted with Tune when inactive. The chunk assertion includes retention
+      request/validation implementation, not only History React components.
 
 Task 8 is code-backed in `fd9055e`. The exact copied-URL and guarded-retention
 tests pass beside the combined all-eight-filter keyboard, comparison, preset,
@@ -617,22 +617,22 @@ over; Task 9 still owns the fresh iteration-wide exit and final documentation.
 ## Task 9: Reviews, Fresh Exit, Documentation, And Milestone Commits
 
 - [x] Dispatch independent reviews for retention/server contract, authorized
-  client/state, shared filtering/storage safety, UI/accessibility/browser, and
-  strangler/cutover boundaries. Add RED/GREEN proof for every Critical or
-  Important finding.
+      client/state, shared filtering/storage safety, UI/accessibility/browser, and
+      strangler/cutover boundaries. Add RED/GREEN proof for every Critical or
+      Important finding.
 - [x] Run the exact focused contract below, complete app unit suite, complete
-  Recipe Console browser config, exact legacy navigation/ticket pair, and
-  control-server tests after the last fix.
+      Recipe Console browser config, exact legacy navigation/ticket pair, and
+      control-server tests after the last fix.
 - [x] Try the in-app Browser first; record its exact unavailability reason if
-  fallback Playwright/System Chromium is used.
+      fallback Playwright/System Chromium is used.
 - [x] Update this plan, parent ledger/decisions/risks, product spec, migration
-  register, and fidelity ledger with counts, commits, evidence, skips, and
-  unchanged rollback/cutover status.
+      register, and fidelity ledger with counts, commits, evidence, skips, and
+      unchanged rollback/cutover status.
 - [x] Keep Ready-State #8 comparison evidence satisfied; close #9 only after
-  the exact copied-URL filter/comparison test passes. Do not claim #3 from
-  mocked/no-environment evidence.
+      the exact copied-URL filter/comparison test passes. Do not claim #3 from
+      mocked/no-environment evidence.
 - [x] Make cohesive local commits after all Iteration 8 gates are green. Do not
-  push or open a PR.
+      push or open a PR.
 
 Task 9 qualified Iteration 8 on 2026-07-13. Fresh proof passed 330/330 exact
 focused tests, 1,066/1,066 complete app tests across 106 files, shared-test

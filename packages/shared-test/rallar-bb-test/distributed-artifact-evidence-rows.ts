@@ -1,11 +1,10 @@
-import type {
-    DistributedRunArtifactFiles,
-    DistributedRunArtifactSnapshots,
-} from './distributed-artifact-analysis.ts';
+import type { DistributedRunArtifactFiles, DistributedRunArtifactSnapshots } from './distributed-artifact-analysis.ts';
+import type { DistributedRunAnalysis } from './distributed-artifact-analysis.ts';
 import type {
     DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceKind,
+    DistributedArtifactEvidenceKind
 } from './distributed-artifact-evidence-contracts.ts';
+import { distributedArtifactEvidenceSourceFile } from './distributed-artifact-evidence-provenance.ts';
 import {
     boundedEvidenceEntry,
     deduplicateArtifactEvidenceEntries,
@@ -15,36 +14,34 @@ import {
     payloadReferencesDistributedRun,
     stableEvidenceId,
     summarizeEvidenceValue,
-    transportFromCommandKind,
+    transportFromCommandKind
 } from './distributed-artifact-evidence-utils.ts';
-import type {
-    DistributedRunAnalysis,
-} from './distributed-artifact-analysis.ts';
 import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
-import { distributedArtifactEvidenceSourceFile } from './distributed-artifact-evidence-provenance.ts';
 
-export function distributedArtifactEvidenceRows(input: Readonly<{
-    analysis: DistributedRunAnalysis;
-    snapshots: DistributedRunArtifactSnapshots;
-    monitor: DistributedRunMonitor;
-    sourceFileNames: ReadonlySet<string>;
-    sourceFiles?: DistributedRunArtifactFiles;
-    parsedControlRun?: Readonly<Record<string, unknown>>;
-    summaryLimit: number;
-    payloadSummaryLimit: number;
-    deduplicate?: boolean;
-}>): DistributedArtifactEvidenceEntry[] {
+export function distributedArtifactEvidenceRows(
+    input: Readonly<{
+        analysis: DistributedRunAnalysis;
+        snapshots: DistributedRunArtifactSnapshots;
+        monitor: DistributedRunMonitor;
+        sourceFileNames: ReadonlySet<string>;
+        sourceFiles?: DistributedRunArtifactFiles;
+        parsedControlRun?: Readonly<Record<string, unknown>>;
+        summaryLimit: number;
+        payloadSummaryLimit: number;
+        deduplicate?: boolean;
+    }>
+): DistributedArtifactEvidenceEntry[] {
     const rows: DistributedArtifactEvidenceEntry[] = [];
     const recipeByCommandId = new Map(
-        input.snapshots.distributedRun.commandLinks.map(link => [
+        input.snapshots.distributedRun.commandLinks.map((link) => [
             link.commandId,
-            link.recipeId,
-        ]),
+            link.recipeId
+        ])
     );
     addAnalysisFailure(rows, input);
     addMonitorFailures(rows, input);
     const linkedCommandIds = new Set(
-        input.snapshots.distributedRun.commandLinks.map(link => link.commandId),
+        input.snapshots.distributedRun.commandLinks.map((link) => link.commandId)
     );
     addResults(rows, input, recipeByCommandId, linkedCommandIds);
     addMonitorEvents(rows, input, recipeByCommandId);
@@ -56,14 +53,19 @@ export function distributedArtifactEvidenceRows(input: Readonly<{
 
 function addAnalysisFailure(
     rows: DistributedArtifactEvidenceEntry[],
-    input: Parameters<typeof distributedArtifactEvidenceRows>[0],
+    input: Parameters<typeof distributedArtifactEvidenceRows>[0]
 ): void {
     const failure = input.analysis.failure;
-    if (!failure) return;
+    if (!failure) {
+        return;
+    }
     rows.push(bound(input, {
         id: stableEvidenceId(
-            'failure', 'analysis', failure.category,
-            failure.commandId, failure.evidenceFile,
+            'failure',
+            'analysis',
+            failure.category,
+            failure.commandId,
+            failure.evidenceFile
         ),
         kind: 'failure',
         sourceFile: failure.evidenceFile,
@@ -83,25 +85,31 @@ function addAnalysisFailure(
             failure.affectedRegions.length > 0
                 ? `Affected regions: ${failure.affectedRegions.join(', ')}`
                 : undefined,
-            `Verification: ${failure.verificationCommand}`,
-        ].filter(Boolean).join(' · '),
+            `Verification: ${failure.verificationCommand}`
+        ].filter(Boolean).join(' · ')
     }));
 }
 
 function addMonitorFailures(
     rows: DistributedArtifactEvidenceEntry[],
-    input: Parameters<typeof distributedArtifactEvidenceRows>[0],
+    input: Parameters<typeof distributedArtifactEvidenceRows>[0]
 ): void {
     for (const failure of input.monitor.failures) {
         const explanation = input.analysis.spa?.report.nextActions.find(
-            candidate => candidate.evidence.includes(failure.key),
+            (candidate) => candidate.evidence.includes(failure.key)
         );
         rows.push(bound(input, {
             id: stableEvidenceId(
-                'failure', 'monitor', failure.key, failure.agentId,
-                failure.recipeId, failure.commandId, failure.atEpochMs,
+                'failure',
+                'monitor',
+                failure.key,
+                failure.agentId,
+                failure.recipeId,
+                failure.commandId,
+                failure.atEpochMs
             ),
-            kind: 'failure', sourceFile: 'distributed-run.json',
+            kind: 'failure',
+            sourceFile: 'distributed-run.json',
             atEpochMs: failure.atEpochMs,
             agentId: failure.agentId,
             agentIds: failure.agentId ? [failure.agentId] : [],
@@ -113,8 +121,8 @@ function addMonitorFailures(
             payloadSummary: [
                 failure.code,
                 explanation?.likelyCause,
-                explanation?.nextAction,
-            ].filter(Boolean).join(' · '),
+                explanation?.nextAction
+            ].filter(Boolean).join(' · ')
         }));
     }
 }
@@ -123,12 +131,12 @@ function addResults(
     rows: DistributedArtifactEvidenceEntry[],
     input: Parameters<typeof distributedArtifactEvidenceRows>[0],
     recipeByCommandId: ReadonlyMap<string, string | undefined>,
-    linkedCommandIds: ReadonlySet<string>,
+    linkedCommandIds: ReadonlySet<string>
 ): void {
     const sourceFile = distributedArtifactEvidenceSourceFile(
         input,
         'results',
-        'results.jsonl',
+        'results.jsonl'
     );
     for (const result of input.snapshots.controlRun.results) {
         if (linkedCommandIds.size > 0 && !linkedCommandIds.has(result.commandId)) {
@@ -141,10 +149,13 @@ function addResults(
             : undefined;
         rows.push(bound(input, {
             id: stableEvidenceId(
-                'result', result.agentId, result.commandId,
-                result.result?.endedAtEpochMs,
+                'result',
+                result.agentId,
+                result.commandId,
+                result.result?.endedAtEpochMs
             ),
-            kind: 'result', sourceFile,
+            kind: 'result',
+            sourceFile,
             atEpochMs: result.result?.endedAtEpochMs,
             agentId: result.agentId,
             agentIds: [result.agentId],
@@ -152,7 +163,7 @@ function addResults(
             commandId: result.commandId,
             transport: evidenceStringField(
                 evidenceRecord(result.result?.value),
-                'transport',
+                'transport'
             ) ?? transportFromCommandKind(kind),
             status,
             category: 'command',
@@ -160,37 +171,41 @@ function addResults(
                 `${kind ?? 'command'} ${status}`,
             payloadSummary: summarizeEvidenceValue(
                 result.error?.details ?? result.result?.error?.details ??
-                    result.result?.value,
+                    result.result?.value
             ),
-            ...(failureDetails ? { failureDetails } : {}),
+            ...(failureDetails ? { failureDetails } : {})
         }));
     }
 }
 
 function resultFailureDetails(
-    value: unknown,
+    value: unknown
 ): DistributedArtifactEvidenceEntry['failureDetails'] {
     let record = evidenceRecord(value);
     const details: Record<'code' | 'name' | 'message' | 'stack', string | undefined> = {
         code: undefined,
         name: undefined,
         message: undefined,
-        stack: undefined,
+        stack: undefined
     };
     for (let depth = 0; depth <= 4; depth += 1) {
         for (const field of ['code', 'name', 'message', 'stack'] as const) {
             const candidate = evidenceStringField(record, field)?.trim();
-            if (candidate) details[field] = candidate;
+            if (candidate) {
+                details[field] = candidate;
+            }
         }
-        if (depth === 4) break;
+        if (depth === 4) {
+            break;
+        }
         const nested = evidenceRecord(record.details);
-        if (Object.keys(nested).length === 0) break;
+        if (Object.keys(nested).length === 0) {
+            break;
+        }
         record = nested;
     }
     const populated = Object.fromEntries(
-        Object.entries(details).filter((entry): entry is [string, string] =>
-            typeof entry[1] === 'string'
-        ),
+        Object.entries(details).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
     );
     return Object.keys(populated).length > 0 ? populated : undefined;
 }
@@ -198,24 +213,30 @@ function resultFailureDetails(
 function addMonitorEvents(
     rows: DistributedArtifactEvidenceEntry[],
     input: Parameters<typeof distributedArtifactEvidenceRows>[0],
-    recipeByCommandId: ReadonlyMap<string, string | undefined>,
+    recipeByCommandId: ReadonlyMap<string, string | undefined>
 ): void {
     const diagnosticKeys = new Set(
-        input.monitor.runtimeDiagnostics.map(diagnosticArtifactEventKey),
+        input.monitor.runtimeDiagnostics.map(diagnosticArtifactEventKey)
     );
     const sourceFile = distributedArtifactEvidenceSourceFile(
         input,
         'events',
-        'events.jsonl',
+        'events.jsonl'
     );
     for (const event of input.monitor.events) {
-        if (diagnosticKeys.has(diagnosticArtifactEventKey(event))) continue;
+        if (diagnosticKeys.has(diagnosticArtifactEventKey(event))) {
+            continue;
+        }
         rows.push(bound(input, {
             id: stableEvidenceId(
-                'event', event.eventId, event.agentId,
-                event.commandId, event.atEpochMs,
+                'event',
+                event.eventId,
+                event.agentId,
+                event.commandId,
+                event.atEpochMs
             ),
-            kind: 'event', sourceFile,
+            kind: 'event',
+            sourceFile,
             atEpochMs: event.atEpochMs,
             agentId: event.agentId,
             agentIds: [event.agentId],
@@ -227,16 +248,20 @@ function addMonitorEvents(
             status: event.kind,
             category: 'event',
             summary: event.summary,
-            payloadSummary: event.payloadSummary,
+            payloadSummary: event.payloadSummary
         }));
     }
     for (const diagnostic of input.monitor.runtimeDiagnostics) {
         rows.push(bound(input, {
             id: stableEvidenceId(
-                'diagnostic', diagnostic.eventId, diagnostic.agentId,
-                diagnostic.commandId, diagnostic.atEpochMs,
+                'diagnostic',
+                diagnostic.eventId,
+                diagnostic.agentId,
+                diagnostic.commandId,
+                diagnostic.atEpochMs
             ),
-            kind: 'diagnostic', sourceFile,
+            kind: 'diagnostic',
+            sourceFile,
             atEpochMs: diagnostic.atEpochMs,
             agentId: diagnostic.agentId,
             agentIds: [diagnostic.agentId],
@@ -251,7 +276,7 @@ function addMonitorEvents(
             status: 'diagnostic',
             category: 'diagnostic',
             summary: diagnostic.summary,
-            payloadSummary: diagnostic.payloadSummary,
+            payloadSummary: diagnostic.payloadSummary
         }));
     }
 }
@@ -260,30 +285,38 @@ function addRawFallbackEvents(
     rows: DistributedArtifactEvidenceEntry[],
     input: Parameters<typeof distributedArtifactEvidenceRows>[0],
     recipeByCommandId: ReadonlyMap<string, string | undefined>,
-    linkedCommandIds: ReadonlySet<string>,
+    linkedCommandIds: ReadonlySet<string>
 ): void {
     const represented = new Set([
         ...input.monitor.events.map(diagnosticArtifactEventKey),
-        ...input.monitor.runtimeDiagnostics.map(diagnosticArtifactEventKey),
+        ...input.monitor.runtimeDiagnostics.map(diagnosticArtifactEventKey)
     ]);
     const sourceFile = distributedArtifactEvidenceSourceFile(
         input,
         'events',
-        'events.jsonl',
+        'events.jsonl'
     );
     for (const event of input.snapshots.controlRun.events) {
         const eventId = event.eventId ?? `${event.kind}-${event.atEpochMs}`;
-        if (represented.has(diagnosticArtifactEventKey({
-            eventId, agentId: event.agentId, commandId: event.commandId,
-        }))) continue;
+        if (
+            represented.has(diagnosticArtifactEventKey({
+                eventId,
+                agentId: event.agentId,
+                commandId: event.commandId
+            }))
+        ) {
+            continue;
+        }
         if (
             linkedCommandIds.size > 0 &&
             !(event.commandId && linkedCommandIds.has(event.commandId)) &&
             !payloadReferencesDistributedRun(
                 event.payload,
-                input.snapshots.distributedRun.distributedRunId,
+                input.snapshots.distributedRun.distributedRunId
             )
-        ) continue;
+        ) {
+            continue;
+        }
         const payload = evidenceRecord(event.payload);
         const nested = evidenceRecord(payload.payload);
         const evidence = Object.keys(nested).length > 0 ? nested : payload;
@@ -292,14 +325,22 @@ function addRawFallbackEvents(
             evidenceStringField(evidence, 'typeId');
         const topic = evidenceStringField(evidence, 'topic') ??
             evidenceStringField(payload, 'topic');
-        const kind: DistributedArtifactEvidenceKind =
-            event.kind === 'diagnostic' || diagnosticType ? 'diagnostic' : 'event';
+        const kind: DistributedArtifactEvidenceKind = event.kind === 'diagnostic' || diagnosticType
+            ? 'diagnostic'
+            : 'event';
         rows.push(bound(input, {
             id: stableEvidenceId(
-                kind, eventId, event.agentId, event.commandId, event.atEpochMs,
+                kind,
+                eventId,
+                event.agentId,
+                event.commandId,
+                event.atEpochMs
             ),
-            kind, sourceFile, atEpochMs: event.atEpochMs,
-            agentId: event.agentId, agentIds: [event.agentId],
+            kind,
+            sourceFile,
+            atEpochMs: event.atEpochMs,
+            agentId: event.agentId,
+            agentIds: [event.agentId],
             recipeId: event.commandId
                 ? recipeByCommandId.get(event.commandId)
                 : undefined,
@@ -315,18 +356,18 @@ function addRawFallbackEvents(
             summary: evidenceStringField(evidence, 'message') ??
                 evidenceStringField(payload, 'message') ??
                 `${event.kind}${topic ? ` · ${topic}` : ''}`,
-            payloadSummary: summarizeEvidenceValue(event.payload),
+            payloadSummary: summarizeEvidenceValue(event.payload)
         }));
     }
 }
 
 function bound(
     input: Parameters<typeof distributedArtifactEvidenceRows>[0],
-    entry: DistributedArtifactEvidenceEntry,
+    entry: DistributedArtifactEvidenceEntry
 ): DistributedArtifactEvidenceEntry {
     return boundedEvidenceEntry(
         entry,
         input.summaryLimit,
-        input.payloadSummaryLimit,
+        input.payloadSummaryLimit
     );
 }

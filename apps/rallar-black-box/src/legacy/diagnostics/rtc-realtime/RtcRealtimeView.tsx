@@ -1,19 +1,16 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
 import { CommandCenterActionFeedbackPanel } from '../shared/CommandCenterActionFeedbackPanel.tsx';
-import type {
-    RtcRealtimeTransport,
-    RtcRealtimeViewModel,
-} from './rtc-realtime-contracts.ts';
+import type { RtcRealtimeTransport, RtcRealtimeViewModel } from './rtc-realtime-contracts.ts';
 
 export function RtcRealtimeView({
     state,
     authSession,
-    model,
+    model
 }: {
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
@@ -63,7 +60,7 @@ export function RtcRealtimeView({
         sendRtcMessage,
         waitForRoomLane,
         refreshHealth,
-        copyRecipe,
+        copyRecipe
     } = model;
 
     return (
@@ -113,41 +110,29 @@ export function RtcRealtimeView({
             >
                 <Metric
                     label="Realtime sub"
-                    value={
-                        subscriptions.some(
-                            (subscription) =>
-                                subscription.transport === 'realtime',
+                    value={subscriptions.some(
+                            (subscription) => subscription.transport === 'realtime'
                         )
-                            ? 'yes'
-                            : 'no'
-                    }
-                    tone={
-                        subscriptions.some(
-                            (subscription) =>
-                                subscription.transport === 'realtime',
+                        ? 'yes'
+                        : 'no'}
+                    tone={subscriptions.some(
+                            (subscription) => subscription.transport === 'realtime'
                         )
-                            ? 'good'
-                            : 'warn'
-                    }
+                        ? 'good'
+                        : 'warn'}
                 />
                 <Metric
                     label="RTC message sub"
-                    value={
-                        subscriptions.some(
-                            (subscription) =>
-                                subscription.transport === 'messages.rtc',
+                    value={subscriptions.some(
+                            (subscription) => subscription.transport === 'messages.rtc'
                         )
-                            ? 'yes'
-                            : 'no'
-                    }
-                    tone={
-                        subscriptions.some(
-                            (subscription) =>
-                                subscription.transport === 'messages.rtc',
+                        ? 'yes'
+                        : 'no'}
+                    tone={subscriptions.some(
+                            (subscription) => subscription.transport === 'messages.rtc'
                         )
-                            ? 'good'
-                            : 'warn'
-                    }
+                        ? 'good'
+                        : 'warn'}
                 />
                 <Metric
                     label="Subscribed group"
@@ -164,7 +149,7 @@ export function RtcRealtimeView({
                 <Metric
                     label="Subscribed since"
                     value={formatTime(
-                        subscriptions.at(-1)?.subscribedAtEpochMs,
+                        subscriptions.at(-1)?.subscribedAtEpochMs
                     )}
                 />
             </div>
@@ -179,9 +164,8 @@ export function RtcRealtimeView({
                             value={transport}
                             onChange={(event) =>
                                 setTransport(
-                                    event.target.value as RtcRealtimeTransport,
-                                )
-                            }
+                                    event.target.value as RtcRealtimeTransport
+                                )}
                         >
                             <option value="realtime">realtime.sendJson</option>
                             <option value="messages.rtc">
@@ -200,9 +184,7 @@ export function RtcRealtimeView({
                         <span>Peer IDs</span>
                         <input
                             value={peerIdsText}
-                            onChange={(event) =>
-                                setPeerIdsText(event.target.value)
-                            }
+                            onChange={(event) => setPeerIdsText(event.target.value)}
                             placeholder="comma separated"
                         />
                     </label>
@@ -224,18 +206,14 @@ export function RtcRealtimeView({
                         <span>Context ID</span>
                         <input
                             value={contextId}
-                            onChange={(event) =>
-                                setContextId(event.target.value)
-                            }
+                            onChange={(event) => setContextId(event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Min Snapshot</span>
                         <input
                             value={minSnapshotVersion}
-                            onChange={(event) =>
-                                setMinSnapshotVersion(event.target.value)
-                            }
+                            onChange={(event) => setMinSnapshotVersion(event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -244,9 +222,7 @@ export function RtcRealtimeView({
                             type="number"
                             min={0}
                             value={timeoutMs}
-                            onChange={(event) =>
-                                setTimeoutMs(Number(event.target.value))
-                            }
+                            onChange={(event) => setTimeoutMs(Number(event.target.value))}
                         />
                     </label>
                     <label className="field">
@@ -255,9 +231,8 @@ export function RtcRealtimeView({
                             value={reliability}
                             onChange={(event) =>
                                 setReliability(
-                                    event.target.value as typeof reliability,
-                                )
-                            }
+                                    event.target.value as typeof reliability
+                                )}
                         >
                             <option value="best-effort">best-effort</option>
                             <option value="at-least-once">at-least-once</option>
@@ -267,9 +242,7 @@ export function RtcRealtimeView({
                         <span>Ack</span>
                         <select
                             value={ack}
-                            onChange={(event) =>
-                                setAck(event.target.value as typeof ack)
-                            }
+                            onChange={(event) => setAck(event.target.value as typeof ack)}
                         >
                             <option value="none">none</option>
                             <option value="receiver">receiver</option>
@@ -285,9 +258,8 @@ export function RtcRealtimeView({
                             value={ownership}
                             onChange={(event) =>
                                 setOwnership(
-                                    event.target.value as typeof ownership,
-                                )
-                            }
+                                    event.target.value as typeof ownership
+                                )}
                         >
                             <option value="shared">shared</option>
                             <option value="exclusive">exclusive</option>
@@ -358,9 +330,7 @@ export function RtcRealtimeView({
                         <span>Payload JSON</span>
                         <textarea
                             value={payloadText}
-                            onChange={(event) =>
-                                setPayloadText(event.target.value)
-                            }
+                            onChange={(event) => setPayloadText(event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -388,17 +358,13 @@ export function RtcRealtimeView({
                                     >
                                         <div>
                                             <strong>
-                                                {message.transport}{' '}
-                                                {message.topicId} /{' '}
-                                                {message.typeId}
+                                                {message.transport} {message.topicId} / {message.typeId}
                                             </strong>
                                             <small>
-                                                {formatTime(message.atEpochMs)}{' '}
-                                                - peer {message.peerId}
+                                                {formatTime(message.atEpochMs)} - peer {message.peerId}
                                             </small>
                                             <small>
-                                                group {message.roomId} - lane{' '}
-                                                {message.laneId} - context{' '}
+                                                group {message.roomId} - lane {message.laneId} - context{' '}
                                                 {message.contextId}
                                             </small>
                                         </div>
@@ -417,17 +383,15 @@ export function RtcRealtimeView({
             </CollapsiblePanelSection>
             {(localError || !realBackendReady || !authSession) && (
                 <div
-                    className={
-                        localError ? 'workbench-error' : 'command-center-status'
-                    }
+                    className={localError ? 'workbench-error' : 'command-center-status'}
                     role="status"
                 >
                     {localError ??
                         (!realBackendReady
                             ? 'RTC/Realtimes requires provider=browser-rallar.'
                             : !authSession
-                              ? 'RTC/Realtimes requires a logged-in browser session.'
-                              : undefined)}
+                            ? 'RTC/Realtimes requires a logged-in browser session.'
+                            : undefined)}
                 </div>
             )}
             <div className="rtc-realtime-result-grid">

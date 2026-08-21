@@ -1,17 +1,10 @@
+import { createRallarBrowserMatch, type RallarBrowserMatchDependencies } from '@shared-web/game/mod.ts';
+import type { RallarGameMatchConfig, RallarGameMatchHandle, RallarGameMatchStatus } from '@shared-web/game/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
-import {
-    createRallarBrowserMatch,
-    type RallarBrowserMatchDependencies,
-} from '@shared-web/game/mod.ts';
-import type {
-    RallarGameMatchConfig,
-    RallarGameMatchHandle,
-    RallarGameMatchStatus,
-} from '@shared-web/game/mod.ts';
 
-type Command = Readonly<{ kind: 'move'; x: number }>;
-type Snapshot = Readonly<{ tick: number }>;
-type Event = Readonly<{ kind: 'accepted' }>;
+type Command = Readonly<{ kind: 'move'; x: number; }>;
+type Snapshot = Readonly<{ tick: number; }>;
+type Event = Readonly<{ kind: 'accepted'; }>;
 
 describe('Rallar browser match support', () => {
     it('creates a browser-director match from the Rallar Game match helper', async () => {
@@ -22,11 +15,11 @@ describe('Rallar browser match support', () => {
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
             matchId: 'match-1',
-            readSnapshot: () => ({ tick: 1 }),
+            readSnapshot: () => ({ tick: 1 })
         }, {
             createGameMatch,
             nowEpochMs: () => 2_000,
-            resultId: () => 'result-1',
+            resultId: () => 'result-1'
         });
 
         await match.start();
@@ -34,8 +27,8 @@ describe('Rallar browser match support', () => {
         expect(createGameMatch).toHaveBeenCalledWith(
             expect.objectContaining({
                 protocol: 'example.match.v1',
-                topicId: 'room.example.match',
-            }),
+                topicId: 'room.example.match'
+            })
         );
         expect(game.start).toHaveBeenCalledOnce();
     });
@@ -46,9 +39,9 @@ describe('Rallar browser match support', () => {
             rallar: fakeRallarFacade(),
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
-            matchId: 'match-1',
+            matchId: 'match-1'
         }, {
-            createGameMatch: () => game,
+            createGameMatch: () => game
         });
 
         await expect(match.submitCommand({ kind: 'move', x: 3 })).resolves
@@ -63,7 +56,7 @@ describe('Rallar browser match support', () => {
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
             matchId: 'match-1',
-            onCommand,
+            onCommand
         });
         await match.start();
 
@@ -72,7 +65,7 @@ describe('Rallar browser match support', () => {
         expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
             kind: 'intent',
             matchId: 'match-1',
-            payload: { kind: 'move', x: 3 },
+            payload: { kind: 'move', x: 3 }
         }));
     });
 
@@ -88,24 +81,23 @@ describe('Rallar browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 20, objectives: 1 },
+                    metrics: { points: 20, objectives: 1 }
                 },
                 {
                     participantId: 'principal-b',
                     principalId: 'principal-b',
                     sessionIds: ['session-b'],
-                    metrics: { points: 10, objectives: 2 },
-                },
+                    metrics: { points: 10, objectives: 2 }
+                }
             ],
-            compareStandings: (left, right) =>
-                right.metrics.objectives - left.metrics.objectives,
+            compareStandings: (left, right) => right.metrics.objectives - left.metrics.objectives
         }, {
-            createGameMatch: () => game,
+            createGameMatch: () => game
         });
 
         expect(match.standings()).toMatchObject([
             { participantId: 'principal-b', rank: 1 },
-            { participantId: 'principal-a', rank: 2 },
+            { participantId: 'principal-a', rank: 2 }
         ]);
     });
 
@@ -123,21 +115,20 @@ describe('Rallar browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 20, objectives: 1 },
+                    metrics: { points: 20, objectives: 1 }
                 },
                 {
                     participantId: 'principal-b',
                     principalId: 'principal-b',
                     sessionIds: ['session-b'],
-                    metrics: { points: 10, objectives: 2 },
-                },
+                    metrics: { points: 10, objectives: 2 }
+                }
             ],
-            compareStandings: (left, right) =>
-                right.metrics.objectives - left.metrics.objectives,
+            compareStandings: (left, right) => right.metrics.objectives - left.metrics.objectives
         }, {
             createGameMatch: () => game,
             nowEpochMs: () => 2_000,
-            resultId: () => 'result-1',
+            resultId: () => 'result-1'
         });
 
         expect(match.finalizeResult({ reason: 'complete' })).toMatchObject({
@@ -150,18 +141,18 @@ describe('Rallar browser match support', () => {
                 id: 'session-a',
                 epoch: 4,
                 principalId: 'principal-a',
-                sessionId: 'session-a',
+                sessionId: 'session-a'
             },
             summary: { reason: 'complete' },
             standings: [
                 { participantId: 'principal-b', rank: 1 },
-                { participantId: 'principal-a', rank: 2 },
-            ],
+                { participantId: 'principal-a', rank: 2 }
+            ]
         });
         expect(directorStatus).toHaveBeenCalledWith({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-1',
+            groupId: 'room-1'
         });
     });
 
@@ -176,19 +167,19 @@ describe('Rallar browser match support', () => {
             isDirector: false,
             isFresh: false,
             active: false,
-            freshness: 'none',
+            freshness: 'none'
         });
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar,
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
-            matchId: 'match-1',
+            matchId: 'match-1'
         }, {
-            createGameMatch: () => fakeGameMatch(),
+            createGameMatch: () => fakeGameMatch()
         });
 
         expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
-            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.'
         );
     });
 
@@ -199,19 +190,19 @@ describe('Rallar browser match support', () => {
             ...current,
             state: 'stale',
             isFresh: false,
-            freshness: 'stale',
+            freshness: 'stale'
         });
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar,
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
-            matchId: 'match-1',
+            matchId: 'match-1'
         }, {
-            createGameMatch: () => fakeGameMatch(),
+            createGameMatch: () => fakeGameMatch()
         });
 
         expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
-            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.'
         );
     });
 
@@ -225,20 +216,20 @@ describe('Rallar browser match support', () => {
             appointment: {
                 ...current.appointment!,
                 principalId: 'principal-b',
-                sessionId: 'session-b',
-            },
+                sessionId: 'session-b'
+            }
         });
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar,
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
-            matchId: 'match-1',
+            matchId: 'match-1'
         }, {
-            createGameMatch: () => fakeGameMatch(),
+            createGameMatch: () => fakeGameMatch()
         });
 
         expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
-            'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.',
+            'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.'
         );
     });
 
@@ -246,35 +237,29 @@ describe('Rallar browser match support', () => {
         const game = fakeGameMatch();
         vi.mocked(game.status).mockReturnValue({
             ...game.status(),
-            roomRef: undefined,
+            roomRef: undefined
         });
         const rallar = fakeRallarFacade();
         vi.spyOn(rallar.rooms, 'state').mockReturnValue({
             ...rallar.rooms.state(),
-            currentRoomRef: undefined,
+            currentRoomRef: undefined
         });
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar,
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
-            matchId: 'match-1',
+            matchId: 'match-1'
         }, {
-            createGameMatch: () => game,
+            createGameMatch: () => game
         });
 
         expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
-            'Cannot finalize a Rallar match result without a roomRef.',
+            'Cannot finalize a Rallar match result without a roomRef.'
         );
     });
 });
 
-function fakeGameMatch(): RallarGameMatchHandle<
-    Command,
-    Command,
-    Snapshot,
-    Event,
-    Command
-> {
+function fakeGameMatch(): RallarGameMatchHandle<Command, Command, Snapshot, Event, Command> {
     const status: RallarGameMatchStatus = {
         phase: 'active',
         protocol: 'example.match.v1',
@@ -283,7 +268,7 @@ function fakeGameMatch(): RallarGameMatchHandle<
         roomRef: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-1',
+            groupId: 'room-1'
         },
         localPeerId: 'session-a',
         directorPeerId: 'session-a',
@@ -294,7 +279,7 @@ function fakeGameMatch(): RallarGameMatchHandle<
         recovery: { status: 'idle' },
         started: true,
         stopped: false,
-        updatedAtEpochMs: 1_000,
+        updatedAtEpochMs: 1_000
     };
 
     return {
@@ -318,7 +303,7 @@ function fakeGameMatch(): RallarGameMatchHandle<
             capabilityCount: 0,
             rtcPeerCount: 0,
             realtimeHealth: [],
-            issues: [],
+            issues: []
         })),
         canAppointDirector: vi.fn(),
         reportCapability: vi.fn(),
@@ -332,17 +317,11 @@ function fakeGameMatch(): RallarGameMatchHandle<
         publishEvent: vi.fn(),
         requestSync: vi.fn(),
         onPresence: vi.fn(() => () => undefined),
-        onStatus: vi.fn(() => () => undefined),
+        onStatus: vi.fn(() => () => undefined)
     } as RallarGameMatchHandle<Command, Command, Snapshot, Event, Command>;
 }
 
-function fakeRallarFacade(): RallarGameMatchConfig<
-    Command,
-    Command,
-    Snapshot,
-    Event,
-    Command
->['rallar'] {
+function fakeRallarFacade(): RallarGameMatchConfig<Command, Command, Snapshot, Event, Command>['rallar'] {
     return {
         session: () => ({
             clientId: 'principal-a',
@@ -350,7 +329,7 @@ function fakeRallarFacade(): RallarGameMatchConfig<
             username: 'Ada',
             token: 'token',
             issuedAtEpochMs: 1,
-            expiresAtEpochMs: 10_000,
+            expiresAtEpochMs: 10_000
         }),
         subscriptions: () => ({
             add() {
@@ -358,7 +337,7 @@ function fakeRallarFacade(): RallarGameMatchConfig<
             },
             unsubscribe() {
                 return undefined;
-            },
+            }
         }),
         rooms: {
             state: () => ({
@@ -367,7 +346,7 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                 currentRoomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
                 members: [
                     {
@@ -377,15 +356,15 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                         status: 'active',
                         isOwner: true,
                         isOnline: true,
-                        sessionIds: ['session-a'],
-                    },
-                ],
+                        sessionIds: ['session-a']
+                    }
+                ]
             }),
-            onChange: () => () => undefined,
+            onChange: () => () => undefined
         },
         people: {
             state: () => ({ people: [] }),
-            onChange: () => () => undefined,
+            onChange: () => () => undefined
         },
         director: {
             status: () => ({
@@ -393,7 +372,7 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
                 role: 'director',
                 state: 'fresh',
@@ -406,16 +385,16 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                     principalId: 'principal-a',
                     epoch: 4,
                     appointedAtEpochMs: 1_000,
-                    heartbeatTtlMs: 5_000,
+                    heartbeatTtlMs: 5_000
                 },
                 active: true,
                 freshness: 'fresh',
-                nowEpochMs: 2_000,
+                nowEpochMs: 2_000
             }),
             appoint: vi.fn(),
             resign: vi.fn(),
             onStatus: () => () => undefined,
-            createRelay: vi.fn(),
+            createRelay: vi.fn()
         },
         rtc: {
             status: () => ({
@@ -425,26 +404,26 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                 activePeerIds: [],
                 peerIdsWithNoReconnectableLanes: [],
                 readyPeerIds: [],
-                peers: [],
+                peers: []
             }),
             onStatus: () => () => undefined,
-            waitForRoomLane: vi.fn(),
+            waitForRoomLane: vi.fn()
         },
         realtime: {
             sendJson: vi.fn(),
             onJson: () => () => undefined,
             health: () => [],
-            room: vi.fn(),
+            room: vi.fn()
         },
         messages: {
             ws: {
                 send: vi.fn(),
-                onMessage: () => () => undefined,
+                onMessage: () => () => undefined
             },
             rtc: {
-                onMessage: () => () => undefined,
+                onMessage: () => () => undefined
             },
-            room: vi.fn(),
+            room: vi.fn()
         },
         ws: {
             status: () => ({
@@ -455,14 +434,8 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                 reconnectEnabled: true,
                 reconnectAttempts: 0,
                 maxReconnectAttempts: 5,
-                reconnectExhausted: false,
-            }),
-        },
-    } as unknown as RallarGameMatchConfig<
-        Command,
-        Command,
-        Snapshot,
-        Event,
-        Command
-    >['rallar'];
+                reconnectExhausted: false
+            })
+        }
+    } as unknown as RallarGameMatchConfig<Command, Command, Snapshot, Event, Command>['rallar'];
 }

@@ -1,55 +1,74 @@
 import { validateRallarBlackBoxTestCommand } from './control-protocol.ts';
-import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
-import { validateDistributedRunManifest } from './distributed-run-validation.ts';
 import { distributedRecipePreflight } from './distributed-run-monitor.ts';
-import {
-    inventoryDistributedRunTuningKnobs, type DistributedRunTuningKnob,
-} from './distributed-run-tuning.ts';
 import {
     tuningAgentIssuePointer,
     tuningPointerTargetsObject,
     tuningPointerTokens,
     tuningPreflightIssuePointer,
-    tuningSchemaPathToPointer,
+    tuningSchemaPathToPointer
 } from './distributed-run-tuning-paths.ts';
+import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningKnob } from './distributed-run-tuning.ts';
+import { validateDistributedRunManifest } from './distributed-run-validation.ts';
+import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
 import { validateRallarBlackBoxRecipeCompatibility } from './schema.ts';
 
 export type DistributedRunTuningChange = Readonly<{
-    pointer: string; value: number; expectedValue?: number | null;
+    pointer: string;
+    value: number;
+    expectedValue?: number | null;
 }>;
 export type DistributedRunTuningPatchOperation = Readonly<{
-    op: 'add' | 'replace'; path: string; value: unknown;
+    op: 'add' | 'replace';
+    path: string;
+    value: unknown;
 }>;
 export type DistributedRunTuningDiffRow = Readonly<{
-    pointer: string; before?: number; after: number;
+    pointer: string;
+    before?: number;
+    after: number;
 }>;
 
 export type DistributedRunTuningCandidateErrorCode =
-    | 'unknown-pointer' | 'duplicate-pointer' | 'stale-value'
-    | 'blocked-knob' | 'invalid-value' | 'clone-failed' | 'patch-application'
-    | 'manifest-validation' | 'recipe-validation'
-    | 'agent-validation' | 'preflight-validation';
+    | 'unknown-pointer'
+    | 'duplicate-pointer'
+    | 'stale-value'
+    | 'blocked-knob'
+    | 'invalid-value'
+    | 'clone-failed'
+    | 'patch-application'
+    | 'manifest-validation'
+    | 'recipe-validation'
+    | 'agent-validation'
+    | 'preflight-validation';
 
 export type DistributedRunTuningCandidateError = Readonly<{
-    code: DistributedRunTuningCandidateErrorCode; path?: string; message: string;
+    code: DistributedRunTuningCandidateErrorCode;
+    path?: string;
+    message: string;
 }>;
 export type DistributedRunTuningCandidateResult =
     | Readonly<{
         ok: true;
         manifest: RallarBlackBoxDistributedRunManifest;
         patch: readonly DistributedRunTuningPatchOperation[];
-        patchJson: string; diff: readonly DistributedRunTuningDiffRow[]; diffText: string;
+        patchJson: string;
+        diff: readonly DistributedRunTuningDiffRow[];
+        diffText: string;
     }>
-    | Readonly<{ ok: false; errors: readonly DistributedRunTuningCandidateError[] }>;
+    | Readonly<{ ok: false; errors: readonly DistributedRunTuningCandidateError[]; }>;
 
 type AcceptedChange = Readonly<{
-    change: DistributedRunTuningChange; knob: DistributedRunTuningKnob; index: number;
+    change: DistributedRunTuningChange;
+    knob: DistributedRunTuningKnob;
+    index: number;
 }>;
 
-export function createDistributedRunTuningCandidate(input: Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    changes: readonly DistributedRunTuningChange[];
-}>): DistributedRunTuningCandidateResult {
+export function createDistributedRunTuningCandidate(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        changes: readonly DistributedRunTuningChange[];
+    }>
+): DistributedRunTuningCandidateResult {
     const sourceErrors = tuningManifestValidationErrors(input.manifest);
     if (sourceErrors.length > 0) {
         return { ok: false, errors: sourceErrors };
@@ -58,7 +77,7 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
     const inventory = inventoryDistributedRunTuningKnobs(input.manifest);
     const knobByPointer = new Map(inventory.knobs.map((knob, index) => [
         knob.pointer,
-        { knob, index },
+        { knob, index }
     ]));
     const errors: DistributedRunTuningCandidateError[] = [];
     const seenPointers = new Set<string>();
@@ -67,8 +86,9 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
     for (const change of input.changes) {
         if (seenPointers.has(change.pointer)) {
             errors.push(candidateError(
-                'duplicate-pointer', change.pointer,
-                'A tuning candidate may change each knob pointer only once.',
+                'duplicate-pointer',
+                change.pointer,
+                'A tuning candidate may change each knob pointer only once.'
             ));
             continue;
         }
@@ -76,16 +96,18 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
         const inventoryEntry = knobByPointer.get(change.pointer);
         if (!inventoryEntry) {
             errors.push(candidateError(
-                'unknown-pointer', change.pointer,
-                'The path is not an inventory-approved tuning knob.',
+                'unknown-pointer',
+                change.pointer,
+                'The path is not an inventory-approved tuning knob.'
             ));
             continue;
         }
         const { knob, index } = inventoryEntry;
         if (knob.availability === 'blocked' || !knob.effective) {
             errors.push(candidateError(
-                'blocked-knob', change.pointer,
-                knob.reason ?? 'The tuning knob is not effective for this manifest.',
+                'blocked-knob',
+                change.pointer,
+                knob.reason ?? 'The tuning knob is not effective for this manifest.'
             ));
             continue;
         }
@@ -93,8 +115,9 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
             const expected = change.expectedValue === null ? undefined : change.expectedValue;
             if (!Object.is(expected, knob.currentValue)) {
                 errors.push(candidateError(
-                    'stale-value', change.pointer,
-                    `Expected ${displayValue(expected)}, but the manifest contains ${displayValue(knob.currentValue)}.`,
+                    'stale-value',
+                    change.pointer,
+                    `Expected ${displayValue(expected)}, but the manifest contains ${displayValue(knob.currentValue)}.`
                 ));
                 continue;
             }
@@ -115,17 +138,29 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
     let candidate: RallarBlackBoxDistributedRunManifest;
     try {
         candidate = structuredClone(input.manifest);
-    } catch (error) {
-        return { ok: false, errors: [candidateError(
-            'clone-failed', undefined, `Unable to clone the source manifest: ${errorMessage(error)}`,
-        )] };
+    }
+    catch (error) {
+        return {
+            ok: false,
+            errors: [candidateError(
+                'clone-failed',
+                undefined,
+                `Unable to clone the source manifest: ${errorMessage(error)}`
+            )]
+        };
     }
     try {
         applyPatch(candidate, patch);
-    } catch (error) {
-        return { ok: false, errors: [candidateError(
-            'patch-application', undefined, `Unable to apply candidate patch: ${errorMessage(error)}`,
-        )] };
+    }
+    catch (error) {
+        return {
+            ok: false,
+            errors: [candidateError(
+                'patch-application',
+                undefined,
+                `Unable to apply candidate patch: ${errorMessage(error)}`
+            )]
+        };
     }
 
     const validationErrors = tuningManifestValidationErrors(candidate);
@@ -135,7 +170,7 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
     const diff = accepted.map(({ change, knob }) => ({
         pointer: change.pointer,
         before: knob.currentValue,
-        after: change.value,
+        after: change.value
     }));
     return {
         ok: true,
@@ -143,15 +178,15 @@ export function createDistributedRunTuningCandidate(input: Readonly<{
         patch,
         patchJson: JSON.stringify(patch, null, 2),
         diff,
-        diffText: diff.map(row =>
-            `${row.pointer}: ${displayValue(row.before)} -> ${displayValue(row.after)}`
-        ).join('\n'),
+        diffText: diff.map((row) => `${row.pointer}: ${displayValue(row.before)} -> ${displayValue(row.after)}`).join(
+            '\n'
+        )
     };
 }
 
 function tuningPatch(
     manifest: RallarBlackBoxDistributedRunManifest,
-    accepted: readonly AcceptedChange[],
+    accepted: readonly AcceptedChange[]
 ): readonly DistributedRunTuningPatchOperation[] {
     const patch: DistributedRunTuningPatchOperation[] = [];
     const materializedParents = new Set<string>();
@@ -166,7 +201,7 @@ function tuningPatch(
         patch.push({
             op: knob.currentValue === undefined ? 'add' : 'replace',
             path: change.pointer,
-            value: change.value,
+            value: change.value
         });
     }
     return patch;
@@ -193,15 +228,20 @@ function tuningValueError(value: number, knob: DistributedRunTuningKnob): string
 }
 
 function tuningManifestValidationErrors(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): readonly DistributedRunTuningCandidateError[] {
     const errors: DistributedRunTuningCandidateError[] = [];
     try {
         const validation = validateDistributedRunManifest(manifest);
-        errors.push(...validation.errors.map(error => candidateError(
-            'manifest-validation', tuningSchemaPathToPointer(error.path), error.message,
-        )));
-    } catch (error) {
+        errors.push(...validation.errors.map((error) =>
+            candidateError(
+                'manifest-validation',
+                tuningSchemaPathToPointer(error.path),
+                error.message
+            )
+        ));
+    }
+    catch (error) {
         errors.push(candidateError('manifest-validation', '/', errorMessage(error)));
     }
     let selections: readonly Record<string, unknown>[];
@@ -211,41 +251,60 @@ function tuningManifestValidationErrors(
             return errors;
         }
         selections = value;
-    } catch (error) {
+    }
+    catch (error) {
         errors.push(candidateError('manifest-validation', '/recipes', errorMessage(error)));
         return errors;
     }
     selections.forEach((selection, recipeIndex) => {
-        if (!selection.recipe) return;
+        if (!selection.recipe) {
+            return;
+        }
         const recipe = selection.recipe as RallarBlackBoxDistributedRunManifest['recipes'][number]['recipe'];
-        if (!recipe) return;
+        if (!recipe) {
+            return;
+        }
         const basePath = `/recipes/${recipeIndex}/recipe`;
         try {
             const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
-            errors.push(...compatibility.errors.map(error => candidateError(
-                'recipe-validation', `${basePath}${tuningSchemaPathToPointer(error.path)}`, error.message,
-            )));
-        } catch (error) {
+            errors.push(...compatibility.errors.map((error) =>
+                candidateError(
+                    'recipe-validation',
+                    `${basePath}${tuningSchemaPathToPointer(error.path)}`,
+                    error.message
+                )
+            ));
+        }
+        catch (error) {
             errors.push(candidateError('recipe-validation', basePath, errorMessage(error)));
         }
         try {
             const agent = validateRallarBlackBoxTestCommand({
-                kind: 'recipe.load', recipe,
+                kind: 'recipe.load',
+                recipe
             });
             if (!agent.ok) {
                 errors.push(candidateError(
-                    'agent-validation', tuningAgentIssuePointer(basePath, agent.error), agent.error,
+                    'agent-validation',
+                    tuningAgentIssuePointer(basePath, agent.error),
+                    agent.error
                 ));
             }
-        } catch (error) {
+        }
+        catch (error) {
             errors.push(candidateError('agent-validation', basePath, errorMessage(error)));
         }
         try {
             const preflight = distributedRecipePreflight(recipe);
-            errors.push(...preflight.errors.map(message => candidateError(
-                'preflight-validation', tuningPreflightIssuePointer(basePath, message), message,
-            )));
-        } catch (error) {
+            errors.push(...preflight.errors.map((message) =>
+                candidateError(
+                    'preflight-validation',
+                    tuningPreflightIssuePointer(basePath, message),
+                    message
+                )
+            ));
+        }
+        catch (error) {
             errors.push(candidateError('preflight-validation', basePath, errorMessage(error)));
         }
     });
@@ -254,12 +313,14 @@ function tuningManifestValidationErrors(
 
 function applyPatch(
     manifest: RallarBlackBoxDistributedRunManifest,
-    patch: readonly DistributedRunTuningPatchOperation[],
+    patch: readonly DistributedRunTuningPatchOperation[]
 ): void {
     for (const operation of patch) {
         const tokens = tuningPointerTokens(operation.path);
         const key = tokens.pop();
-        if (key === undefined) throw new Error(`Invalid patch path ${operation.path}.`);
+        if (key === undefined) {
+            throw new Error(`Invalid patch path ${operation.path}.`);
+        }
         let parent: unknown = manifest;
         for (const token of tokens) {
             parent = Array.isArray(parent)
@@ -286,10 +347,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function candidateError(
-    code: DistributedRunTuningCandidateErrorCode, path: string | undefined, message: string,
+    code: DistributedRunTuningCandidateErrorCode,
+    path: string | undefined,
+    message: string
 ): DistributedRunTuningCandidateError {
     return { code, path, message };
 }
 
-function displayValue(value: number | undefined): string { return value === undefined ? '(unset)' : String(value); }
-function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function displayValue(value: number | undefined): string {
+    return value === undefined ? '(unset)' : String(value);
+}
+function errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}

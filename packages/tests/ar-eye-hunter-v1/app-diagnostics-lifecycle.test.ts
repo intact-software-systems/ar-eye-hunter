@@ -1,29 +1,27 @@
 // @vitest-environment happy-dom
+import { toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type {
-    ArenaConnection,
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import App from '../../../apps/ar-eye-hunter-v1/src/App.tsx';
+import type { ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockArena = vi.hoisted(() => ({
     current: undefined as ArenaConnection | undefined,
-    refreshDiagnostics: vi.fn(() => Promise.resolve()),
+    refreshDiagnostics: vi.fn(() => Promise.resolve())
 }));
 
 vi.mock('../../../apps/ar-eye-hunter-v1/src/game/BabylonArena.tsx', () => ({
-    BabylonArena: () => createElement('div', { 'data-testid': 'arena-scene' }),
+    BabylonArena: () => createElement('div', { 'data-testid': 'arena-scene' })
 }));
 
 vi.mock('../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts', () => ({
-    useRallarArena: () => mockArena.current,
+    useRallarArena: () => mockArena.current
 }));
 
 describe('AR Eye Hunter diagnostics lifecycle', () => {
@@ -70,7 +68,7 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
             networkEnabled: false,
             logoutQuiesced: true,
             roomId: undefined,
-            session: undefined,
+            session: undefined
         });
         await act(async () => {
             root?.render(createElement(App));
@@ -96,16 +94,16 @@ function createArenaRoomSnapshot(): GroupSnapshot {
         applicationId: 'ar-eye-hunter',
         workspaceId: 'default',
         groupId: 'arena-1',
-        sessionIds: ['hunter-1'],
+        sessionIds: ['hunter-1']
     });
     return {
         ...snapshot,
-        group: { ...snapshot.group, displayName: 'Arena: Vector Circuit' },
+        group: { ...snapshot.group, displayName: 'Arena: Vector Circuit' }
     };
 }
 
 function createArenaConnection(
-    overrides: Partial<ArenaConnection> = {},
+    overrides: Partial<ArenaConnection> = {}
 ): ArenaConnection {
     const arenaRoomSnapshot = createArenaRoomSnapshot();
     return {
@@ -114,7 +112,7 @@ function createArenaConnection(
             accessToken: 'token-1',
             username: 'hunter',
             sessionId: 'session-1',
-            expiresAtEpochMs: Date.now() + 60_000,
+            expiresAtEpochMs: Date.now() + 60_000
         },
         connectionState: 'connected',
         error: undefined,
@@ -123,8 +121,8 @@ function createArenaConnection(
             toRallarRoomSummary({
                 snapshot: arenaRoomSnapshot,
                 sessionId: 'session-1',
-                currentRoomRef: arenaRoomSnapshot.group,
-            }),
+                currentRoomRef: arenaRoomSnapshot.group
+            })
         ],
         directorStatus: {
             role: 'none',
@@ -133,7 +131,7 @@ function createArenaConnection(
             isFresh: false,
             active: false,
             freshness: 'none',
-            nowEpochMs: Date.now(),
+            nowEpochMs: Date.now()
         },
         rtcLanes: [],
         directorAttempt: { status: 'idle' },
@@ -148,19 +146,19 @@ function createArenaConnection(
                 reconnectEnabled: true,
                 reconnectAttempts: 0,
                 maxReconnectAttempts: 5,
-                reconnectExhausted: false,
-            },
+                reconnectExhausted: false
+            }
         },
         httpDiagnostics: {
             apiConfig: { status: 'idle' },
-            ice: { status: 'idle' },
+            ice: { status: 'idle' }
         },
         linkState: {
             label: 'solo',
             tone: 'live',
             detail: 'Solo systems hot.',
             playerCount: 0,
-            actionNeeded: false,
+            actionNeeded: false
         },
         presenceNotices: [],
         authStorageKind: 'session',
@@ -192,6 +190,6 @@ function createArenaConnection(
         sendPickupIntent: vi.fn(),
         startArenaMatch: vi.fn(),
         publishArenaSnapshot: vi.fn(),
-        ...overrides,
+        ...overrides
     };
 }

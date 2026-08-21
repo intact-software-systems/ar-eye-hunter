@@ -11,7 +11,7 @@ import type {
     LegacyShellGlobalContext,
     LegacyShellNavigation,
     LegacyShellRunnerSelection,
-    LegacyShellRuntime,
+    LegacyShellRuntime
 } from '../legacy-shell-contracts.ts';
 
 export function DiagnosticEvidenceTabPanels({
@@ -19,7 +19,7 @@ export function DiagnosticEvidenceTabPanels({
     auth,
     navigation,
     globalContext,
-    runnerSelection,
+    runnerSelection
 }: Readonly<{
     runtime: LegacyShellRuntime;
     auth: LegacyShellAuth;
@@ -37,7 +37,7 @@ export function DiagnosticEvidenceTabPanels({
         now,
         selectedCommandId,
         setSelectedCommandId,
-        selectedResult,
+        selectedResult
     } = runnerSelection;
 
     return (

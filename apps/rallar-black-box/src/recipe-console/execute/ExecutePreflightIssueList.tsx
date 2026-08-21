@@ -1,13 +1,13 @@
-import { ExecuteWindowedList } from './ExecuteWindowedList.tsx';
 import { createExecuteWindowRevision } from './execute-window-revision.ts';
 import styles from './ExecutePreflight.module.css';
+import { ExecuteWindowedList } from './ExecuteWindowedList.tsx';
 
 export function ExecutePreflightIssueList({
     contextKey,
     id,
     label,
     tone,
-    values,
+    values
 }: Readonly<{
     contextKey: string;
     id: string;
@@ -15,7 +15,9 @@ export function ExecutePreflightIssueList({
     tone: 'error' | 'warning';
     values: readonly string[];
 }>) {
-    if (values.length === 0) return null;
+    if (values.length === 0) {
+        return null;
+    }
     const itemLabel = tone === 'error' ? 'errors' : 'warnings';
     return (
         <div
@@ -26,7 +28,9 @@ export function ExecutePreflightIssueList({
             <small
                 data-execute-preflight-live-summary
                 role={tone === 'error' ? 'alert' : 'status'}
-            >{values.length.toLocaleString('en-US')} {itemLabel} total</small>
+            >
+                {values.length.toLocaleString('en-US')} {itemLabel} total
+            </small>
             <ExecuteWindowedList
                 contentId={`execute-preflight-${id}-window`}
                 contextKey={JSON.stringify([contextKey, label])}
@@ -34,10 +38,8 @@ export function ExecutePreflightIssueList({
                 itemLabel={itemLabel}
                 items={values}
                 label={label}
-                renderItem={value => (
-                    <li data-execute-preflight-issue>{value}</li>
-                )}
-                revisionKey={createExecuteWindowRevision(values, value => value)}
+                renderItem={(value) => <li data-execute-preflight-issue>{value}</li>}
+                revisionKey={createExecuteWindowRevision(values, (value) => value)}
                 section="preflightIssues"
             />
         </div>

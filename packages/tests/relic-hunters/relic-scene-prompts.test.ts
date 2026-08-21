@@ -1,20 +1,15 @@
-import { describe, expect, it } from 'vitest';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createRelicGame,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicGameState,
-    type RelicPublicSnapshot,
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import { ROOM_SIZE, ROAM_MARGIN } from '../../../apps/relic-hunters-v1/src/game/scene/constants.ts';
-import {
-    computeScenePrompt,
-    roomClueHotspot,
-    roomClueHotspots,
-    samePrompt,
-} from '../../../apps/relic-hunters-v1/src/game/scene/prompts.ts';
+import { describe, expect, it } from 'vitest';
+import { ROAM_MARGIN, ROOM_SIZE } from '../../../apps/relic-hunters-v1/src/game/scene/constants.ts';
+import { computeScenePrompt, roomClueHotspot, roomClueHotspots, samePrompt } from '../../../apps/relic-hunters-v1/src/game/scene/prompts.ts';
 
 describe('Relic scene prompt computation', () => {
     it('shows a turn-based move prompt near an open doorway', () => {
@@ -25,14 +20,14 @@ describe('Relic scene prompt computation', () => {
             localPlayerId: 'alice-session',
             room: entrance,
             roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
-            forward: new Vector3(0, 0, 1),
+            forward: new Vector3(0, 0, 1)
         });
 
         expect(prompt).toEqual({
             kind: 'move',
             roomId: 'hallway',
             roomName: 'Hallway',
-            direction: 'south',
+            direction: 'south'
         });
     });
 
@@ -43,14 +38,14 @@ describe('Relic scene prompt computation', () => {
             id: 'test-exit',
             x: 0,
             z: 0,
-            neighbors: ['south-room'],
+            neighbors: ['south-room']
         };
         const southRoom = {
             ...room(snapshot, 'hallway'),
             id: 'south-room',
             x: 0,
             z: 1,
-            neighbors: ['test-exit'],
+            neighbors: ['test-exit']
         };
         const prompt = computeScenePrompt({
             snapshot: {
@@ -60,18 +55,18 @@ describe('Relic scene prompt computation', () => {
                     player.playerId === 'alice-session'
                         ? { ...player, roomId: 'test-exit' }
                         : player
-                ),
+                )
             },
             localPlayerId: 'alice-session',
             room: exit,
             roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
-            forward: new Vector3(0, 0, 1),
+            forward: new Vector3(0, 0, 1)
         });
 
         expect(prompt).toMatchObject({
             kind: 'move',
             roomId: 'south-room',
-            roomName: 'Hallway',
+            roomName: 'Hallway'
         });
     });
 
@@ -85,18 +80,18 @@ describe('Relic scene prompt computation', () => {
                     player.playerId === 'alice-session'
                         ? { ...player, roomId: 'storage' }
                         : player
-                ),
+                )
             },
             localPlayerId: 'alice-session',
             room: storage,
             roamOffset: new Vector3(-0.75, 0, 0.55),
-            forward: new Vector3(1, 0, 0),
+            forward: new Vector3(1, 0, 0)
         });
 
         expect(prompt).toMatchObject({
             kind: 'search',
             hotspotId: 'storage-crates',
-            label: 'Inspect map fragment',
+            label: 'Inspect map fragment'
         });
     });
 
@@ -111,19 +106,19 @@ describe('Relic scene prompt computation', () => {
                     player.playerId === 'alice-session'
                         ? { ...player, roomId: 'storage' }
                         : player
-                ),
+                )
             },
             localPlayerId: 'alice-session',
             room: storage,
             roamOffset: new Vector3(0.92, 0, 0.1),
-            forward: new Vector3(0, 0, 1),
+            forward: new Vector3(0, 0, 1)
         });
 
         expect(hotspots.map((hotspot) => hotspot.discoveredLabel)).toContain('Marked wax seal');
         expect(prompt).toMatchObject({
             kind: 'search',
             hotspotId: 'storage-wax-seal',
-            label: 'Inspect wax seal',
+            label: 'Inspect wax seal'
         });
     });
 
@@ -137,7 +132,7 @@ describe('Relic scene prompt computation', () => {
                     player.playerId === 'alice-session'
                         ? { ...player, roomId: 'shrine' }
                         : player
-                ),
+                )
             },
             localPlayerId: 'alice-session',
             room: shrine,
@@ -145,15 +140,15 @@ describe('Relic scene prompt computation', () => {
             forward: new Vector3(0, 0, 1),
             inspection: {
                 roomId: 'shrine',
-                hotspot: roomClueHotspot(shrine),
-            },
+                hotspot: roomClueHotspot(shrine)
+            }
         });
 
         expect(prompt).toMatchObject({
             kind: 'search',
             hotspotId: 'shrine-altar',
             label: 'Inspect altar runes',
-            inspecting: true,
+            inspecting: true
         });
         const searchPrompt = prompt?.kind === 'search' ? prompt : undefined;
         expect(searchPrompt?.detail).toContain('altar glyphs pulse');
@@ -167,7 +162,7 @@ describe('Relic scene prompt computation', () => {
             localPlayerId: 'alice-session',
             room: entrance,
             roamOffset: new Vector3(0, 0, 0),
-            forward: new Vector3(0, 0, 1),
+            forward: new Vector3(0, 0, 1)
         });
 
         expect(prompt).toBeUndefined();
@@ -181,7 +176,7 @@ describe('Relic scene prompt computation', () => {
             localPlayerId: 'alice-session',
             room: entrance,
             roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
-            forward: new Vector3(0, 0, 1),
+            forward: new Vector3(0, 0, 1)
         });
 
         expect(prompt).toBeUndefined();
@@ -193,12 +188,12 @@ describe('Relic scene prompt computation', () => {
         const prompt = computeScenePrompt({
             snapshot: {
                 ...snapshot,
-                submittedPlayerIds: ['alice-session'],
+                submittedPlayerIds: ['alice-session']
             },
             localPlayerId: 'alice-session',
             room: entrance,
             roamOffset: new Vector3(0, 0, ROOM_SIZE / 2 - ROAM_MARGIN - 0.1),
-            forward: new Vector3(0, 0, 1),
+            forward: new Vector3(0, 0, 1)
         });
 
         expect(prompt).toBeUndefined();
@@ -210,15 +205,15 @@ describe('Relic scene prompt computation', () => {
                 kind: 'search',
                 hotspotId: 'shrine-altar',
                 label: 'Search the altar',
-                detail: 'Prime a Search plan for this room',
+                detail: 'Prime a Search plan for this room'
             },
             {
                 kind: 'search',
                 hotspotId: 'shrine-altar',
                 label: 'Search the altar',
                 detail: 'The altar glyphs pulse. Esc or back away to leave inspection.',
-                inspecting: true,
-            },
+                inspecting: true
+            }
         )).toBe(false);
     });
 });
@@ -230,10 +225,10 @@ function lobbySnapshot(): RelicPublicSnapshot {
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2,
+        now: () => 2
     }).state;
 
     return toPublicRelicSnapshot(state);
@@ -246,19 +241,19 @@ function planningSnapshot(): RelicPublicSnapshot {
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2,
+        now: () => 2
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username: 'Alice',
+        username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => 3,
+        now: () => 3
     }).state;
 
     return toPublicRelicSnapshot(state);

@@ -12,8 +12,8 @@ const runDry = async (args: readonly string[] = []) => {
     const { stdout } = await execFileAsync('bash', [logsScriptPath, ...args], {
         env: {
             ...process.env,
-            RALLAR_LOGS_SELF_TEST: '1',
-        },
+            RALLAR_LOGS_SELF_TEST: '1'
+        }
     });
     return stdout;
 };
@@ -23,11 +23,12 @@ const runDryFailure = async (args: readonly string[]) => {
         await execFileAsync('bash', [logsScriptPath, ...args], {
             env: {
                 ...process.env,
-                RALLAR_LOGS_SELF_TEST: '1',
-            },
+                RALLAR_LOGS_SELF_TEST: '1'
+            }
         });
-    } catch (error) {
-        return error as Readonly<{ stderr?: string; code?: number }>;
+    }
+    catch (error) {
+        return error as Readonly<{ stderr?: string; code?: number; }>;
     }
     throw new Error(`Expected rallar-logs ${args.join(' ')} to fail.`);
 };
@@ -38,7 +39,7 @@ describe('Hetzner logs script', () => {
 
         expect(stdout).toContain('mode=dry-run');
         expect(stdout).toContain(
-            'units=rallar-api-v1.service,rallar-black-box-control.service,rallar-black-box-headless-worker.service',
+            'units=rallar-api-v1.service,rallar-black-box-control.service,rallar-black-box-headless-worker.service'
         );
         expect(stdout).toContain('lines=120');
         expect(stdout).toContain('follow=0');
@@ -57,7 +58,7 @@ describe('Hetzner logs script', () => {
             '30 min ago',
             '--grep',
             'rtc-realtime',
-            '--no-color',
+            '--no-color'
         ]);
 
         expect(stdout).toContain('units=rallar-black-box-headless-worker.service');
@@ -74,7 +75,7 @@ describe('Hetzner logs script', () => {
         const stdout = await runDry(['--services', 'all']);
 
         expect(stdout).toContain(
-            'units=rallar-api-v1.service,rallar-black-box-control.service,rallar-black-box-headless-worker.service,caddy.service',
+            'units=rallar-api-v1.service,rallar-black-box-control.service,rallar-black-box-headless-worker.service,caddy.service'
         );
     });
 

@@ -1,12 +1,12 @@
 import {
     selectRallarBlackBoxFailures,
-    selectRallarBlackBoxLatestStats,
+    selectRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
 
-export function StatsPanel({ state }: { state: RallarBlackBoxTestState }) {
+export function StatsPanel({ state }: { state: RallarBlackBoxTestState; }) {
     const stats = selectRallarBlackBoxLatestStats(state);
     const failures = selectRallarBlackBoxFailures(state);
     const latency = stats?.commandLatency;

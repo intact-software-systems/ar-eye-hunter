@@ -1,12 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type {
-    ControlAgentSnapshot,
-    ControlDistributedRunCommandLink,
-    ControlDistributedRunSnapshot,
-    ControlQueuedCommandSnapshot,
-    ControlRunSnapshot,
-    ControlServerSnapshot,
-} from '../../shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     controlSnapshotSelectionIndexWorkForTest,
     createControlSnapshotBoardRunOverlayPlan,
@@ -20,8 +12,16 @@ import {
     rebindControlRunsFromSelectionIndex,
     rebindDistributedRunFromSelectionIndex,
     rebindDistributedRunPairFromSelectionIndex,
-    rebindDistributedRunsFromSelectionIndex,
+    rebindDistributedRunsFromSelectionIndex
 } from '../../shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import type {
+    ControlAgentSnapshot,
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunSnapshot,
+    ControlQueuedCommandSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '../../shared-test/rallar-bb-test/control-snapshots.ts';
 
 const SCALE = 5_000;
 
@@ -37,7 +37,7 @@ describe('control snapshot selection index', () => {
                     agents: [
                         controlAgent(hostileRunId, hostileAgentId),
                         controlAgent(hostileRunId, hostileAgentId),
-                        controlAgent(hostileRunId, '000-agent'),
+                        controlAgent(hostileRunId, '000-agent')
                     ],
                     commands: [
                         controlCommand(hostileRunId, hostileAgentId, hostileCommandId),
@@ -46,37 +46,37 @@ describe('control snapshot selection index', () => {
                             hostileRunId,
                             hostileAgentId,
                             'completed-command',
-                            2,
+                            2
                         ),
-                        controlCommand(hostileRunId, '000-agent', 'other-command'),
-                    ],
+                        controlCommand(hostileRunId, '000-agent', 'other-command')
+                    ]
                 }),
                 controlRun('control-b', 30),
                 controlRun(hostileRunId, 50, {
                     agents: [controlAgent(hostileRunId, 'shadow-agent')],
-                    commands: [controlCommand(hostileRunId, 'shadow-agent', 'shadow-command')],
-                }),
+                    commands: [controlCommand(hostileRunId, 'shadow-agent', 'shadow-command')]
+                })
             ],
             distributedRuns: [
                 distributedRun(hostileDistributedId, hostileRunId, 10, 'running', {
                     targetAgentIds: [hostileAgentId, hostileAgentId],
                     commandLinks: [
                         commandLink(hostileAgentId, hostileCommandId, 'stage'),
-                        commandLink(hostileAgentId, hostileCommandId, 'barrier'),
-                    ],
+                        commandLink(hostileAgentId, hostileCommandId, 'barrier')
+                    ]
                 }),
                 distributedRun('distributed-b', 'control-b', 30, 'passed', {
-                    targetAgentIds: ['agent-b'],
+                    targetAgentIds: ['agent-b']
                 }),
                 distributedRun(hostileDistributedId, 'control-b', 50, 'running', {
                     targetAgentIds: ['agent-late'],
-                    commandLinks: [commandLink('agent-late', 'command-late', 'start')],
+                    commandLinks: [commandLink('agent-late', 'command-late', 'start')]
                 }),
                 distributedRun('distributed-a-active', hostileRunId, 40, 'ready', {
-                    targetAgentIds: ['agent-a'],
+                    targetAgentIds: ['agent-a']
                 }),
-                distributedRun('distributed-a-terminal', hostileRunId, 60, 'passed'),
-            ],
+                distributedRun('distributed-a-terminal', hostileRunId, 60, 'passed')
+            ]
         });
         const before = JSON.stringify(snapshot);
 
@@ -93,12 +93,18 @@ describe('control snapshot selection index', () => {
             .toBe(0);
         expect(index.controlAgentOrdinalsByControlRunIdSorted.get(hostileRunId))
             .toEqual([2, 0, 1]);
-        expect(index.controlCommandOrdinalsByControlRunAgentId
-            .get(hostileRunId)?.get(hostileAgentId)).toEqual([0, 1, 2]);
-        expect(index.queuedControlCommandCountByControlRunAgentId
-            .get(hostileRunId)?.get(hostileAgentId)).toBe(2);
-        expect(index.queuedControlCommandCountByControlRunAgentId
-            .get(hostileRunId)?.get('000-agent')).toBe(1);
+        expect(
+            index.controlCommandOrdinalsByControlRunAgentId
+                .get(hostileRunId)?.get(hostileAgentId)
+        ).toEqual([0, 1, 2]);
+        expect(
+            index.queuedControlCommandCountByControlRunAgentId
+                .get(hostileRunId)?.get(hostileAgentId)
+        ).toBe(2);
+        expect(
+            index.queuedControlCommandCountByControlRunAgentId
+                .get(hostileRunId)?.get('000-agent')
+        ).toBe(1);
         expect(index.distributedRunOrdinalsByControlRunId.get(hostileRunId))
             .toEqual([0, 3, 4]);
         expect(index.distributedRunOrdinalsByControlRunIdUpdatedDesc.get(hostileRunId))
@@ -107,10 +113,14 @@ describe('control snapshot selection index', () => {
             .toEqual([2, 1]);
         expect(index.activeDistributedRunOrdinalsByControlRunId.get(hostileRunId))
             .toEqual([3, 0]);
-        expect(index.targetDistributedRunOrdinalsByControlRunId
-            .get(hostileRunId)?.get(hostileAgentId)).toEqual([0]);
-        expect(index.commandLinkOrdinalsByDistributedRunOrdinal
-            .get(0)?.get(hostileAgentId)).toEqual([0, 1]);
+        expect(
+            index.targetDistributedRunOrdinalsByControlRunId
+                .get(hostileRunId)?.get(hostileAgentId)
+        ).toEqual([0]);
+        expect(
+            index.commandLinkOrdinalsByDistributedRunOrdinal
+                .get(0)?.get(hostileAgentId)
+        ).toEqual([0, 1]);
 
         // Map replacement keeps the first insertion position while the last
         // duplicate payload wins, matching the current board's uniqueRuns.
@@ -118,8 +128,10 @@ describe('control snapshot selection index', () => {
             .toEqual([2, 1]);
         expect(index.boardDistributedRunOrdinalsByControlRunId.get(hostileRunId))
             .toEqual([3, 4]);
-        expect(index.boardTargetDistributedRunOrdinalsByControlRunId
-            .get('control-b')?.get('agent-late')).toEqual([2]);
+        expect(
+            index.boardTargetDistributedRunOrdinalsByControlRunId
+                .get('control-b')?.get('agent-late')
+        ).toEqual([2]);
 
         const next = structuredClone(snapshot);
         expect(rebindControlRunFromSelectionIndex(index, next, hostileRunId))
@@ -128,55 +140,55 @@ describe('control snapshot selection index', () => {
             index,
             next,
             hostileRunId,
-            hostileAgentId,
+            hostileAgentId
         )).toBe(next.runs[0]!.agents[0]);
         expect(rebindControlCommandFromSelectionIndex(
             index,
             next,
             hostileRunId,
-            hostileCommandId,
+            hostileCommandId
         )).toBe(next.runs[0]!.commands[0]);
         expect(rebindControlAgentsFromSelectionIndex(
             index,
             next,
             hostileRunId,
-            index.controlAgentOrdinalsByControlRunIdSorted.get(hostileRunId)!,
+            index.controlAgentOrdinalsByControlRunIdSorted.get(hostileRunId)!
         )).toEqual([
             next.runs[0]!.agents[2],
             next.runs[0]!.agents[0],
-            next.runs[0]!.agents[1],
+            next.runs[0]!.agents[1]
         ]);
         expect(rebindControlCommandsFromSelectionIndex(
             index,
             next,
             hostileRunId,
             index.controlCommandOrdinalsByControlRunAgentId
-                .get(hostileRunId)!.get(hostileAgentId)!,
+                .get(hostileRunId)!.get(hostileAgentId)!
         )).toEqual([
             next.runs[0]!.commands[0],
             next.runs[0]!.commands[1],
-            next.runs[0]!.commands[2],
+            next.runs[0]!.commands[2]
         ]);
         expect(rebindDistributedRunFromSelectionIndex(index, next, hostileDistributedId))
             .toBe(next.distributedRuns![0]);
         expect(rebindControlRunsFromSelectionIndex(
             index,
             next,
-            index.controlRunOrdinalsByUpdatedDesc,
+            index.controlRunOrdinalsByUpdatedDesc
         )).toEqual([next.runs[2], next.runs[1], next.runs[0]]);
         expect(rebindDistributedRunsFromSelectionIndex(
             index,
             next,
-            index.boardDistributedRunOrdinalsByControlRunId.get('control-b')!,
+            index.boardDistributedRunOrdinalsByControlRunId.get('control-b')!
         )).toEqual([next.distributedRuns![2], next.distributedRuns![1]]);
         expect(rebindCommandLinksFromSelectionIndex(
             index,
             next,
             0,
-            index.commandLinkOrdinalsByDistributedRunOrdinal.get(0)!.get(hostileAgentId)!,
+            index.commandLinkOrdinalsByDistributedRunOrdinal.get(0)!.get(hostileAgentId)!
         )).toEqual([
             next.distributedRuns![0]!.commandLinks[0],
-            next.distributedRuns![0]!.commandLinks[1],
+            next.distributedRuns![0]!.commandLinks[1]
         ]);
         expect(JSON.stringify(snapshot)).toBe(before);
     });
@@ -195,12 +207,12 @@ describe('control snapshot selection index', () => {
         const snapshot: ControlServerSnapshot = {
             runs: [controlRun('', 1, {
                 agents: [controlAgent('', '')],
-                commands: [controlCommand('', '', '')],
+                commands: [controlCommand('', '', '')]
             })],
             distributedRuns: [distributedRun('', '', 1, 'running', {
                 targetAgentIds: [''],
-                commandLinks: [commandLink('', '', 'stage')],
-            })],
+                commandLinks: [commandLink('', '', 'stage')]
+            })]
         };
         const index = createControlSnapshotSelectionIndex(snapshot);
 
@@ -221,19 +233,19 @@ describe('control snapshot selection index', () => {
             targetAgentIds: [agent],
             commandLinks: [
                 commandLink(agent, 'resolution-link-a', 'stage', 'link-first'),
-                commandLink(agent, 'resolution-link-b', 'start', 'link-later'),
-            ],
+                commandLink(agent, 'resolution-link-b', 'start', 'link-later')
+            ]
         });
         const manifest = distributedRun('manifest', 'control', 2, 'running', {
             targetAgentIds: [agent],
-            commandLinks: [commandLink(agent, 'manifest-link', 'stage', 'link-only')],
+            commandLinks: [commandLink(agent, 'manifest-link', 'stage', 'link-only')]
         });
         const link = distributedRun('link', 'control', 1, 'running', {
             targetAgentIds: [agent],
             commandLinks: [
                 commandLink(agent, 'link-a', 'stage', 'link-first'),
-                commandLink(agent, 'link-b', 'start', 'link-later'),
-            ],
+                commandLink(agent, 'link-b', 'start', 'link-later')
+            ]
         });
         const linkBlockedByFirst = distributedRun(
             'link-blocked-by-first',
@@ -244,35 +256,40 @@ describe('control snapshot selection index', () => {
                 targetAgentIds: [agent],
                 commandLinks: [
                     commandLink(agent, 'link-no-role', 'stage'),
-                    commandLink(agent, 'link-role-later', 'start', 'must-not-win'),
-                ],
-            },
+                    commandLink(agent, 'link-role-later', 'start', 'must-not-win')
+                ]
+            }
         );
         const snapshot: ControlServerSnapshot = {
             runs: [controlRun('control', 1)],
-            distributedRuns: [{
-                ...resolution,
-                manifest: {
-                    ...resolution.manifest,
-                    roleAssignments: [
-                        { agentId: agent, role: 'manifest-first', required: true },
-                        { agentId: agent, role: 'manifest-later', required: true },
-                    ],
+            distributedRuns: [
+                {
+                    ...resolution,
+                    manifest: {
+                        ...resolution.manifest,
+                        roleAssignments: [
+                            { agentId: agent, role: 'manifest-first', required: true },
+                            { agentId: agent, role: 'manifest-later', required: true }
+                        ]
+                    },
+                    targetResolution: targetResolution(agent, [
+                        { agentId: agent, role: 'resolution-first', required: true },
+                        { agentId: agent, role: 'resolution-later', required: true }
+                    ])
                 },
-                targetResolution: targetResolution(agent, [
-                    { agentId: agent, role: 'resolution-first', required: true },
-                    { agentId: agent, role: 'resolution-later', required: true },
-                ]),
-            }, {
-                ...manifest,
-                manifest: {
-                    ...manifest.manifest,
-                    roleAssignments: [
-                        { agentId: agent, role: 'manifest-first', required: true },
-                        { agentId: agent, role: 'manifest-later', required: true },
-                    ],
+                {
+                    ...manifest,
+                    manifest: {
+                        ...manifest.manifest,
+                        roleAssignments: [
+                            { agentId: agent, role: 'manifest-first', required: true },
+                            { agentId: agent, role: 'manifest-later', required: true }
+                        ]
+                    }
                 },
-            }, link, linkBlockedByFirst],
+                link,
+                linkBlockedByFirst
+            ]
         };
 
         const index = createControlSnapshotSelectionIndex(snapshot);
@@ -298,8 +315,8 @@ describe('control snapshot selection index', () => {
             'running',
             {
                 targetAgentIds: [agent],
-                commandLinks: [commandLink(agent, 'link-manifest-fallback', 'stage', 'link-fallback')],
-            },
+                commandLinks: [commandLink(agent, 'link-manifest-fallback', 'stage', 'link-fallback')]
+            }
         );
         const resolutionNullish = distributedRun(
             'resolution-nullish',
@@ -308,8 +325,8 @@ describe('control snapshot selection index', () => {
             'running',
             {
                 targetAgentIds: [agent],
-                commandLinks: [commandLink(agent, 'link-resolution-fallback', 'stage', 'link-lower')],
-            },
+                commandLinks: [commandLink(agent, 'link-resolution-fallback', 'stage', 'link-lower')]
+            }
         );
         const snapshot: ControlServerSnapshot = {
             runs: [controlRun('control', 1)],
@@ -320,15 +337,13 @@ describe('control snapshot selection index', () => {
                     roleAssignments: [{
                         agentId: agent,
                         role: undefined,
-                        required: true,
+                        required: true
                     }, {
                         agentId: agent,
                         role: 'manifest-later-must-not-win',
-                        required: true,
-                    }] as unknown as NonNullable<
-                        ControlDistributedRunSnapshot['manifest']['roleAssignments']
-                    >,
-                },
+                        required: true
+                    }] as unknown as NonNullable<ControlDistributedRunSnapshot['manifest']['roleAssignments']>
+                }
             }, {
                 ...resolutionNullish,
                 manifest: {
@@ -336,21 +351,22 @@ describe('control snapshot selection index', () => {
                     roleAssignments: [{
                         agentId: agent,
                         role: 'manifest-fallback',
-                        required: true,
-                    }],
+                        required: true
+                    }]
                 },
-                targetResolution: targetResolution(agent, [{
-                    agentId: agent,
-                    role: null,
-                    required: true,
-                }, {
-                    agentId: agent,
-                    role: 'resolution-later-must-not-win',
-                    required: true,
-                }] as unknown as NonNullable<
-                    ControlDistributedRunSnapshot['targetResolution']
-                >['roleAssignments']),
-            }],
+                targetResolution: targetResolution(
+                    agent,
+                    [{
+                        agentId: agent,
+                        role: null,
+                        required: true
+                    }, {
+                        agentId: agent,
+                        role: 'resolution-later-must-not-win',
+                        required: true
+                    }] as unknown as NonNullable<ControlDistributedRunSnapshot['targetResolution']>['roleAssignments']
+                )
+            }]
         };
 
         const index = createControlSnapshotSelectionIndex(snapshot);
@@ -366,16 +382,16 @@ describe('control snapshot selection index', () => {
         const lastTarget = 'last-target';
         const source = [
             distributedRun('duplicate', 'control', 1, 'running', {
-                targetAgentIds: [firstTarget],
+                targetAgentIds: [firstTarget]
             }),
             distributedRun('middle', 'control', 2, 'running'),
             distributedRun('duplicate', 'control', 3, 'running', {
-                targetAgentIds: [lastTarget],
-            }),
+                targetAgentIds: [lastTarget]
+            })
         ];
         const snapshot: ControlServerSnapshot = {
             runs: [controlRun('control', 1)],
-            distributedRuns: source,
+            distributedRuns: source
         };
         const index = createControlSnapshotSelectionIndex(snapshot);
 
@@ -389,40 +405,44 @@ describe('control snapshot selection index', () => {
         const plan = createControlSnapshotBoardRunOverlayPlan(
             index,
             'control',
-            selected,
+            selected
         );
         expect(plan).toEqual([{
             kind: 'selected',
             distributedRunId: 'duplicate',
             firstInsertionOrdinal: 0,
             sourceWinnerOrdinal: 2,
-            sourceCount: 2,
+            sourceCount: 2
         }, {
             kind: 'source',
             distributedRunId: 'middle',
             firstInsertionOrdinal: 1,
             sourceWinnerOrdinal: 1,
-            sourceCount: 1,
+            sourceCount: 1
         }]);
-        const rebound = plan.map(entry =>
+        const rebound = plan.map((entry) =>
             entry.kind === 'selected'
                 ? selected
                 : snapshot.distributedRuns![entry.sourceWinnerOrdinal]
         );
-        expect(rebound.filter(run => run!.targetAgentIds.includes(firstTarget))
-            .map(run => run!.distributedRunId)).toEqual(['duplicate']);
-        expect(rebound.filter(run => run!.targetAgentIds.includes(lastTarget)))
+        expect(
+            rebound.filter((run) => run!.targetAgentIds.includes(firstTarget))
+                .map((run) => run!.distributedRunId)
+        ).toEqual(['duplicate']);
+        expect(rebound.filter((run) => run!.targetAgentIds.includes(lastTarget)))
             .toEqual([]);
 
-        expect(createControlSnapshotBoardRunOverlayPlan(index, 'control', {
-            distributedRunId: 'external',
-            controlRunId: 'control',
-        }).at(-1)).toEqual({
+        expect(
+            createControlSnapshotBoardRunOverlayPlan(index, 'control', {
+                distributedRunId: 'external',
+                controlRunId: 'control'
+            }).at(-1)
+        ).toEqual({
             kind: 'selected',
             distributedRunId: 'external',
             firstInsertionOrdinal: source.length,
             sourceWinnerOrdinal: undefined,
-            sourceCount: 0,
+            sourceCount: 0
         });
     });
 
@@ -435,16 +455,20 @@ describe('control snapshot selection index', () => {
             distributedRuns: [
                 distributedRun(distributedRunId, controlB, 1, 'running'),
                 distributedRun(distributedRunId, controlA, 2, 'running'),
-                distributedRun('b|' + distributedRunId, controlA, 3, 'running'),
-            ],
+                distributedRun('b|' + distributedRunId, controlA, 3, 'running')
+            ]
         };
         const index = createControlSnapshotSelectionIndex(snapshot);
 
         expect(index.firstDistributedRunOrdinalById.get(distributedRunId)).toBe(0);
-        expect(index.firstDistributedRunOrdinalByIdAndControlRunId
-            .get(distributedRunId)?.get(controlA)).toBe(1);
-        expect(index.firstDistributedRunOrdinalByIdAndControlRunId
-            .get(distributedRunId)?.get(controlB)).toBe(0);
+        expect(
+            index.firstDistributedRunOrdinalByIdAndControlRunId
+                .get(distributedRunId)?.get(controlA)
+        ).toBe(1);
+        expect(
+            index.firstDistributedRunOrdinalByIdAndControlRunId
+                .get(distributedRunId)?.get(controlB)
+        ).toBe(0);
         expect(index.distributedRunOrdinalsByControlRunId.get(controlA)).toEqual([1, 2]);
         expect(rebindDistributedRunFromSelectionIndex(index, snapshot, distributedRunId))
             .toBe(snapshot.distributedRuns![0]);
@@ -452,7 +476,7 @@ describe('control snapshot selection index', () => {
             index,
             snapshot,
             distributedRunId,
-            controlA,
+            controlA
         )).toBe(snapshot.distributedRuns![1]);
     });
 
@@ -467,21 +491,23 @@ describe('control snapshot selection index', () => {
             index,
             snapshot,
             controlId(SCALE - 1),
-            agentId(SCALE - 1),
+            agentId(SCALE - 1)
         )).toBe(snapshot.runs[SCALE - 1]!.agents[0]);
         expect(rebindControlCommandFromSelectionIndex(
             index,
             snapshot,
             controlId(SCALE - 1),
-            commandId(SCALE - 1),
+            commandId(SCALE - 1)
         )).toBe(snapshot.runs[SCALE - 1]!.commands[0]);
         expect(rebindDistributedRunFromSelectionIndex(
             index,
             snapshot,
-            distributedId(SCALE - 1),
+            distributedId(SCALE - 1)
         )).toBe(snapshot.distributedRuns![SCALE - 1]);
-        expect(index.boardTargetDistributedRunOrdinalsByControlRunId
-            .get(controlId(SCALE - 1))?.get(agentId(SCALE - 1)))
+        expect(
+            index.boardTargetDistributedRunOrdinalsByControlRunId
+                .get(controlId(SCALE - 1))?.get(agentId(SCALE - 1))
+        )
             .toEqual([SCALE - 1]);
         expect(controlSnapshotSelectionIndexWorkForTest(index)).toEqual({
             controlRunVisitCount: SCALE,
@@ -507,7 +533,7 @@ describe('control snapshot selection index', () => {
             boardWinnerVisitCount: SCALE,
             boardControlBucketWriteCount: SCALE,
             boardTargetAgentVisitCount: SCALE,
-            boardTargetMembershipWriteCount: SCALE,
+            boardTargetMembershipWriteCount: SCALE
         });
     }, 30_000);
 
@@ -530,56 +556,58 @@ describe('control snapshot selection index', () => {
             ...polled,
             runs: [...polled.runs].reverse(),
             distributedRuns: polled.distributedRuns &&
-                [...polled.distributedRuns].reverse(),
+                [...polled.distributedRuns].reverse()
         };
 
         expect(rebindControlRunFromSelectionIndex(index, changed, controlId(0))).toBeUndefined();
         expect(rebindDistributedRunFromSelectionIndex(
             index,
             changed,
-            distributedId(0),
+            distributedId(0)
         )).toBeUndefined();
         expect(rebindControlRunsFromSelectionIndex(
             index,
             changed,
-            index.controlRunOrdinalsByUpdatedDesc,
+            index.controlRunOrdinalsByUpdatedDesc
         )).toEqual([]);
         expect(rebindDistributedRunsFromSelectionIndex(
             index,
             changed,
-            index.distributedRunOrdinalsByUpdatedDesc,
+            index.distributedRunOrdinalsByUpdatedDesc
         )).toEqual([]);
     });
 });
 
 function scaleSnapshot(size: number): ControlServerSnapshot {
     return {
-        runs: Array.from({ length: size }, (_, ordinal) => controlRun(
-            controlId(ordinal),
-            ordinal,
-            {
-                agents: [controlAgent(controlId(ordinal), agentId(ordinal))],
-                commands: [controlCommand(
-                    controlId(ordinal),
-                    agentId(ordinal),
-                    commandId(ordinal),
-                )],
-            },
-        )),
-        distributedRuns: Array.from({ length: size }, (_, ordinal) => distributedRun(
-            distributedId(ordinal),
-            controlId(ordinal),
-            ordinal,
-            'running',
-            {
-                targetAgentIds: [agentId(ordinal)],
-                commandLinks: [commandLink(
-                    agentId(ordinal),
-                    commandId(ordinal),
-                    'start',
-                )],
-            },
-        )),
+        runs: Array.from({ length: size }, (_, ordinal) =>
+            controlRun(
+                controlId(ordinal),
+                ordinal,
+                {
+                    agents: [controlAgent(controlId(ordinal), agentId(ordinal))],
+                    commands: [controlCommand(
+                        controlId(ordinal),
+                        agentId(ordinal),
+                        commandId(ordinal)
+                    )]
+                }
+            )),
+        distributedRuns: Array.from({ length: size }, (_, ordinal) =>
+            distributedRun(
+                distributedId(ordinal),
+                controlId(ordinal),
+                ordinal,
+                'running',
+                {
+                    targetAgentIds: [agentId(ordinal)],
+                    commandLinks: [commandLink(
+                        agentId(ordinal),
+                        commandId(ordinal),
+                        'start'
+                    )]
+                }
+            ))
     };
 }
 
@@ -589,7 +617,7 @@ function controlRun(
     input: Readonly<{
         agents?: readonly ControlAgentSnapshot[];
         commands?: readonly ControlQueuedCommandSnapshot[];
-    }> = {},
+    }> = {}
 ): ControlRunSnapshot {
     return {
         runId,
@@ -601,7 +629,7 @@ function controlRun(
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
@@ -615,7 +643,7 @@ function controlAgent(runId: string, value: string): ControlAgentSnapshot {
         receivedResultCount: 0,
         receivedEventCount: 0,
         completedCommandIds: [],
-        resumeCompletedCommandIds: [],
+        resumeCompletedCommandIds: []
     };
 }
 
@@ -623,7 +651,7 @@ function controlCommand(
     runId: string,
     value: string,
     id: string,
-    completedAtEpochMs?: number,
+    completedAtEpochMs?: number
 ): ControlQueuedCommandSnapshot {
     return {
         envelope: {
@@ -632,11 +660,11 @@ function controlCommand(
             runId,
             agentId: value,
             commandId: id,
-            command: { kind: 'health' },
+            command: { kind: 'health' }
         },
         queuedAtEpochMs: 1,
         completedAtEpochMs,
-        dispatchCount: 0,
+        dispatchCount: 0
     };
 }
 
@@ -648,7 +676,7 @@ function distributedRun(
     input: Readonly<{
         targetAgentIds?: readonly string[];
         commandLinks?: readonly ControlDistributedRunCommandLink[];
-    }> = {},
+    }> = {}
 ): ControlDistributedRunSnapshot {
     return {
         distributedRunId,
@@ -659,10 +687,10 @@ function distributedRun(
             group: {
                 applicationId: 'test',
                 workspaceId: 'test',
-                groupId: 'test',
+                groupId: 'test'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [] },
+            targetPolicy: { mode: 'selected-agents', agentIds: [] }
         },
         state,
         createdAtEpochMs: updatedAtEpochMs,
@@ -685,10 +713,10 @@ function distributedRun(
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: 0,
+                blockingFailures: 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 }
 
@@ -696,26 +724,26 @@ function commandLink(
     value: string,
     commandId: string,
     phase: ControlDistributedRunCommandLink['phase'],
-    role?: string,
+    role?: string
 ): ControlDistributedRunCommandLink {
     return {
         phase,
         agentId: value,
         commandId,
         role,
-        queuedAtEpochMs: 1,
+        queuedAtEpochMs: 1
     };
 }
 
 function targetResolution(
     agentId: string,
-    roleAssignments: NonNullable<ControlDistributedRunSnapshot['targetResolution']>['roleAssignments'],
+    roleAssignments: NonNullable<ControlDistributedRunSnapshot['targetResolution']>['roleAssignments']
 ): NonNullable<ControlDistributedRunSnapshot['targetResolution']> {
     return {
         group: {
             applicationId: 'test',
             workspaceId: 'test',
-            groupId: 'test',
+            groupId: 'test'
         },
         resolvedAtEpochMs: 1,
         staleAfterMs: 1,
@@ -735,8 +763,8 @@ function targetResolution(
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
-            providers: {},
-        },
+            providers: {}
+        }
     };
 }
 
@@ -765,15 +793,18 @@ function freezeDeep<T>(value: T): T {
 }
 
 function collectObjects(value: unknown, output = new Set<object>()): Set<object> {
-    if (!value || typeof value !== 'object' || output.has(value)) return output;
+    if (!value || typeof value !== 'object' || output.has(value)) {
+        return output;
+    }
     output.add(value);
     if (value instanceof Map) {
         value.forEach((entry, key) => {
             collectObjects(key, output);
             collectObjects(entry, output);
         });
-    } else {
-        Object.values(value).forEach(entry => collectObjects(entry, output));
+    }
+    else {
+        Object.values(value).forEach((entry) => collectObjects(entry, output));
     }
     return output;
 }

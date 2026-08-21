@@ -1,7 +1,7 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
-import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     createContext,
     useContext,
@@ -10,34 +10,31 @@ import {
     useMemo,
     useRef,
     useSyncExternalStore,
-    type ReactNode,
+    type ReactNode
 } from 'react';
-import {
-    createBrowserAgentLaunchService,
-    type BrowserAgentLaunchService,
-} from '../../browser-agent-launch-service.ts';
+import { createBrowserAgentLaunchService, type BrowserAgentLaunchService } from '../../browser-agent-launch-service.ts';
 import { controlWebSocketUrlFromHttpBaseUrl } from '../../runner-agent-launch.ts';
+import { parseRecipeConsoleUrl } from '../routing/url-state-codec.ts';
 import {
     createRecipeConsoleControlApi,
     type RecipeConsoleControlApi,
     type RecipeConsoleControlFleetCapability,
     type RecipeConsoleControlQueryProvenance,
-    type RecipeConsoleControlRetentionCapability,
+    type RecipeConsoleControlRetentionCapability
 } from './control-api.ts';
-import {
-    createControlQueryService,
-    type ControlQueryAuthorization,
-    type ControlQuerySnapshot,
-} from './control-query.ts';
 import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
 import { recipeConsoleDetailRunIds } from './control-detail-run-ids.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
-import { parseRecipeConsoleUrl } from '../routing/url-state-codec.ts';
+import {
+    createControlQueryService,
+    type ControlQueryAuthorization,
+    type ControlQuerySnapshot
+} from './control-query.ts';
 import {
     controlSelectionIndexCacheLastLookup,
     createControlSelectionIndexCache,
-    type ControlSnapshotSelectionIndex,
     type ControlSelectionIndexCacheLookupWork,
+    type ControlSnapshotSelectionIndex
 } from './control-selection-index-cache.ts';
 
 export const CONTROL_QUERY_POLL_INTERVAL_MS = 5_000;
@@ -53,10 +50,9 @@ export type RecipeConsoleControlBootstrap = Readonly<{
     bootstrapGroup: RallarBlackBoxDistributedGroupRef;
 }>;
 
-export type RecipeConsoleControlContext = Readonly<Pick<
-    RecipeConsoleControlBootstrap,
-    'bootstrapRunId' | 'apiBaseUrl' | 'providerMode' | 'bootstrapGroup'
->>;
+export type RecipeConsoleControlContext = Readonly<
+    Pick<RecipeConsoleControlBootstrap, 'bootstrapRunId' | 'apiBaseUrl' | 'providerMode' | 'bootstrapGroup'>
+>;
 
 export type RecipeConsoleControlConnection = Readonly<{
     bootstrap: RecipeConsoleControlContext;
@@ -66,23 +62,18 @@ export type RecipeConsoleControlConnection = Readonly<{
     execution: RecipeConsoleControlExecutionApi | undefined;
     retention: RecipeConsoleControlRetentionCapability | undefined;
     fleet: RecipeConsoleControlFleetCapability | undefined;
-    query: ControlQuerySnapshot<
-        ControlServerSnapshot,
-        RecipeConsoleControlQueryProvenance
-    >;
+    query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>;
     selectionIndex?: ControlSnapshotSelectionIndex;
     selectionIndexWork?: ControlSelectionIndexCacheLookupWork;
     refresh(): Promise<void>;
     refreshAfterCurrent(): Promise<void>;
 }>;
 
-const ControlConnectionContext = createContext<
-    RecipeConsoleControlConnection | undefined
->(undefined);
+const ControlConnectionContext = createContext<RecipeConsoleControlConnection | undefined>(undefined);
 
 type ControlApiSetup =
-    | Readonly<{ api: RecipeConsoleControlApi; error?: never }>
-    | Readonly<{ api?: never; error: unknown }>;
+    | Readonly<{ api: RecipeConsoleControlApi; error?: never; }>
+    | Readonly<{ api?: never; error: unknown; }>;
 
 const browserScheduler = {
     setTimeout(callback: () => void, delayMs: number): ReturnType<typeof setTimeout> {
@@ -90,14 +81,14 @@ const browserScheduler = {
     },
     clearTimeout(handle: ReturnType<typeof setTimeout>): void {
         globalThis.clearTimeout(handle);
-    },
+    }
 };
 
 export function ControlConnectionProvider({
     authSession,
     bootstrap,
     children,
-    controlReadTimeoutMs,
+    controlReadTimeoutMs
 }: Readonly<{
     authSession?: AuthSession;
     bootstrap: RecipeConsoleControlBootstrap;
@@ -113,16 +104,18 @@ export function ControlConnectionProvider({
                     apiBaseUrl: bootstrap.apiBaseUrl,
                     authSession,
                     credentialPolicy: bootstrap.credentialPolicy,
-                    detailRunIds: snapshot => recipeConsoleDetailRunIds({
-                        snapshot,
-                        bootstrapRunId: bootstrap.bootstrapRunId,
-                        urlState: parseRecipeConsoleUrl(
-                            globalThis.location?.search ?? '',
-                        ).state,
-                    }),
-                }),
+                    detailRunIds: (snapshot) =>
+                        recipeConsoleDetailRunIds({
+                            snapshot,
+                            bootstrapRunId: bootstrap.bootstrapRunId,
+                            urlState: parseRecipeConsoleUrl(
+                                globalThis.location?.search ?? ''
+                            ).state
+                        })
+                })
             };
-        } catch (error) {
+        }
+        catch (error) {
             return { error };
         }
     }, [
@@ -131,18 +124,18 @@ export function ControlConnectionProvider({
         bootstrap.bootstrapRunId,
         bootstrap.controlUrl,
         bootstrap.credentialPolicy,
-        bootstrap.manualToken,
+        bootstrap.manualToken
     ]);
     const publicBootstrap = useMemo<RecipeConsoleControlContext>(() => ({
         bootstrapRunId: bootstrap.bootstrapRunId,
         apiBaseUrl: bootstrap.apiBaseUrl,
         providerMode: bootstrap.providerMode,
-        bootstrapGroup: bootstrap.bootstrapGroup,
+        bootstrapGroup: bootstrap.bootstrapGroup
     }), [
         bootstrap.apiBaseUrl,
         bootstrap.bootstrapGroup,
         bootstrap.bootstrapRunId,
-        bootstrap.providerMode,
+        bootstrap.providerMode
     ]);
     const browserAgentLaunchIssue = bootstrap.providerMode !== 'browser-rallar'
         ? undefined
@@ -151,68 +144,73 @@ export function ControlConnectionProvider({
         : !authSession
         ? 'Log in before launching browser-rallar agents. Fresh per-agent sessions require an authenticated operator.'
         : undefined;
-    const browserAgentLaunch = useMemo(() => apiSetup.api && !browserAgentLaunchIssue
-        ? createBrowserAgentLaunchService({
-            origin: globalThis.location?.origin ?? 'http://localhost:5176',
-            providerMode: bootstrap.providerMode,
-            controlWsUrl: controlWebSocketUrlFromHttpBaseUrl(apiSetup.api.baseUrl),
-            apiBaseUrl: bootstrap.apiBaseUrl,
-            authSession,
-            issueRunToken: apiSetup.api.agentLaunch.issueRunToken,
-        })
-        : undefined, [
+    const browserAgentLaunch = useMemo(() =>
+        apiSetup.api && !browserAgentLaunchIssue
+            ? createBrowserAgentLaunchService({
+                origin: globalThis.location?.origin ?? 'http://localhost:5176',
+                providerMode: bootstrap.providerMode,
+                controlWsUrl: controlWebSocketUrlFromHttpBaseUrl(apiSetup.api.baseUrl),
+                apiBaseUrl: bootstrap.apiBaseUrl,
+                authSession,
+                issueRunToken: apiSetup.api.agentLaunch.issueRunToken
+            })
+            : undefined, [
         apiSetup,
         authSession,
         bootstrap.apiBaseUrl,
         bootstrap.providerMode,
-        browserAgentLaunchIssue,
+        browserAgentLaunchIssue
     ]);
-    const service = useMemo(() => createControlQueryService({
-        query: async ({ signal }) => {
-            if (!apiSetup.api) {
-                throw apiSetup.error;
-            }
-            const result = await apiSetup.api.readSnapshot({ signal });
-            return {
-                completeness: result.completeness,
-                snapshot: result.snapshot,
-                provenance: {
-                    distributedRunsSource: result.distributedRunsSource,
-                    runEvidence: result.runEvidence,
-                },
-                authorization: partialQueryAuthorization(result.partialError),
-            };
-        },
-        now: Date.now,
-        scheduler: browserScheduler,
-        pollIntervalMs: CONTROL_QUERY_POLL_INTERVAL_MS,
-        requestTimeoutMs: controlReadTimeoutMs ??
-            CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS,
-    }), [apiSetup, controlReadTimeoutMs]);
+    const service = useMemo(() =>
+        createControlQueryService({
+            query: async ({ signal }) => {
+                if (!apiSetup.api) {
+                    throw apiSetup.error;
+                }
+                const result = await apiSetup.api.readSnapshot({ signal });
+                return {
+                    completeness: result.completeness,
+                    snapshot: result.snapshot,
+                    provenance: {
+                        distributedRunsSource: result.distributedRunsSource,
+                        runEvidence: result.runEvidence
+                    },
+                    authorization: partialQueryAuthorization(result.partialError)
+                };
+            },
+            now: Date.now,
+            scheduler: browserScheduler,
+            pollIntervalMs: CONTROL_QUERY_POLL_INTERVAL_MS,
+            requestTimeoutMs: controlReadTimeoutMs ??
+                CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS
+        }), [apiSetup, controlReadTimeoutMs]);
     const query = useSyncExternalStore(
         service.subscribe,
         service.getSnapshot,
-        service.getSnapshot,
+        service.getSnapshot
     );
     const selectionIndexCache = useMemo(
         () => createControlSelectionIndexCache(),
-        [apiSetup],
+        [apiSetup]
     );
     const selectionProjection = useMemo(() => {
         const snapshot = query.snapshot;
-        if (!snapshot) return undefined;
+        if (!snapshot) {
+            return undefined;
+        }
         const selectionIndex = selectionIndexCache.get(snapshot);
         return Object.freeze({
             selectionIndex,
-            selectionIndexWork:
-                controlSelectionIndexCacheLastLookup(selectionIndexCache),
+            selectionIndexWork: controlSelectionIndexCacheLastLookup(selectionIndexCache)
         });
     }, [query.snapshot, selectionIndexCache]);
 
-    const apiLifetime = useRef<Readonly<{
-        api: RecipeConsoleControlApi | undefined;
-        token: object;
-    }> | undefined>(undefined);
+    const apiLifetime = useRef<
+        Readonly<{
+            api: RecipeConsoleControlApi | undefined;
+            token: object;
+        }> | undefined
+    >(undefined);
     useLayoutEffect(() => {
         const previous = apiLifetime.current;
         if (previous?.api && previous.api !== apiSetup.api) {
@@ -221,14 +219,15 @@ export function ControlConnectionProvider({
         const token = {};
         const current = { api: apiSetup.api, token };
         apiLifetime.current = current;
-        return () => queueMicrotask(() => {
-            const active = apiLifetime.current;
-            // React StrictMode replays effects with the same memoized API.
-            // Close only after a real replacement or unmount, never that replay.
-            if (active?.token === token || active?.api !== current.api) {
-                current.api?.close();
-            }
-        });
+        return () =>
+            queueMicrotask(() => {
+                const active = apiLifetime.current;
+                // React StrictMode replays effects with the same memoized API.
+                // Close only after a real replacement or unmount, never that replay.
+                if (active?.token === token || active?.api !== current.api) {
+                    current.api?.close();
+                }
+            });
     }, [apiSetup]);
 
     useEffect(() => {
@@ -256,7 +255,7 @@ export function ControlConnectionProvider({
         selectionIndex: selectionProjection?.selectionIndex,
         selectionIndexWork: selectionProjection?.selectionIndexWork,
         refresh: service.refresh,
-        refreshAfterCurrent: service.refreshAfterCurrent,
+        refreshAfterCurrent: service.refreshAfterCurrent
     }), [
         apiSetup,
         browserAgentLaunch,
@@ -264,7 +263,7 @@ export function ControlConnectionProvider({
         publicBootstrap,
         query,
         selectionProjection,
-        service.refresh,
+        service.refresh
     ]);
 
     return (
@@ -275,7 +274,7 @@ export function ControlConnectionProvider({
 }
 
 function partialQueryAuthorization(
-    error: unknown,
+    error: unknown
 ): ControlQueryAuthorization {
     const record = error && typeof error === 'object'
         ? error as Record<string, unknown>

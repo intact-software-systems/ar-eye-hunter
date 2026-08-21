@@ -27,14 +27,14 @@ yet a complete authoritative game-server framework.
 
 ## Fit By Game Type
 
-| Game Type | Fit Today | Notes |
-| --- | --- | --- |
-| Turn-based multiplayer | Strong | Rooms, durable state, validation, reconnect, and event fanout map well. |
-| Async/social multiplayer | Strong | Presence, group state, chat/events, local data, and app data are already good building blocks. |
-| Casual realtime small rooms | Good | WebRTC realtime lanes are suitable for cursors, avatars, lightweight co-op state, and party games. |
-| Authoritative action game | Medium foundation | Transport is present, but game authority, ticks, snapshots, and reconciliation must be added. |
-| Competitive twitch game | Weak today | Needs strict authority, binary protocol tuning, anti-cheat, rate limits, and load testing. |
-| MMO / large world | Not ready | Needs sharding, zones, spatial interest management, and higher-volume infrastructure. |
+| Game Type                   | Fit Today         | Notes                                                                                              |
+| --------------------------- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| Turn-based multiplayer      | Strong            | Rooms, durable state, validation, reconnect, and event fanout map well.                            |
+| Async/social multiplayer    | Strong            | Presence, group state, chat/events, local data, and app data are already good building blocks.     |
+| Casual realtime small rooms | Good              | WebRTC realtime lanes are suitable for cursors, avatars, lightweight co-op state, and party games. |
+| Authoritative action game   | Medium foundation | Transport is present, but game authority, ticks, snapshots, and reconciliation must be added.      |
+| Competitive twitch game     | Weak today        | Needs strict authority, binary protocol tuning, anti-cheat, rate limits, and load testing.         |
+| MMO / large world           | Not ready         | Needs sharding, zones, spatial interest management, and higher-volume infrastructure.              |
 
 ## Recommended Direction
 

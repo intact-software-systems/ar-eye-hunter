@@ -1,28 +1,19 @@
 // deno-lint-ignore-file no-explicit-any
-import { CompareJson } from '../../json-compare/json-compare.ts';
+import { validateAssertValueComparators } from '../../black-box-runner/expectations/assert-value-comparators.ts';
+import { executeHttpInteraction } from '../../black-box-runner/http/execute-http-interaction.ts';
+import { waitForWsMessageAbsence } from '../../black-box-runner/ws/ws-wait-expectations.ts';
 import type { JsonValue } from '../../json-compare/CompareJson.ts';
-import {
-    validateAssertValueComparators,
-} from '../../black-box-runner/expectations/assert-value-comparators.ts';
-import {
-    waitForWsMessageAbsence,
-} from '../../black-box-runner/ws/ws-wait-expectations.ts';
-import {
-    executeHttpInteraction,
-} from '../../black-box-runner/http/execute-http-interaction.ts';
+import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import { assertValueMatches } from '../assert/assert-value-operators.ts';
+import { createRallarBlackBoxTestRuntime } from '../runtime.ts';
+import type { RallarBlackBoxTestAssertOperator, RallarBlackBoxTestCommand } from '../types.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,
     COMPLETE_ARRAY_FIXTURES,
-    POLLING_FIXTURES,
+    POLLING_FIXTURES
 } from './assertion-outcome-parity-fixtures.ts';
-import { createRallarBlackBoxTestRuntime } from '../runtime.ts';
-import type {
-    RallarBlackBoxTestAssertOperator,
-    RallarBlackBoxTestCommand,
-} from '../types.ts';
 
 export type AssertionOutcomeParityFamily =
     | 'comparators'
@@ -46,22 +37,22 @@ export interface AssertionOutcomeParityRow {
 // expect.comparators validator, the runtime through the extended assert
 // operators. Divergent verdicts fail the parity suite by contract.
 export function evaluateComparatorOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
-    return COMPARATOR_FIXTURES.map(fixture => {
+    return COMPARATOR_FIXTURES.map((fixture) => {
         const runnerIssues = validateAssertValueComparators(fixture.value, [
-            fixture.runnerComparator,
+            fixture.runnerComparator
         ]);
         const runnerVerdict: AssertionOutcomeVerdict = runnerIssues.length === 0 ? 'pass' : 'fail';
         const path = fixture.runnerComparator.path;
         const record = fixture.value as Record<string, any>;
         const lookup = {
             exists: Object.prototype.hasOwnProperty.call(record, path),
-            value: record[path],
+            value: record[path]
         };
         const runtimeVerdict: AssertionOutcomeVerdict = assertValueMatches(
-            lookup,
-            fixture.runtimeOperator,
-            fixture.runtimeExpected,
-        )
+                lookup,
+                fixture.runtimeOperator,
+                fixture.runtimeExpected
+            )
             ? 'pass'
             : 'fail';
         return toRow({
@@ -69,22 +60,22 @@ export function evaluateComparatorOutcomeParityRows(): readonly AssertionOutcome
             family: 'comparators',
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
-            runtimeVerdict,
+            runtimeVerdict
         });
     });
 }
 
 export function evaluateCompleteArrayOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
-    return COMPLETE_ARRAY_FIXTURES.map(fixture => {
+    return COMPLETE_ARRAY_FIXTURES.map((fixture) => {
         const runnerVerdict: AssertionOutcomeVerdict =
             CompareJson.compatibleComplete(fixture.expected, fixture.actual).isEqual
                 ? 'pass'
                 : 'fail';
         const runtimeVerdict: AssertionOutcomeVerdict = assertValueMatches(
-            { exists: true, value: fixture.actual },
-            'matchesShapeComplete',
-            fixture.expected,
-        )
+                { exists: true, value: fixture.actual },
+                'matchesShapeComplete',
+                fixture.expected
+            )
             ? 'pass'
             : 'fail';
         return toRow({
@@ -92,16 +83,14 @@ export function evaluateCompleteArrayOutcomeParityRows(): readonly AssertionOutc
             family: 'complete-array',
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
-            runtimeVerdict,
+            runtimeVerdict
         });
     });
 }
 
 // Both dialects hold the full window, then scan the whole buffer once, so a
 // frame buffered before the wait started violates the claim in both engines.
-export async function evaluateAbsenceOutcomeParityRows(): Promise<
-    readonly AssertionOutcomeParityRow[]
-> {
+export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly AssertionOutcomeParityRow[]> {
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of ABSENCE_FIXTURES) {
         const runnerStatus = await waitForWsMessageAbsence({
@@ -109,15 +98,15 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<
                 request: { timeoutMs: 5 },
                 response: {
                     connection: 'parityWs',
-                    absent: { topic: fixture.forbiddenTopic },
-                },
+                    absent: { topic: fixture.forbiddenTopic }
+                }
             },
             config: { interaction: { request: {} } },
             context: {
                 wsMessages: {
-                    parityWs: fixture.bufferedTopics.map(topic => ({ data: { topic } })),
-                },
-            },
+                    parityWs: fixture.bufferedTopics.map((topic) => ({ data: { topic } }))
+                }
+            }
         });
         const runnerVerdict: AssertionOutcomeVerdict = isRunnerSuccess(runnerStatus)
             ? 'pass'
@@ -128,7 +117,7 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<
             runtime.recordEvent({
                 kind: 'message',
                 topic,
-                payload: { data: { topic } },
+                payload: { data: { topic } }
             });
         }
         const runtimeResult = await runtime.execute({
@@ -138,8 +127,8 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<
             timeoutMs: 5,
             match: {
                 kind: 'message',
-                topic: fixture.forbiddenTopic,
-            },
+                topic: fixture.forbiddenTopic
+            }
         });
         const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
         rows.push(toRow({
@@ -147,7 +136,7 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<
             family: 'absence',
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
-            runtimeVerdict,
+            runtimeVerdict
         }));
     }
     return rows;
@@ -161,7 +150,7 @@ export interface EvaluatePollingOutcomeParityInput {
 // needed); the runtime polls its own recorded evidence through an until loop.
 // Success is the attempt expectation passing; exhaustion is a failure.
 export async function evaluatePollingOutcomeParityRows(
-    input: EvaluatePollingOutcomeParityInput,
+    input: EvaluatePollingOutcomeParityInput
 ): Promise<readonly AssertionOutcomeParityRow[]> {
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of POLLING_FIXTURES) {
@@ -180,14 +169,15 @@ export async function evaluatePollingOutcomeParityRows(
                         maxAttempts: fixture.maxAttempts,
                         maxDurationMs: 5_000,
                         backoffMs: 1,
-                        backoffMultiplier: 1,
-                    },
+                        backoffMultiplier: 1
+                    }
                 },
                 response: {
-                    status: 200,
-                },
+                    status: 200
+                }
             }, { interaction: { request: {} } });
-        } finally {
+        }
+        finally {
             globalThis.fetch = previousFetch;
         }
         const runnerVerdict: AssertionOutcomeVerdict = isRunnerSuccess(runnerStatus)
@@ -209,9 +199,9 @@ export async function evaluatePollingOutcomeParityRows(
                     operator: 'gte',
                     expected: fixture.succeedOnAttempt === undefined
                         ? Number.MAX_SAFE_INTEGER
-                        : fixture.succeedOnAttempt,
-                },
-            ] satisfies readonly RallarBlackBoxTestCommand[],
+                        : fixture.succeedOnAttempt
+                }
+            ] satisfies readonly RallarBlackBoxTestCommand[]
         });
         const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
         rows.push(toRow({
@@ -219,7 +209,7 @@ export async function evaluatePollingOutcomeParityRows(
             family: 'polling',
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
-            runtimeVerdict,
+            runtimeVerdict
         }));
     }
     return rows;
@@ -242,7 +232,7 @@ function toRow(input: ToRowInput): AssertionOutcomeParityRow {
         runtimeVerdict: input.runtimeVerdict,
         agree: input.runnerVerdict === input.runtimeVerdict,
         matchesExpected: input.runnerVerdict === input.expectedVerdict &&
-            input.runtimeVerdict === input.expectedVerdict,
+            input.runtimeVerdict === input.expectedVerdict
     };
 }
 
@@ -259,6 +249,6 @@ function createDeterministicRuntime() {
         idFactory: (prefix: string) => `${prefix}-${sequence++}`,
         sleep: async (ms: number) => {
             now += ms;
-        },
+        }
     });
 }

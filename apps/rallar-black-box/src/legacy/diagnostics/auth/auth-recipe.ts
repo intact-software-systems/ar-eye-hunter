@@ -17,12 +17,12 @@ export function authRecipeSnippet(username: string): string {
                     method: 'POST',
                     body: {
                         username: username || '<username>',
-                        password: '<password>',
-                    },
+                        password: '<password>'
+                    }
                 },
                 response: {
-                    body: 'json',
-                },
+                    body: 'json'
+                }
             },
             {
                 kind: 'http.request',
@@ -30,11 +30,11 @@ export function authRecipeSnippet(username: string): string {
                 request: {
                     path: `/api/auth/ws-ticket/requests/${ticketRequestId}`,
                     method: 'POST',
-                    body: {},
+                    body: {}
                 },
                 response: {
-                    body: 'json',
-                },
+                    body: 'json'
+                }
             },
             {
                 kind: 'http.request',
@@ -42,15 +42,15 @@ export function authRecipeSnippet(username: string): string {
                 request: {
                     path: `/api/auth/ws-ticket/requests/${missingTokenRequestId}`,
                     method: 'POST',
-                    body: {},
+                    body: {}
                 },
                 response: {
-                    body: 'json',
+                    body: 'json'
                 },
                 metadata: {
-                    expectedStatus: 401,
-                },
-            },
-        ],
+                    expectedStatus: 401
+                }
+            }
+        ]
     });
 }

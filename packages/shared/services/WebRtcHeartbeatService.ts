@@ -4,37 +4,37 @@ export const defaultMaxMissedPings = 5;
 export const defaultPingFrequencyMsecs = 5000;
 
 type WebRtcHeartbeatServiceStatusDto = {
-    pingInterval: ReturnType<typeof setInterval> | undefined,
-    missedPings: number
-    lastRttMsecs: number
-}
+    pingInterval: ReturnType<typeof setInterval> | undefined;
+    missedPings: number;
+    lastRttMsecs: number;
+};
 
 const pingMessageType: string = 'ping';
 
 type PingPayload = {
-    type: string
-    pingType: 'ping' | 'pong'
-    ts: number
+    type: string;
+    pingType: 'ping' | 'pong';
+    ts: number;
 };
 
 export type WebRtcHeartbeatCallbacks = {
-    onHeartbeat: (result: PingResult) => Promise<void>,
-    onMissedHeartbeat: (peerId: string) => Promise<void>
-}
+    onHeartbeat: (result: PingResult) => Promise<void>;
+    onMissedHeartbeat: (peerId: string) => Promise<void>;
+};
 
 export type PingResult = {
-    peerSessionId: string
-    rttMsecs: number
-    version: number
-}
+    peerSessionId: string;
+    rttMsecs: number;
+    version: number;
+};
 
 export type WebRtcHeartbeatServiceInputDto = {
-    sessionId: string
-    peerSessionId: string
-    channel: QRtcDataChannel
-    maxMissedPings: number
-    pingFrequencyMsecs: number
-}
+    sessionId: string;
+    peerSessionId: string;
+    channel: QRtcDataChannel;
+    maxMissedPings: number;
+    pingFrequencyMsecs: number;
+};
 
 export class WebRtcHeartbeatService {
     private readonly status: WebRtcHeartbeatServiceStatusDto;
@@ -73,7 +73,7 @@ export class WebRtcHeartbeatService {
 
         if (this.messageCallbackId) {
             this.input.channel.removeOnRtcMessageCallbackById(
-                this.messageCallbackId,
+                this.messageCallbackId
             );
             this.messageCallbackId = undefined;
         }
@@ -94,7 +94,6 @@ export class WebRtcHeartbeatService {
                         switch (msg.pingType) {
                             // Respond to incoming Pings from the remote peer
                             case 'ping': {
-
                                 // Echo the exact timestamp back
                                 const value: PingPayload = {
                                     type: pingMessageType,
@@ -132,7 +131,8 @@ export class WebRtcHeartbeatService {
                                 break;
                             }
                         }
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('Failed to parse DataChannel message', e);
                     }
                 }

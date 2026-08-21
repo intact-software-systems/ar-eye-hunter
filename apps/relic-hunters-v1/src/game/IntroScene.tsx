@@ -1,25 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
-import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
-import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
+import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
-import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
-import { Scene } from '@babylonjs/core/scene.js';
-import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
-import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
 import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
+import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
+import { Scene } from '@babylonjs/core/scene.js';
+import { useEffect, useRef, useState } from 'react';
 import '@babylonjs/loaders/glTF/index.js';
-import {
-    createCastleExteriorScene,
-    createWizardHost,
-    createWizardAmbientParticles,
-} from './scene/castleExterior.ts';
 import { AUTO_COMPLETE_MS, INTRO_DIALOGUE, pickSpeechVoice, type Lang } from './lang.ts';
+import { createCastleExteriorScene, createWizardAmbientParticles, createWizardHost } from './scene/castleExterior.ts';
 
-type IntroSceneProps = Readonly<{ onComplete: () => void; lang: Lang }>;
+type IntroSceneProps = Readonly<{ onComplete: () => void; lang: Lang; }>;
 
 export function IntroScene({ onComplete, lang }: IntroSceneProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -38,7 +34,9 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
 
     // Load speech voice (voices may be async)
     useEffect(() => {
-        if (!('speechSynthesis' in window)) return;
+        if (!('speechSynthesis' in window)) {
+            return;
+        }
         const loadVoice = () => {
             voiceRef.current = pickSpeechVoice(langRef.current);
         };
@@ -52,7 +50,9 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
     // BabylonJS scene
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
 
         const engine = new Engine(canvas, true, { antialias: true, stencil: true });
         const scene = new Scene(engine);
@@ -65,7 +65,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         // Camera — wide shot: wizard in foreground, castle looming behind
         const camState = {
             pos: new Vector3(1.8, 2.1, -8.5),
-            look: new Vector3(-0.3, 3.2, 9),
+            look: new Vector3(-0.3, 3.2, 9)
         };
         const camera = new UniversalCamera('intro-cam', camState.pos.clone(), scene);
         camera.setTarget(camState.look.clone());
@@ -121,17 +121,21 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
 
         // Scene content (procedural + optional GLBs)
         const hostPos = new Vector3(0, 0.22, -1);
-        let orbMaterialRef: { emissiveColor: { set(r: number, g: number, b: number): void } } | null = null;
+        let orbMaterialRef: { emissiveColor: { set(r: number, g: number, b: number): void; }; } | null = null;
         let staffOrbPos = new Vector3(
             0.52 + Math.sin(0.12) * 1.26,
             0.22 + (0.22 + 1.26 + Math.cos(0.12) * 1.26 + 0.46),
-            -1.22,
+            -1.22
         );
 
-        const buildProceduralCastle = () => { createCastleExteriorScene(scene); };
+        const buildProceduralCastle = () => {
+            createCastleExteriorScene(scene);
+        };
         const buildProceduralWizard = () => {
             const wiz = createWizardHost(scene);
-            orbMaterialRef = wiz.orbMaterial as unknown as { emissiveColor: { set(r: number, g: number, b: number): void } };
+            orbMaterialRef = wiz.orbMaterial as unknown as {
+                emissiveColor: { set(r: number, g: number, b: number): void; };
+            };
             staffOrbPos = wiz.staffOrbPos.add(hostPos);
             createWizardAmbientParticles(scene, hostPos, flameTex);
         };
@@ -139,16 +143,18 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         // Try GLBs, fall back gracefully
         Promise.allSettled([
             SceneLoader.ImportMeshAsync('', '/models/', 'castle-exterior.glb', scene),
-            SceneLoader.ImportMeshAsync('', '/models/', 'host.glb', scene),
+            SceneLoader.ImportMeshAsync('', '/models/', 'host.glb', scene)
         ]).then(([castleRes, hostRes]) => {
             if (castleRes.status !== 'fulfilled' || castleRes.value.meshes.length === 0) {
                 buildProceduralCastle();
-            } else {
+            }
+            else {
                 castleRes.value.meshes[0]?.position.set(0, 0, 14);
             }
             if (hostRes.status !== 'fulfilled' || hostRes.value.meshes.length === 0) {
                 buildProceduralWizard();
-            } else {
+            }
+            else {
                 hostRes.value.meshes[0]?.position.copyFrom(hostPos);
                 createWizardAmbientParticles(scene, hostPos, flameTex);
             }
@@ -163,16 +169,20 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                 t = Math.min(1, t + 0.08);
                 if (orbMaterialRef) {
                     const v = 0.92 + t * 2.2;
-                    orbMaterialRef.emissiveColor = new Color3(1.0 * v, 0.55 * v, 0.09 * v) as unknown as { set(r: number, g: number, b: number): void };
+                    orbMaterialRef.emissiveColor = new Color3(1.0 * v, 0.55 * v, 0.09 * v) as unknown as {
+                        set(r: number, g: number, b: number): void;
+                    };
                 }
-                if (t >= 1) clearInterval(intensify);
+                if (t >= 1) {
+                    clearInterval(intensify);
+                }
             }, 40);
 
             // Burst particles from staff orb
             const burstDefs = [
                 { c1: new Color4(1.0, 0.88, 0.22, 1.0), c2: new Color4(1.0, 0.52, 0.08, 0.8), power: 2.8 },
                 { c1: new Color4(0.58, 0.28, 1.0, 0.9), c2: new Color4(0.38, 0.18, 0.9, 0.7), power: 3.8 },
-                { c1: new Color4(1.0, 1.0, 0.95, 0.95), c2: new Color4(0.9, 0.92, 1.0, 0.78), power: 4.8 },
+                { c1: new Color4(1.0, 1.0, 0.95, 0.95), c2: new Color4(0.9, 0.92, 1.0, 0.78), power: 4.8 }
             ];
             for (const [i, def] of burstDefs.entries()) {
                 const sys = new ParticleSystem(`cast-ring-${i}`, 70, scene);
@@ -213,7 +223,9 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         // Render loop with camera drift
         let alive = true;
         engine.runRenderLoop(() => {
-            if (!alive) return;
+            if (!alive) {
+                return;
+            }
             const now = performance.now() / 1000;
 
             if (castDolly.active) {
@@ -226,17 +238,18 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                 // Bloom up during cast
                 pipeline.bloomWeight = 0.68 + ease * 0.5;
                 pipeline.imageProcessing.exposure = 0.9 + ease * 0.45;
-            } else {
+            }
+            else {
                 // Slow cinematic drift
                 const driftPos = new Vector3(
                     1.8 + Math.sin(now * 0.07) * 0.9,
                     2.1 + Math.sin(now * 0.11) * 0.22,
-                    -8.5 + Math.sin(now * 0.06) * 0.7,
+                    -8.5 + Math.sin(now * 0.06) * 0.7
                 );
                 const driftLook = new Vector3(
                     -0.3 + Math.sin(now * 0.05) * 0.4,
                     3.2 + Math.sin(now * 0.08) * 0.3,
-                    9 + Math.sin(now * 0.09) * 1.5,
+                    9 + Math.sin(now * 0.09) * 1.5
                 );
                 camState.pos.addInPlace(driftPos.subtract(camState.pos).scale(0.011));
                 camState.look.addInPlace(driftLook.subtract(camState.look).scale(0.011));
@@ -267,13 +280,17 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         const hasSpeech = 'speechSynthesis' in window;
 
         const speak = (text: string) => {
-            if (!hasSpeech || text === '...' || !soundOnRef.current) return;
+            if (!hasSpeech || text === '...' || !soundOnRef.current) {
+                return;
+            }
             window.speechSynthesis.cancel();
             const utter = new SpeechSynthesisUtterance(text);
             utter.lang = speechLang;
             utter.rate = 0.88;
             utter.pitch = 0.78;
-            if (voiceRef.current) utter.voice = voiceRef.current;
+            if (voiceRef.current) {
+                utter.voice = voiceRef.current;
+            }
             window.speechSynthesis.speak(utter);
         };
 
@@ -291,7 +308,9 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
         timers.push(window.setTimeout(() => completeRef.current(), AUTO_COMPLETE_MS));
         return () => {
             timers.forEach(clearTimeout);
-            if (hasSpeech) window.speechSynthesis.cancel();
+            if (hasSpeech) {
+                window.speechSynthesis.cancel();
+            }
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -300,7 +319,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
 
     return (
         <>
-            <canvas ref={canvasRef} className="intro-scene-canvas" aria-hidden="true" tabIndex={-1}/>
+            <canvas ref={canvasRef} className="intro-scene-canvas" aria-hidden="true" tabIndex={-1} />
             <div className="intro-overlay" aria-live="polite">
                 <div className="intro-host-label">The Arcane Keeper</div>
                 <div className={`intro-dialogue-box${casting ? ' casting' : ''}`}>
@@ -314,7 +333,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                     <button
                         type="button"
                         className={`intro-sound-btn${soundOn ? ' active' : ''}`}
-                        onClick={() => setSoundOn(s => !s)}
+                        onClick={() => setSoundOn((s) => !s)}
                     >
                         {soundOn ? 'Narrator: ON' : 'Narrator: OFF'}
                     </button>
@@ -322,7 +341,9 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                         type="button"
                         className="intro-skip-btn"
                         onClick={() => {
-                            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                            if ('speechSynthesis' in window) {
+                                window.speechSynthesis.cancel();
+                            }
                             completeRef.current();
                         }}
                     >
@@ -330,7 +351,7 @@ export function IntroScene({ onComplete, lang }: IntroSceneProps) {
                     </button>
                 </div>
             </div>
-            {flash && <div className="intro-flash" aria-hidden="true"/>}
+            {flash && <div className="intro-flash" aria-hidden="true" />}
         </>
     );
 }

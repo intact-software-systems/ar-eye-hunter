@@ -22,10 +22,12 @@
 ### Task 1: Specify Managed Two-Server Orchestration
 
 **Files:**
+
 - Modify: `packages/tests/shared-test/api-v1-black-box-run.test.ts`
 - Modify: `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`
 
 **Interfaces:**
+
 - Extend `ApiV1BlackBoxOptions` with `secondaryPort?: number`.
 - Accept `--secondary-port=<1..65535>` only when `backend` is `postgres` and it differs from `port`.
 - Emit `RALLAR_API_BASE_URL_SECONDARY` and `RALLAR_WS_BASE_URL_SECONDARY` only when configured.
@@ -43,11 +45,13 @@
 ### Task 2: Specify The No-Browser Cluster Recipe
 
 **Files:**
+
 - Create: `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`
 - Modify: `packages/shared-test/black-box-runner/recipe-matrix.json`
 - Modify: `packages/tests/shared-test/recipe-matrix.test.ts`
 
 **Interfaces:**
+
 - Consume `RALLAR_API_BASE_URL`, `RALLAR_WS_BASE_URL`, `RALLAR_API_BASE_URL_SECONDARY`, and `RALLAR_WS_BASE_URL_SECONDARY`.
 - Register matrix ID `api-v1-rtc-topology-convergence` under profile `api-v1-black-box-cluster`.
 - Declare two HTTP service requirements and no Playwright requirement.
@@ -62,12 +66,14 @@
 ### Task 3: Wire GitHub Actions To Two PostgreSQL API Processes
 
 **Files:**
+
 - Modify: `.github/actions/api-v1-black-box-test/action.yml`
 - Modify: `.github/workflows/api-v1-black-box.yml`
 - Modify: `.github/workflows/release-gate.yml`
 - Create: `packages/tests/repo/api-v1-black-box-workflow.test.ts`
 
 **Interfaces:**
+
 - Add composite-action input `secondary-api-port`, defaulting to an empty string.
 - Pass `--secondary-port` only when the input is non-empty.
 - Set `secondary-api-port: "18081"` in both Postgres workflow callers.
@@ -81,6 +87,7 @@
 ### Task 4: Verify Real Two-Process Convergence
 
 **Files:**
+
 - Modify if required by observed failures: only files listed in Tasks 1-3 and the architecture documentation.
 
 - [ ] Run focused runner, matrix, and workflow suites.
@@ -93,6 +100,7 @@
 ### Task 5: Publish To PR #37
 
 **Files:**
+
 - Stage only the files from Tasks 1-4.
 
 - [ ] Inspect `git diff` and prove unrelated recipe-console/artifact-analysis edits remain unstaged.

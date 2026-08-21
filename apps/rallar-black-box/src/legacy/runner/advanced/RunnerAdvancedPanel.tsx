@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { RunnerAdvancedSurfaceId } from '../../../app-tabs.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
@@ -11,18 +11,18 @@ import type { CommandQueueRow } from '../runner-contracts.ts';
 import { LocalWorkbenchSection } from '../workbench/LocalWorkbenchSection.tsx';
 
 const DistributedRecipesPanel = lazy(() =>
-    import('../distributed-recipes/DistributedRecipesPanel.tsx').then(module => ({
-        default: module.DistributedRecipesPanel,
+    import('../distributed-recipes/DistributedRecipesPanel.tsx').then((module) => ({
+        default: module.DistributedRecipesPanel
     }))
 );
 const RunManagerPanel = lazy(() =>
-    import('../run-manager/RunManagerPanel.tsx').then(module => ({
-        default: module.RunManagerPanel,
+    import('../run-manager/RunManagerPanel.tsx').then((module) => ({
+        default: module.RunManagerPanel
     }))
 );
 const SharedTestPanel = lazy(() =>
-    import('../shared-test/SharedTestPanel.tsx').then(module => ({
-        default: module.SharedTestPanel,
+    import('../shared-test/SharedTestPanel.tsx').then((module) => ({
+        default: module.SharedTestPanel
     }))
 );
 
@@ -43,7 +43,7 @@ export function RunnerAdvancedPanel({
     initialSurface = 'workbench',
     onSelectCommand,
     onGlobalValueChange,
-    onSurfaceChange,
+    onSurfaceChange
 }: {
     active: boolean;
     state: RallarBlackBoxTestState;
@@ -62,7 +62,7 @@ export function RunnerAdvancedPanel({
     onSelectCommand(commandId: string | undefined): void;
     onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
     onSurfaceChange(surface: RunnerAdvancedSurfaceId): void;
 }) {
@@ -89,7 +89,7 @@ export function RunnerAdvancedPanel({
                     ['distributed', 'Distributed Recipes'],
                     ['run-manager', 'Run Manager'],
                     ['manual', 'Manual Rallar'],
-                    ['shared-test', 'Shared Test'],
+                    ['shared-test', 'Shared Test']
                 ].map(([id, label]) => (
                     <button
                         type="button"

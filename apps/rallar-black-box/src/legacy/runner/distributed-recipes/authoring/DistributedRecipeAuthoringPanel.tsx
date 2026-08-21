@@ -1,7 +1,7 @@
 import {
     DISTRIBUTED_RECIPE_PROMPT_TEMPLATES,
     type DistributedRecipePromptTemplateId,
-    type DistributedRecipePromptVariables,
+    type DistributedRecipePromptVariables
 } from '../../../../distributed-recipe-authoring-prompts.ts';
 import type { SchemaAuthoringValidation } from '../../../../schema-authoring.ts';
 import { recordValue } from '../../../shared/record-value.ts';
@@ -9,7 +9,7 @@ import { SchemaAuthoringPanel } from '../../../shared/schema/SchemaAuthoringPane
 import { DistributedRecipePreflightPanel } from '../DistributedRecipePreflightPanel.tsx';
 import type {
     DistributedAuthoringDraftPreflightEntry,
-    DistributedAuthoringDraftTarget,
+    DistributedAuthoringDraftTarget
 } from './distributed-recipe-authoring.ts';
 
 export function DistributedRecipeAuthoringPanel({
@@ -29,7 +29,7 @@ export function DistributedRecipeAuthoringPanel({
     onCopyPrompt,
     onCopySchemaContext,
     onCopyValidationFeedback,
-    onUseManifestPreview,
+    onUseManifestPreview
 }: {
     selectedTemplateId: DistributedRecipePromptTemplateId;
     promptText: string;
@@ -49,20 +49,19 @@ export function DistributedRecipeAuthoringPanel({
     onCopyValidationFeedback(): void;
     onUseManifestPreview(): void;
 }) {
-    const selectedTemplate =
-        DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.find(
-            (template) => template.id === selectedTemplateId,
-        ) ?? DISTRIBUTED_RECIPE_PROMPT_TEMPLATES[0];
+    const selectedTemplate = DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.find(
+        (template) => template.id === selectedTemplateId
+    ) ?? DISTRIBUTED_RECIPE_PROMPT_TEMPLATES[0];
     const visibleVariables = Object.entries(promptVariables).filter(
-        ([, value]) => promptVariableVisible(value),
+        ([, value]) => promptVariableVisible(value)
     );
     const preflightErrors = draftPreflights.reduce(
         (sum, entry) => sum + entry.preflight.errors.length,
-        0,
+        0
     );
     const preflightWarnings = draftPreflights.reduce(
         (sum, entry) => sum + entry.preflight.warnings.length,
-        0,
+        0
     );
 
     return (
@@ -86,9 +85,8 @@ export function DistributedRecipeAuthoringPanel({
                             onChange={(event) =>
                                 onTemplateChange(
                                     event.target
-                                        .value as DistributedRecipePromptTemplateId,
-                                )
-                            }
+                                        .value as DistributedRecipePromptTemplateId
+                                )}
                         >
                             {DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.map(
                                 (template) => (
@@ -98,7 +96,7 @@ export function DistributedRecipeAuthoringPanel({
                                     >
                                         {template.title}
                                     </option>
-                                ),
+                                )
                             )}
                         </select>
                         <small>{selectedTemplate.description}</small>
@@ -111,9 +109,8 @@ export function DistributedRecipeAuthoringPanel({
                             onChange={(event) =>
                                 onDraftTargetChange(
                                     event.target
-                                        .value as DistributedAuthoringDraftTarget,
-                                )
-                            }
+                                        .value as DistributedAuthoringDraftTarget
+                                )}
                         >
                             <option value="distributed-run-manifest">
                                 Distributed manifest
@@ -145,13 +142,11 @@ export function DistributedRecipeAuthoringPanel({
                 <div className="distributed-ai-guidance">
                     <strong>Required Inputs</strong>
                     <span>
-                        Goal, target shape, group scope, agent roles, expected
-                        evidence, and live-service assumptions.
+                        Goal, target shape, group scope, agent roles, expected evidence, and live-service assumptions.
                     </span>
                     <strong>No Provider Dependency</strong>
                     <span>
-                        Copy the prompt into any AI assistant, then paste JSON
-                        here for schema and preflight checks.
+                        Copy the prompt into any AI assistant, then paste JSON here for schema and preflight checks.
                     </span>
                 </div>
                 <div
@@ -180,9 +175,7 @@ export function DistributedRecipeAuthoringPanel({
                     <textarea
                         aria-label="Generated JSON"
                         value={draftText}
-                        onChange={(event) =>
-                            onDraftTextChange(event.target.value)
-                        }
+                        onChange={(event) => onDraftTextChange(event.target.value)}
                         placeholder="Paste a generated distributed manifest or browser-agent recipe JSON object."
                         spellCheck={false}
                     />
@@ -194,7 +187,11 @@ export function DistributedRecipeAuthoringPanel({
                     <div className="schema-authoring-heading">
                         <strong>Validation Feedback</strong>
                         <span
-                            className={`pill ${draftValidation ? (draftValidation.ok && preflightErrors === 0 ? 'good' : 'bad') : 'muted'}`}
+                            className={`pill ${
+                                draftValidation
+                                    ? (draftValidation.ok && preflightErrors === 0 ? 'good' : 'bad')
+                                    : 'muted'
+                            }`}
                         >
                             {draftValidation
                                 ? draftValidation.ok && preflightErrors === 0
@@ -208,16 +205,18 @@ export function DistributedRecipeAuthoringPanel({
                     <pre aria-label="Validation feedback copy text">
                         {validationFeedbackText}
                     </pre>
-                    {draftValidation ? (
-                        <SchemaAuthoringPanel
-                            validation={draftValidation}
-                            compact
-                        />
-                    ) : (
-                        <div className="schema-capability-empty">
-                            Paste generated JSON to validate it before running.
-                        </div>
-                    )}
+                    {draftValidation
+                        ? (
+                            <SchemaAuthoringPanel
+                                validation={draftValidation}
+                                compact
+                            />
+                        )
+                        : (
+                            <div className="schema-capability-empty">
+                                Paste generated JSON to validate it before running.
+                            </div>
+                        )}
                     {draftPreflights.length > 0 && (
                         <div className="distributed-ai-preflight-list">
                             {draftPreflights.map((entry) => (
@@ -256,9 +255,7 @@ function promptVariableVisible(value: unknown): boolean {
 function formatPromptVariableValue(value: unknown): string {
     if (Array.isArray(value)) {
         return value
-            .map((entry) =>
-                typeof entry === 'string' ? entry : JSON.stringify(entry),
-            )
+            .map((entry) => typeof entry === 'string' ? entry : JSON.stringify(entry))
             .join(', ');
     }
     if (value && typeof value === 'object') {

@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useMemo, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
-    RALLAR_SERVER_ENDPOINT_PRESETS,
     applyRallarServerEndpointPreset,
     assertRallarServerRestResponse,
     buildRallarServerCollectionStepRequestInput,
@@ -13,6 +12,7 @@ import {
     executeRallarServerRestRequest,
     extractRallarServerRestVariables,
     fetchRallarServerOpenApiEndpoints,
+    RALLAR_SERVER_ENDPOINT_PRESETS,
     redactRallarServerText,
     redactRallarServerUrl,
     redactRallarServerValue,
@@ -22,20 +22,20 @@ import {
     type RallarServerRestCollectionStepResult,
     type RallarServerRestCollectionVariables,
     type RallarServerRestRequestInput,
-    type RallarServerRestResponse,
+    type RallarServerRestResponse
 } from '../../../rallar-server-workbench.ts';
+import {
+    createRallarServerRestCollectionTemplates
+} from '../../../rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
 import type {
     RallarServerEndpointPreset,
     RallarServerResponseBodyMode,
-    RallarServerRestMethod,
+    RallarServerRestMethod
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
-import {
-    createRallarServerRestCollectionTemplates,
-} from '../../../rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
 import {
     rallarBlackBoxProviderModeFromConfig,
     rallarBlackBoxRuntimeStore,
-    type RallarBlackBoxBootstrapConfig,
+    type RallarBlackBoxBootstrapConfig
 } from '../../../runtime-store.ts';
 import {
     readRallarServerRestCollectionDraft,
@@ -43,21 +43,15 @@ import {
     writeRallarServerRestCollectionDraft,
     writeRallarServerWorkbenchDraft,
     type RallarServerRestCollectionDraft,
-    type RallarServerWorkbenchDraft,
+    type RallarServerWorkbenchDraft
 } from '../../../ui-persistence.ts';
 import { json } from '../../shared/json-presentation.ts';
-import {
-    redactedJson,
-    uiSecretValues,
-} from '../../shared/redaction-presentation.ts';
+import { redactedJson, uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { findStringDeep } from '../shared/deep-string-value.ts';
 import type { RallarServerRequestFeedback } from './rallar-server-contracts.ts';
-import {
-    parseRallarServerCollectionText,
-    parseRallarServerCollectionVariablesText,
-} from './rallar-server-parsing.ts';
+import { parseRallarServerCollectionText, parseRallarServerCollectionVariablesText } from './rallar-server-parsing.ts';
 
 export type UseRallarServerControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -67,7 +61,7 @@ export type UseRallarServerControllerInput = Readonly<{
     control: RallarBlackBoxControlSnapshot;
     onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
 }>;
 
@@ -75,7 +69,7 @@ export function useRallarServerController({
     state,
     bootstrap,
     authSession,
-    globalValues,
+    globalValues
 }: UseRallarServerControllerInput) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
@@ -84,20 +78,16 @@ export function useRallarServerController({
             defaultRallarServerWorkbenchVariables({
                 applicationId: globalValues?.applicationId,
                 workspaceId: globalValues?.workspaceId,
-                principalId:
-                    globalValues?.clientId ??
+                principalId: globalValues?.clientId ??
                     authSession?.clientId ??
                     config?.actor ??
                     bootstrap.actor,
-                sessionId:
-                    globalValues?.sessionId ??
+                sessionId: globalValues?.sessionId ??
                     authSession?.sessionId ??
                     config?.sessionId ??
                     bootstrap.sessionId,
-                groupId:
-                    globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
-                username:
-                    authSession?.username ?? config?.actor ?? bootstrap.actor,
+                groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+                username: authSession?.username ?? config?.actor ?? bootstrap.actor
             }),
         [
             authSession?.clientId,
@@ -113,21 +103,20 @@ export function useRallarServerController({
             globalValues?.clientId,
             globalValues?.roomId,
             globalValues?.sessionId,
-            globalValues?.workspaceId,
-        ],
+            globalValues?.workspaceId
+        ]
     );
     const initialDraft = useMemo(
         () =>
             applyRallarServerEndpointPreset(
                 RALLAR_SERVER_ENDPOINT_PRESETS[0],
-                variables,
+                variables
             ),
-        [variables],
+        [variables]
     );
     const defaultServerDraft = useMemo<RallarServerWorkbenchDraft>(
         () => ({
-            apiBaseUrl:
-                globalValues?.apiBaseUrl ??
+            apiBaseUrl: globalValues?.apiBaseUrl ??
                 config?.apiBaseUrl ??
                 bootstrap.apiBaseUrl,
             selectedPresetId: RALLAR_SERVER_ENDPOINT_PRESETS[0].presetId,
@@ -138,110 +127,96 @@ export function useRallarServerController({
             bodyText: initialDraft.bodyText,
             responseBodyMode: initialDraft.responseBodyMode,
             attachAuth: initialDraft.attachAuth,
-            timeoutMs: 5_000,
+            timeoutMs: 5_000
         }),
         [
             bootstrap.apiBaseUrl,
             config?.apiBaseUrl,
             globalValues?.apiBaseUrl,
-            initialDraft,
-        ],
+            initialDraft
+        ]
     );
     const collectionTemplates = useMemo(
         () => createRallarServerRestCollectionTemplates(variables),
-        [variables],
+        [variables]
     );
-    const defaultCollectionDraft =
-        useMemo<RallarServerRestCollectionDraft>(() => {
-            const collection = collectionTemplates[0];
-            return {
-                selectedCollectionId: collection.collectionId,
-                collection,
-                variables: collection.variables ?? {},
-            };
-        }, [collectionTemplates]);
+    const defaultCollectionDraft = useMemo<RallarServerRestCollectionDraft>(() => {
+        const collection = collectionTemplates[0];
+        return {
+            selectedCollectionId: collection.collectionId,
+            collection,
+            variables: collection.variables ?? {}
+        };
+    }, [collectionTemplates]);
     const [initialServerDraft] = useState(() => {
         const stored = readRallarServerWorkbenchDraft(
             browserUiStorage(),
-            defaultServerDraft,
+            defaultServerDraft
         );
         return {
             draft: stored ?? defaultServerDraft,
-            restored: Boolean(stored),
+            restored: Boolean(stored)
         };
     });
     const [initialCollectionDraft] = useState(
         () =>
             readRallarServerRestCollectionDraft(
                 browserUiStorage(),
-                defaultCollectionDraft,
-            ) ?? defaultCollectionDraft,
+                defaultCollectionDraft
+            ) ?? defaultCollectionDraft
     );
     const [serverDraftEdited, setServerDraftEdited] = useState(
-        initialServerDraft.restored,
+        initialServerDraft.restored
     );
     const [apiBaseUrl, setApiBaseUrl] = useState(
-        initialServerDraft.draft.apiBaseUrl,
+        initialServerDraft.draft.apiBaseUrl
     );
     const [selectedPresetId, setSelectedPresetId] = useState(
-        initialServerDraft.draft.selectedPresetId,
+        initialServerDraft.draft.selectedPresetId
     );
-    const [serverOpenApiPresets, setServerOpenApiPresets] = useState<
-        readonly RallarServerEndpointPreset[]
-    >([]);
+    const [serverOpenApiPresets, setServerOpenApiPresets] = useState<readonly RallarServerEndpointPreset[]>([]);
     const [method, setMethod] = useState<RallarServerRestMethod>(
-        initialServerDraft.draft.method,
+        initialServerDraft.draft.method
     );
     const [path, setPath] = useState(initialServerDraft.draft.path);
     const [headersText, setHeadersText] = useState(
-        initialServerDraft.draft.headersText,
+        initialServerDraft.draft.headersText
     );
     const [queryText, setQueryText] = useState(
-        initialServerDraft.draft.queryText,
+        initialServerDraft.draft.queryText
     );
     const [bodyText, setBodyText] = useState(initialServerDraft.draft.bodyText);
-    const [responseBodyMode, setResponseBodyMode] =
-        useState<RallarServerResponseBodyMode>(
-            initialServerDraft.draft.responseBodyMode,
-        );
+    const [responseBodyMode, setResponseBodyMode] = useState<RallarServerResponseBodyMode>(
+        initialServerDraft.draft.responseBodyMode
+    );
     const [attachAuth, setAttachAuth] = useState(
-        initialServerDraft.draft.attachAuth,
+        initialServerDraft.draft.attachAuth
     );
     const [timeoutMs, setTimeoutMs] = useState(
-        initialServerDraft.draft.timeoutMs,
+        initialServerDraft.draft.timeoutMs
     );
     const [busy, setBusy] = useState(false);
     const [openApiBusy, setOpenApiBusy] = useState(false);
     const [localError, setLocalError] = useState<string | undefined>();
-    const [response, setResponse] = useState<
-        RallarServerRestResponse | undefined
-    >();
-    const [requestFeedback, setRequestFeedback] =
-        useState<RallarServerRequestFeedback>({
-            state: 'idle',
-        });
+    const [response, setResponse] = useState<RallarServerRestResponse | undefined>();
+    const [requestFeedback, setRequestFeedback] = useState<RallarServerRequestFeedback>({
+        state: 'idle'
+    });
     const [selectedCollectionId, setSelectedCollectionId] = useState(
-        initialCollectionDraft.selectedCollectionId,
+        initialCollectionDraft.selectedCollectionId
     );
-    const [collectionText, setCollectionText] = useState(() =>
-        json(initialCollectionDraft.collection),
-    );
+    const [collectionText, setCollectionText] = useState(() => json(initialCollectionDraft.collection));
     const [collectionVariablesText, setCollectionVariablesText] = useState(() =>
-        json(initialCollectionDraft.variables),
+        json(initialCollectionDraft.variables)
     );
     const [collectionBusy, setCollectionBusy] = useState(false);
-    const [collectionError, setCollectionError] = useState<
-        string | undefined
-    >();
-    const [collectionResults, setCollectionResults] = useState<
-        readonly RallarServerRestCollectionStepResult[]
-    >([]);
+    const [collectionError, setCollectionError] = useState<string | undefined>();
+    const [collectionResults, setCollectionResults] = useState<readonly RallarServerRestCollectionStepResult[]>([]);
     const allPresets = useMemo(
         () => [...RALLAR_SERVER_ENDPOINT_PRESETS, ...serverOpenApiPresets],
-        [serverOpenApiPresets],
+        [serverOpenApiPresets]
     );
-    const activePreset =
-        allPresets.find((preset) => preset.presetId === selectedPresetId) ??
+    const activePreset = allPresets.find((preset) => preset.presetId === selectedPresetId) ??
         RALLAR_SERVER_ENDPOINT_PRESETS[0];
     const requestInput: RallarServerRestRequestInput = {
         apiBaseUrl,
@@ -254,7 +229,7 @@ export function useRallarServerController({
         attachAuth,
         timeoutMs,
         authSession,
-        forbidPlaceholderBaseUrl: providerMode === 'browser-rallar',
+        forbidPlaceholderBaseUrl: providerMode === 'browser-rallar'
     };
     const commandPreview = useMemo(() => {
         try {
@@ -262,12 +237,13 @@ export function useRallarServerController({
                 redactRallarServerValue(
                     toRallarServerBlackBoxCommand(
                         requestInput,
-                        'rallar-server-rest-request',
+                        'rallar-server-rest-request'
                     ),
-                    authSession,
-                ),
+                    authSession
+                )
             );
-        } catch (error) {
+        }
+        catch (error) {
             return error instanceof Error ? error.message : String(error);
         }
     }, [requestInput]);
@@ -275,8 +251,8 @@ export function useRallarServerController({
         ? response.bodyKind === 'json'
             ? json(redactRallarServerValue(response.bodyJson, authSession))
             : response.bodyText
-              ? redactRallarServerText(response.bodyText, authSession)
-              : '-'
+            ? redactRallarServerText(response.bodyText, authSession)
+            : '-'
         : 'No response';
     const responseHeadersText = response
         ? json(redactRallarServerValue(response.headers, authSession))
@@ -286,7 +262,7 @@ export function useRallarServerController({
     const latestClientId = findStringDeep(latestBody, [
         'clientId',
         'principalId',
-        'username',
+        'username'
     ]);
     const latestSessionId = findStringDeep(latestBody, ['sessionId']);
     useEffect(() => {
@@ -294,14 +270,14 @@ export function useRallarServerController({
             setApiBaseUrl(
                 globalValues?.apiBaseUrl ??
                     config?.apiBaseUrl ??
-                    bootstrap.apiBaseUrl,
+                    bootstrap.apiBaseUrl
             );
         }
     }, [
         bootstrap.apiBaseUrl,
         config?.apiBaseUrl,
         globalValues?.apiBaseUrl,
-        serverDraftEdited,
+        serverDraftEdited
     ]);
     useEffect(() => {
         writeRallarServerWorkbenchDraft(
@@ -316,9 +292,9 @@ export function useRallarServerController({
                 bodyText,
                 responseBodyMode,
                 attachAuth,
-                timeoutMs,
+                timeoutMs
             },
-            uiSecretValues(undefined, authSession),
+            uiSecretValues(undefined, authSession)
         );
     }, [
         apiBaseUrl,
@@ -331,7 +307,7 @@ export function useRallarServerController({
         queryText,
         responseBodyMode,
         selectedPresetId,
-        timeoutMs,
+        timeoutMs
     ]);
     useEffect(() => {
         try {
@@ -341,19 +317,20 @@ export function useRallarServerController({
                     selectedCollectionId,
                     collection: parseRallarServerCollectionText(collectionText),
                     variables: parseRallarServerCollectionVariablesText(
-                        collectionVariablesText,
-                    ),
+                        collectionVariablesText
+                    )
                 },
-                uiSecretValues(undefined, authSession),
+                uiSecretValues(undefined, authSession)
             );
-        } catch {
+        }
+        catch {
             // Invalid collection drafts remain editable but are not persisted.
         }
     }, [
         authSession?.accessToken,
         collectionText,
         collectionVariablesText,
-        selectedCollectionId,
+        selectedCollectionId
     ]);
     const applyPreset = (preset: RallarServerEndpointPreset): void => {
         const draft = applyRallarServerEndpointPreset(preset, variables);
@@ -376,7 +353,7 @@ export function useRallarServerController({
             state: 'sending',
             method,
             path,
-            atEpochMs: Date.now(),
+            atEpochMs: Date.now()
         };
         try {
             const request = buildRallarServerRestRequest(requestInput);
@@ -385,7 +362,7 @@ export function useRallarServerController({
                 method: request.method,
                 path,
                 url: request.url,
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             };
             setRequestFeedback(requestSummary);
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
@@ -400,14 +377,13 @@ export function useRallarServerController({
                         url: redactRallarServerUrl(request.url, authSession),
                         attachAuth,
                         responseBodyMode,
-                        timeoutMs,
-                    },
+                        timeoutMs
+                    }
                 },
-                `Rallar Server ${request.method} request started`,
+                `Rallar Server ${request.method} request started`
             );
 
-            const nextResponse =
-                await executeRallarServerRestRequest(requestInput);
+            const nextResponse = await executeRallarServerRestRequest(requestInput);
             setResponse(nextResponse);
             const nextFeedback: RallarServerRequestFeedback = {
                 state: nextResponse.ok ? 'success' : 'error',
@@ -418,12 +394,11 @@ export function useRallarServerController({
                 statusText: nextResponse.statusText,
                 durationMs: nextResponse.durationMs,
                 errorKind: nextResponse.error?.kind,
-                message:
-                    nextResponse.error?.message ??
+                message: nextResponse.error?.message ??
                     (nextResponse.ok
                         ? 'Request completed successfully.'
                         : 'Request failed.'),
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             };
             setRequestFeedback(nextFeedback);
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
@@ -439,7 +414,7 @@ export function useRallarServerController({
                         path,
                         url: redactRallarServerUrl(
                             nextResponse.url,
-                            authSession,
+                            authSession
                         ),
                         status: nextResponse.status,
                         statusText: nextResponse.statusText,
@@ -448,33 +423,32 @@ export function useRallarServerController({
                         bodyKind: nextResponse.bodyKind,
                         bodyText: nextResponse.bodyText
                             ? redactRallarServerText(
-                                  nextResponse.bodyText,
-                                  authSession,
-                              )
+                                nextResponse.bodyText,
+                                authSession
+                            )
                             : undefined,
-                        bodyJson:
-                            nextResponse.bodyJson === undefined
-                                ? undefined
-                                : redactRallarServerValue(
-                                      nextResponse.bodyJson,
-                                      authSession,
-                                  ),
-                    },
+                        bodyJson: nextResponse.bodyJson === undefined
+                            ? undefined
+                            : redactRallarServerValue(
+                                nextResponse.bodyJson,
+                                authSession
+                            )
+                    }
                 },
                 nextResponse.ok
                     ? `Rallar Server ${request.method} request completed`
-                    : `Rallar Server ${request.method} request failed`,
+                    : `Rallar Server ${request.method} request failed`
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setRequestFeedback({
                 ...requestSummary,
                 state: 'error',
                 errorKind: 'request-build',
                 message,
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             });
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                 {
@@ -487,22 +461,23 @@ export function useRallarServerController({
                         path: requestSummary.path,
                         url: requestSummary.url
                             ? redactRallarServerUrl(
-                                  requestSummary.url,
-                                  authSession,
-                              )
+                                requestSummary.url,
+                                authSession
+                            )
                             : undefined,
                         error: {
                             kind: 'request-build',
                             message: redactRallarServerText(
                                 message,
-                                authSession,
-                            ),
-                        },
-                    },
+                                authSession
+                            )
+                        }
+                    }
                 },
-                `Rallar Server ${requestSummary.method ?? 'REST'} request failed`,
+                `Rallar Server ${requestSummary.method ?? 'REST'} request failed`
             );
-        } finally {
+        }
+        finally {
             setBusy(false);
         }
     };
@@ -511,24 +486,27 @@ export function useRallarServerController({
         setLocalError(undefined);
         try {
             setServerOpenApiPresets(
-                await fetchRallarServerOpenApiEndpoints(apiBaseUrl),
+                await fetchRallarServerOpenApiEndpoints(apiBaseUrl)
             );
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
-        } finally {
+        }
+        finally {
             setOpenApiBusy(false);
         }
     };
     const copyCurl = (): void => {
         try {
             void navigator.clipboard?.writeText(
-                toRallarServerCurl(requestInput),
+                toRallarServerCurl(requestInput)
             );
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
@@ -537,7 +515,7 @@ export function useRallarServerController({
     };
     const applyCollectionTemplate = (collectionId: string): void => {
         const template = collectionTemplates.find(
-            (entry) => entry.collectionId === collectionId,
+            (entry) => entry.collectionId === collectionId
         );
         if (!template) {
             return;
@@ -551,43 +529,37 @@ export function useRallarServerController({
     const addCurrentRequestToCollection = (): void => {
         try {
             const collection = parseRallarServerCollectionText(collectionText);
-            const bodyValue =
-                bodyText.trim().length === 0 || method === 'GET'
-                    ? undefined
-                    : (JSON.parse(bodyText) as unknown);
+            const bodyValue = bodyText.trim().length === 0 || method === 'GET'
+                ? undefined
+                : (JSON.parse(bodyText) as unknown);
             const nextStep = {
                 stepId: `request-${collection.steps.length + 1}`,
                 label: activePreset.label,
                 request: {
                     method,
                     path,
-                    headers: JSON.parse(headersText || '{}') as Record<
-                        string,
-                        unknown
-                    >,
-                    query: JSON.parse(queryText || '{}') as Record<
-                        string,
-                        unknown
-                    >,
+                    headers: JSON.parse(headersText || '{}') as Record<string, unknown>,
+                    query: JSON.parse(queryText || '{}') as Record<string, unknown>,
                     ...(bodyValue === undefined ? {} : { body: bodyValue }),
                     responseBodyMode,
                     attachAuth,
-                    timeoutMs,
+                    timeoutMs
                 },
                 expect: {
-                    status: response?.status ?? 200,
-                },
+                    status: response?.status ?? 200
+                }
             };
             setCollectionText(
                 json({
                     ...collection,
-                    steps: [...collection.steps, nextStep],
-                }),
+                    steps: [...collection.steps, nextStep]
+                })
             );
             setCollectionError(undefined);
-        } catch (error) {
+        }
+        catch (error) {
             setCollectionError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
@@ -600,8 +572,8 @@ export function useRallarServerController({
             let collectionVariables: RallarServerRestCollectionVariables = {
                 ...(collection.variables ?? {}),
                 ...parseRallarServerCollectionVariablesText(
-                    collectionVariablesText,
-                ),
+                    collectionVariablesText
+                )
             };
             const nextResults: RallarServerRestCollectionStepResult[] = [];
 
@@ -613,18 +585,17 @@ export function useRallarServerController({
                         variables: collectionVariables,
                         authSession,
                         defaultTimeoutMs: timeoutMs,
-                        forbidPlaceholderBaseUrl:
-                            providerMode === 'browser-rallar',
-                    }),
+                        forbidPlaceholderBaseUrl: providerMode === 'browser-rallar'
+                    })
                 );
                 const assertions = assertRallarServerRestResponse(
                     stepResponse,
                     step.expect,
-                    collectionVariables,
+                    collectionVariables
                 );
                 const extracted = extractRallarServerRestVariables(
                     stepResponse,
-                    step.extract,
+                    step.extract
                 );
                 const ok = assertions.every((assertion) => assertion.ok);
                 const result = {
@@ -633,71 +604,73 @@ export function useRallarServerController({
                     ok,
                     response: stepResponse,
                     assertions,
-                    extracted,
+                    extracted
                 };
                 nextResults.push(result);
                 setCollectionResults([...nextResults]);
                 collectionVariables = {
                     ...collectionVariables,
-                    ...extracted,
+                    ...extracted
                 };
                 setCollectionVariablesText(json(collectionVariables));
                 if (!ok) {
                     break;
                 }
             }
-        } catch (error) {
+        }
+        catch (error) {
             setCollectionError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
-        } finally {
+        }
+        finally {
             setCollectionBusy(false);
         }
     };
     const copyCollection = (): void => {
         try {
             const collection = parseRallarServerCollectionText(collectionText);
-            const collectionVariables =
-                parseRallarServerCollectionVariablesText(
-                    collectionVariablesText,
-                );
+            const collectionVariables = parseRallarServerCollectionVariablesText(
+                collectionVariablesText
+            );
             void navigator.clipboard?.writeText(
                 redactedJson(
                     {
                         ...collection,
-                        variables: collectionVariables,
+                        variables: collectionVariables
                     },
                     state,
-                    authSession,
-                ),
+                    authSession
+                )
             );
-        } catch (error) {
+        }
+        catch (error) {
             setCollectionError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
     const copyCollectionRecipe = (): void => {
         try {
             const collection = parseRallarServerCollectionText(collectionText);
-            const collectionVariables =
-                parseRallarServerCollectionVariablesText(
-                    collectionVariablesText,
-                );
+            const collectionVariables = parseRallarServerCollectionVariablesText(
+                collectionVariablesText
+            );
             const recipe = toRallarServerRestCollectionRecipe({
                 collection,
                 apiBaseUrl,
                 variables: collectionVariables,
                 authSession,
                 defaultTimeoutMs: timeoutMs,
-                forbidPlaceholderBaseUrl: providerMode === 'browser-rallar',
+                forbidPlaceholderBaseUrl: providerMode === 'browser-rallar'
             });
             void navigator.clipboard?.writeText(
-                redactedJson(recipe, state, authSession),
+                redactedJson(recipe, state, authSession)
             );
-        } catch (error) {
+        }
+        catch (error) {
             setCollectionError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
@@ -757,10 +730,8 @@ export function useRallarServerController({
         response,
         responseBodyText,
         responseHeadersText,
-        commandPreview,
+        commandPreview
     };
 }
 
-export type RallarServerControllerModel = ReturnType<
-    typeof useRallarServerController
->;
+export type RallarServerControllerModel = ReturnType<typeof useRallarServerController>;

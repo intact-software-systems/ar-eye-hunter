@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatestMementoRepository } from '@shared/cache/LatestMementoRepository.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { configureLatestRepository } from '@shared/cache/LatestRepositoryHelpers.ts';
@@ -6,7 +5,8 @@ import { LoanedMementoRepository } from '@shared/cache/LoanedMementoRepository.t
 import { LoanedRepository } from '@shared/cache/LoanedRepository.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
-import { latestMementoRepositoryToken, loanedMementoRepositoryToken, } from '@shared/cache/RepositoryTokens.ts';
+import { latestMementoRepositoryToken, loanedMementoRepositoryToken } from '@shared/cache/RepositoryTokens.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('LatestRepository', () => {
     afterEach(() => {
@@ -27,7 +27,7 @@ describe('LatestRepository', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const repo = new LatestRepository<string, number>({
-            ttlMs: 10,
+            ttlMs: 10
         });
         const callback = repo.asCallback('a');
 
@@ -53,7 +53,7 @@ describe('LatestRepository', () => {
 
         const repo = new LatestRepository<string, number>({
             ttlMs: 10,
-            deleteExpiredIntervalMs: 20,
+            deleteExpiredIntervalMs: 20
         });
 
         repo.set('expired', 1);
@@ -89,7 +89,7 @@ describe('LatestRepository', () => {
     });
 
     it('updateIfNewer creates, updates on higher version, and rejects stale writes', () => {
-        type Versioned = Readonly<{ version: number; payload: string }>;
+        type Versioned = Readonly<{ version: number; payload: string; }>;
         const repo = new LatestRepository<string, Versioned>();
         const versionOf = (value: Versioned) => value.version;
         const onNewer = vi.fn();
@@ -99,8 +99,8 @@ describe('LatestRepository', () => {
             repo.updateIfNewer('k', { version: 1, payload: 'a' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(true);
         expect(repo.read('k')).toEqual({ version: 1, payload: 'a' });
         expect(onNewer).not.toHaveBeenCalled();
@@ -109,8 +109,8 @@ describe('LatestRepository', () => {
             repo.updateIfNewer('k', { version: 2, payload: 'b' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(true);
         expect(repo.read('k')).toEqual({ version: 2, payload: 'b' });
         expect(onNewer).toHaveBeenCalledTimes(1);
@@ -119,8 +119,8 @@ describe('LatestRepository', () => {
             repo.updateIfNewer('k', { version: 1, payload: 'old' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(false);
         expect(repo.read('k')).toEqual({ version: 2, payload: 'b' });
         expect(onStale).toHaveBeenCalledTimes(1);
@@ -129,8 +129,8 @@ describe('LatestRepository', () => {
             repo.updateIfNewer('k', { version: 2, payload: 'sameVersion' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(false);
         expect(repo.read('k')).toEqual({ version: 2, payload: 'b' });
         expect(onStale).toHaveBeenCalledTimes(2);
@@ -164,8 +164,8 @@ describe('LoanedRepository', () => {
                 return (current ?? key.length) + 1;
             },
             {
-                ttlMs: 1_000,
-            },
+                ttlMs: 1_000
+            }
         );
 
         expect(await repo.get('aa')).toBe(3);
@@ -173,19 +173,19 @@ describe('LoanedRepository', () => {
             await repo.getWith('bb', async (key, current) => {
                 overrideCalls.push([key, current]);
                 return (current ?? 0) + 10;
-            }),
+            })
         ).toBe(10);
         expect(
             await repo.refreshWith('aa', async (key, current) => {
                 overrideCalls.push([key, current]);
                 return (current ?? 0) + 5;
-            }),
+            })
         ).toBe(8);
 
         expect(defaultCalls).toEqual([['aa', undefined]]);
         expect(overrideCalls).toEqual([
             ['bb', undefined],
-            ['aa', 3],
+            ['aa', 3]
         ]);
     });
 
@@ -204,8 +204,8 @@ describe('LoanedRepository', () => {
                 return deferred.promise;
             },
             {
-                ttlMs: 5,
-            },
+                ttlMs: 5
+            }
         );
 
         expect(await repo.get('job')).toBe(1);
@@ -230,11 +230,11 @@ describe('RepositoryManager', () => {
     it('resolves, replaces, deletes, and clears repositories with disposal semantics', async () => {
         const manager = new RepositoryManager();
         const created = {
-            dispose: vi.fn(),
+            dispose: vi.fn()
         };
         const createdToken = new RepositoryToken('created', () => created);
         const registered = {
-            dispose: vi.fn(),
+            dispose: vi.fn()
         };
         const registeredToken = new RepositoryToken('registered', () => registered);
 
@@ -245,11 +245,11 @@ describe('RepositoryManager', () => {
         manager.register(registeredToken, registered);
         expect(manager.require(registeredToken)).toBe(registered);
         expect(() => manager.register(registeredToken, registered)).toThrow(
-            'Repository already registered: registered',
+            'Repository already registered: registered'
         );
 
         const replacement = {
-            dispose: vi.fn(),
+            dispose: vi.fn()
         };
         await manager.replace(registeredToken, replacement);
 
@@ -269,7 +269,7 @@ describe('RepositoryManager', () => {
         const manager = new RepositoryManager();
         const token = new RepositoryToken(
             'latest-replace',
-            () => new LatestRepository<string, number>(),
+            () => new LatestRepository<string, number>()
         );
         const first = configureLatestRepository(token, {}, manager);
         const dispose = vi.spyOn(first, 'dispose');
@@ -282,21 +282,21 @@ describe('RepositoryManager', () => {
 
     it('validates tokens and creates repository instances from token factories', () => {
         expect(
-            () => new RepositoryToken('' as never, (() => ({})) as never),
+            () => new RepositoryToken('' as never, (() => ({})) as never)
         ).toThrow('RepositoryToken id is required');
         expect(
-            () => new RepositoryToken('missing-create', undefined as never),
+            () => new RepositoryToken('missing-create', undefined as never)
         ).toThrow('RepositoryToken create factory is required');
 
         const latestToken = latestMementoRepositoryToken<string, number>('latest', {
-            ttlMs: 5,
+            ttlMs: 5
         });
         const loanedToken = loanedMementoRepositoryToken<string, number>(
             'loaned',
             async (_key, current) => (current ?? 0) + 1,
             {
-                ttlMs: 5,
-            },
+                ttlMs: 5
+            }
         );
 
         const latestRepo = latestToken.create();
@@ -319,6 +319,6 @@ function createDeferred<T>() {
     return {
         promise,
         resolve,
-        reject,
+        reject
     };
 }

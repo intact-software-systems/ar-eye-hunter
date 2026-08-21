@@ -1,179 +1,179 @@
 {
-    "variables": {
-        "applicationId": "rallar-test",
-        "workspaceId": "main",
-        "groupId": "room-1",
-        "documentType": "checklist",
-        "updateId": "update-1",
-        "replicaId": "replica-a"
-    },
-    "steps": [
-        {
-            "name": "assertCrdtUpdateEnvelopeShape",
-            "type": "assert",
-            "actual": {
-                "protocolVersion": 1,
-                "topicId": "room.crdt",
-                "typeId": "rallar.crdt.update.v1",
-                "document": {
-                    "applicationId": "{applicationId}",
-                    "workspaceId": "{workspaceId}",
-                    "scope": "room",
-                    "documentType": "{documentType}",
-                    "documentId": "{groupId}",
-                    "roomRef": {
-                        "applicationId": "{applicationId}",
-                        "workspaceId": "{workspaceId}",
-                        "groupId": "{groupId}"
-                    }
-                },
-                "updateId": "{updateId}",
-                "replicaId": "{replicaId}",
-                "payload": {
-                    "kind": "batch",
-                    "operations": [
-                        {
-                            "kind": "map.set",
-                            "path": [],
-                            "key": "title",
-                            "value": "North entrance"
-                        }
-                    ]
-                }
-            },
-            "expect": {
-                "body": {
-                    "protocolVersion": 1,
-                    "topicId": "room.crdt",
-                    "typeId": "rallar.crdt.update.v1",
-                    "document": {
-                        "scope": "room",
-                        "documentType": "{documentType}",
-                        "roomRef": {
-                            "groupId": "{groupId}"
-                        }
-                    },
-                    "updateId": "{updateId}",
-                    "replicaId": "{replicaId}",
-                    "payload": {
-                        "kind": "batch"
-                    }
-                }
-            }
+  "variables": {
+    "applicationId": "rallar-test",
+    "workspaceId": "main",
+    "groupId": "room-1",
+    "documentType": "checklist",
+    "updateId": "update-1",
+    "replicaId": "replica-a"
+  },
+  "steps": [
+    {
+      "name": "assertCrdtUpdateEnvelopeShape",
+      "type": "assert",
+      "actual": {
+        "protocolVersion": 1,
+        "topicId": "room.crdt",
+        "typeId": "rallar.crdt.update.v1",
+        "document": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}",
+          "scope": "room",
+          "documentType": "{documentType}",
+          "documentId": "{groupId}",
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          }
         },
-        {
-            "name": "assertDuplicateDeliveryIsIdempotentByUpdateId",
-            "type": "assert",
-            "actual": {
-                "firstDeliveryUpdateId": "{updateId}",
-                "duplicateDeliveryUpdateId": "{updateId}",
-                "dedupeKey": "{applicationId}:{workspaceId}:{groupId}:{updateId}"
-            },
-            "expect": {
-                "body": {
-                    "firstDeliveryUpdateId": "{updateId}",
-                    "duplicateDeliveryUpdateId": "{updateId}",
-                    "dedupeKey": "{applicationId}:{workspaceId}:{groupId}:{updateId}"
-                }
+        "updateId": "{updateId}",
+        "replicaId": "{replicaId}",
+        "payload": {
+          "kind": "batch",
+          "operations": [
+            {
+              "kind": "map.set",
+              "path": [],
+              "key": "title",
+              "value": "North entrance"
             }
-        },
-        {
-            "name": "assertConvergenceTransportPlan",
-            "type": "assert",
-            "actual": {
-                "roomTopicId": "room.crdt",
-                "supportedStrategies": [
-                    "ws",
-                    "rtc",
-                    "ws-then-rtc",
-                    "rtc-with-ws-fallback"
-                ],
-                "mergeRule": "dedupe-update-id-and-apply-operation-batch"
-            },
-            "expect": {
-                "body": {
-                    "roomTopicId": "room.crdt",
-                    "supportedStrategies": [
-                        "ws",
-                        "rtc",
-                        "ws-then-rtc",
-                        "rtc-with-ws-fallback"
-                    ],
-                    "mergeRule": "dedupe-update-id-and-apply-operation-batch"
-                }
-            }
-        },
-        {
-            "name": "assertConflictSurfacingPlan",
-            "type": "assert",
-            "actual": {
-                "operationKind": "register.set",
-                "policy": "multi",
-                "concurrentValues": ["ready", "blocked"],
-                "applicationResolution": "register.set causal descendant"
-            },
-            "expect": {
-                "body": {
-                    "operationKind": "register.set",
-                    "policy": "multi",
-                    "concurrentValues": ["ready", "blocked"],
-                    "applicationResolution": "register.set causal descendant"
-                }
-            }
-        },
-        {
-            "name": "assertDependencyRepairMetadata",
-            "type": "assert",
-            "actual": {
-                "syncRequestTypeId": "rallar.crdt.sync-request.v1",
-                "syncResponseTypeId": "rallar.crdt.sync-response.v1",
-                "knownUpdateIds": ["{updateId}"],
-                "missingUpdateIds": ["parent-update-1"],
-                "maxUpdateCount": 100
-            },
-            "expect": {
-                "body": {
-                    "syncRequestTypeId": "rallar.crdt.sync-request.v1",
-                    "syncResponseTypeId": "rallar.crdt.sync-response.v1",
-                    "knownUpdateIds": ["{updateId}"],
-                    "missingUpdateIds": ["parent-update-1"],
-                    "maxUpdateCount": 100
-                }
-            }
-        },
-        {
-            "name": "assertReconnectCatchUpPlan",
-            "type": "assert",
-            "actual": {
-                "durableCatchUp": "snapshot-plus-update-page",
-                "afterCursor": "seq:1",
-                "lateJoinRequiresPeerOnline": false
-            },
-            "expect": {
-                "body": {
-                    "durableCatchUp": "snapshot-plus-update-page",
-                    "afterCursor": "seq:1",
-                    "lateJoinRequiresPeerOnline": false
-                }
-            }
-        },
-        {
-            "name": "assertDebugReplayBundleInputs",
-            "type": "assert",
-            "actual": {
-                "snapshotTypeId": "rallar.crdt.snapshot.v1",
-                "appendResponseTypeId": "rallar.crdt.append-response.v1",
-                "appendCursor": "seq:1",
-                "includedUpdateIds": ["{updateId}"]
-            },
-            "expect": {
-                "body": {
-                    "snapshotTypeId": "rallar.crdt.snapshot.v1",
-                    "appendResponseTypeId": "rallar.crdt.append-response.v1",
-                    "appendCursor": "seq:1",
-                    "includedUpdateIds": ["{updateId}"]
-                }
-            }
+          ]
         }
-    ]
+      },
+      "expect": {
+        "body": {
+          "protocolVersion": 1,
+          "topicId": "room.crdt",
+          "typeId": "rallar.crdt.update.v1",
+          "document": {
+            "scope": "room",
+            "documentType": "{documentType}",
+            "roomRef": {
+              "groupId": "{groupId}"
+            }
+          },
+          "updateId": "{updateId}",
+          "replicaId": "{replicaId}",
+          "payload": {
+            "kind": "batch"
+          }
+        }
+      }
+    },
+    {
+      "name": "assertDuplicateDeliveryIsIdempotentByUpdateId",
+      "type": "assert",
+      "actual": {
+        "firstDeliveryUpdateId": "{updateId}",
+        "duplicateDeliveryUpdateId": "{updateId}",
+        "dedupeKey": "{applicationId}:{workspaceId}:{groupId}:{updateId}"
+      },
+      "expect": {
+        "body": {
+          "firstDeliveryUpdateId": "{updateId}",
+          "duplicateDeliveryUpdateId": "{updateId}",
+          "dedupeKey": "{applicationId}:{workspaceId}:{groupId}:{updateId}"
+        }
+      }
+    },
+    {
+      "name": "assertConvergenceTransportPlan",
+      "type": "assert",
+      "actual": {
+        "roomTopicId": "room.crdt",
+        "supportedStrategies": [
+          "ws",
+          "rtc",
+          "ws-then-rtc",
+          "rtc-with-ws-fallback"
+        ],
+        "mergeRule": "dedupe-update-id-and-apply-operation-batch"
+      },
+      "expect": {
+        "body": {
+          "roomTopicId": "room.crdt",
+          "supportedStrategies": [
+            "ws",
+            "rtc",
+            "ws-then-rtc",
+            "rtc-with-ws-fallback"
+          ],
+          "mergeRule": "dedupe-update-id-and-apply-operation-batch"
+        }
+      }
+    },
+    {
+      "name": "assertConflictSurfacingPlan",
+      "type": "assert",
+      "actual": {
+        "operationKind": "register.set",
+        "policy": "multi",
+        "concurrentValues": ["ready", "blocked"],
+        "applicationResolution": "register.set causal descendant"
+      },
+      "expect": {
+        "body": {
+          "operationKind": "register.set",
+          "policy": "multi",
+          "concurrentValues": ["ready", "blocked"],
+          "applicationResolution": "register.set causal descendant"
+        }
+      }
+    },
+    {
+      "name": "assertDependencyRepairMetadata",
+      "type": "assert",
+      "actual": {
+        "syncRequestTypeId": "rallar.crdt.sync-request.v1",
+        "syncResponseTypeId": "rallar.crdt.sync-response.v1",
+        "knownUpdateIds": ["{updateId}"],
+        "missingUpdateIds": ["parent-update-1"],
+        "maxUpdateCount": 100
+      },
+      "expect": {
+        "body": {
+          "syncRequestTypeId": "rallar.crdt.sync-request.v1",
+          "syncResponseTypeId": "rallar.crdt.sync-response.v1",
+          "knownUpdateIds": ["{updateId}"],
+          "missingUpdateIds": ["parent-update-1"],
+          "maxUpdateCount": 100
+        }
+      }
+    },
+    {
+      "name": "assertReconnectCatchUpPlan",
+      "type": "assert",
+      "actual": {
+        "durableCatchUp": "snapshot-plus-update-page",
+        "afterCursor": "seq:1",
+        "lateJoinRequiresPeerOnline": false
+      },
+      "expect": {
+        "body": {
+          "durableCatchUp": "snapshot-plus-update-page",
+          "afterCursor": "seq:1",
+          "lateJoinRequiresPeerOnline": false
+        }
+      }
+    },
+    {
+      "name": "assertDebugReplayBundleInputs",
+      "type": "assert",
+      "actual": {
+        "snapshotTypeId": "rallar.crdt.snapshot.v1",
+        "appendResponseTypeId": "rallar.crdt.append-response.v1",
+        "appendCursor": "seq:1",
+        "includedUpdateIds": ["{updateId}"]
+      },
+      "expect": {
+        "body": {
+          "snapshotTypeId": "rallar.crdt.snapshot.v1",
+          "appendResponseTypeId": "rallar.crdt.append-response.v1",
+          "appendCursor": "seq:1",
+          "includedUpdateIds": ["{updateId}"]
+        }
+      }
+    }
+  ]
 }

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
-import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import { describe, expect, it } from 'vitest';
+import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
@@ -9,7 +9,7 @@ function snapshotWithPendingParker(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
         ...SCOPE,
         groupId: 'room-1',
-        sessionIds: ['alice-session'],
+        sessionIds: ['alice-session']
     });
     const parker: GroupMember = {
         ...snapshot.members[0],
@@ -18,7 +18,7 @@ function snapshotWithPendingParker(): GroupSnapshot {
         joined: null,
         left: null,
         removed: null,
-        banned: null,
+        banned: null
     };
     return { ...snapshot, members: [...snapshot.members, parker] };
 }

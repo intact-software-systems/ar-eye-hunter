@@ -1,20 +1,14 @@
-import type {
-    RallarAiProviderGovernanceMetadata,
-    RallarAiProviderTarget,
-} from './rallar-ai-types.ts';
+import type { RallarAiProviderGovernanceMetadata, RallarAiProviderTarget } from './rallar-ai-types.ts';
 
 export function defineRallarAiProviderGovernanceMetadata(
-    metadata: RallarAiProviderGovernanceMetadata,
+    metadata: RallarAiProviderGovernanceMetadata
 ): RallarAiProviderGovernanceMetadata {
     return { ...metadata };
 }
 
 export function isRallarAiProviderAllowedInProduction(
-    metadata: Pick<
-        RallarAiProviderGovernanceMetadata,
-        'productionAllowed' | 'target'
-    >,
-    target?: RallarAiProviderTarget,
+    metadata: Pick<RallarAiProviderGovernanceMetadata, 'productionAllowed' | 'target'>,
+    target?: RallarAiProviderTarget
 ): boolean {
     if (metadata.productionAllowed !== true) {
         return false;

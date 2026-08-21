@@ -9,7 +9,7 @@ describe('Hetzner SPA public env wiring', () => {
     it('provides a shared helper that maps public Rallar env to Vite SPA env', async () => {
         const helper = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(helper).toContain('apply_rallar_public_spa_defaults');
@@ -27,11 +27,11 @@ describe('Hetzner SPA public env wiring', () => {
     it('uses the shared helper for initial deploy and controlled rollout builds', async () => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
-            'utf8',
+            'utf8'
         );
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
-            'utf8',
+            'utf8'
         );
 
         for (const script of [deployScript, rolloutScript]) {
@@ -46,29 +46,29 @@ describe('Hetzner SPA public env wiring', () => {
     it('preserves a stable API auth credential secret across deploys and rollouts', async () => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
-            'utf8',
+            'utf8'
         );
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(deployScript).toContain(
-            'grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env',
+            'grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env'
         );
         expect(deployScript).toContain(
-            'RALLAR_AUTH_CREDENTIAL_SECRET=${RALLAR_AUTH_CREDENTIAL_SECRET}',
+            'RALLAR_AUTH_CREDENTIAL_SECRET=${RALLAR_AUTH_CREDENTIAL_SECRET}'
         );
         expect(rolloutScript).toContain('ensure_api_auth_credential_secret');
         expect(rolloutScript).toContain(
-            'update_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET"',
+            'update_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET"'
         );
     });
 
     it('serves nested SPA entry points before falling back to the operator index', async () => {
         const helper = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(helper).toContain('try_files {path} {path}/index.html /index.html');
@@ -80,32 +80,32 @@ describe('Hetzner SPA public env wiring', () => {
         };
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
-            'utf8',
+            'utf8'
         );
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(controlConfig.nodeModulesDir).toBe('auto');
         for (const script of [deployScript, rolloutScript]) {
             expect(script).toContain(
-                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"',
+                'deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json"'
             );
         }
         expect(deployScript).toContain(
-            'deno run --config ${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json',
+            'deno run --config ${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json'
         );
     });
 
     it('keeps the headless browser workflow responsible for actual agent count and prefix', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
-            'utf8',
+            'utf8'
         );
         const startScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(workflow).toContain('default: controller');
@@ -123,25 +123,25 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\\n\'');
         expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_REGISTER=%s\\n\'');
         expect(startScript).toContain(
-            'RALLAR_BLACK_BOX_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID:-${RALLAR_APPLICATION_ID:-rallar-server}}"',
+            'RALLAR_BLACK_BOX_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID:-${RALLAR_APPLICATION_ID:-rallar-server}}"'
         );
         expect(startScript).toContain(
-            'RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-${RALLAR_WORKSPACE_ID:-default}}"',
+            'RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-${RALLAR_WORKSPACE_ID:-default}}"'
         );
         expect(startScript).toContain(
-            'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"',
+            'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"'
         );
     });
 
     it('resolves headless browser credentials from workflow inputs before falling back to secrets', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
-            'utf8',
+            'utf8'
         );
 
         expect(workflow).toContain('name: Resolve headless credentials');
         expect(workflow.indexOf('name: Resolve headless credentials')).toBeLessThan(
-            workflow.indexOf('name: Configure SSH'),
+            workflow.indexOf('name: Configure SSH')
         );
         expect(workflow).toContain('RALLAR_BLACK_BOX_USERNAME_SECRET: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_PASSWORD_SECRET: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}');
@@ -159,7 +159,7 @@ describe('Hetzner SPA public env wiring', () => {
     it('lets the headless browser workflow roll out the selected ref before starting agents', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
-            'utf8',
+            'utf8'
         );
 
         expect(workflow).toContain('ref:');
@@ -171,22 +171,22 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('./10-stop-headless-workers.sh');
         expect(workflow).toContain('./08-rollout-controller.sh');
         expect(workflow.indexOf('./08-rollout-controller.sh')).toBeLessThan(
-            workflow.indexOf('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh'),
+            workflow.indexOf('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh')
         );
     });
 
     it('keeps public SPA origin allowed for API CORS and control-server browser requests', async () => {
         const helper = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
-            'utf8',
+            'utf8'
         );
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
-            'utf8',
+            'utf8'
         );
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(helper).toContain('apply_rallar_public_cors_defaults');
@@ -204,7 +204,7 @@ describe('Hetzner SPA public env wiring', () => {
     it('lets the controller deploy action configure SPA public defaults during rollout', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'),
-            'utf8',
+            'utf8'
         );
 
         expect(workflow).toContain('spa_url:');
@@ -226,13 +226,13 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('quote() { printf \'%q\' "$1"; }');
         expect(workflow).toContain('rollout_env="${RUNNER_TEMP}/rallar-controller-rollout.env"');
         expect(workflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_SPA_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"',
+            'printf \'RALLAR_BLACK_BOX_SPA_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_SPA_URL}")"'
         );
         expect(workflow).toContain(
-            'printf \'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"',
+            'printf \'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"'
         );
         expect(workflow).toContain(
-            '"${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller-rollout.env"',
+            '"${HETZNER_USER}@${HETZNER_HOST}:/tmp/rallar-controller-rollout.env"'
         );
         expect(workflow).toContain('source /tmp/rallar-controller-rollout.env');
         expect(workflow).toContain('./08-rollout-controller.sh');

@@ -10,7 +10,7 @@ export type RtcGroupFormationMode = 'bounded-bootstrap' | 'legacy-star';
 export const DEFAULT_RTC_GROUP_FORMATION_MODE: RtcGroupFormationMode = 'bounded-bootstrap';
 
 export function resolveRtcGroupFormationMode(
-    mode: RtcGroupFormationMode | undefined,
+    mode: RtcGroupFormationMode | undefined
 ): RtcGroupFormationMode {
     return mode ?? DEFAULT_RTC_GROUP_FORMATION_MODE;
 }

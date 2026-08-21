@@ -1,11 +1,5 @@
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -14,45 +8,40 @@ import {
     controlRunManagerStats,
     deleteControlRun,
     enqueueBulkControlCommand,
-    fetchControlRunSnapshot,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
     fetchControlRunJsonl,
+    fetchControlRunSnapshot,
     fetchControlServerSnapshot,
     resetControlRun,
     type ControlRunArtifactBundle,
     type ControlRunSnapshot,
-    type ControlServerSnapshot,
+    type ControlServerSnapshot
 } from '../../../control-run-manager.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-presets.ts';
+import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
 import { parseRallarBlackBoxSharedTestArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';
-import { Metric } from '../../shared/Metric.tsx';
-import { formatTime } from '../../shared/time-format.ts';
+import { resolveRunManagerRefreshSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
+import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import { json } from '../../shared/json-presentation.ts';
+import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
-import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
+import { sameStringArray } from '../../shared/same-string-array.ts';
 import { CommandExamplePicker } from '../../shared/schema/CommandExamplePicker.tsx';
+import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
+import { formatTime } from '../../shared/time-format.ts';
+import { artifactIssueText } from '../shared/artifact-issue-presentation.ts';
+import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
+import { parseRunManagerCommandText, runManagerCommandPrefix } from './run-manager-command.ts';
 import { RunManagerAgentRow } from './RunManagerAgentRow.tsx';
 import { RunManagerCommandList } from './RunManagerCommandList.tsx';
-import {
-    parseRunManagerCommandText,
-    runManagerCommandPrefix,
-} from './run-manager-command.ts';
-import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
-import { sameStringArray } from '../../shared/same-string-array.ts';
-import { artifactIssueText } from '../shared/artifact-issue-presentation.ts';
-import { useLegacyDiagnosticContext } from
-    '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
-import { resolveRunManagerRefreshSelection } from
-    '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
-import { useLatestRequestGuard } from
-    '../shared/use-latest-request-guard.ts';
 
 export function RunManagerPanel({
     state,
     bootstrap,
-    control,
+    control
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -60,26 +49,18 @@ export function RunManagerPanel({
 }) {
     const diagnosticContext = useLegacyDiagnosticContext().context;
     const diagnosticControlRunId = diagnosticContext?.controlRunId;
-    const [baseUrl, setBaseUrl] = useState(() =>
-        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl),
-    );
+    const [baseUrl, setBaseUrl] = useState(() => controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl));
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
-        diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? '',
+        diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? ''
     );
     const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>(
-        [],
+        []
     );
-    const [commandText, setCommandText] = useState(() =>
-        json(RUN_MANAGER_COMMAND_PRESETS[0].command),
-    );
-    const [snapshot, setSnapshot] = useState<
-        ControlServerSnapshot | undefined
-    >();
+    const [commandText, setCommandText] = useState(() => json(RUN_MANAGER_COMMAND_PRESETS[0].command));
+    const [snapshot, setSnapshot] = useState<ControlServerSnapshot | undefined>();
     const [run, setRun] = useState<ControlRunSnapshot | undefined>();
-    const [artifactBundle, setArtifactBundle] = useState<
-        ControlRunArtifactBundle | undefined
-    >();
+    const [artifactBundle, setArtifactBundle] = useState<ControlRunArtifactBundle | undefined>();
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
@@ -90,39 +71,39 @@ export function RunManagerPanel({
     const agentRowsKey = agentRows.map((row) => row.agentId).join('\u0000');
     const commandRows = useMemo(
         () => controlRunCommandRows(run).slice(0, 24),
-        [run],
+        [run]
     );
     const runOptions = useMemo(
         () =>
             [...(snapshot?.runs ?? [])].sort(
-                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
             ),
-        [snapshot],
+        [snapshot]
     );
     const selectedAgentSet = useMemo(
         () => new Set(selectedAgentIds),
-        [selectedAgentIds],
+        [selectedAgentIds]
     );
     const recentResults = useMemo(
         () => [...(run?.results ?? [])].reverse().slice(0, 12),
-        [run],
+        [run]
     );
     const recentEvents = useMemo(
         () => [...(run?.events ?? [])].reverse().slice(0, 12),
-        [run],
+        [run]
     );
     const parsedArtifact = useMemo(
         () =>
             artifactBundle
                 ? parseRallarBlackBoxSharedTestArtifactBundle(
-                      artifactBundle.files,
-                  )
+                    artifactBundle.files
+                )
                 : undefined,
-        [artifactBundle],
+        [artifactBundle]
     );
     const commandValidation = useMemo(
         () => validateSchemaAuthoringText('command', commandText),
-        [commandText],
+        [commandText]
     );
     const canTargetAgents = Boolean(run && selectedAgentIds.length > 0);
 
@@ -134,7 +115,7 @@ export function RunManagerPanel({
             const serverSnapshot = await fetchControlServerSnapshot({
                 baseUrl,
                 token,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
                 return;
@@ -145,7 +126,7 @@ export function RunManagerPanel({
                 diagnosticControlRunId,
                 controlRunId: control.runId,
                 bootstrapRunId: bootstrap.runId,
-                availableRunIds: serverSnapshot.runs.map(run => run.runId),
+                availableRunIds: serverSnapshot.runs.map((run) => run.runId)
             });
             const nextRunId = selection.runId;
             setSelectedRunId(nextRunId);
@@ -161,23 +142,26 @@ export function RunManagerPanel({
                     baseUrl,
                     token,
                     runId: nextRunId,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 });
                 if (!request.isCurrent()) {
                     return;
                 }
                 setRun(nextRun);
                 setArtifactBundle(undefined);
-            } else {
+            }
+            else {
                 setRun(undefined);
                 setArtifactBundle(undefined);
             }
             setLastAction(`Refreshed ${serverSnapshot.runs.length} run(s).`);
-        } catch (caught) {
+        }
+        catch (caught) {
             if (request.isCurrent()) {
                 setError(caught instanceof Error ? caught.message : String(caught));
             }
-        } finally {
+        }
+        finally {
             if (request.isCurrent()) {
                 setBusyAction(undefined);
             }
@@ -195,8 +179,7 @@ export function RunManagerPanel({
             return;
         }
         lastDiagnosticControlRunId.current = diagnosticControlRunId;
-        const preferredRunId =
-            diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? '';
+        const preferredRunId = diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? '';
         setSelectedRunId(preferredRunId);
         setRun(undefined);
         setArtifactBundle(undefined);
@@ -208,9 +191,7 @@ export function RunManagerPanel({
     useEffect(() => {
         const availableAgentIds = agentRows.map((row) => row.agentId);
         setSelectedAgentIds((previous) => {
-            const kept = previous.filter((agentId) =>
-                availableAgentIds.includes(agentId),
-            );
+            const kept = previous.filter((agentId) => availableAgentIds.includes(agentId));
             const next = kept.length > 0 ? kept : availableAgentIds;
             return sameStringArray(previous, next) ? previous : next;
         });
@@ -234,18 +215,20 @@ export function RunManagerPanel({
                 baseUrl,
                 token,
                 runId,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
                 return;
             }
             setRun(loaded);
             setLastAction(`Loaded ${runId}.`);
-        } catch (caught) {
+        }
+        catch (caught) {
             if (request.isCurrent()) {
                 setError(caught instanceof Error ? caught.message : String(caught));
             }
-        } finally {
+        }
+        finally {
             if (request.isCurrent()) {
                 setBusyAction(undefined);
             }
@@ -272,13 +255,15 @@ export function RunManagerPanel({
                 runId: run.runId,
                 agentIds: selectedAgentIds,
                 command,
-                commandIdPrefix: runManagerCommandPrefix(command),
+                commandIdPrefix: runManagerCommandPrefix(command)
             });
             setLastAction(`Queued ${result.commands.length} command(s).`);
             await refresh(run.runId);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -294,14 +279,16 @@ export function RunManagerPanel({
             const resetRun = await resetControlRun({
                 baseUrl,
                 token,
-                runId: run.runId,
+                runId: run.runId
             });
             setRun(resetRun);
             setLastAction(`Reset ${run.runId}.`);
             await refresh(run.runId);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -318,7 +305,7 @@ export function RunManagerPanel({
             await deleteControlRun({
                 baseUrl,
                 token,
-                runId: deletedRunId,
+                runId: deletedRunId
             });
             setRun(undefined);
             setSelectedRunId('');
@@ -326,9 +313,11 @@ export function RunManagerPanel({
             setArtifactBundle(undefined);
             setLastAction(`Deleted ${deletedRunId}.`);
             await refresh('');
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -337,7 +326,7 @@ export function RunManagerPanel({
         setSelectedAgentIds((previous) =>
             previous.includes(agentId)
                 ? previous.filter((value) => value !== agentId)
-                : [...previous, agentId],
+                : [...previous, agentId]
         );
     };
 
@@ -352,26 +341,27 @@ export function RunManagerPanel({
             const bundle = await fetchControlRunArtifactBundle({
                 baseUrl,
                 token,
-                runId: run.runId,
+                runId: run.runId
             });
             setArtifactBundle(bundle);
             setLastAction(`Loaded artifact bundle for ${run.runId}.`);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
     const copyArtifactBundle = async (): Promise<void> => {
-        const bundle =
-            artifactBundle ??
+        const bundle = artifactBundle ??
             (run
                 ? await fetchControlRunArtifactBundle({
-                      baseUrl,
-                      token,
-                      runId: run.runId,
-                  })
+                    baseUrl,
+                    token,
+                    runId: run.runId
+                })
                 : undefined);
         if (bundle) {
             setArtifactBundle(bundle);
@@ -388,7 +378,7 @@ export function RunManagerPanel({
             baseUrl,
             token,
             runId: run.runId,
-            kind,
+            kind
         });
         await navigator.clipboard?.writeText(text);
         setLastAction(`Copied ${kind} JSONL.`);
@@ -401,7 +391,7 @@ export function RunManagerPanel({
         const bundle = await fetchControlRunFailureBundle({
             baseUrl,
             token,
-            runId: run.runId,
+            runId: run.runId
         });
         await navigator.clipboard?.writeText(json(bundle));
         setLastAction('Copied failure bundle.');
@@ -521,9 +511,7 @@ export function RunManagerPanel({
                                 </span>
                             </button>
                         ))}
-                        {runOptions.length === 0 && (
-                            <div className="empty-state">No runs</div>
-                        )}
+                        {runOptions.length === 0 && <div className="empty-state">No runs</div>}
                     </div>
                 </section>
                 <section className="run-manager-subpanel run-manager-agents-panel">
@@ -540,9 +528,7 @@ export function RunManagerPanel({
                                 onToggle={toggleAgent}
                             />
                         ))}
-                        {agentRows.length === 0 && (
-                            <div className="empty-state">No agents</div>
-                        )}
+                        {agentRows.length === 0 && <div className="empty-state">No agents</div>}
                     </div>
                     <div className="run-manager-command-editor">
                         <div className="run-manager-preset-grid">
@@ -550,9 +536,7 @@ export function RunManagerPanel({
                                 <button
                                     key={preset.presetId}
                                     type="button"
-                                    onClick={() =>
-                                        setCommandText(json(preset.command))
-                                    }
+                                    onClick={() => setCommandText(json(preset.command))}
                                 >
                                     {preset.label}
                                 </button>
@@ -562,26 +546,20 @@ export function RunManagerPanel({
                             <span>Command JSON</span>
                             <textarea
                                 value={commandText}
-                                onChange={(event) =>
-                                    setCommandText(event.target.value)
-                                }
+                                onChange={(event) => setCommandText(event.target.value)}
                                 spellCheck={false}
                             />
                         </label>
                         <SchemaAuthoringPanel validation={commandValidation} />
                         <CommandExamplePicker
                             onInsert={setCommandText}
-                            onCopy={(text) =>
-                                void navigator.clipboard?.writeText(text)
-                            }
+                            onCopy={(text) => void navigator.clipboard?.writeText(text)}
                         />
                         <button
                             type="button"
-                            disabled={
-                                !canTargetAgents ||
+                            disabled={!canTargetAgents ||
                                 Boolean(busyAction) ||
-                                !commandValidation.ok
-                            }
+                                !commandValidation.ok}
                             onClick={() => void enqueueSelected()}
                         >
                             Enqueue Selected
@@ -644,9 +622,7 @@ export function RunManagerPanel({
                                         </pre>
                                     </div>
                                 ))}
-                                {recentEvents.length === 0 && (
-                                    <div className="empty-state">No events</div>
-                                )}
+                                {recentEvents.length === 0 && <div className="empty-state">No events</div>}
                             </div>
                         </section>
                     </div>
@@ -659,8 +635,8 @@ export function RunManagerPanel({
                                 {parsedArtifact?.ok
                                     ? 'valid'
                                     : parsedArtifact
-                                      ? 'invalid'
-                                      : 'not loaded'}
+                                    ? 'invalid'
+                                    : 'not loaded'}
                             </span>
                         </div>
                         <div className="run-manager-artifact-actions">
@@ -706,14 +682,14 @@ export function RunManagerPanel({
                                     label="Total"
                                     value={String(
                                         parsedArtifact.value.report.summary
-                                            .total,
+                                            .total
                                     )}
                                 />
                                 <Metric
                                     label="Success"
                                     value={String(
                                         parsedArtifact.value.report.summary
-                                            .success,
+                                            .success
                                     )}
                                     tone="good"
                                 />
@@ -721,20 +697,18 @@ export function RunManagerPanel({
                                     label="Failure"
                                     value={String(
                                         parsedArtifact.value.report.summary
-                                            .failure,
+                                            .failure
                                     )}
-                                    tone={
-                                        parsedArtifact.value.report.summary
+                                    tone={parsedArtifact.value.report.summary
                                             .failure > 0
-                                            ? 'bad'
-                                            : 'good'
-                                    }
+                                        ? 'bad'
+                                        : 'good'}
                                 />
                                 <Metric
                                     label="Events"
                                     value={String(
                                         parsedArtifact.value.views.eventStream
-                                            .length,
+                                            .length
                                     )}
                                 />
                             </div>

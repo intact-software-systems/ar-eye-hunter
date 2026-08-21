@@ -1,13 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { hydrateStateSyncSnapshotCaches } from '@shared-server/mod.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    findClientStateSnapshotByPrincipalId,
-} from '@shared/repository/client-state-snapshots-repository.ts';
-import {
-    findGroupStateSnapshotByRef,
-} from '@shared/repository/group-state-snapshots-repository.ts';
-import { hydrateStateSyncSnapshotCaches } from '@shared-server/mod.ts';
+import { findClientStateSnapshotByPrincipalId } from '@shared/repository/client-state-snapshots-repository.ts';
+import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
@@ -23,11 +19,11 @@ describe('state sync cache hydration', () => {
         await expect(
             hydrateStateSyncSnapshotCaches({
                 clients: [client],
-                groups: [group],
-            }),
+                groups: [group]
+            })
         ).resolves.toEqual({
             clientSnapshotCount: 1,
-            groupSnapshotCount: 1,
+            groupSnapshotCount: 1
         });
 
         expect(findClientStateSnapshotByPrincipalId('alice')).toEqual(client);
@@ -41,7 +37,7 @@ function createClientSnapshot(principalId: string): ClientSnapshot {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
     return {
         stateRevision: 1,
@@ -64,13 +60,13 @@ function createClientSnapshot(principalId: string): ClientSnapshot {
             snapshotVersion: 1,
             created: audit,
             updated: audit,
-            lastSeenAtEpochMs: null,
+            lastSeenAtEpochMs: null
         },
         instances: [],
         activeSessions: [],
         isOnline: false,
         activeSessionCount: 0,
-        lastSeenAtEpochMs: null,
+        lastSeenAtEpochMs: null
     };
 }
 
@@ -80,7 +76,7 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
     return {
         stateRevision: 1,
@@ -97,11 +93,11 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
             rosterVersion: 1,
             presenceVersion: 0,
             created: audit,
-            updated: audit,
+            updated: audit
         }),
         members: [],
         activeSessions: [],
         memberCount: 0,
-        onlineMemberCount: 0,
+        onlineMemberCount: 0
     };
 }

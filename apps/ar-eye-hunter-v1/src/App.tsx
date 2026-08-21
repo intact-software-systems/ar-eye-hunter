@@ -1,21 +1,18 @@
 import { Temporal } from '@js-temporal/polyfill';
 (globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
 
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
+import { useRallarArena, type ArenaConnection } from './game/arena-runtime/use-rallar-arena.ts';
 import { BabylonArena } from './game/BabylonArena.tsx';
 import { colorForId } from './game/color.ts';
 import {
     createInitialCombatState,
     createInitialLoadoutState,
     createInitialVitalsState,
-    getWeaponStats,
+    getWeaponStats
 } from './game/simulation.ts';
 import { GAME_ROOM_NAME, type ArenaMatchState } from './game/types.ts';
-import {
-    useRallarArena,
-    type ArenaConnection,
-} from './game/arena-runtime/use-rallar-arena.ts';
 
 type AuthMode = 'login' | 'register';
 
@@ -36,7 +33,7 @@ export default function App() {
 
     const localColor = useMemo(
         () => colorForId(arena.session?.sessionId ?? 'local'),
-        [arena.session?.sessionId],
+        [arena.session?.sessionId]
     );
     const currentRoom = arena.rooms.find((room) => room.roomId === arena.roomId);
     const arenaRooms = arena.rooms.filter((room) =>
@@ -51,12 +48,12 @@ export default function App() {
     const winnerMatch = match?.status === 'complete' && dismissedMatchId !== match.matchId
         ? match
         : undefined;
-    const hostileEyeCount = arena.arenaSnapshot?.targets.filter((target) =>
-        target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss'
-    ).length ?? 0;
-    const incomingAttack = arena.arenaSnapshot?.attacks.some((attack) =>
-        attack.targetSessionId === arena.session?.sessionId
-    ) ?? false;
+    const hostileEyeCount =
+        arena.arenaSnapshot?.targets.filter((target) =>
+            target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss'
+        ).length ?? 0;
+    const incomingAttack =
+        arena.arenaSnapshot?.attacks.some((attack) => attack.targetSessionId === arena.session?.sessionId) ?? false;
     const rtcReadyPeers = arena.transportDiagnostics.rtc?.readyPeerIds.length ??
         arena.rtcLanes.reduce((sum, lane) => sum + lane.readyPeers, 0);
     const httpStatus = `${arena.httpDiagnostics.apiConfig.status}/${arena.httpDiagnostics.ice.status}`;
@@ -67,7 +64,7 @@ export default function App() {
         'data-arena-ws-state': arena.transportDiagnostics.ws?.readyState ?? 'unknown',
         'data-arena-rtc-ready-peers': String(rtcReadyPeers),
         'data-arena-http-status': httpStatus,
-        'data-arena-network-enabled': arenaNetworkEnabled ? 'true' : 'false',
+        'data-arena-network-enabled': arenaNetworkEnabled ? 'true' : 'false'
     } as const;
 
     useEffect(() => {
@@ -140,7 +137,7 @@ export default function App() {
 
             <section className="hud hud--top">
                 <div className="brand">
-                    <span className="brand__mark"/>
+                    <span className="brand__mark" />
                     <div>
                         <h1>AR Eye Hunter</h1>
                         <p>{currentRoom?.name ?? 'No arena room selected'}</p>
@@ -148,8 +145,8 @@ export default function App() {
                 </div>
 
                 <div className="status-strip">
-                    <StatusPill label="Arena" value={arena.connectionState}/>
-                    <StatusPill label="Score" value={String(localCombat.score)}/>
+                    <StatusPill label="Arena" value={arena.connectionState} />
+                    <StatusPill label="Score" value={String(localCombat.score)} />
                     <StatusPill
                         label="Health"
                         value={localVitals.health <= 0
@@ -172,7 +169,7 @@ export default function App() {
                         label="Weapon"
                         value={getWeaponStats(localLoadout.weaponKind).label}
                     />
-                    <StatusPill label="Combo" value={`x${localCombat.combo}`}/>
+                    <StatusPill label="Combo" value={`x${localCombat.combo}`} />
                     <StatusPill
                         label="Overdrive"
                         value={`${Math.round(localCombat.overdrive)}%`}
@@ -442,7 +439,7 @@ export default function App() {
     );
 }
 
-function StatusPill({ label, value }: Readonly<{ label: string; value: string }>) {
+function StatusPill({ label, value }: Readonly<{ label: string; value: string; }>) {
     return (
         <div className="status-pill">
             <span>{label}</span>
@@ -456,7 +453,7 @@ function SquadLinkChip({
     open,
     onToggle,
     onOpenDiagnostics,
-    directorLabel,
+    directorLabel
 }: Readonly<{
     linkState: ArenaConnection['linkState'];
     open: boolean;
@@ -478,7 +475,9 @@ function SquadLinkChip({
             {open && (
                 <div className="squad-link__popover">
                     <strong>{linkState.detail}</strong>
-                    <span>{linkState.playerCount} hunter{linkState.playerCount === 1 ? '' : 's'} in this signal mess.</span>
+                    <span>
+                        {linkState.playerCount} hunter{linkState.playerCount === 1 ? '' : 's'} in this signal mess.
+                    </span>
                     <span>Arena host: {directorLabel}</span>
                     <button type="button" onClick={onOpenDiagnostics}>
                         Open diagnostics
@@ -491,7 +490,7 @@ function SquadLinkChip({
 
 function PresenceToastStack({
     notices,
-    onDismiss,
+    onDismiss
 }: Readonly<{
     notices: ArenaConnection['presenceNotices'];
     onDismiss: (id: string) => void;
@@ -516,11 +515,13 @@ function PresenceToastStack({
     );
 }
 
-function directorLabel(status: Readonly<{
-    role: string;
-    state: string;
-    isDirector: boolean;
-}>): string {
+function directorLabel(
+    status: Readonly<{
+        role: string;
+        state: string;
+        isDirector: boolean;
+    }>
+): string {
     if (status.state === 'none') {
         return 'peer mode';
     }
@@ -532,7 +533,7 @@ function directorLabel(status: Readonly<{
 
 function matchLabel(
     match: ArenaMatchState | undefined,
-    remainingMs: number,
+    remainingMs: number
 ): string {
     if (!match) {
         return 'infinite';
@@ -557,7 +558,7 @@ function shortId(id: string): string {
 
 function MatchWinnerOverlay({
     match,
-    onClose,
+    onClose
 }: Readonly<{
     match: ArenaMatchState;
     onClose: () => void;
@@ -593,33 +594,38 @@ function MatchWinnerOverlay({
 
 function DiagnosticsDrawer({
     arena,
-    onClose,
+    onClose
 }: Readonly<{
     arena: ArenaConnection;
     onClose: () => void;
 }>) {
     const [copied, setCopied] = useState(false);
     const diagnosticsJson = useMemo(
-        () => JSON.stringify({
-            directorAttempt: arena.directorAttempt,
-            directorStatus: arena.directorStatus,
-            match: arena.gameDiagnostics,
-            transport: arena.transportDiagnostics,
-            http: arena.httpDiagnostics,
-            link: arena.linkState,
-            lanes: arena.rtcLanes,
-            lifecycle: {
-                authStorageKind: arena.authStorageKind,
-                authGeneration: arena.authGeneration,
-                networkEnabled: arena.networkEnabled,
-                logoutQuiesced: arena.logoutQuiesced,
-                wsTicketBackoff: arena.transportDiagnostics.wsTicketBackoff,
-            },
-            ai: {
-                status: arena.aiStatus,
-                error: arena.aiError,
-            },
-        }, null, 2),
+        () =>
+            JSON.stringify(
+                {
+                    directorAttempt: arena.directorAttempt,
+                    directorStatus: arena.directorStatus,
+                    match: arena.gameDiagnostics,
+                    transport: arena.transportDiagnostics,
+                    http: arena.httpDiagnostics,
+                    link: arena.linkState,
+                    lanes: arena.rtcLanes,
+                    lifecycle: {
+                        authStorageKind: arena.authStorageKind,
+                        authGeneration: arena.authGeneration,
+                        networkEnabled: arena.networkEnabled,
+                        logoutQuiesced: arena.logoutQuiesced,
+                        wsTicketBackoff: arena.transportDiagnostics.wsTicketBackoff
+                    },
+                    ai: {
+                        status: arena.aiStatus,
+                        error: arena.aiError
+                    }
+                },
+                null,
+                2
+            ),
         [
             arena.aiError,
             arena.aiStatus,
@@ -633,8 +639,8 @@ function DiagnosticsDrawer({
             arena.logoutQuiesced,
             arena.rtcLanes,
             arena.networkEnabled,
-            arena.transportDiagnostics,
-        ],
+            arena.transportDiagnostics
+        ]
     );
 
     const copyDiagnostics = async () => {
@@ -682,9 +688,9 @@ function DiagnosticsDrawer({
             </div>
 
             <DiagnosticsSection title="Director">
-                <DiagnosticsRow label="Role" value={directorLabel(arena.directorStatus)}/>
-                <DiagnosticsRow label="Fresh" value={arena.directorStatus.isFresh ? 'yes' : 'no'}/>
-                <DiagnosticsRow label="Attempt" value={directorAttemptLabel(arena.directorAttempt)}/>
+                <DiagnosticsRow label="Role" value={directorLabel(arena.directorStatus)} />
+                <DiagnosticsRow label="Fresh" value={arena.directorStatus.isFresh ? 'yes' : 'no'} />
+                <DiagnosticsRow label="Attempt" value={directorAttemptLabel(arena.directorAttempt)} />
                 <DiagnosticsRow
                     label="Heartbeat"
                     value={arena.directorStatus.lastHeartbeatAtEpochMs
@@ -694,7 +700,7 @@ function DiagnosticsDrawer({
             </DiagnosticsSection>
 
             <DiagnosticsSection title="Match Election">
-                <DiagnosticsRow label="Phase" value={arena.gameDiagnostics?.phase ?? 'unknown'}/>
+                <DiagnosticsRow label="Phase" value={arena.gameDiagnostics?.phase ?? 'unknown'} />
                 <DiagnosticsRow
                     label="Authority"
                     value={arena.gameDiagnostics?.directorAuthority ?? 'unknown'}
@@ -707,9 +713,9 @@ function DiagnosticsDrawer({
                     label="Local role"
                     value={arena.gameDiagnostics?.appointment?.localRole ?? 'unknown'}
                 />
-                <DiagnosticsRow label="Host" value={shortOptional(arena.gameDiagnostics?.hostPeerId)}/>
-                <DiagnosticsRow label="Director" value={shortOptional(arena.gameDiagnostics?.directorPeerId)}/>
-                <DiagnosticsRow label="Ready peers" value={String(arena.gameDiagnostics?.readyPeerIds.length ?? 0)}/>
+                <DiagnosticsRow label="Host" value={shortOptional(arena.gameDiagnostics?.hostPeerId)} />
+                <DiagnosticsRow label="Director" value={shortOptional(arena.gameDiagnostics?.directorPeerId)} />
+                <DiagnosticsRow label="Ready peers" value={String(arena.gameDiagnostics?.readyPeerIds.length ?? 0)} />
                 <DiagnosticsRow
                     label="Issues"
                     value={arena.gameDiagnostics?.issues.join(', ') || 'none'}
@@ -717,7 +723,7 @@ function DiagnosticsDrawer({
             </DiagnosticsSection>
 
             <DiagnosticsSection title="RTC / Realtime">
-                <DiagnosticsRow label="Squad Link" value={`${arena.linkState.label} (${arena.linkState.tone})`}/>
+                <DiagnosticsRow label="Squad Link" value={`${arena.linkState.label} (${arena.linkState.tone})`} />
                 <DiagnosticsRow
                     label="Reliable"
                     value={arena.gameDiagnostics?.egress.reliable ?? 'unknown'}
@@ -726,14 +732,16 @@ function DiagnosticsDrawer({
                     label="RTC"
                     value={arena.gameDiagnostics?.egress.realtime ?? 'unknown'}
                 />
-                <DiagnosticsRow label="WS" value={arena.transportDiagnostics.ws?.readyState ?? 'unknown'}/>
+                <DiagnosticsRow label="WS" value={arena.transportDiagnostics.ws?.readyState ?? 'unknown'} />
                 <DiagnosticsRow
                     label="WS ticket"
                     value={wsTicketBackoffLabel(arena.transportDiagnostics.wsTicketBackoff)}
                 />
                 <DiagnosticsRow
                     label="RTC peers"
-                    value={`${arena.transportDiagnostics.rtc?.readyPeerIds.length ?? 0}/${arena.transportDiagnostics.rtc?.knownPeerIds.length ?? 0}`}
+                    value={`${arena.transportDiagnostics.rtc?.readyPeerIds.length ?? 0}/${
+                        arena.transportDiagnostics.rtc?.knownPeerIds.length ?? 0
+                    }`}
                 />
                 <DiagnosticsRow
                     label="Relay peers"
@@ -753,10 +761,10 @@ function DiagnosticsDrawer({
             </DiagnosticsSection>
 
             <DiagnosticsSection title="HTTP / API">
-                <DiagnosticsRow label="Auth storage" value={arena.authStorageKind}/>
-                <DiagnosticsRow label="Generation" value={String(arena.authGeneration)}/>
-                <DiagnosticsRow label="Network" value={arena.networkEnabled ? 'enabled' : 'disabled'}/>
-                <DiagnosticsRow label="Logout" value={arena.logoutQuiesced ? 'quiesced' : 'active'}/>
+                <DiagnosticsRow label="Auth storage" value={arena.authStorageKind} />
+                <DiagnosticsRow label="Generation" value={String(arena.authGeneration)} />
+                <DiagnosticsRow label="Network" value={arena.networkEnabled ? 'enabled' : 'disabled'} />
+                <DiagnosticsRow label="Logout" value={arena.logoutQuiesced ? 'quiesced' : 'active'} />
                 <DiagnosticsRow
                     label="Config"
                     value={httpProbeLabel(arena.httpDiagnostics.apiConfig)}
@@ -768,10 +776,10 @@ function DiagnosticsDrawer({
             </DiagnosticsSection>
 
             <DiagnosticsSection title="Recent Events">
-                <DiagnosticsRow label="Remote players" value={String(arena.remotePlayers.size)}/>
-                <DiagnosticsRow label="Remote events" value={String(arena.remoteEvents.length)}/>
-                <DiagnosticsRow label="Shots" value={String(arena.remoteShots.length)}/>
-                <DiagnosticsRow label="Hits" value={String(arena.remotePlayerHits.length)}/>
+                <DiagnosticsRow label="Remote players" value={String(arena.remotePlayers.size)} />
+                <DiagnosticsRow label="Remote events" value={String(arena.remoteEvents.length)} />
+                <DiagnosticsRow label="Shots" value={String(arena.remoteShots.length)} />
+                <DiagnosticsRow label="Hits" value={String(arena.remotePlayerHits.length)} />
             </DiagnosticsSection>
 
             <details className="diagnostics-json">
@@ -787,7 +795,7 @@ function DiagnosticsDrawer({
 
 function DiagnosticsSection({
     title,
-    children,
+    children
 }: Readonly<{
     title: string;
     children: ReactNode;
@@ -802,7 +810,7 @@ function DiagnosticsSection({
 
 function DiagnosticsRow({
     label,
-    value,
+    value
 }: Readonly<{
     label: string;
     value: string;
@@ -836,7 +844,7 @@ function httpProbeLabel(probe: ArenaConnection['httpDiagnostics']['apiConfig']):
 }
 
 function wsTicketBackoffLabel(
-    state: ArenaConnection['transportDiagnostics']['wsTicketBackoff'],
+    state: ArenaConnection['transportDiagnostics']['wsTicketBackoff']
 ): string {
     if (!state || state.status === 'idle') {
         return 'idle';

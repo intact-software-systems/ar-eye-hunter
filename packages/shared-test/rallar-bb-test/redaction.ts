@@ -17,7 +17,7 @@ const DEFAULT_KEY_SUBSTRINGS = [
     'privatekey',
     'ciphertext',
     'encrypted',
-    'encryption',
+    'encryption'
 ];
 
 function normalizeKey(value: string): string {
@@ -26,7 +26,7 @@ function normalizeKey(value: string): string {
 
 function shouldRedactKey(
     key: string,
-    options: RallarBlackBoxTestRedactionOptions = {},
+    options: RallarBlackBoxTestRedactionOptions = {}
 ): boolean {
     const normalized = normalizeKey(key);
     const exactKeys = new Set((options.keys ?? []).map(normalizeKey));
@@ -40,7 +40,7 @@ function shouldRedactKey(
 
 function shouldRedactString(
     value: string,
-    options: RallarBlackBoxTestRedactionOptions = {},
+    options: RallarBlackBoxTestRedactionOptions = {}
 ): boolean {
     return (options.secretValues ?? [])
         .filter((secret) => secret.length > 0)
@@ -49,7 +49,7 @@ function shouldRedactString(
 
 export function redactRallarBlackBoxValue<T>(
     value: T,
-    options: RallarBlackBoxTestRedactionOptions = {},
+    options: RallarBlackBoxTestRedactionOptions = {}
 ): T {
     const replacement = options.replacement ?? RALLAR_BLACK_BOX_REDACTED_VALUE;
 
@@ -75,8 +75,8 @@ export function redactRallarBlackBoxValue<T>(
         return Object.fromEntries(
             Object.entries(current).map(([childKey, childValue]) => [
                 childKey,
-                redact(childValue, childKey),
-            ]),
+                redact(childValue, childKey)
+            ])
         );
     }
 

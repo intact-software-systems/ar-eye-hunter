@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('QRtcPeerConnection', () => {
     afterEach(() => {
@@ -15,11 +15,11 @@ describe('QRtcPeerConnection', () => {
 
         const signaler = {
             send: vi.fn(async () => {
-            }),
+            })
         };
         const peer = new QRtcPeerConnection(
             signaler as never,
-            createPeerInput(true),
+            createPeerInput(true)
         );
         const seenDataChannels: string[] = [];
         const seenTracks: string[] = [];
@@ -38,7 +38,7 @@ describe('QRtcPeerConnection', () => {
         });
 
         peer.connect({
-            onConnected,
+            onConnected
         });
 
         const pc = FakeRTCPeerConnection.instances[0];
@@ -46,15 +46,15 @@ describe('QRtcPeerConnection', () => {
         await pc.onnegotiationneeded?.();
         await pc.onicecandidate?.({
             candidate: {
-                candidate: 'ice-1',
-            },
+                candidate: 'ice-1'
+            }
         });
         await pc.ondatachannel?.({
-            channel: new FakeRTCDataChannel('chat'),
+            channel: new FakeRTCDataChannel('chat')
         } as RTCDataChannelEvent);
         const remoteTrackEvent: Pick<RTCTrackEvent, 'track' | 'streams'> = {
             track: createFakeTrack('video'),
-            streams: [createFakeStream('remote-1', [createFakeTrack('audio')])],
+            streams: [createFakeStream('remote-1', [createFakeTrack('audio')])]
         };
         await pc.ontrack?.(remoteTrackEvent as RTCTrackEvent);
 
@@ -72,10 +72,10 @@ describe('QRtcPeerConnection', () => {
             payload: {
                 description: {
                     type: 'offer',
-                    sdp: 'offer-sdp',
+                    sdp: 'offer-sdp'
                 },
-                candidate: null,
-            },
+                candidate: null
+            }
         });
         expect(signaler.send).toHaveBeenNthCalledWith(2, {
             channel: 'RtcSignal',
@@ -88,9 +88,9 @@ describe('QRtcPeerConnection', () => {
             payload: {
                 description: null,
                 candidate: {
-                    candidate: 'ice-1',
-                },
-            },
+                    candidate: 'ice-1'
+                }
+            }
         });
         expect(seenDataChannels).toEqual(['chat']);
         expect(seenTracks).toEqual(['video']);
@@ -107,7 +107,7 @@ describe('QRtcPeerConnection', () => {
             outboundIceCandidateCount: 1,
             pendingIceCandidateQueueLength: 0,
             reconnectAttemptsInFlight: 0,
-            hasReconnectTimer: false,
+            hasReconnectTimer: false
         });
 
         peer.resetDiagnostics();
@@ -116,7 +116,7 @@ describe('QRtcPeerConnection', () => {
             connectCallCount: 0,
             negotiationNeededCount: 0,
             outboundOfferCount: 0,
-            outboundIceCandidateCount: 0,
+            outboundIceCandidateCount: 0
         });
     });
 
@@ -125,11 +125,11 @@ describe('QRtcPeerConnection', () => {
 
         const signaler = {
             send: vi.fn(async () => {
-            }),
+            })
         };
         const peer = new QRtcPeerConnection(
             signaler as never,
-            createPeerInput(true),
+            createPeerInput(true)
         );
 
         peer.connect();
@@ -140,8 +140,8 @@ describe('QRtcPeerConnection', () => {
             await peer.handleSignal(QRtcSignalingType.IceCandidate, {
                 description: null,
                 candidate: {
-                    candidate,
-                },
+                    candidate
+                }
             });
         }
         await (peer as any).signalingChain;
@@ -150,35 +150,35 @@ describe('QRtcPeerConnection', () => {
         expect(peer.readDiagnostics()).toMatchObject({
             inboundIceCandidateCount: 2,
             queuedIceCandidateCount: 2,
-            pendingIceCandidateQueueLength: 2,
+            pendingIceCandidateQueueLength: 2
         });
         expect((peer as any).status.iceCandidateQueue).toEqual([
             {
-                candidate: 'queued-ice-1',
+                candidate: 'queued-ice-1'
             },
             {
-                candidate: 'queued-ice-2',
-            },
+                candidate: 'queued-ice-2'
+            }
         ]);
 
         await peer.handleSignal(QRtcSignalingType.Offer, {
             description: {
                 type: 'offer',
-                sdp: 'remote-offer',
+                sdp: 'remote-offer'
             },
-            candidate: null,
+            candidate: null
         });
         await (peer as any).signalingChain;
 
         expect(pc.setRemoteDescription).toHaveBeenCalledWith({
             type: 'offer',
-            sdp: 'remote-offer',
+            sdp: 'remote-offer'
         });
         expect(pc.addIceCandidate).toHaveBeenNthCalledWith(1, {
-            candidate: 'queued-ice-1',
+            candidate: 'queued-ice-1'
         });
         expect(pc.addIceCandidate).toHaveBeenNthCalledWith(2, {
-            candidate: 'queued-ice-2',
+            candidate: 'queued-ice-2'
         });
         expect((peer as any).status.iceCandidateQueue).toEqual([]);
         expect(peer.readDiagnostics()).toMatchObject({
@@ -186,7 +186,7 @@ describe('QRtcPeerConnection', () => {
             outboundAnswerCount: 1,
             addedIceCandidateCount: 2,
             flushedIceCandidateCount: 2,
-            pendingIceCandidateQueueLength: 0,
+            pendingIceCandidateQueueLength: 0
         });
         expect(signaler.send).toHaveBeenLastCalledWith({
             channel: 'RtcSignal',
@@ -199,10 +199,10 @@ describe('QRtcPeerConnection', () => {
             payload: {
                 description: {
                     type: 'answer',
-                    sdp: 'answer-sdp',
+                    sdp: 'answer-sdp'
                 },
-                candidate: null,
-            },
+                candidate: null
+            }
         });
     });
 
@@ -211,11 +211,11 @@ describe('QRtcPeerConnection', () => {
 
         const signaler = {
             send: vi.fn(async () => {
-            }),
+            })
         };
         const peer = new QRtcPeerConnection(
             signaler as never,
-            createPeerInput(true),
+            createPeerInput(true)
         );
 
         peer.connect();
@@ -228,9 +228,9 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal(QRtcSignalingType.Answer, {
             description: {
                 type: 'answer',
-                sdp: 'stale-answer',
+                sdp: 'stale-answer'
             },
-            candidate: null,
+            candidate: null
         });
         await (peer as any).signalingChain;
 
@@ -239,7 +239,7 @@ describe('QRtcPeerConnection', () => {
         expect((peer as any).status.ignoreOffer).toBe(true);
         expect(peer.readDiagnostics()).toMatchObject({
             inboundAnswerCount: 1,
-            staleAnswerIgnoredCount: 1,
+            staleAnswerIgnoredCount: 1
         });
     });
 
@@ -249,11 +249,11 @@ describe('QRtcPeerConnection', () => {
 
         const signaler = {
             send: vi.fn(async () => {
-            }),
+            })
         };
         const peer = new QRtcPeerConnection(
             signaler as never,
-            createPeerInput(false),
+            createPeerInput(false)
         );
 
         peer.connect();
@@ -265,9 +265,9 @@ describe('QRtcPeerConnection', () => {
         await peer.handleSignal(QRtcSignalingType.Offer, {
             description: {
                 type: 'offer',
-                sdp: 'colliding-offer',
+                sdp: 'colliding-offer'
             },
-            candidate: null,
+            candidate: null
         });
         await (peer as any).signalingChain;
 
@@ -275,7 +275,7 @@ describe('QRtcPeerConnection', () => {
         expect(peer.readDiagnostics()).toMatchObject({
             inboundOfferCount: 1,
             offerCollisionCount: 1,
-            ignoredOfferCollisionCount: 1,
+            ignoredOfferCollisionCount: 1
         });
 
         await peer.handleReconnect();
@@ -284,7 +284,7 @@ describe('QRtcPeerConnection', () => {
         expect(peer.readDiagnostics()).toMatchObject({
             reconnectAttemptCount: 1,
             reconnectTimerAlreadyActiveCount: 1,
-            hasReconnectTimer: true,
+            hasReconnectTimer: true
         });
 
         pc.connectionState = 'failed';
@@ -294,7 +294,7 @@ describe('QRtcPeerConnection', () => {
         expect(peer.readDiagnostics()).toMatchObject({
             iceRestartCount: 1,
             iceRestartSkippedConnectedCount: 0,
-            hasReconnectTimer: false,
+            hasReconnectTimer: false
         });
 
         (peer as any).status.reconnectAttempts = 5;
@@ -305,7 +305,7 @@ describe('QRtcPeerConnection', () => {
         expect(peer.readDiagnostics()).toMatchObject({
             reconnectExhaustedCount: 1,
             resetCount: 1,
-            closedPeerConnectionCount: 1,
+            closedPeerConnectionCount: 1
         });
     });
 
@@ -315,9 +315,9 @@ describe('QRtcPeerConnection', () => {
         const peer = new QRtcPeerConnection(
             {
                 send: vi.fn(async () => {
-                }),
+                })
             } as never,
-            createPeerInput(true),
+            createPeerInput(true)
         );
 
         peer.connect();
@@ -345,9 +345,9 @@ describe('QRtcPeerConnection', () => {
         const peer = new QRtcPeerConnection(
             {
                 send: vi.fn(async () => {
-                }),
+                })
             } as never,
-            createPeerInput(true),
+            createPeerInput(true)
         );
 
         peer.connect();
@@ -361,7 +361,7 @@ describe('QRtcPeerConnection', () => {
             disconnectTimerScheduledCount: 1,
             disconnectTimerAlreadyActiveCount: 1,
             disconnectTimerClearedCount: 0,
-            disconnectTimerFiredCount: 0,
+            disconnectTimerFiredCount: 0
         });
 
         pc.connectionState = 'connected';
@@ -373,7 +373,7 @@ describe('QRtcPeerConnection', () => {
             disconnectTimerAlreadyActiveCount: 1,
             disconnectTimerClearedCount: 1,
             disconnectTimerFiredCount: 0,
-            reconnectAttemptCount: 0,
+            reconnectAttemptCount: 0
         });
     });
 
@@ -382,11 +382,11 @@ describe('QRtcPeerConnection', () => {
 
         const signaler = {
             send: vi.fn(async () => {
-            }),
+            })
         };
         const peer = new QRtcPeerConnection(
             signaler as never,
-            createPeerInput(true),
+            createPeerInput(true)
         );
 
         peer.connect();
@@ -404,7 +404,7 @@ describe('QRtcPeerConnection', () => {
         const secondVideo = createFakeTrack('video');
         const secondStream = createFakeStream('local-2', [
             secondAudio,
-            secondVideo,
+            secondVideo
         ]);
 
         await peer.setLocalMediaStream(secondStream as never);
@@ -456,7 +456,7 @@ class FakeRTCPeerConnection {
 
     onnegotiationneeded: (() => Promise<void>) | null = null;
     onicecandidate:
-        | ((event: { candidate: RTCIceCandidateInit | null }) => Promise<void>)
+        | ((event: { candidate: RTCIceCandidateInit | null; }) => Promise<void>)
         | null = null;
     ondatachannel: ((event: RTCDataChannelEvent) => Promise<void>) | null = null;
     ontrack: ((event: RTCTrackEvent) => Promise<void>) | null = null;
@@ -472,7 +472,7 @@ class FakeRTCPeerConnection {
             }),
             getParameters: vi.fn(() => ({})),
             setParameters: vi.fn(async () => {
-            }),
+            })
         };
 
         return sender as unknown as RTCRtpSender;
@@ -487,29 +487,29 @@ class FakeRTCPeerConnection {
     readonly setRemoteDescription = vi.fn(
         async (description: RTCSessionDescriptionInit) => {
             this.remoteDescription = description;
-            this.signalingState =
-                description.type === 'offer' ? 'have-remote-offer' : 'stable';
-        },
+            this.signalingState = description.type === 'offer' ? 'have-remote-offer' : 'stable';
+        }
     );
     readonly setLocalDescription = vi.fn(
         async (description?: RTCSessionDescriptionInit) => {
             if (description) {
                 this.localDescription = description;
-            } else if (this.remoteDescription?.type === 'offer') {
+            }
+            else if (this.remoteDescription?.type === 'offer') {
                 this.localDescription = {
                     type: 'answer',
-                    sdp: 'answer-sdp',
+                    sdp: 'answer-sdp'
                 };
-            } else {
+            }
+            else {
                 this.localDescription = {
                     type: 'offer',
-                    sdp: 'offer-sdp',
+                    sdp: 'offer-sdp'
                 };
             }
 
-            this.signalingState =
-                this.localDescription.type === 'offer' ? 'have-local-offer' : 'stable';
-        },
+            this.signalingState = this.localDescription.type === 'offer' ? 'have-local-offer' : 'stable';
+        }
     );
 
     private readonly listeners = new Map<string, Array<() => void>>();
@@ -543,7 +543,7 @@ class FakeRTCPeerConnection {
         return this.listeners.get(type)?.length ?? 0;
     }
 
-    getTransceivers(): Array<{ stop: () => void }> {
+    getTransceivers(): Array<{ stop: () => void; }> {
         return [];
     }
 
@@ -559,9 +559,9 @@ function createPeerInput(isPolite: boolean) {
         peerSessionId: 'peer-1',
         iceCandidates: {
             iceServers: [],
-            expiresAtEpochMs: Date.now() + 1_000,
+            expiresAtEpochMs: Date.now() + 1_000
         },
-        isPolite,
+        isPolite
     };
 }
 
@@ -569,7 +569,7 @@ function createFakeTrack(kind: 'audio' | 'video'): MediaStreamTrack {
     return {
         kind,
         enabled: true,
-        stop: vi.fn(),
+        stop: vi.fn()
     } as never;
 }
 
@@ -578,6 +578,6 @@ function createFakeStream(id: string, tracks: MediaStreamTrack[]): MediaStream {
         id,
         getTracks: () => tracks,
         getAudioTracks: () => tracks.filter((track) => track.kind === 'audio'),
-        getVideoTracks: () => tracks.filter((track) => track.kind === 'video'),
+        getVideoTracks: () => tracks.filter((track) => track.kind === 'video')
     } as never;
 }

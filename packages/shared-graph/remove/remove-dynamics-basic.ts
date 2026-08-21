@@ -1,6 +1,6 @@
-import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
-import { degreeOf, edgeWeightOf, neighborsOf, withUnusedSteinerRemoved, } from './remove-dynamics-helpers.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
+import { degreeOf, edgeWeightOf, neighborsOf, withUnusedSteinerRemoved } from './remove-dynamics-helpers.ts';
+import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 
 export function rvLeaf(ctx: RemoveDynamicsContext): RemoveResult {
     const next = cloneGraph(ctx.groupGraph);
@@ -23,7 +23,7 @@ export function rvODTwo(ctx: RemoveDynamicsContext): RemoveResult {
     const neighbors = neighborsOf(next, ctx.actionVertexId);
     if (neighbors.length !== 2) {
         throw new Error(
-            `rvODTwo requires degree 2 for ${ctx.actionVertexId}, got ${neighbors.length}`,
+            `rvODTwo requires degree 2 for ${ctx.actionVertexId}, got ${neighbors.length}`
         );
     }
 
@@ -35,7 +35,7 @@ export function rvODTwo(ctx: RemoveDynamicsContext): RemoveResult {
         next.addEdge(a, b, {
             from: a,
             to: b,
-            weight: edgeWeightOf(ctx.globalGraph, a, b),
+            weight: edgeWeightOf(ctx.globalGraph, a, b)
         });
     }
 

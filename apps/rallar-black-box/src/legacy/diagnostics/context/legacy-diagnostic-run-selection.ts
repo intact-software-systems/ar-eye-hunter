@@ -3,14 +3,14 @@ export function resolveRunManagerRefreshSelection({
     diagnosticControlRunId,
     controlRunId,
     bootstrapRunId,
-    availableRunIds,
+    availableRunIds
 }: Readonly<{
     preferredRunId: string;
     diagnosticControlRunId?: string;
     controlRunId?: string;
     bootstrapRunId?: string;
     availableRunIds: readonly string[];
-}>): Readonly<{ runId: string; issue?: string }> {
+}>): Readonly<{ runId: string; issue?: string; }> {
     const available = new Set(availableRunIds);
     if (
         diagnosticControlRunId &&
@@ -23,15 +23,15 @@ export function resolveRunManagerRefreshSelection({
             ? { runId: diagnosticControlRunId }
             : {
                 runId: '',
-                issue: 'Requested diagnostic control run is unavailable. No substitute was selected.',
+                issue: 'Requested diagnostic control run is unavailable. No substitute was selected.'
             };
     }
     const runId = [
         preferredRunId,
         controlRunId,
         bootstrapRunId,
-        availableRunIds[0],
-    ].find(candidate => candidate && available.has(candidate)) ?? '';
+        availableRunIds[0]
+    ].find((candidate) => candidate && available.has(candidate)) ?? '';
     return { runId };
 }
 
@@ -39,7 +39,7 @@ export function deriveDistributedDiagnosticSelection({
     requestedControlRunId,
     requestedDistributedRunId,
     availableControlRunIds,
-    distributedRuns,
+    distributedRuns
 }: Readonly<{
     requestedControlRunId?: string;
     requestedDistributedRunId?: string;
@@ -56,7 +56,7 @@ export function deriveDistributedDiagnosticSelection({
     if (!requestedControlRunId && requestedDistributedRunId) {
         return {
             controlRunId: '',
-            issue: 'Requested diagnostic distributed run has no control-run context. No substitute was selected.',
+            issue: 'Requested diagnostic distributed run has no control-run context. No substitute was selected.'
         };
     }
     if (!requestedControlRunId) {
@@ -65,29 +65,29 @@ export function deriveDistributedDiagnosticSelection({
     if (!availableControlRunIds.includes(requestedControlRunId)) {
         return {
             controlRunId: '',
-            issue: 'Requested diagnostic control run is unavailable. No substitute was selected.',
+            issue: 'Requested diagnostic control run is unavailable. No substitute was selected.'
         };
     }
     if (!requestedDistributedRunId) {
         return { controlRunId: requestedControlRunId };
     }
     const distributedRun = distributedRuns.find(
-        run => run.distributedRunId === requestedDistributedRunId,
+        (run) => run.distributedRunId === requestedDistributedRunId
     );
     if (!distributedRun) {
         return {
             controlRunId: requestedControlRunId,
-            issue: 'Requested diagnostic distributed run is unavailable. No substitute was selected.',
+            issue: 'Requested diagnostic distributed run is unavailable. No substitute was selected.'
         };
     }
     if (distributedRun.controlRunId !== requestedControlRunId) {
         return {
             controlRunId: requestedControlRunId,
-            issue: 'Requested diagnostic distributed run does not belong to the requested control run.',
+            issue: 'Requested diagnostic distributed run does not belong to the requested control run.'
         };
     }
     return {
         controlRunId: requestedControlRunId,
-        distributedRunId: requestedDistributedRunId,
+        distributedRunId: requestedDistributedRunId
     };
 }

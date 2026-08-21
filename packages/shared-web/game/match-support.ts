@@ -1,69 +1,35 @@
 import type {
     RallarMatchStandingComparator,
     RallarMatchStandingRow,
-    RallarRoomTrustedMatchResult,
+    RallarRoomTrustedMatchResult
 } from '@shared/rallar-match/mod.ts';
 import {
     createRallarMatchResult,
     deriveRallarMatchParticipants,
-    deriveRallarMatchStandings,
+    deriveRallarMatchStandings
 } from '@shared/rallar-match/mod.ts';
 import { createRallarGameMatch } from './match.ts';
-import type {
-    RallarGameMatchConfig,
-    RallarGameMatchHandle,
-    RallarGameSendResult,
-} from './types.ts';
+import type { RallarGameMatchConfig, RallarGameMatchHandle, RallarGameSendResult } from './types.ts';
 
-export type RallarBrowserMatchConfig<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = TCommand,
-> =
-    Omit<
-        RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence>,
-        'onInput' | 'onIntent'
-    > &
-    Readonly<{
+export type RallarBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence = TCommand> =
+    & Omit<RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence>, 'onInput' | 'onIntent'>
+    & Readonly<{
         matchId: string;
         startedAtEpochMs?: number;
-        onCommand?: RallarGameMatchConfig<
-            TCommand,
-            TCommand,
-            TSnapshot,
-            TEvent,
-            TPresence
-        >['onIntent'];
+        onCommand?: RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence>['onIntent'];
         readStandingRows?: () => readonly RallarMatchStandingRow[];
         compareStandings?: RallarMatchStandingComparator;
     }>;
 
-export type RallarBrowserMatchDependencies<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = TCommand,
-> = Readonly<{
+export type RallarBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence = TCommand> = Readonly<{
     createGameMatch?: (
-        config: RallarGameMatchConfig<
-            TCommand,
-            TCommand,
-            TSnapshot,
-            TEvent,
-            TPresence
-        >,
+        config: RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence>
     ) => RallarGameMatchHandle<TCommand, TCommand, TSnapshot, TEvent, TPresence>;
     nowEpochMs?: () => number;
     resultId?: () => string;
 }>;
 
-export type RallarBrowserMatchHandle<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = TCommand,
-> = Readonly<{
+export type RallarBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence = TCommand> = Readonly<{
     game: RallarGameMatchHandle<TCommand, TCommand, TSnapshot, TEvent, TPresence>;
     start: RallarGameMatchHandle<TCommand, TCommand, TSnapshot, TEvent, TPresence>['start'];
     stop: RallarGameMatchHandle<TCommand, TCommand, TSnapshot, TEvent, TPresence>['stop'];
@@ -75,28 +41,12 @@ export type RallarBrowserMatchHandle<
     finalizeResult<TSummary>(summary: TSummary): RallarRoomTrustedMatchResult<TSummary>;
 }>;
 
-export function createRallarBrowserMatch<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = TCommand,
->(
+export function createRallarBrowserMatch<TCommand, TSnapshot, TEvent, TPresence = TCommand>(
     config: RallarBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>,
-    dependencies: RallarBrowserMatchDependencies<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    > = {},
+    dependencies: RallarBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence> = {}
 ): RallarBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence> {
     const createGameMatch = dependencies.createGameMatch ?? createRallarGameMatch;
-    const gameConfig: RallarGameMatchConfig<
-        TCommand,
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    > = {
+    const gameConfig: RallarGameMatchConfig<TCommand, TCommand, TSnapshot, TEvent, TPresence> = {
         rallar: config.rallar,
         protocol: config.protocol,
         topicId: config.topicId,
@@ -119,7 +69,7 @@ export function createRallarBrowserMatch<
         onIntent: config.onCommand,
         onSnapshot: config.onSnapshot,
         onEvent: config.onEvent,
-        onSyncRequest: config.onSyncRequest,
+        onSyncRequest: config.onSyncRequest
     };
     const game = createGameMatch(gameConfig);
     const nowEpochMs = dependencies.nowEpochMs ?? Date.now;
@@ -128,7 +78,7 @@ export function createRallarBrowserMatch<
     const deriveStandings = () =>
         deriveRallarMatchStandings({
             rows: config.readStandingRows?.() ?? [],
-            compare: config.compareStandings,
+            compare: config.compareStandings
         });
 
     return {
@@ -152,7 +102,7 @@ export function createRallarBrowserMatch<
             const appointment = directorStatus.appointment;
             if (!appointment || !directorStatus.isFresh) {
                 throw new Error(
-                    'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+                    'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.'
                 );
             }
             const session = config.rallar.session();
@@ -163,7 +113,7 @@ export function createRallarBrowserMatch<
                 appointment.principalId !== session.clientId
             ) {
                 throw new Error(
-                    'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.',
+                    'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.'
                 );
             }
 
@@ -177,14 +127,14 @@ export function createRallarBrowserMatch<
                     id: appointment.sessionId,
                     epoch: appointment.epoch,
                     principalId: appointment.principalId,
-                    sessionId: appointment.sessionId,
+                    sessionId: appointment.sessionId
                 },
                 trust: 'room-trusted',
                 startedAtEpochMs: config.startedAtEpochMs,
                 finishedAtEpochMs: nowEpochMs(),
                 standings: deriveStandings(),
-                summary,
+                summary
             });
-        },
+        }
     };
 }

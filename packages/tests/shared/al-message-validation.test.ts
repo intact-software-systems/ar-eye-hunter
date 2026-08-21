@@ -1,13 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { newALRoute } from '@shared/al-contracts/al-contract.ts';
-import {
-    assertValidALMessageInput,
-    validateALMessageInput,
-} from '@shared/al-contracts/al-validation.ts';
-import {
-    RallarValidationError,
-    isRallarValidationError,
-} from '@shared/api/rallar-validation.ts';
+import { assertValidALMessageInput, validateALMessageInput } from '@shared/al-contracts/al-validation.ts';
+import { isRallarValidationError, RallarValidationError } from '@shared/api/rallar-validation.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('AL message validation', () => {
     it('accepts valid AL message builder input', () => {
@@ -15,7 +9,7 @@ describe('AL message validation', () => {
             senderId: 'peer-a',
             route: newALRoute('room.chat', 'lobby', 'msg-1'),
             typeId: 'chat.message.v1',
-            payload: { text: 'hello' },
+            payload: { text: 'hello' }
         });
 
         expect(result.ok).toBe(true);
@@ -27,13 +21,13 @@ describe('AL message validation', () => {
             senderId: 'peer/a',
             route: newALRoute('room chat', 'lobby', 'msg-1'),
             typeId: 'chat.message.v1',
-            payload: { text: 'hello' },
+            payload: { text: 'hello' }
         });
 
         expect(result.ok).toBe(false);
         expect(result.issues.map((issue) => issue.path)).toEqual([
             '$.senderId',
-            '$.route.topicId',
+            '$.route.topicId'
         ]);
     });
 
@@ -43,7 +37,7 @@ describe('AL message validation', () => {
                 senderId: 'peer-a',
                 route: newALRoute('room.chat', 'lobby', 'msg-1'),
                 typeId: 'chat.message.v1',
-                payload: undefined,
+                payload: undefined
             })
         ).toThrow(RallarValidationError);
 
@@ -52,9 +46,10 @@ describe('AL message validation', () => {
                 senderId: 'peer-a',
                 route: newALRoute('room.chat', 'lobby', 'msg-1'),
                 typeId: 'chat.message.v1',
-                payload: 1n,
+                payload: 1n
             });
-        } catch (error) {
+        }
+        catch (error) {
             expect(isRallarValidationError(error)).toBe(true);
             expect((error as RallarValidationError).issues[0]?.code)
                 .toBe('invalid-json-payload');
@@ -67,7 +62,7 @@ describe('AL message validation', () => {
             route: newALRoute('room.chat', 'lobby', 'msg-1'),
             typeId: 'chat.message.v1',
             payload: { text: 'hello' },
-            maxPayloadBytes: 3,
+            maxPayloadBytes: 3
         });
 
         expect(result.ok).toBe(false);

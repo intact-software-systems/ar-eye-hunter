@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
 import { PartitionRange } from '@shared/resilience/PartitionRange.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('PartitionRange', () => {
     it('splits a range into contiguous partitions up to the max size', () => {
@@ -11,14 +11,14 @@ describe('PartitionRange', () => {
             (from, to, value) => ({
                 ...value,
                 from,
-                to,
-            }),
+                to
+            })
         );
 
         expect(partitions).toEqual([
             { kind: 'range', from: 0, to: 3 },
             { kind: 'range', from: 4, to: 7 },
-            { kind: 'range', from: 8, to: 10 },
+            { kind: 'range', from: 8, to: 10 }
         ]);
     });
 
@@ -27,10 +27,10 @@ describe('PartitionRange', () => {
         const partitioner = vi.fn();
 
         expect(PartitionRange.partition(value, 5, 5, 10, partitioner)).toEqual([
-            value,
+            value
         ]);
         expect(PartitionRange.partition(value, 0, 3, 3, partitioner)).toEqual([
-            value,
+            value
         ]);
         expect(partitioner).not.toHaveBeenCalled();
     });
@@ -42,8 +42,8 @@ describe('PartitionRange', () => {
                 10,
                 5,
                 3,
-                (from, to, value) => `${value}:${from}-${to}`,
-            ),
+                (from, to, value) => `${value}:${from}-${to}`
+            )
         ).toThrow('From cannot be larger than to: 10 > 5');
     });
 });

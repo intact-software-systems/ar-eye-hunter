@@ -1,10 +1,10 @@
-import { recordAnalyzeWorkerPerformance } from './analyze-worker-performance.ts';
 import type {
     AnalyzeCompleteResponse,
     AnalyzeSearchResponse,
     AnalyzeTuneResponse,
-    AnalyzeWindowResponse,
+    AnalyzeWindowResponse
 } from './analyze-worker-client-contract.ts';
+import { recordAnalyzeWorkerPerformance } from './analyze-worker-performance.ts';
 import type { AnalyzeWorkerPerformancePort } from './analyze-worker-performance.ts';
 
 export function recordAnalyzeWorkerClientTelemetry(
@@ -14,27 +14,29 @@ export function recordAnalyzeWorkerClientTelemetry(
         | AnalyzeCompleteResponse
         | AnalyzeSearchResponse
         | AnalyzeWindowResponse
-        | AnalyzeTuneResponse,
+        | AnalyzeTuneResponse
 ): void {
-    if (!performance) return;
+    if (!performance) {
+        return;
+    }
     const telemetry = response.telemetry;
     const counts = {
         sourceCount: telemetry.sourceFileCount,
         indexCount: telemetry.retainedEntryCount,
         matchCount: telemetry.matchedEntryCount,
         mountedCount: telemetry.projectedEntryCount,
-        renderCount: 1,
+        renderCount: 1
     };
     if (name === 'model') {
         recordAnalyzeWorkerPerformance(performance, {
             name: 'parse',
             durationMs: telemetry.parseDurationMs,
-            counts,
+            counts
         });
     }
     recordAnalyzeWorkerPerformance(performance, {
         name,
         durationMs: telemetry.durationMs,
-        counts,
+        counts
     });
 }

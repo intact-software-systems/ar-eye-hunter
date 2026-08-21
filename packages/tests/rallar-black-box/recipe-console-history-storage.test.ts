@@ -4,48 +4,47 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-    HISTORY_FILTER_PRESET_LIMITS,
     createHistoryFilterPreset,
+    HISTORY_FILTER_PRESET_LIMITS,
     historyFilterPresetApplyPatch,
     removeHistoryFilterPreset,
     upsertHistoryFilterPreset,
-    type HistoryFilterPreset,
+    type HistoryFilterPreset
 } from '../../../apps/rallar-black-box/src/recipe-console/history/history-filter-contract.ts';
 import {
-    HISTORY_FILTER_PRESET_STORAGE_KEY,
+    deserializeHistoryFilterPresets,
     HISTORY_FILTER_PRESET_MAX_INPUT_COUNT,
     HISTORY_FILTER_PRESET_MAX_SERIALIZED_LENGTH,
-    deserializeHistoryFilterPresets,
+    HISTORY_FILTER_PRESET_STORAGE_KEY,
     parseHistoryFilterPresetEnvelope,
     readHistoryFilterPresets,
     serializeHistoryFilterPresets,
     writeHistoryFilterPresets,
-    type HistoryFilterStorage,
+    type HistoryFilterStorage
 } from '../../../apps/rallar-black-box/src/recipe-console/history/history-filter-storage.ts';
 import {
     useHistoryFilterPresets,
-    type HistoryFilterPresetController,
+    type HistoryFilterPresetController
 } from '../../../apps/rallar-black-box/src/recipe-console/history/use-history-filter-presets.ts';
-import type { RecipeConsoleUrlState } from
-    '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const BASE_STATE: RecipeConsoleUrlState = {
     v: 1,
     experience: 'recipe-console',
-    view: 'tune',
+    view: 'tune'
 };
 
 function state(
-    overrides: Partial<RecipeConsoleUrlState> = {},
+    overrides: Partial<RecipeConsoleUrlState> = {}
 ): RecipeConsoleUrlState {
     return { ...BASE_STATE, ...overrides };
 }
 
 function preset(
     name: string,
-    filters: HistoryFilterPreset['filters'] = {},
+    filters: HistoryFilterPreset['filters'] = {}
 ): HistoryFilterPreset {
     return { name, filters };
 }
@@ -59,19 +58,25 @@ class MemoryStorage implements HistoryFilterStorage {
     removeCalls = 0;
 
     getItem(key: string): string | null {
-        if (this.getError) throw this.getError;
+        if (this.getError) {
+            throw this.getError;
+        }
         return this.values.get(key) ?? null;
     }
 
     setItem(key: string, value: string): void {
         this.setCalls += 1;
-        if (this.setError) throw this.setError;
+        if (this.setError) {
+            throw this.setError;
+        }
         this.values.set(key, value);
     }
 
     removeItem(key: string): void {
         this.removeCalls += 1;
-        if (this.removeError) throw this.removeError;
+        if (this.removeError) {
+            throw this.removeError;
+        }
         this.values.delete(key);
     }
 }
@@ -80,30 +85,30 @@ describe('Recipe Console History filter contract', () => {
     it('persists exactly the eight committed History filters and applies a replacement patch', () => {
         const committedWithForbiddenState = {
             ...state({
-            historyQuery: 'failed ack',
-            historyGroup: 'bb-group',
-            historyRecipeId: 'history-recipe',
-            historyProfile: 'smoke',
-            failureCategory: 'readiness',
-            status: 'failed',
-            from: 100,
-            to: 900,
-            recipeId: 'operational-secret',
-            controlRunId: 'control-secret',
-            distributedRunId: 'distributed-secret',
-            compareLeft: 'compare-left-secret',
-            compareRight: 'compare-right-secret',
-            timingMetric: 'stream-cadence',
+                historyQuery: 'failed ack',
+                historyGroup: 'bb-group',
+                historyRecipeId: 'history-recipe',
+                historyProfile: 'smoke',
+                failureCategory: 'readiness',
+                status: 'failed',
+                from: 100,
+                to: 900,
+                recipeId: 'operational-secret',
+                controlRunId: 'control-secret',
+                distributedRunId: 'distributed-secret',
+                compareLeft: 'compare-left-secret',
+                compareRight: 'compare-right-secret',
+                timingMetric: 'stream-cadence'
             }),
             controlToken: 'cast-control-token-secret',
             controlUrl: 'https://cast-control-url-secret.test',
             artifact: { payload: 'cast-artifact-secret' },
             draft: 'cast-draft-secret',
-            activePreset: 'cast-active-preset-secret',
+            activePreset: 'cast-active-preset-secret'
         } as RecipeConsoleUrlState;
         const created = createHistoryFilterPreset(
             '  Failed ACKs  ',
-            committedWithForbiddenState,
+            committedWithForbiddenState
         );
 
         expect(created).toEqual({
@@ -116,14 +121,14 @@ describe('Recipe Console History filter contract', () => {
                 failureCategory: 'readiness',
                 status: 'failed',
                 from: 100,
-                to: 900,
-            },
+                to: 900
+            }
         });
         expect(JSON.stringify(created)).not.toMatch(
-            /operational-secret|control-secret|distributed-secret|compare-|stream-cadence|cast-/,
+            /operational-secret|control-secret|distributed-secret|compare-|stream-cadence|cast-/
         );
         expect(historyFilterPresetApplyPatch(preset('Partial', {
-            historyGroup: 'only-this-group',
+            historyGroup: 'only-this-group'
         }))).toEqual({
             historyQuery: undefined,
             historyGroup: 'only-this-group',
@@ -132,7 +137,7 @@ describe('Recipe Console History filter contract', () => {
             failureCategory: undefined,
             status: undefined,
             from: undefined,
-            to: undefined,
+            to: undefined
         });
     });
 
@@ -140,22 +145,34 @@ describe('Recipe Console History filter contract', () => {
         expect(createHistoryFilterPreset(' ', BASE_STATE)).toBeUndefined();
         expect(createHistoryFilterPreset(
             'n'.repeat(HISTORY_FILTER_PRESET_LIMITS.name + 1),
-            BASE_STATE,
+            BASE_STATE
         )).toBeUndefined();
-        expect(createHistoryFilterPreset('Query boundary', state({
-            historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query),
-            historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
-        }))).toBeDefined();
-        expect(createHistoryFilterPreset('Query too long', state({
-            historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query + 1),
-        }))).toBeUndefined();
-        expect(createHistoryFilterPreset('Group too long', state({
-            historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string + 1),
-        }))).toBeUndefined();
-        expect(createHistoryFilterPreset('Bad range', state({
-            from: 901,
-            to: 900,
-        }))).toBeUndefined();
+        expect(createHistoryFilterPreset(
+            'Query boundary',
+            state({
+                historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query),
+                historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string)
+            })
+        )).toBeDefined();
+        expect(createHistoryFilterPreset(
+            'Query too long',
+            state({
+                historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query + 1)
+            })
+        )).toBeUndefined();
+        expect(createHistoryFilterPreset(
+            'Group too long',
+            state({
+                historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string + 1)
+            })
+        )).toBeUndefined();
+        expect(createHistoryFilterPreset(
+            'Bad range',
+            state({
+                from: 901,
+                to: 900
+            })
+        )).toBeUndefined();
     });
 
     it('replaces an exact normalized duplicate as newest and evicts the oldest at twelve', () => {
@@ -163,24 +180,24 @@ describe('Recipe Console History filter contract', () => {
         for (let index = 1; index <= 12; index += 1) {
             presets = upsertHistoryFilterPreset(
                 presets,
-                preset(`Preset ${index}`, { historyQuery: `query-${index}` }),
+                preset(`Preset ${index}`, { historyQuery: `query-${index}` })
             );
         }
 
         presets = upsertHistoryFilterPreset(
             presets,
-            preset('  Preset 2  ', { historyQuery: 'replacement' }),
+            preset('  Preset 2  ', { historyQuery: 'replacement' })
         );
         expect(presets).toHaveLength(12);
         expect(presets.at(-1)).toEqual(preset('Preset 2', {
-            historyQuery: 'replacement',
+            historyQuery: 'replacement'
         }));
 
         presets = upsertHistoryFilterPreset(
             presets,
-            preset('Preset 13', { historyQuery: 'query-13' }),
+            preset('Preset 13', { historyQuery: 'query-13' })
         );
-        expect(presets.map(entry => entry.name)).toEqual([
+        expect(presets.map((entry) => entry.name)).toEqual([
             'Preset 3',
             'Preset 4',
             'Preset 5',
@@ -192,9 +209,9 @@ describe('Recipe Console History filter contract', () => {
             'Preset 11',
             'Preset 12',
             'Preset 2',
-            'Preset 13',
+            'Preset 13'
         ]);
-        expect(removeHistoryFilterPreset(presets, '  Preset 2  ').map(entry => entry.name))
+        expect(removeHistoryFilterPreset(presets, '  Preset 2  ').map((entry) => entry.name))
             .not.toContain('Preset 2');
     });
 });
@@ -202,7 +219,7 @@ describe('Recipe Console History filter contract', () => {
 describe('Recipe Console History filter storage', () => {
     it('uses one versioned key and a deterministic exact-whitelist envelope', () => {
         expect(HISTORY_FILTER_PRESET_STORAGE_KEY).toBe(
-            'rallar-black-box.ui.recipe-console.history-filter-presets.v1',
+            'rallar-black-box.ui.recipe-console.history-filter-presets.v1'
         );
         const serialized = serializeHistoryFilterPresets([
             preset('Failed ACKs', {
@@ -213,8 +230,8 @@ describe('Recipe Console History filter storage', () => {
                 failureCategory: 'readiness',
                 status: 'failed',
                 from: 100,
-                to: 900,
-            }),
+                to: 900
+            })
         ]);
 
         expect(serialized).toBe(JSON.stringify({
@@ -229,9 +246,9 @@ describe('Recipe Console History filter storage', () => {
                     failureCategory: 'readiness',
                     status: 'failed',
                     from: 100,
-                    to: 900,
-                },
-            }],
+                    to: 900
+                }
+            }]
         }));
         expect(deserializeHistoryFilterPresets(serialized)).toEqual({
             status: 'ready',
@@ -243,8 +260,8 @@ describe('Recipe Console History filter storage', () => {
                 failureCategory: 'readiness',
                 status: 'failed',
                 from: 100,
-                to: 900,
-            })],
+                to: 900
+            })]
         });
     });
 
@@ -257,23 +274,23 @@ describe('Recipe Console History filter storage', () => {
                     name: 'Leaky',
                     filters: {
                         historyQuery: 'leaky',
-                        controlToken: 'secret-token',
-                    },
+                        controlToken: 'secret-token'
+                    }
                 },
                 preset('Bad status', {
-                    status: 'not-a-state' as HistoryFilterPreset['filters']['status'],
+                    status: 'not-a-state' as HistoryFilterPreset['filters']['status']
                 }),
                 preset('Bad range', { from: 20, to: 10 }),
-                preset('Last', { historyRecipeId: 'last-recipe' }),
-            ],
+                preset('Last', { historyRecipeId: 'last-recipe' })
+            ]
         });
 
         expect(parsed).toEqual({
             status: 'ready',
             presets: [
                 preset('First', { historyQuery: 'first' }),
-                preset('Last', { historyRecipeId: 'last-recipe' }),
-            ],
+                preset('Last', { historyRecipeId: 'last-recipe' })
+            ]
         });
     });
 
@@ -285,15 +302,15 @@ describe('Recipe Console History filter storage', () => {
                     historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query),
                     historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
                     historyRecipeId: 'r'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
-                    historyProfile: 'p'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
+                    historyProfile: 'p'.repeat(HISTORY_FILTER_PRESET_LIMITS.string)
                 }),
                 preset('Query over', {
-                    historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query + 1),
+                    historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query + 1)
                 }),
                 preset('Group over', {
-                    historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string + 1),
-                }),
-            ],
+                    historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string + 1)
+                })
+            ]
         });
 
         expect(parsed.presets).toEqual([
@@ -301,40 +318,40 @@ describe('Recipe Console History filter storage', () => {
                 historyQuery: 'q'.repeat(HISTORY_FILTER_PRESET_LIMITS.query),
                 historyGroup: 'g'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
                 historyRecipeId: 'r'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
-                historyProfile: 'p'.repeat(HISTORY_FILTER_PRESET_LIMITS.string),
-            }),
+                historyProfile: 'p'.repeat(HISTORY_FILTER_PRESET_LIMITS.string)
+            })
         ]);
     });
 
     it('rejects malformed envelopes and preserves a future version as unsupported', () => {
         expect(deserializeHistoryFilterPresets('{')).toEqual({
             status: 'invalid',
-            presets: [],
+            presets: []
         });
         expect(parseHistoryFilterPresetEnvelope({ version: 1, presets: {} })).toEqual({
             status: 'invalid',
-            presets: [],
+            presets: []
         });
         expect(parseHistoryFilterPresetEnvelope({ version: 2, presets: [] })).toEqual({
             status: 'unsupported',
-            presets: [],
+            presets: []
         });
         expect(parseHistoryFilterPresetEnvelope({
             version: 1,
             presets: [],
-            token: 'secret',
+            token: 'secret'
         })).toEqual({
             status: 'invalid',
-            presets: [],
+            presets: []
         });
     });
 
     it('rejects a serialized value above the defensive raw-input budget', () => {
         expect(deserializeHistoryFilterPresets(
-            ' '.repeat(HISTORY_FILTER_PRESET_MAX_SERIALIZED_LENGTH + 1),
+            ' '.repeat(HISTORY_FILTER_PRESET_MAX_SERIALIZED_LENGTH + 1)
         )).toEqual({
             status: 'invalid',
-            presets: [],
+            presets: []
         });
     });
 
@@ -346,10 +363,9 @@ describe('Recipe Console History filter storage', () => {
             get: () => {
                 getterCalls += 1;
                 return {};
-            },
+            }
         });
-        const inherited = Object.create({ controlToken: 'prototype-secret' }) as
-            Record<string, unknown>;
+        const inherited = Object.create({ controlToken: 'prototype-secret' }) as Record<string, unknown>;
         inherited.name = 'Inherited';
         inherited.filters = {};
 
@@ -359,29 +375,28 @@ describe('Recipe Console History filter storage', () => {
                 preset('Safe'),
                 accessor,
                 inherited,
-                JSON.parse('{"name":"Proto key","filters":{"__proto__":{"token":"secret"}}}') as unknown,
-            ],
+                JSON.parse('{"name":"Proto key","filters":{"__proto__":{"token":"secret"}}}') as unknown
+            ]
         });
 
         expect(getterCalls).toBe(0);
         expect(parsed).toEqual({
             status: 'ready',
-            presets: [preset('Safe')],
+            presets: [preset('Safe')]
         });
     });
 
     it('deduplicates by the newest occurrence before keeping the newest twelve', () => {
-        const entries = Array.from({ length: 13 }, (_, index) =>
-            preset(`Preset ${index + 1}`, { historyQuery: `old-${index + 1}` }));
+        const entries = Array.from({ length: 13 }, (_, index) => preset(`Preset ${index + 1}`, { historyQuery: `old-${index + 1}` }));
         entries.push(preset(' Preset 2 ', { historyQuery: 'newest-two' }));
 
         const parsed = parseHistoryFilterPresetEnvelope({
             version: 1,
-            presets: entries,
+            presets: entries
         });
 
         expect(parsed.presets).toHaveLength(12);
-        expect(parsed.presets.map(entry => entry.name)).toEqual([
+        expect(parsed.presets.map((entry) => entry.name)).toEqual([
             'Preset 3',
             'Preset 4',
             'Preset 5',
@@ -393,7 +408,7 @@ describe('Recipe Console History filter storage', () => {
             'Preset 11',
             'Preset 12',
             'Preset 13',
-            'Preset 2',
+            'Preset 2'
         ]);
         expect(parsed.presets.at(-1)?.filters.historyQuery).toBe('newest-two');
     });
@@ -401,25 +416,27 @@ describe('Recipe Console History filter storage', () => {
     it('bounds direct untrusted arrays before validating dense entries', () => {
         const atLimit = Array.from(
             { length: HISTORY_FILTER_PRESET_MAX_INPUT_COUNT },
-            (_, index) => preset(`Preset ${index}`, { historyQuery: String(index) }),
+            (_, index) => preset(`Preset ${index}`, { historyQuery: String(index) })
         );
+        expect(
+            parseHistoryFilterPresetEnvelope({
+                version: 1,
+                presets: atLimit
+            }).presets
+        ).toHaveLength(HISTORY_FILTER_PRESET_LIMITS.count);
         expect(parseHistoryFilterPresetEnvelope({
             version: 1,
-            presets: atLimit,
-        }).presets).toHaveLength(HISTORY_FILTER_PRESET_LIMITS.count);
-        expect(parseHistoryFilterPresetEnvelope({
-            version: 1,
-            presets: [...atLimit, preset('One too many')],
+            presets: [...atLimit, preset('One too many')]
         })).toEqual({
             status: 'invalid',
-            presets: [],
+            presets: []
         });
     });
 
     it('treats disabled and throwing storage operations as nonfatal', () => {
         expect(readHistoryFilterPresets(undefined)).toEqual({
             status: 'unavailable',
-            presets: [],
+            presets: []
         });
         expect(writeHistoryFilterPresets(undefined, [preset('No storage')])).toBe(false);
 
@@ -427,7 +444,7 @@ describe('Recipe Console History filter storage', () => {
         storage.getError = new Error('read denied');
         expect(readHistoryFilterPresets(storage)).toEqual({
             status: 'unavailable',
-            presets: [],
+            presets: []
         });
         storage.getError = undefined;
         storage.setError = new Error('quota');
@@ -458,7 +475,7 @@ describe('useHistoryFilterPresets', () => {
         browserStorage = new MemoryStorage();
         Object.defineProperty(window, 'localStorage', {
             configurable: true,
-            value: browserStorage,
+            value: browserStorage
         });
         container = document.createElement('div');
         document.body.append(container);
@@ -478,13 +495,13 @@ describe('useHistoryFilterPresets', () => {
         let committed = state({
             historyQuery: 'first committed',
             historyRecipeId: 'first-recipe',
-            recipeId: 'operational-secret',
+            recipeId: 'operational-secret'
         });
 
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: committed,
-                storage,
+                storage
             });
             return null;
         }
@@ -494,7 +511,7 @@ describe('useHistoryFilterPresets', () => {
         committed = state({
             historyQuery: 'latest committed',
             historyRecipeId: 'latest-recipe',
-            recipeId: 'new-operational-secret',
+            recipeId: 'new-operational-secret'
         });
         await act(async () => root?.render(createElement(Harness)));
         await act(async () => controller?.save('Latest'));
@@ -507,8 +524,8 @@ describe('useHistoryFilterPresets', () => {
         expect(controller?.presets).toEqual([
             preset('Latest', {
                 historyQuery: 'latest committed',
-                historyRecipeId: 'latest-recipe',
-            }),
+                historyRecipeId: 'latest-recipe'
+            })
         ]);
     });
 
@@ -517,15 +534,15 @@ describe('useHistoryFilterPresets', () => {
         storage.values.set(
             HISTORY_FILTER_PRESET_STORAGE_KEY,
             serializeHistoryFilterPresets([
-                preset('Saved', { historyQuery: 'saved query' }),
-            ]),
+                preset('Saved', { historyQuery: 'saved query' })
+            ])
         );
         const committed = state({ historyQuery: 'explicit URL query' });
 
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: committed,
-                storage,
+                storage
             });
             return null;
         }
@@ -537,8 +554,8 @@ describe('useHistoryFilterPresets', () => {
         expect(controller?.presets).toEqual([
             preset('Saved', { historyQuery: 'saved query' }),
             preset('URL remains authoritative', {
-                historyQuery: 'explicit URL query',
-            }),
+                historyQuery: 'explicit URL query'
+            })
         ]);
     });
 
@@ -548,7 +565,7 @@ describe('useHistoryFilterPresets', () => {
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: state({ historyQuery: 'committed' }),
-                storage,
+                storage
             });
             return null;
         }
@@ -563,12 +580,12 @@ describe('useHistoryFilterPresets', () => {
         storage.setError = undefined;
         await act(async () => controller?.save('Durable'));
         expect(controller?.presets).toEqual([
-            preset('Durable', { historyQuery: 'committed' }),
+            preset('Durable', { historyQuery: 'committed' })
         ]);
         storage.removeError = new Error('remove denied');
         await act(async () => controller?.remove('Durable'));
         expect(controller?.presets).toEqual([
-            preset('Durable', { historyQuery: 'committed' }),
+            preset('Durable', { historyQuery: 'committed' })
         ]);
         expect(controller?.status).toBe('write-failed');
     });
@@ -579,20 +596,22 @@ describe('useHistoryFilterPresets', () => {
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: state({ historyQuery: 'strict committed' }),
-                storage,
+                storage
             });
             return null;
         }
 
         root = createRoot(container);
-        await act(async () => root?.render(
-            createElement(StrictMode, null, createElement(Harness)),
-        ));
+        await act(async () =>
+            root?.render(
+                createElement(StrictMode, null, createElement(Harness))
+            )
+        );
         await act(async () => controller?.save('Strict save'));
 
         expect(storage.setCalls).toBe(1);
         expect(controller?.presets).toEqual([
-            preset('Strict save', { historyQuery: 'strict committed' }),
+            preset('Strict save', { historyQuery: 'strict committed' })
         ]);
     });
 
@@ -606,7 +625,7 @@ describe('useHistoryFilterPresets', () => {
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: state({ historyQuery: 'committed' }),
-                storage: currentStorage,
+                storage: currentStorage
             });
             return null;
         }
@@ -630,7 +649,7 @@ describe('useHistoryFilterPresets', () => {
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: state({ historyQuery: 'committed' }),
-                storage,
+                storage
             });
             return null;
         }
@@ -648,7 +667,7 @@ describe('useHistoryFilterPresets', () => {
         function Harness() {
             controller = useHistoryFilterPresets({
                 committedUrlState: BASE_STATE,
-                storage: null,
+                storage: null
             });
             return null;
         }
@@ -659,14 +678,14 @@ describe('useHistoryFilterPresets', () => {
 
         expect(controller).toMatchObject({
             presets: [],
-            status: 'unavailable',
+            status: 'unavailable'
         });
     });
 
     it('resolves browser localStorage only when no injected port is supplied', async () => {
         function Harness() {
             controller = useHistoryFilterPresets({
-                committedUrlState: state({ historyQuery: 'browser committed' }),
+                committedUrlState: state({ historyQuery: 'browser committed' })
             });
             return null;
         }

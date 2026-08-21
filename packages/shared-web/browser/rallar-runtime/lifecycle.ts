@@ -1,6 +1,6 @@
 import type {
     RallarLifecycleCoordinator,
-    RallarLifecycleParticipant,
+    RallarLifecycleParticipant
 } from '@shared-web/browser/rallar-runtime/contracts.ts';
 
 export type {
@@ -12,15 +12,13 @@ export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
     const participants = new Map<string, RallarLifecycleParticipant>();
 
     const ordered = (): readonly RallarLifecycleParticipant[] =>
-        [...participants.values()].sort((left, right) =>
-            left.order - right.order
-        );
+        [...participants.values()].sort((left, right) => left.order - right.order);
 
     return {
         register: (participant): void => {
             if (participants.has(participant.id)) {
                 throw new Error(
-                    `Duplicate Rallar lifecycle participant: ${participant.id}`,
+                    `Duplicate Rallar lifecycle participant: ${participant.id}`
                 );
             }
             participants.set(participant.id, participant);
@@ -44,6 +42,6 @@ export function createRallarLifecycleCoordinator(): RallarLifecycleCoordinator {
             for (const participant of ordered()) {
                 participant.disconnected?.();
             }
-        },
+        }
     };
 }

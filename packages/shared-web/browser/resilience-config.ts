@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
 const duration = Temporal.Duration.from({ seconds: 10 });
 

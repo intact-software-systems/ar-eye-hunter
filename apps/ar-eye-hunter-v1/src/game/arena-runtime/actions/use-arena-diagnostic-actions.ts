@@ -1,30 +1,23 @@
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
+import { readWebSocketTicketBackoffState } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { rallar } from '@shared-web/browser/rallar.ts';
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
-import {
-    readWebSocketTicketBackoffState,
-} from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 
-import {
-    GAME_AI_LANE_ID,
-    GAME_COMBAT_LANE_ID,
-    GAME_FX_LANE_ID,
-    GAME_MOTION_LANE_ID,
-} from '../../types.ts';
+import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
 import { GAME_SNAPSHOT_LANE_ID } from '../../rallar-game-match-adapter.ts';
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type { ArenaPresenceNotice } from '../../squadLink.ts';
+import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_FX_LANE_ID, GAME_MOTION_LANE_ID } from '../../types.ts';
+import type { RtcLaneStatus } from '../../types.ts';
 import type {
     ArenaConnection,
     ArenaDiagnosticsRefreshOptions,
     ArenaHttpDiagnostics,
-    ArenaTransportDiagnostics,
+    ArenaTransportDiagnostics
 } from '../arena-connection-contracts.ts';
-import type { ArenaPresenceNotice } from '../../squadLink.ts';
 import { probeHttp, toErrorMessage } from '../arena-connection-helpers.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
-import type { RtcLaneStatus } from '../../types.ts';
 
 interface ArenaDiagnosticActionsInput {
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
@@ -43,11 +36,8 @@ interface ArenaDiagnosticActionsInput {
 }
 
 export function useArenaDiagnosticActions(
-    input: ArenaDiagnosticActionsInput,
-): Pick<
-    ArenaConnection,
-    'refreshDiagnostics' | 'requestArenaSync' | 'dismissPresenceNotice'
-> {
+    input: ArenaDiagnosticActionsInput
+): Pick<ArenaConnection, 'refreshDiagnostics' | 'requestArenaSync' | 'dismissPresenceNotice'> {
     const {
         arenaMatchRef,
         currentNetworkSignal,
@@ -61,16 +51,16 @@ export function useArenaDiagnosticActions(
         setPresenceNotices,
         setRtcLanes,
         setTransportDiagnostics,
-        transportDiagnosticsRef,
+        transportDiagnosticsRef
     } = input;
 
     const refreshDiagnostics = useCallback(async (
-        options: ArenaDiagnosticsRefreshOptions = {},
+        options: ArenaDiagnosticsRefreshOptions = {}
     ) => {
         if (!isNetworkEnabled()) {
             const nextTransport: ArenaTransportDiagnostics = {
                 realtimeHealth: [],
-                wsTicketBackoff: readWebSocketTicketBackoffState(),
+                wsTicketBackoff: readWebSocketTicketBackoffState()
             };
             transportDiagnosticsRef.current = nextTransport;
             setTransportDiagnostics(nextTransport);
@@ -78,7 +68,7 @@ export function useArenaDiagnosticActions(
             setRtcLanes([]);
             setHttpDiagnostics({
                 apiConfig: { status: 'idle' },
-                ice: { status: 'idle' },
+                ice: { status: 'idle' }
             });
             return;
         }
@@ -110,8 +100,8 @@ export function useArenaDiagnosticActions(
                             GAME_COMBAT_LANE_ID,
                             GAME_SNAPSHOT_LANE_ID,
                             GAME_FX_LANE_ID,
-                            GAME_AI_LANE_ID,
-                        ],
+                            GAME_AI_LANE_ID
+                        ]
                     }),
                     rtcDiagnostics: options.includeRtcStats
                         ? await rallar.rtc.diagnostics({
@@ -120,18 +110,19 @@ export function useArenaDiagnosticActions(
                                 GAME_COMBAT_LANE_ID,
                                 GAME_SNAPSHOT_LANE_ID,
                                 GAME_FX_LANE_ID,
-                                GAME_AI_LANE_ID,
-                            ],
+                                GAME_AI_LANE_ID
+                            ]
                         })
                         : transportDiagnosticsRef.current.rtcDiagnostics,
-                    wsTicketBackoff: readWebSocketTicketBackoffState(),
+                    wsTicketBackoff: readWebSocketTicketBackoffState()
                 };
                 if (!isCurrentNetworkGeneration(generation) || signal.aborted) {
                     return;
                 }
                 transportDiagnosticsRef.current = nextTransport;
                 setTransportDiagnostics(nextTransport);
-            } catch (err) {
+            }
+            catch (err) {
                 if (!isCurrentNetworkGeneration(generation) || signal.aborted) {
                     return;
                 }
@@ -140,8 +131,8 @@ export function useArenaDiagnosticActions(
                         ...previous,
                         refreshedAtEpochMs,
                         error: toErrorMessage(
-                            err instanceof Error ? err : new Error(String(err)),
-                        ),
+                            err instanceof Error ? err : new Error(String(err))
+                        )
                     };
                     transportDiagnosticsRef.current = next;
                     return next;
@@ -153,15 +144,15 @@ export function useArenaDiagnosticActions(
                 probeHttp((signal) =>
                     readIceCandidates({
                         signal,
-                        authSession: sessionRef.current ?? null,
-                    }), signal),
+                        authSession: sessionRef.current ?? null
+                    }), signal)
             ]);
             if (!isCurrentNetworkGeneration(generation) || signal.aborted) {
                 return;
             }
             setHttpDiagnostics({
                 apiConfig,
-                ice,
+                ice
             });
         })();
 
@@ -183,12 +174,12 @@ export function useArenaDiagnosticActions(
             id: `sync:${now}`,
             kind: 'link-forming',
             message: 'Catching up to the live arena',
-            createdAtEpochMs: now,
+            createdAtEpochMs: now
         };
         setPresenceNotices((previous) => [...previous, notice].slice(-5));
         await arenaMatchRef.current?.requestSync({
             reason: 'diagnostics-drawer',
-            requestedAtEpochMs: now,
+            requestedAtEpochMs: now
         });
         if (!isNetworkEnabled()) {
             return;
@@ -203,6 +194,6 @@ export function useArenaDiagnosticActions(
     return {
         refreshDiagnostics,
         requestArenaSync,
-        dismissPresenceNotice,
+        dismissPresenceNotice
     };
 }

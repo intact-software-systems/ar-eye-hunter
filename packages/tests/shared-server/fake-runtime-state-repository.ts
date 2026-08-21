@@ -3,30 +3,26 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import {
-    assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { assertRuntimeStateExpectedRevision, assertRuntimeStateUpsertExpectedRevision } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
-export class FakeRuntimeStateRepository
-    implements RuntimeStateOptimisticTransactionalRepositoryLike {
+export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
-    readonly locks: Array<Readonly<{ namespace: string; key: string }>> = [];
+    readonly locks: Array<Readonly<{ namespace: string; key: string; }>> = [];
     beforeUpsert?: (namespace: string, key: string) => void | Promise<void>;
     beforeConditionalWrite?: (
         operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
         namespace: string,
-        key: string,
+        key: string
     ) => void | Promise<void>;
     serializeTransactions = false;
     private transactionTail: Promise<void> = Promise.resolve();
 
     async begin<T>(
         fn: (
-            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        ) => Promise<T>,
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike
+        ) => Promise<T>
     ): Promise<T> {
         if (this.serializeTransactions) {
             const previous = this.transactionTail;
@@ -37,7 +33,8 @@ export class FakeRuntimeStateRepository
             await previous;
             try {
                 return await this.beginUnserialized(fn);
-            } finally {
+            }
+            finally {
                 release();
             }
         }
@@ -46,13 +43,14 @@ export class FakeRuntimeStateRepository
 
     private async beginUnserialized<T>(
         fn: (
-            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        ) => Promise<T>,
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike
+        ) => Promise<T>
     ): Promise<T> {
         const before = new Map(this.data);
         try {
             return await fn(this);
-        } catch (error) {
+        }
+        catch (error) {
             this.data.clear();
             for (const [key, entry] of before) {
                 this.data.set(key, entry);
@@ -63,7 +61,7 @@ export class FakeRuntimeStateRepository
 
     findEntry(
         namespace: string,
-        key: string,
+        key: string
     ): Promise<RuntimeStateEntry | undefined> {
         const entry = this.data.get(this.toKey(namespace, key));
         return Promise.resolve(entry ? { ...entry } : undefined);
@@ -74,41 +72,39 @@ export class FakeRuntimeStateRepository
             [...this.data.entries()]
                 .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
                 .map(([, entry]) => ({ ...entry }))
-                .sort((left, right) => left.key.localeCompare(right.key)),
+                .sort((left, right) => left.key.localeCompare(right.key))
         );
     }
 
     findEntriesByPrefix(
         namespace: string,
-        keyPrefix: string,
+        keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         return Promise.resolve(
             [...this.data.entries()]
                 .filter(
                     ([compositeKey]) =>
                         this.toNamespace(compositeKey) === namespace &&
-                        this.toStoreKey(compositeKey).startsWith(keyPrefix),
+                        this.toStoreKey(compositeKey).startsWith(keyPrefix)
                 )
                 .map(([, entry]) => ({ ...entry }))
-                .sort((left, right) => left.key.localeCompare(right.key)),
+                .sort((left, right) => left.key.localeCompare(right.key))
         );
     }
 
     async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,
-        options: RuntimeStateEntryPageOptions,
+        options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntry[]> {
         return (await this.findEntriesByPrefix(namespace, keyPrefix))
-            .filter((entry) =>
-                options.afterKey === undefined || entry.key > options.afterKey
-            )
+            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
             .slice(0, options.limit);
     }
 
     findEntriesByKeys(
         namespace: string,
-        keys: readonly string[],
+        keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         const keySet = new Set(keys);
         return Promise.resolve(
@@ -116,10 +112,10 @@ export class FakeRuntimeStateRepository
                 .filter(
                     ([compositeKey]) =>
                         this.toNamespace(compositeKey) === namespace &&
-                        keySet.has(this.toStoreKey(compositeKey)),
+                        keySet.has(this.toStoreKey(compositeKey))
                 )
                 .map(([, entry]) => ({ ...entry }))
-                .sort((left, right) => left.key.localeCompare(right.key)),
+                .sort((left, right) => left.key.localeCompare(right.key))
         );
     }
 
@@ -127,7 +123,7 @@ export class FakeRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<void> {
         return this.upsertAfterHook(namespace, key, value, expireAtTimestamp);
     }
@@ -136,7 +132,7 @@ export class FakeRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<void> {
         await this.beforeUpsert?.(namespace, key);
         const compositeKey = this.toKey(namespace, key);
@@ -146,7 +142,7 @@ export class FakeRuntimeStateRepository
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: current ? current.revision + 1 : 0,
+            revision: current ? current.revision + 1 : 0
         });
     }
 
@@ -154,7 +150,7 @@ export class FakeRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         await this.beforeConditionalWrite?.('insertIfAbsent', namespace, key);
         const compositeKey = this.toKey(namespace, key);
@@ -167,7 +163,7 @@ export class FakeRuntimeStateRepository
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: 0,
+            revision: 0
         });
         return { status: 'applied', revision: 0 };
     }
@@ -177,7 +173,7 @@ export class FakeRuntimeStateRepository
         key: string,
         value: string,
         expireAtTimestamp: number,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         await this.beforeConditionalWrite?.('upsertIfRevision', namespace, key);
@@ -193,7 +189,7 @@ export class FakeRuntimeStateRepository
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision,
+            revision
         });
         return { status: 'applied', revision };
     }
@@ -201,7 +197,7 @@ export class FakeRuntimeStateRepository
     async deleteIfRevision(
         namespace: string,
         key: string,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<RuntimeStateConditionalDeleteResult> {
         assertRuntimeStateExpectedRevision(expectedRevision);
         await this.beforeConditionalWrite?.('deleteIfRevision', namespace, key);

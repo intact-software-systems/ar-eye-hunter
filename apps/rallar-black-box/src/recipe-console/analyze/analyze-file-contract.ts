@@ -18,7 +18,7 @@ export const ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES = [
     'results.jsonl',
     'events.jsonl',
     'failures.json',
-    'metadata.json',
+    'metadata.json'
 ] as const;
 
 export type AnalyzeFileLike = Readonly<{
@@ -101,17 +101,13 @@ export type AnalyzeSelectedFileMetadata = Readonly<{
     webkitRelativePath?: string;
 }>;
 
-export type NormalizedSelectedFile<
-    TFile extends AnalyzeSelectedFileMetadata,
-> = Readonly<{
+export type NormalizedSelectedFile<TFile extends AnalyzeSelectedFileMetadata> = Readonly<{
     file: TFile;
     basename: string;
     sourcePath: string;
 }>;
 
-export type PreparedAnalyzeArtifactFileIntake<
-    TFile extends AnalyzeSelectedFileMetadata,
-> = Readonly<{
+export type PreparedAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFileMetadata> = Readonly<{
     accepted: readonly NormalizedSelectedFile<TFile>[];
     ignoredFiles: readonly AnalyzeIgnoredFile[];
     totalSelectedBytes: number;

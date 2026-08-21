@@ -1,16 +1,13 @@
-import type {
-    RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS,
     type DistributedRecipeRolePattern,
-    type DistributedRecipeTargetPolicyMode,
+    type DistributedRecipeTargetPolicyMode
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
-    ControlAgentBoardRow,
-    ControlAgentBoardSummary,
-} from '../../../../control-agent-board.ts';
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetResolution
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
 import { ControlAgentBoardPanel } from '../../agents/ControlAgentBoardPanel.tsx';
 
 type DistributedTargetResolutionPanelProps = Readonly<{
@@ -57,9 +54,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         onChange={(event) =>
                             props.onTargetPolicyModeChange(
                                 event.target
-                                    .value as DistributedRecipeTargetPolicyMode,
-                            )
-                        }
+                                    .value as DistributedRecipeTargetPolicyMode
+                            )}
                     >
                         <option value="selected-agents">Selected agents</option>
                         <option value="all-online-group-members">
@@ -79,9 +75,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         value={props.rolePattern}
                         onChange={(event) =>
                             props.onRolePatternChange(
-                                event.target.value as DistributedRecipeRolePattern,
-                            )
-                        }
+                                event.target.value as DistributedRecipeRolePattern
+                            )}
                     >
                         {DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -99,9 +94,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                             value={props.expectedParticipantCount}
                             onChange={(event) =>
                                 props.onExpectedParticipantCountChange(
-                                    Number.parseInt(event.target.value, 10) || 1,
-                                )
-                            }
+                                    Number.parseInt(event.target.value, 10) || 1
+                                )}
                         />
                     </label>
                 )}
@@ -113,9 +107,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         value={props.ackTimeoutMs}
                         onChange={(event) =>
                             props.onAckTimeoutMsChange(
-                                Number.parseInt(event.target.value, 10) || 1,
-                            )
-                        }
+                                Number.parseInt(event.target.value, 10) || 1
+                            )}
                     />
                 </label>
                 <label className="field">
@@ -124,9 +117,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         value={props.barrierEnabled ? 'enabled' : 'disabled'}
                         onChange={(event) =>
                             props.onBarrierEnabledChange(
-                                event.target.value === 'enabled',
-                            )
-                        }
+                                event.target.value === 'enabled'
+                            )}
                     >
                         <option value="disabled">Disabled</option>
                         <option value="enabled">Enabled</option>
@@ -141,9 +133,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                             value={props.barrierTimeoutMs}
                             onChange={(event) =>
                                 props.onBarrierTimeoutMsChange(
-                                    Number.parseInt(event.target.value, 10) || 1,
-                                )
-                            }
+                                    Number.parseInt(event.target.value, 10) || 1
+                                )}
                         />
                     </label>
                 )}
@@ -154,9 +145,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         onChange={(event) =>
                             props.onStartModeChange(
                                 event.target
-                                    .value as RallarBlackBoxDistributedRunManifest['startMode'],
-                            )
-                        }
+                                    .value as RallarBlackBoxDistributedRunManifest['startMode']
+                            )}
                     >
                         <option value="manual">Manual</option>
                         <option value="auto-after-ready">Auto after ready</option>
@@ -172,9 +162,8 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                             value={props.startDelayMs}
                             onChange={(event) =>
                                 props.onStartDelayMsChange(
-                                    Number.parseInt(event.target.value, 10) || 1,
-                                )
-                            }
+                                    Number.parseInt(event.target.value, 10) || 1
+                                )}
                         />
                     </label>
                 )}
@@ -182,13 +171,19 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
             {props.usesWorldFleetTargets && (
                 <div className="distributed-warning" role="status">
                     {props.activeTargetResolution
-                        ? `Server preview selected ${props.activeTargetResolution.summary.selected}/${props.expectedParticipantCount}; roles ${Object.entries(props.activeTargetResolution.summary.roleCounts).map(([role, count]) => `${role}:${count}`).join(', ') || 'none'}; blockers ${props.activeTargetResolution.blockers.length}.`
+                        ? `Server preview selected ${props.activeTargetResolution.summary.selected}/${props.expectedParticipantCount}; roles ${
+                            Object.entries(props.activeTargetResolution.summary.roleCounts).map(([role, count]) =>
+                                `${role}:${count}`
+                            ).join(', ') || 'none'
+                        }; blockers ${props.activeTargetResolution.blockers.length}.`
                         : 'Resolve targets to preview online world-fleet participants and derived roles.'}
                 </div>
             )}
             <ControlAgentBoardPanel
                 title="Resolved Targets"
-                subtitle={`${props.selectedAgentCount}/${props.targetableAgentCount} selected for ${props.groupId || 'missing group'}`}
+                subtitle={`${props.selectedAgentCount}/${props.targetableAgentCount} selected for ${
+                    props.groupId || 'missing group'
+                }`}
                 rows={props.agentRows}
                 summary={props.agentSummary}
                 emptyMessage="No control agents in selected run"

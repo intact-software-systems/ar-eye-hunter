@@ -891,7 +891,7 @@ governance child and stops; it does not silently implement the rule.
 
 ```ts
 export function toGroupMutationDescriptor<V>(
-  enqueue: AppInboxEnqueueInput<V>,
+    enqueue: AppInboxEnqueueInput<V>
 ): GroupMutationDescriptor;
 ```
 
@@ -912,13 +912,13 @@ and after-commit wake in their existing order.
 
 ```ts
 export interface CreateTimedGroupStateServiceInput {
-  readonly service: GroupStateService;
-  readonly timing: RallarTimingSink | undefined;
-  readonly serviceId: string;
+    readonly service: GroupStateService;
+    readonly timing: RallarTimingSink | undefined;
+    readonly serviceId: string;
 }
 
 export function createTimedGroupStateService(
-  input: CreateTimedGroupStateServiceInput,
+    input: CreateTimedGroupStateServiceInput
 ): GroupStateService;
 ```
 
@@ -967,8 +967,8 @@ human plan decision.
 
 ```ts
 export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitResult> {
-  readonly durableResult: DurableResult;
-  readonly afterCommitResult: AfterCommitResult;
+    readonly durableResult: DurableResult;
+    readonly afterCommitResult: AfterCommitResult;
 }
 ```
 

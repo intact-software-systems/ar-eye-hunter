@@ -1,10 +1,6 @@
-import type {
-    RallarBlackBoxTestRecipe,
-} from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../types.ts';
 
-import type {
-    RallarBlackBoxCompositeConformanceRecipeOptions,
-} from '../composite-conformance.ts';
+import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
 import {
     closeCommand,
     commandMetadata,
@@ -16,11 +12,11 @@ import {
     rtcConnectCommand,
     scopeFields,
     statsCommand,
-    timeoutMs,
+    timeoutMs
 } from '../conformance/composite-conformance-command-fixtures.ts';
 
 export function waitAbsenceHoldRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -38,7 +34,7 @@ export function waitAbsenceHoldRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'rtc.send',
@@ -49,12 +45,12 @@ export function waitAbsenceHoldRecipe(
                 send: {
                     data: {
                         topic: 'rallar.conformance.wait-absence-hold',
-                        marker: 'wait-absence-hold',
+                        marker: 'wait-absence-hold'
                     },
                     roomId,
-                    ...scopeFields(options),
+                    ...scopeFields(options)
                 },
-                metadata: commandMetadata('wait-absence-hold', 'wait-absence-hold-send'),
+                metadata: commandMetadata('wait-absence-hold', 'wait-absence-hold-send')
             },
             {
                 kind: 'wait',
@@ -64,12 +60,12 @@ export function waitAbsenceHoldRecipe(
                     kind: 'message',
                     topic: 'rallar.conformance.message',
                     payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.wait-absence-hold',
+                    equals: 'rallar.conformance.wait-absence-hold'
                 },
                 metadata: commandMetadata(
                     'wait-absence-hold',
-                    'wait-absence-hold-positive-control',
-                ),
+                    'wait-absence-hold-positive-control'
+                )
             },
             {
                 kind: 'wait',
@@ -80,18 +76,18 @@ export function waitAbsenceHoldRecipe(
                     kind: 'message',
                     topic: 'rallar.conformance.message',
                     payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.wait-absence-other-room',
+                    equals: 'rallar.conformance.wait-absence-other-room'
                 },
-                metadata: commandMetadata('wait-absence-hold', 'wait-absence-hold-absent'),
+                metadata: commandMetadata('wait-absence-hold', 'wait-absence-hold-absent')
             },
             statsCommand('wait-absence-hold-stats', 'wait-absence-hold'),
-            closeCommand('wait-absence-hold-close', 'wait-absence-hold'),
-        ],
+            closeCommand('wait-absence-hold-close', 'wait-absence-hold')
+        ]
     };
 }
 
 export function waitAbsenceViolatedRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -109,7 +105,7 @@ export function waitAbsenceViolatedRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'rtc.send',
@@ -120,12 +116,12 @@ export function waitAbsenceViolatedRecipe(
                 send: {
                     data: {
                         topic: 'rallar.conformance.wait-absence-violated',
-                        marker: 'wait-absence-violated',
+                        marker: 'wait-absence-violated'
                     },
                     roomId,
-                    ...scopeFields(options),
+                    ...scopeFields(options)
                 },
-                metadata: commandMetadata('wait-absence-violated', 'wait-absence-violated-send'),
+                metadata: commandMetadata('wait-absence-violated', 'wait-absence-violated-send')
             },
             {
                 kind: 'wait',
@@ -135,12 +131,12 @@ export function waitAbsenceViolatedRecipe(
                     kind: 'message',
                     topic: 'rallar.conformance.message',
                     payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.wait-absence-violated',
+                    equals: 'rallar.conformance.wait-absence-violated'
                 },
                 metadata: commandMetadata(
                     'wait-absence-violated',
-                    'wait-absence-violated-positive-control',
-                ),
+                    'wait-absence-violated-positive-control'
+                )
             },
             {
                 kind: 'wait',
@@ -151,10 +147,10 @@ export function waitAbsenceViolatedRecipe(
                     kind: 'message',
                     topic: 'rallar.conformance.message',
                     payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.wait-absence-violated',
+                    equals: 'rallar.conformance.wait-absence-violated'
                 },
-                metadata: commandMetadata('wait-absence-violated', 'wait-absence-violated-absent'),
-            },
-        ],
+                metadata: commandMetadata('wait-absence-violated', 'wait-absence-violated-absent')
+            }
+        ]
     };
 }

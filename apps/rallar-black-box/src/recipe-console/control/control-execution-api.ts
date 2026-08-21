@@ -1,10 +1,10 @@
 import type {
     ControlDistributedRunArtifactBundle,
-    ControlDistributedRunSnapshot,
+    ControlDistributedRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     cancelDistributedRun,
@@ -13,16 +13,16 @@ import {
     fetchDistributedRunArtifactBundleBytes,
     resolveDistributedTargets,
     stageDistributedRun,
-    startDistributedRun,
+    startDistributedRun
 } from '../../control-run-manager.ts';
 import type { ControlAuthorizedTransport } from './control-authorized-transport.ts';
 import {
     validateControlExecutionArtifactBundle,
     validateControlExecutionRun,
-    validateControlExecutionTargetResolution,
+    validateControlExecutionTargetResolution
 } from './control-execution-validation.ts';
 
-type ExecutionSignal = Readonly<{ signal?: AbortSignal }>;
+type ExecutionSignal = Readonly<{ signal?: AbortSignal; }>;
 type ManifestExecutionInput =
     & ExecutionSignal
     & Readonly<{
@@ -33,7 +33,7 @@ type RunExecutionInput =
     & Readonly<{
         distributedRunId: string;
     }>;
-type CancelExecutionInput = RunExecutionInput & Readonly<{ reason?: string }>;
+type CancelExecutionInput = RunExecutionInput & Readonly<{ reason?: string; }>;
 
 export const RECIPE_CONSOLE_CONTROL_ARTIFACT_TRANSFER_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -44,19 +44,19 @@ export type RecipeConsoleControlArtifactBytes = Readonly<{
 
 export type RecipeConsoleControlExecutionApi = Readonly<{
     resolveTargets(
-        input: ManifestExecutionInput,
+        input: ManifestExecutionInput
     ): Promise<RallarBlackBoxDistributedTargetResolution>;
     createRun(
-        input: ManifestExecutionInput,
+        input: ManifestExecutionInput
     ): Promise<ControlDistributedRunSnapshot>;
     stageRun(input: RunExecutionInput): Promise<ControlDistributedRunSnapshot>;
     startRun(input: RunExecutionInput): Promise<ControlDistributedRunSnapshot>;
     cancelRun(input: CancelExecutionInput): Promise<ControlDistributedRunSnapshot>;
     exportRunArtifact(
-        input: RunExecutionInput,
+        input: RunExecutionInput
     ): Promise<ControlDistributedRunArtifactBundle>;
     exportRunArtifactBytes(
-        input: RunExecutionInput,
+        input: RunExecutionInput
     ): Promise<RecipeConsoleControlArtifactBytes>;
 }>;
 
@@ -64,7 +64,7 @@ export function createRecipeConsoleControlExecutionApi(
     input: Readonly<{
         baseUrl: string;
         transport: ControlAuthorizedTransport;
-    }>,
+    }>
 ): RecipeConsoleControlExecutionApi {
     const writeAuthorization = input.transport.createEndpointAuthorization();
     const artifactAuthorization = input.transport.createEndpointAuthorization();
@@ -77,13 +77,13 @@ export function createRecipeConsoleControlExecutionApi(
                         baseUrl: input.baseUrl,
                         manifest: request.manifest,
                         token,
-                        fetchFn,
+                        fetchFn
                     });
                     validateControlExecutionTargetResolution(value);
                     return value;
                 },
                 writeAuthorization,
-                request.signal,
+                request.signal
             );
             return result.value;
         },
@@ -94,9 +94,9 @@ export function createRecipeConsoleControlExecutionApi(
                         baseUrl: input.baseUrl,
                         manifest: request.manifest,
                         token,
-                        fetchFn,
+                        fetchFn
                     }),
-                request.signal,
+                request.signal
             );
         },
         async stageRun(request) {
@@ -106,9 +106,9 @@ export function createRecipeConsoleControlExecutionApi(
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,
-                        fetchFn,
+                        fetchFn
                     }),
-                request.signal,
+                request.signal
             );
         },
         async startRun(request) {
@@ -118,9 +118,9 @@ export function createRecipeConsoleControlExecutionApi(
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,
-                        fetchFn,
+                        fetchFn
                     }),
-                request.signal,
+                request.signal
             );
         },
         async cancelRun(request) {
@@ -131,9 +131,9 @@ export function createRecipeConsoleControlExecutionApi(
                         distributedRunId: request.distributedRunId,
                         reason: request.reason,
                         token,
-                        fetchFn,
+                        fetchFn
                     }),
-                request.signal,
+                request.signal
             );
         },
         async exportRunArtifact(request) {
@@ -143,38 +143,39 @@ export function createRecipeConsoleControlExecutionApi(
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,
-                        fetchFn,
+                        fetchFn
                     });
                     validateControlExecutionArtifactBundle(value);
                     return value;
                 },
                 artifactAuthorization,
-                request.signal,
+                request.signal
             );
             return result.value;
         },
         async exportRunArtifactBytes(request) {
             const result = await input.transport.response(
-                (token, fetchFn) => fetchDistributedRunArtifactBundleBytes({
-                    baseUrl: input.baseUrl,
-                    distributedRunId: request.distributedRunId,
-                    token,
-                    fetchFn,
-                    maxBytes: RECIPE_CONSOLE_CONTROL_ARTIFACT_TRANSFER_MAX_BYTES,
-                }),
+                (token, fetchFn) =>
+                    fetchDistributedRunArtifactBundleBytes({
+                        baseUrl: input.baseUrl,
+                        distributedRunId: request.distributedRunId,
+                        token,
+                        fetchFn,
+                        maxBytes: RECIPE_CONSOLE_CONTROL_ARTIFACT_TRANSFER_MAX_BYTES
+                    }),
                 artifactAuthorization,
-                request.signal,
+                request.signal
             );
             return {
                 distributedRunId: request.distributedRunId,
-                bytes: result.value,
+                bytes: result.value
             };
-        },
+        }
     };
 
     async function runMutation(
         operation: Parameters<ControlAuthorizedTransport['response']>[0],
-        signal: AbortSignal | undefined,
+        signal: AbortSignal | undefined
     ): Promise<ControlDistributedRunSnapshot> {
         const result = await input.transport.response(
             async (token, fetchFn) => {
@@ -183,7 +184,7 @@ export function createRecipeConsoleControlExecutionApi(
                 return value;
             },
             writeAuthorization,
-            signal,
+            signal
         );
         return result.value;
     }

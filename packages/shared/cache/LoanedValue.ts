@@ -1,7 +1,7 @@
 import { ReadableValue } from './ReadableValue.ts';
 
 export type LoanedValueRefresh<T> = (
-    current: T | undefined,
+    current: T | undefined
 ) => T | Promise<T>;
 
 export type LoanedValueValidityChecker<T> = (value: T, nowEpochMs: number) => boolean;
@@ -26,7 +26,7 @@ export class LoanedValue<T> implements ReadableValue<T> {
 
     public constructor(
         refresher: LoanedValueRefresh<T>,
-        options: LoanedValueOptions<T> = {},
+        options: LoanedValueOptions<T> = {}
     ) {
         this.refresher = refresher;
         if (!refresher) {
@@ -126,7 +126,7 @@ export class LoanedValue<T> implements ReadableValue<T> {
 
     private async runRefresh(
         onlyIfStillExpired: boolean,
-        refresher: LoanedValueRefresh<T>,
+        refresher: LoanedValueRefresh<T>
     ): Promise<T> {
         if (this.inFlightRefresh) {
             return this.inFlightRefresh;
@@ -147,7 +147,8 @@ export class LoanedValue<T> implements ReadableValue<T> {
                 this.value = next;
                 this.valueStartMs = Date.now();
                 return next;
-            } finally {
+            }
+            finally {
                 this.inFlightRefresh = undefined;
             }
         })();

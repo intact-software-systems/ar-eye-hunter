@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import { LoanedRepository } from '@shared/cache/LoanedRepository.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('CommandsOrchestrator', () => {
     it('runs sequential phases in order and invokes then callbacks after each phase', async () => {
@@ -10,7 +10,7 @@ describe('CommandsOrchestrator', () => {
         const results = await CommandsOrchestrator.withPolicies<string, number>()
             .sequential(
                 async () => ['a', 1],
-                async (existing) => ['b', (existing.get('a') ?? 0) + 1],
+                async (existing) => ['b', (existing.get('a') ?? 0) + 1]
             )
             .then((existing) => {
                 phaseSnapshots.push(Array.from(existing.entries()));
@@ -24,18 +24,18 @@ describe('CommandsOrchestrator', () => {
         expect(Array.from(results.entries())).toEqual([
             ['a', 1],
             ['b', 2],
-            ['c', 3],
+            ['c', 3]
         ]);
         expect(phaseSnapshots).toEqual([
             [
                 ['a', 1],
-                ['b', 2],
+                ['b', 2]
             ],
             [
                 ['a', 1],
                 ['b', 2],
-                ['c', 3],
-            ],
+                ['c', 3]
+            ]
         ]);
     });
 
@@ -44,14 +44,14 @@ describe('CommandsOrchestrator', () => {
             .sequential(async () => ['seed', 10])
             .parallel(
                 async (existing) => ['left', (existing.get('seed') ?? 0) + 1],
-                async (existing) => ['right', existing.has('left') ? 99 : 20],
+                async (existing) => ['right', existing.has('left') ? 99 : 20]
             )
             .run();
 
         expect(Array.from(results.entries())).toEqual([
             ['seed', 10],
             ['left', 11],
-            ['right', 20],
+            ['right', 20]
         ]);
     });
 
@@ -62,8 +62,8 @@ describe('CommandsOrchestrator', () => {
         const orchestrator = CommandsOrchestrator.withPolicies<string, number>({
             command: {
                 maxAttempts: 2,
-                fallback: async () => 100,
-            },
+                fallback: async () => 100
+            }
         });
 
         const results = await orchestrator
@@ -81,11 +81,11 @@ describe('CommandsOrchestrator', () => {
                         throw new Error('always-fail');
                     },
                     {
-                        fallback: async () => 200,
-                    },
+                        fallback: async () => 200
+                    }
                 ),
                 orchestrator.loanedValueGetStep('loan', loanedValue),
-                orchestrator.repositoryGetStep('repo', repository),
+                orchestrator.repositoryGetStep('repo', repository)
             )
             .run();
 
@@ -94,20 +94,20 @@ describe('CommandsOrchestrator', () => {
             ['command', 5],
             ['fallback', 200],
             ['loan', 7],
-            ['repo', 8],
+            ['repo', 8]
         ]);
     });
 
     it('runs pull-push command steps and stores the pushed value', async () => {
         type FlowValue =
             | {
-            type: 'session';
-            peerId: string;
-        }
+                type: 'session';
+                peerId: string;
+            }
             | {
-            type: 'connected';
-            peerId: string;
-        };
+                type: 'connected';
+                peerId: string;
+            };
         const events: string[] = [];
         const orchestrator = CommandsOrchestrator.withPolicies<string, FlowValue>();
 
@@ -118,37 +118,35 @@ describe('CommandsOrchestrator', () => {
                     () => {
                         events.push('pull');
                         return {
-                            peerId: 'peer-1',
+                            peerId: 'peer-1'
                         };
                     },
                     (peer) => {
                         events.push(`push:${peer.peerId}`);
                         return {
                             type: 'connected',
-                            peerId: peer.peerId,
+                            peerId: peer.peerId
                         };
                     },
                     {
                         hooks: {
-                            onPullSuccess: (peer) =>
-                                events.push(`pulled:${peer.peerId}`),
-                            onPushSuccess: (value) =>
-                                events.push(`pushed:${value.peerId}`),
-                        },
-                    },
-                ),
+                            onPullSuccess: (peer) => events.push(`pulled:${peer.peerId}`),
+                            onPushSuccess: (value) => events.push(`pushed:${value.peerId}`)
+                        }
+                    }
+                )
             )
             .run();
 
         expect(results.get('peer')).toEqual({
             type: 'connected',
-            peerId: 'peer-1',
+            peerId: 'peer-1'
         });
         expect(events).toEqual([
             'pull',
             'pulled:peer-1',
             'push:peer-1',
-            'pushed:peer-1',
+            'pushed:peer-1'
         ]);
     });
 
@@ -168,7 +166,7 @@ describe('CommandsOrchestrator', () => {
         expect(Array.from(results.entries())).toEqual([['a', 1]]);
         expect(snapshots).toEqual([
             [['a', 1]],
-            [['a', 1]],
+            [['a', 1]]
         ]);
     });
 });

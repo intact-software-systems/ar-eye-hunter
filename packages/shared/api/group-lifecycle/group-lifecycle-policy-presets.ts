@@ -1,7 +1,4 @@
-import type {
-    GroupLifecyclePolicy,
-    GroupLifecyclePolicyPresetName,
-} from './group-lifecycle-policy.ts';
+import type { GroupLifecyclePolicy, GroupLifecyclePolicyPresetName } from './group-lifecycle-policy.ts';
 
 /**
  * The default is `optimistic`, which is the behaviour a group has when no
@@ -14,7 +11,7 @@ export function createDefaultGroupLifecyclePolicy(): GroupLifecyclePolicy {
 }
 
 export function resolveGroupLifecyclePolicyPreset(
-    name: GroupLifecyclePolicyPresetName,
+    name: GroupLifecyclePolicyPresetName
 ): GroupLifecyclePolicy {
     switch (name) {
         case 'optimistic':
@@ -34,12 +31,12 @@ const OPTIMISTIC_POLICY: GroupLifecyclePolicy = {
         selection: 'none',
         assignedPrincipalIds: [],
         count: 1,
-        succession: 'none',
+        succession: 'none'
     },
     establishment: {
         transports: 'rtc-and-ws',
         initiator: 'any-member',
-        maxConcurrentEdgeSetups: 64,
+        maxConcurrentEdgeSetups: 64
     },
     activation: {
         mode: 'manual',
@@ -47,14 +44,14 @@ const OPTIMISTIC_POLICY: GroupLifecyclePolicy = {
         minimumViableRate: 0,
         deadlineMs: 0,
         maxFormationAttempts: 1,
-        strictConfirmation: false,
+        strictConfirmation: false
     },
     admission: {
         mode: 'open',
         untilEpochMs: null,
-        untilMemberCount: null,
+        untilMemberCount: null
     },
-    data: { preActivationAppData: 'allowed' },
+    data: { preActivationAppData: 'allowed' }
 };
 
 const MANAGED_POLICY: GroupLifecyclePolicy = {
@@ -63,12 +60,12 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
         selection: 'creator',
         assignedPrincipalIds: [],
         count: 1,
-        succession: 'next-by-selection',
+        succession: 'next-by-selection'
     },
     establishment: {
         transports: 'rtc-and-ws',
         initiator: 'manager',
-        maxConcurrentEdgeSetups: 32,
+        maxConcurrentEdgeSetups: 32
     },
     activation: {
         mode: 'threshold-or-deadline',
@@ -76,14 +73,14 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
         minimumViableRate: 0.5,
         deadlineMs: 30_000,
         maxFormationAttempts: 3,
-        strictConfirmation: false,
+        strictConfirmation: false
     },
     admission: {
         mode: 'manager-approval',
         untilEpochMs: null,
-        untilMemberCount: null,
+        untilMemberCount: null
     },
-    data: { preActivationAppData: 'allowed' },
+    data: { preActivationAppData: 'allowed' }
 };
 
 /**
@@ -101,12 +98,12 @@ const MATCH_POLICY: GroupLifecyclePolicy = {
         selection: 'elected-random-deterministic',
         assignedPrincipalIds: [],
         count: 1,
-        succession: 'next-by-selection',
+        succession: 'next-by-selection'
     },
     establishment: {
         transports: 'rtc-preferred',
         initiator: 'manager',
-        maxConcurrentEdgeSetups: 16,
+        maxConcurrentEdgeSetups: 16
     },
     activation: {
         mode: 'threshold-or-deadline',
@@ -114,14 +111,14 @@ const MATCH_POLICY: GroupLifecyclePolicy = {
         minimumViableRate: 1,
         deadlineMs: 20_000,
         maxFormationAttempts: 2,
-        strictConfirmation: false,
+        strictConfirmation: false
     },
     admission: {
         mode: 'closed',
         untilEpochMs: null,
-        untilMemberCount: null,
+        untilMemberCount: null
     },
-    data: { preActivationAppData: 'blocked-until-active' },
+    data: { preActivationAppData: 'blocked-until-active' }
 };
 
 const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
@@ -130,12 +127,12 @@ const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
         selection: 'none',
         assignedPrincipalIds: [],
         count: 1,
-        succession: 'none',
+        succession: 'none'
     },
     establishment: {
         transports: 'rtc-and-ws',
         initiator: 'server-auto',
-        maxConcurrentEdgeSetups: 64,
+        maxConcurrentEdgeSetups: 64
     },
     activation: {
         mode: 'threshold',
@@ -143,12 +140,12 @@ const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
         minimumViableRate: 0.25,
         deadlineMs: 0,
         maxFormationAttempts: 5,
-        strictConfirmation: false,
+        strictConfirmation: false
     },
     admission: {
         mode: 'open',
         untilEpochMs: null,
-        untilMemberCount: 50,
+        untilMemberCount: 50
     },
-    data: { preActivationAppData: 'allowed' },
+    data: { preActivationAppData: 'allowed' }
 };

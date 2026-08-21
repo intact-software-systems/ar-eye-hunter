@@ -1,35 +1,30 @@
-import type {
-    AuditStamp,
-    Group,
-    GroupMember,
-    GroupPresenceSession,
-} from '@shared/api/group-types.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type {
     RuntimeStateEntry,
-    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
     assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { AuditStamp, Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 
 const GROUPS = Number(
     Deno.args.find((arg) => arg.startsWith('--groups='))?.slice('--groups='.length) ??
-        '1000',
+        '1000'
 );
 const RUNS = Number(
     Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
-        '3',
+        '3'
 );
 const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/group-list-fanout.json';
 
 const scope = {
     applicationId: 'perf-app',
-    workspaceId: 'perf-workspace',
+    workspaceId: 'perf-workspace'
 };
 
 type RunResult = Readonly<{
@@ -47,7 +42,7 @@ const EXPECTED_PREFIX_READS = Object.freeze({
     'group-state:groups': 2,
     'group-state:members': 1,
     'group-state:presence-summaries': 1,
-    'group-state:sessions': 1,
+    'group-state:sessions': 1
 });
 
 async function main(): Promise<void> {
@@ -58,7 +53,7 @@ async function main(): Promise<void> {
         formationDamping: 'damped',
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
-        authSessionRepository: new AuthSessionRepository(repository),
+        authSessionRepository: new AuthSessionRepository(repository)
     });
 
     for (let index = 0; index < GROUPS; index += 1) {
@@ -89,9 +84,7 @@ async function main(): Promise<void> {
             throw new Error(
                 `Expected bounded semantic prefix reads ${
                     JSON.stringify(EXPECTED_PREFIX_READS)
-                } and zero point reads, got ${
-                    JSON.stringify(prefixReads)
-                } and ${repository.findEntryCalls}`,
+                } and zero point reads, got ${JSON.stringify(prefixReads)} and ${repository.findEntryCalls}`
             );
         }
         results.push({
@@ -102,7 +95,7 @@ async function main(): Promise<void> {
             findAllEntriesCalls: repository.findAllEntriesCalls,
             findEntriesByPrefixCalls: repository.findEntriesByPrefixCalls,
             findEntriesByPrefixCallsByNamespace: prefixReads,
-            maxRowsReturnedPerPrefixCall: repository.maxRowsReturnedPerPrefixCall,
+            maxRowsReturnedPerPrefixCall: repository.maxRowsReturnedPerPrefixCall
         });
     }
 
@@ -115,12 +108,12 @@ async function main(): Promise<void> {
                     benchmark: 'group-list-snapshots-fanout',
                     groups: GROUPS,
                     runs: RUNS,
-                    results,
+                    results
                 },
                 null,
-                2,
+                2
             )
-        }\n`,
+        }\n`
     );
 }
 
@@ -155,7 +148,7 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         updated: createAuditStamp(1),
         expiresAtEpochMs: null,
         emptySinceEpochMs: null,
-        purgeAfterEpochMs: null,
+        purgeAfterEpochMs: null
     };
 }
 
@@ -172,14 +165,14 @@ function createMember(groupId: string, principalId: string): GroupMember {
         invitationExpiresAtEpochMs: null,
         left: null,
         removed: null,
-        banned: null,
+        banned: null
     };
 }
 
 function createPresenceSession(
     groupId: string,
     principalId: string,
-    sessionId: string,
+    sessionId: string
 ): GroupPresenceSession {
     return {
         ...scope,
@@ -193,7 +186,7 @@ function createPresenceSession(
         lastHeartbeatAtEpochMs: 1_700_000_000_000,
         expiresAtEpochMs: 4_102_444_821_000,
         disconnectedAtEpochMs: null,
-        disconnectReason: null,
+        disconnectReason: null
     };
 }
 
@@ -203,12 +196,11 @@ function createAuditStamp(atEpochMs: number): AuditStamp {
         actor: { kind: 'service', serviceId: 'perf' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }
 
-export class CountingRuntimeStateRepository
-    implements RuntimeStateOptimisticTransactionalRepositoryLike {
+export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     findEntryCalls = 0;
     findAllEntriesCalls = 0;
@@ -217,14 +209,14 @@ export class CountingRuntimeStateRepository
     maxRowsReturnedPerPrefixCall = 0;
 
     async begin<T>(
-        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
+        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
     ): Promise<T> {
         return await fn(this);
     }
 
     async findEntry(
         namespace: string,
-        key: string,
+        key: string
     ): Promise<RuntimeStateEntry | undefined> {
         this.findEntryCalls += 1;
         const entry = this.data.get(this.toKey(namespace, key));
@@ -241,31 +233,31 @@ export class CountingRuntimeStateRepository
 
     async findEntriesByPrefix(
         namespace: string,
-        keyPrefix: string,
+        keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
         this.findEntriesByPrefixCallsByNamespace.set(
             namespace,
-            (this.findEntriesByPrefixCallsByNamespace.get(namespace) ?? 0) + 1,
+            (this.findEntriesByPrefixCallsByNamespace.get(namespace) ?? 0) + 1
         );
         const rows = [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
                     this.toNamespace(compositeKey) === namespace &&
-                    this.toStoreKey(compositeKey).startsWith(keyPrefix),
+                    this.toStoreKey(compositeKey).startsWith(keyPrefix)
             )
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
         this.maxRowsReturnedPerPrefixCall = Math.max(
             this.maxRowsReturnedPerPrefixCall,
-            rows.length,
+            rows.length
         );
         return rows;
     }
 
     async findEntriesByKeys(
         namespace: string,
-        keys: readonly string[],
+        keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         const keySet = new Set(keys);
         return [...this.data.entries()]
@@ -281,7 +273,7 @@ export class CountingRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -290,7 +282,7 @@ export class CountingRuntimeStateRepository
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: current ? current.revision + 1 : 0,
+            revision: current ? current.revision + 1 : 0
         });
     }
 
@@ -298,8 +290,8 @@ export class CountingRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
-    ): Promise<{ status: 'applied'; revision: number } | { status: 'conflict' }> {
+        expireAtTimestamp: number
+    ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
             return { status: 'conflict' };
@@ -313,8 +305,8 @@ export class CountingRuntimeStateRepository
         key: string,
         value: string,
         expireAtTimestamp: number,
-        expectedRevision: number,
-    ): Promise<{ status: 'applied'; revision: number } | { status: 'conflict' }> {
+        expectedRevision: number
+    ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -329,8 +321,8 @@ export class CountingRuntimeStateRepository
     async deleteIfRevision(
         namespace: string,
         key: string,
-        expectedRevision: number,
-    ): Promise<{ status: 'applied' } | { status: 'conflict' }> {
+        expectedRevision: number
+    ): Promise<{ status: 'applied'; } | { status: 'conflict'; }> {
         assertRuntimeStateExpectedRevision(expectedRevision);
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -371,9 +363,7 @@ export class CountingRuntimeStateRepository
 
     prefixReadCounts(): Readonly<Record<string, number>> {
         return Object.fromEntries(
-            [...this.findEntriesByPrefixCallsByNamespace.entries()].sort(([left], [right]) =>
-                left.localeCompare(right)
-            ),
+            [...this.findEntriesByPrefixCallsByNamespace.entries()].sort(([left], [right]) => left.localeCompare(right))
         );
     }
 
@@ -381,14 +371,14 @@ export class CountingRuntimeStateRepository
         key: string,
         value: string,
         expireAtTimestamp: number,
-        revision: number,
+        revision: number
     ): RuntimeStateEntry {
         return {
             key,
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision,
+            revision
         };
     }
 

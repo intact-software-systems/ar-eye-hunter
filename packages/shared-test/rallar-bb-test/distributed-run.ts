@@ -1,33 +1,33 @@
-import type {
-    RallarBlackBoxTestAssertOperator,
-    RallarBlackBoxTestCrdtTransport,
-    RallarBlackBoxTestRecipe,
-} from './types.ts';
 import {
     collectDistributedAssertionFeatures,
     validateAgentAssertionCapability,
-    type DistributedAssertionFeatures,
+    type DistributedAssertionFeatures
 } from './distributed/control-agent-capabilities.ts';
 import {
     validateDistributedGroupAssertions,
-    type RallarBlackBoxDistributedGroupAssertion,
+    type RallarBlackBoxDistributedGroupAssertion
 } from './distributed/group-assertions.ts';
+import type {
+    RallarBlackBoxTestAssertOperator,
+    RallarBlackBoxTestCrdtTransport,
+    RallarBlackBoxTestRecipe
+} from './types.ts';
 
 export {
     isDistributedRunTerminalState,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
-    rollupDistributedRunResult,
+    rollupDistributedRunResult
 } from './distributed/distributed-run-rollup.ts';
 export type {
     RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunRollupFailure,
     RallarBlackBoxDistributedRunRollupInput,
-    RallarBlackBoxDistributedRunTerminalState,
+    RallarBlackBoxDistributedRunTerminalState
 } from './distributed/distributed-run-rollup.ts';
 export type {
     RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupAssertionResult,
-    RallarBlackBoxGroupAssertionAggregate,
+    RallarBlackBoxGroupAssertionAggregate
 } from './distributed/group-assertions.ts';
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES = [
@@ -41,47 +41,43 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES = [
     'passed',
     'failed',
     'cancelled',
-    'timed-out',
+    'timed-out'
 ] as const;
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES = [
     'all-online-group-members',
     'selected-agents',
-    'role-map',
+    'role-map'
 ] as const;
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES = [
     'manual',
     'auto-after-ready',
-    'scheduled',
+    'scheduled'
 ] as const;
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS = [
     'all-agents',
     'sender-receiver',
     'one-sender-many-receivers',
-    'three-browser-matrix',
+    'three-browser-matrix'
 ] as const;
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES = [
-    'ordered-targets',
+    'ordered-targets'
 ] as const;
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS = [
-    'agent-id',
+    'agent-id'
 ] as const;
 
-export type RallarBlackBoxDistributedRunState =
-    typeof RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES[number];
+export type RallarBlackBoxDistributedRunState = typeof RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES[number];
 
-export type RallarBlackBoxDistributedTargetPolicyMode =
-    typeof RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES[number];
+export type RallarBlackBoxDistributedTargetPolicyMode = typeof RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES[number];
 
-export type RallarBlackBoxDistributedStartMode =
-    typeof RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES[number];
+export type RallarBlackBoxDistributedStartMode = typeof RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES[number];
 
-export type RallarBlackBoxDistributedRolePattern =
-    typeof RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS[number];
+export type RallarBlackBoxDistributedRolePattern = typeof RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS[number];
 
 export type RallarBlackBoxDistributedRoleAssignmentPolicyMode =
     typeof RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES[number];
@@ -364,11 +360,11 @@ export type RallarBlackBoxDistributedRunValidationIssue = Readonly<{
 }>;
 
 export type RallarBlackBoxDistributedRunValidationResult =
-    | Readonly<{ ok: true; errors: readonly [] }>
-    | Readonly<{ ok: false; errors: readonly RallarBlackBoxDistributedRunValidationIssue[] }>;
+    | Readonly<{ ok: true; errors: readonly []; }>
+    | Readonly<{ ok: false; errors: readonly RallarBlackBoxDistributedRunValidationIssue[]; }>;
 
 export function validateDistributedRunManifestContract(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): RallarBlackBoxDistributedRunValidationResult {
     const errors: RallarBlackBoxDistributedRunValidationIssue[] = [];
 
@@ -385,23 +381,26 @@ export function validateDistributedRunManifestContract(
         if (!cleanString(recipe.recipeId) && !recipe.recipe) {
             errors.push({
                 path: `$.recipes[${index}]`,
-                message: 'Recipe selection requires recipeId or inline recipe.',
+                message: 'Recipe selection requires recipeId or inline recipe.'
             });
         }
     });
 
     const expectedParticipantCount = manifest.targetPolicy.expectedParticipantCount;
-    if (expectedParticipantCount !== undefined && (!Number.isInteger(expectedParticipantCount) || expectedParticipantCount < 1)) {
+    if (
+        expectedParticipantCount !== undefined &&
+        (!Number.isInteger(expectedParticipantCount) || expectedParticipantCount < 1)
+    ) {
         errors.push({
             path: '$.targetPolicy.expectedParticipantCount',
-            message: 'Expected participant count must be an integer >= 1.',
+            message: 'Expected participant count must be an integer >= 1.'
         });
     }
 
     if (manifest.targetPolicy.mode === 'selected-agents' && (manifest.targetPolicy.agentIds?.length ?? 0) === 0) {
         errors.push({
             path: '$.targetPolicy.agentIds',
-            message: 'selected-agents target policy requires at least one agent ID.',
+            message: 'selected-agents target policy requires at least one agent ID.'
         });
     }
 
@@ -412,7 +411,7 @@ export function validateDistributedRunManifestContract(
         if (roleMapCount === 0 && roleAssignmentCount === 0) {
             errors.push({
                 path: '$.targetPolicy.roles',
-                message: 'role-map target policy requires roles or roleAssignments.',
+                message: 'role-map target policy requires roles or roleAssignments.'
             });
         }
     }
@@ -422,13 +421,13 @@ export function validateDistributedRunManifestContract(
         if (policy.mode !== 'ordered-targets') {
             errors.push({
                 path: '$.roleAssignmentPolicy.mode',
-                message: 'Role assignment policy mode must be ordered-targets.',
+                message: 'Role assignment policy mode must be ordered-targets.'
             });
         }
         if (!RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS.includes(policy.pattern)) {
             errors.push({
                 path: '$.roleAssignmentPolicy.pattern',
-                message: 'Role assignment policy pattern is not supported.',
+                message: 'Role assignment policy pattern is not supported.'
             });
         }
         if (
@@ -437,7 +436,7 @@ export function validateDistributedRunManifestContract(
         ) {
             errors.push({
                 path: '$.roleAssignmentPolicy.orderBy',
-                message: 'Role assignment policy ordering is not supported.',
+                message: 'Role assignment policy ordering is not supported.'
             });
         }
     }
@@ -445,14 +444,16 @@ export function validateDistributedRunManifestContract(
     if (manifest.startMode === 'scheduled' && manifest.startDeadlineEpochMs === undefined) {
         errors.push({
             path: '$.startDeadlineEpochMs',
-            message: 'Scheduled distributed runs require startDeadlineEpochMs.',
+            message: 'Scheduled distributed runs require startDeadlineEpochMs.'
         });
     }
 
-    if (manifest.ackTimeoutMs !== undefined && (!Number.isInteger(manifest.ackTimeoutMs) || manifest.ackTimeoutMs < 1)) {
+    if (
+        manifest.ackTimeoutMs !== undefined && (!Number.isInteger(manifest.ackTimeoutMs) || manifest.ackTimeoutMs < 1)
+    ) {
         errors.push({
             path: '$.ackTimeoutMs',
-            message: 'ACK timeout must be an integer >= 1.',
+            message: 'ACK timeout must be an integer >= 1.'
         });
     }
 
@@ -462,7 +463,7 @@ export function validateDistributedRunManifestContract(
     ) {
         errors.push({
             path: '$.barrier.timeoutMs',
-            message: 'Barrier timeout must be an integer >= 1.',
+            message: 'Barrier timeout must be an integer >= 1.'
         });
     }
 
@@ -473,23 +474,23 @@ export function validateDistributedRunManifestContract(
         : { ok: false, errors };
 }
 
-export function resolveGroupMemberControlAgentMatches(input: Readonly<{
-    group: RallarBlackBoxDistributedGroupRef;
-    members: readonly RallarBlackBoxGroupMemberCandidate[];
-    agents: readonly RallarBlackBoxControlAgentCandidate[];
-    nowEpochMs?: number;
-    staleAfterMs?: number;
-}>): RallarBlackBoxGroupControlAgentMatchResult {
+export function resolveGroupMemberControlAgentMatches(
+    input: Readonly<{
+        group: RallarBlackBoxDistributedGroupRef;
+        members: readonly RallarBlackBoxGroupMemberCandidate[];
+        agents: readonly RallarBlackBoxControlAgentCandidate[];
+        nowEpochMs?: number;
+        staleAfterMs?: number;
+    }>
+): RallarBlackBoxGroupControlAgentMatchResult {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const staleAfterMs = input.staleAfterMs ?? 30_000;
     const consumedAgentIds = new Set<string>();
     const matches: RallarBlackBoxGroupControlAgentMatch[] = [];
 
     for (const member of input.members) {
-        const candidates = input.agents.filter(agent =>
-            agentMatchesMemberInGroup(agent, member, input.group)
-        );
-        const activeCandidates = candidates.filter(agent =>
+        const candidates = input.agents.filter((agent) => agentMatchesMemberInGroup(agent, member, input.group));
+        const activeCandidates = candidates.filter((agent) =>
             agent.connected && !agentIsStale(agent, nowEpochMs, staleAfterMs)
         );
 
@@ -502,43 +503,43 @@ export function resolveGroupMemberControlAgentMatches(input: Readonly<{
                 reason: 'Group member has one connected control agent with matching identity.',
                 member,
                 agent,
-                candidateAgents: candidates,
+                candidateAgents: candidates
             });
             continue;
         }
 
         if (activeCandidates.length > 1) {
-            activeCandidates.forEach(agent => consumedAgentIds.add(agent.agentId));
+            activeCandidates.forEach((agent) => consumedAgentIds.add(agent.agentId));
             matches.push({
                 status: 'duplicate-session',
                 targetable: false,
                 reason: 'Group member matches multiple connected control agents; select a target explicitly.',
                 member,
-                candidateAgents: candidates,
+                candidateAgents: candidates
             });
             continue;
         }
 
-        if (candidates.some(agent => agent.connected && agentIsStale(agent, nowEpochMs, staleAfterMs))) {
-            candidates.forEach(agent => consumedAgentIds.add(agent.agentId));
+        if (candidates.some((agent) => agent.connected && agentIsStale(agent, nowEpochMs, staleAfterMs))) {
+            candidates.forEach((agent) => consumedAgentIds.add(agent.agentId));
             matches.push({
                 status: 'stale-agent',
                 targetable: false,
                 reason: 'Matching control agent is connected but stale.',
                 member,
-                candidateAgents: candidates,
+                candidateAgents: candidates
             });
             continue;
         }
 
-        if (candidates.some(agent => !agent.connected)) {
-            candidates.forEach(agent => consumedAgentIds.add(agent.agentId));
+        if (candidates.some((agent) => !agent.connected)) {
+            candidates.forEach((agent) => consumedAgentIds.add(agent.agentId));
             matches.push({
                 status: 'offline-agent',
                 targetable: false,
                 reason: 'Matching control agent is offline.',
                 member,
-                candidateAgents: candidates,
+                candidateAgents: candidates
             });
             continue;
         }
@@ -548,7 +549,7 @@ export function resolveGroupMemberControlAgentMatches(input: Readonly<{
             targetable: false,
             reason: 'No connected control agent identity matches this group member.',
             member,
-            candidateAgents: [],
+            candidateAgents: []
         });
     }
 
@@ -557,13 +558,16 @@ export function resolveGroupMemberControlAgentMatches(input: Readonly<{
             continue;
         }
 
-        if (!agent.identity || !cleanString(agent.identity.principalId ?? agent.identity.clientId ?? agent.identity.username)) {
+        if (
+            !agent.identity ||
+            !cleanString(agent.identity.principalId ?? agent.identity.clientId ?? agent.identity.username)
+        ) {
             matches.push({
                 status: 'agent-without-identity',
                 targetable: false,
                 reason: 'Control agent has not reported Rallar identity metadata.',
                 agent,
-                candidateAgents: [agent],
+                candidateAgents: [agent]
             });
             continue;
         }
@@ -574,16 +578,16 @@ export function resolveGroupMemberControlAgentMatches(input: Readonly<{
                 targetable: false,
                 reason: 'Control agent reports this group but no matching group member was observed.',
                 agent,
-                candidateAgents: [agent],
+                candidateAgents: [agent]
             });
         }
     }
 
     const targetableAgentIds = matches
-        .filter(match => match.targetable && match.agent)
-        .map(match => match.agent!.agentId);
+        .filter((match) => match.targetable && match.agent)
+        .map((match) => match.agent!.agentId);
     const count = (status: RallarBlackBoxGroupControlAgentMatchStatus) =>
-        matches.filter(match => match.status === status).length;
+        matches.filter((match) => match.status === status).length;
 
     return {
         group: input.group,
@@ -599,17 +603,19 @@ export function resolveGroupMemberControlAgentMatches(input: Readonly<{
             staleAgents: count('stale-agent'),
             duplicateSessions: count('duplicate-session'),
             agentsWithoutMembers: count('agent-without-group-member'),
-            agentsWithoutIdentity: count('agent-without-identity'),
-        },
+            agentsWithoutIdentity: count('agent-without-identity')
+        }
     };
 }
 
-export function resolveDistributedTargetAgentIds(input: Readonly<{
-    matchResult: RallarBlackBoxGroupControlAgentMatchResult;
-    targetPolicy: RallarBlackBoxDistributedTargetPolicy;
-}>): readonly string[] {
+export function resolveDistributedTargetAgentIds(
+    input: Readonly<{
+        matchResult: RallarBlackBoxGroupControlAgentMatchResult;
+        targetPolicy: RallarBlackBoxDistributedTargetPolicy;
+    }>
+): readonly string[] {
     const targetable = new Set(input.matchResult.targetableAgentIds);
-    const unique = (values: readonly string[]) => [...new Set(values)].filter(value => targetable.has(value));
+    const unique = (values: readonly string[]) => [...new Set(values)].filter((value) => targetable.has(value));
 
     switch (input.targetPolicy.mode) {
         case 'all-online-group-members':
@@ -621,12 +627,14 @@ export function resolveDistributedTargetAgentIds(input: Readonly<{
     }
 }
 
-export function resolveDistributedRunTargets(input: Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    agents: readonly RallarBlackBoxControlAgentCandidate[];
-    nowEpochMs?: number;
-    staleAfterMs?: number;
-}>): RallarBlackBoxDistributedTargetResolution {
+export function resolveDistributedRunTargets(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        agents: readonly RallarBlackBoxControlAgentCandidate[];
+        nowEpochMs?: number;
+        staleAfterMs?: number;
+    }>
+): RallarBlackBoxDistributedTargetResolution {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const staleAfterMs = input.staleAfterMs ?? 30_000;
     const blockers: RallarBlackBoxDistributedTargetBlocker[] = [];
@@ -634,8 +642,8 @@ export function resolveDistributedRunTargets(input: Readonly<{
     const targetableById = new Set<string>();
     const assertionFeatures = collectDistributedAssertionFeatures(
         input.manifest.recipes
-            .map(selection => selection.recipe)
-            .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined),
+            .map((selection) => selection.recipe)
+            .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined)
     );
 
     for (const agent of input.agents) {
@@ -644,7 +652,7 @@ export function resolveDistributedRunTargets(input: Readonly<{
             group: input.manifest.group,
             nowEpochMs,
             staleAfterMs,
-            assertionFeatures,
+            assertionFeatures
         });
         if (blocker) {
             blockers.push(blocker);
@@ -658,15 +666,15 @@ export function resolveDistributedRunTargets(input: Readonly<{
         policy: input.manifest.targetPolicy,
         targetableAgentIds,
         targetableById,
-        roleAssignments: input.manifest.roleAssignments ?? [],
+        roleAssignments: input.manifest.roleAssignments ?? []
     });
     const roleAssignments = distributedRoleAssignments({
         manifest: input.manifest,
-        targetAgentIds: selected,
+        targetAgentIds: selected
     });
-    const roleCounts = countBy(roleAssignments.map(assignment => assignment.role));
+    const roleCounts = countBy(roleAssignments.map((assignment) => assignment.role));
     const selectedAgentSet = new Set(selected);
-    const selectedAgents = input.agents.filter(agent => selectedAgentSet.has(agent.agentId));
+    const selectedAgents = input.agents.filter((agent) => selectedAgentSet.has(agent.agentId));
     const expected = input.manifest.targetPolicy.expectedParticipantCount;
 
     return {
@@ -685,16 +693,16 @@ export function resolveDistributedRunTargets(input: Readonly<{
             missingExpectedParticipants: expected === undefined
                 ? 0
                 : Math.max(0, expected - selected.length),
-            staleAgents: blockers.filter(blocker => blocker.status === 'stale-agent').length,
-            offlineAgents: blockers.filter(blocker => blocker.status === 'offline-agent').length,
-            wrongGroupAgents: blockers.filter(blocker => blocker.status === 'different-group').length,
+            staleAgents: blockers.filter((blocker) => blocker.status === 'stale-agent').length,
+            offlineAgents: blockers.filter((blocker) => blocker.status === 'offline-agent').length,
+            wrongGroupAgents: blockers.filter((blocker) => blocker.status === 'different-group').length,
             assertionCapabilityBlockedAgents: blockers
-                .filter(blocker => blocker.status === 'missing-assertion-capability').length,
-            agentsWithoutIdentity: blockers.filter(blocker => blocker.status === 'agent-without-identity').length,
+                .filter((blocker) => blocker.status === 'missing-assertion-capability').length,
+            agentsWithoutIdentity: blockers.filter((blocker) => blocker.status === 'agent-without-identity').length,
             roleCounts,
-            regions: countBy(selectedAgents.map(agent => agent.identity?.region).filter(isString)),
-            providers: countBy(selectedAgents.map(agent => agent.identity?.provider).filter(isString)),
-        },
+            regions: countBy(selectedAgents.map((agent) => agent.identity?.region).filter(isString)),
+            providers: countBy(selectedAgents.map((agent) => agent.identity?.provider).filter(isString))
+        }
     };
 }
 
@@ -707,14 +715,14 @@ interface DistributedTargetBlockerInput {
 }
 
 function distributedTargetBlocker(
-    input: DistributedTargetBlockerInput,
+    input: DistributedTargetBlockerInput
 ): RallarBlackBoxDistributedTargetBlocker | undefined {
     const agent = input.agent;
     if (!agent.identity) {
         return {
             agentId: agent.agentId,
             status: 'agent-without-identity',
-            reason: 'Control agent has not reported Rallar identity metadata.',
+            reason: 'Control agent has not reported Rallar identity metadata.'
         };
     }
     if (!identityMatchesGroup(agent.identity, input.group)) {
@@ -722,7 +730,7 @@ function distributedTargetBlocker(
             agentId: agent.agentId,
             status: 'different-group',
             reason: 'Control agent reports a different application, workspace, or group.',
-            identity: agent.identity,
+            identity: agent.identity
         };
     }
     if (!agent.connected) {
@@ -730,7 +738,7 @@ function distributedTargetBlocker(
             agentId: agent.agentId,
             status: 'offline-agent',
             reason: 'Control agent is offline.',
-            identity: agent.identity,
+            identity: agent.identity
         };
     }
     if (agentIsStale(agent, input.nowEpochMs, input.staleAfterMs)) {
@@ -738,33 +746,35 @@ function distributedTargetBlocker(
             agentId: agent.agentId,
             status: 'stale-agent',
             reason: 'Control agent heartbeat is stale.',
-            identity: agent.identity,
+            identity: agent.identity
         };
     }
     const unmetAssertionReason = validateAgentAssertionCapability(
         input.assertionFeatures,
-        agent.identity.capabilities,
+        agent.identity.capabilities
     );
     if (unmetAssertionReason) {
         return {
             agentId: agent.agentId,
             status: 'missing-assertion-capability',
             reason: unmetAssertionReason,
-            identity: agent.identity,
+            identity: agent.identity
         };
     }
     return undefined;
 }
 
-function distributedSelectedAgentIds(input: Readonly<{
-    policy: RallarBlackBoxDistributedTargetPolicy;
-    targetableAgentIds: readonly string[];
-    targetableById: ReadonlySet<string>;
-    roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
-}>): readonly string[] {
+function distributedSelectedAgentIds(
+    input: Readonly<{
+        policy: RallarBlackBoxDistributedTargetPolicy;
+        targetableAgentIds: readonly string[];
+        targetableById: ReadonlySet<string>;
+        roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
+    }>
+): readonly string[] {
     const uniqueTargetable = (values: readonly string[]) =>
         [...new Set(values)]
-            .filter(value => input.targetableById.has(value))
+            .filter((value) => input.targetableById.has(value))
             .sort((left, right) => left.localeCompare(right));
 
     if (input.policy.mode === 'all-online-group-members') {
@@ -775,19 +785,21 @@ function distributedSelectedAgentIds(input: Readonly<{
     }
     return uniqueTargetable([
         ...Object.values(input.policy.roles ?? {}).flat(),
-        ...input.roleAssignments.map(assignment => assignment.agentId),
+        ...input.roleAssignments.map((assignment) => assignment.agentId)
     ]);
 }
 
-function distributedRoleAssignments(input: Readonly<{
-    manifest: RallarBlackBoxDistributedRunManifest;
-    targetAgentIds: readonly string[];
-}>): readonly RallarBlackBoxDistributedRoleAssignment[] {
+function distributedRoleAssignments(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        targetAgentIds: readonly string[];
+    }>
+): readonly RallarBlackBoxDistributedRoleAssignment[] {
     if ((input.manifest.roleAssignments?.length ?? 0) > 0) {
         const selected = new Set(input.targetAgentIds);
         return (input.manifest.roleAssignments ?? [])
-            .filter(assignment => selected.has(assignment.agentId))
-            .map(assignment => ({ ...assignment }));
+            .filter((assignment) => selected.has(assignment.agentId))
+            .map((assignment) => ({ ...assignment }));
     }
 
     const roles = input.manifest.targetPolicy.roles;
@@ -796,11 +808,11 @@ function distributedRoleAssignments(input: Readonly<{
         return Object.entries(roles)
             .flatMap(([role, agentIds]) =>
                 agentIds
-                    .filter(agentId => selected.has(agentId))
-                    .map(agentId => ({
+                    .filter((agentId) => selected.has(agentId))
+                    .map((agentId) => ({
                         role,
                         agentId,
-                        required: true,
+                        required: true
                     }))
             );
     }
@@ -815,27 +827,27 @@ function distributedRoleAssignments(input: Readonly<{
 
 function roleAssignmentsForPattern(
     pattern: RallarBlackBoxDistributedRolePattern,
-    agentIds: readonly string[],
+    agentIds: readonly string[]
 ): readonly RallarBlackBoxDistributedRoleAssignment[] {
     if (pattern === 'all-agents') {
         return [];
     }
     if (pattern === 'sender-receiver') {
         return [
-            ...agentIds.slice(0, 1).map(agentId => ({ role: 'sender', agentId, required: true })),
-            ...agentIds.slice(1, 2).map(agentId => ({ role: 'receiver', agentId, required: true })),
+            ...agentIds.slice(0, 1).map((agentId) => ({ role: 'sender', agentId, required: true })),
+            ...agentIds.slice(1, 2).map((agentId) => ({ role: 'receiver', agentId, required: true }))
         ];
     }
     if (pattern === 'one-sender-many-receivers') {
         return [
-            ...agentIds.slice(0, 1).map(agentId => ({ role: 'sender', agentId, required: true })),
-            ...agentIds.slice(1).map(agentId => ({ role: 'receiver', agentId, required: true })),
+            ...agentIds.slice(0, 1).map((agentId) => ({ role: 'sender', agentId, required: true })),
+            ...agentIds.slice(1).map((agentId) => ({ role: 'receiver', agentId, required: true }))
         ];
     }
     return [
-        ...agentIds.slice(0, 1).map(agentId => ({ role: 'publisher', agentId, required: true })),
-        ...agentIds.slice(1, 2).map(agentId => ({ role: 'relay', agentId, required: true })),
-        ...agentIds.slice(2).map(agentId => ({ role: 'observer', agentId, required: true })),
+        ...agentIds.slice(0, 1).map((agentId) => ({ role: 'publisher', agentId, required: true })),
+        ...agentIds.slice(1, 2).map((agentId) => ({ role: 'relay', agentId, required: true })),
+        ...agentIds.slice(2).map((agentId) => ({ role: 'observer', agentId, required: true }))
     ];
 }
 
@@ -845,7 +857,7 @@ function countBy(values: readonly string[]): Readonly<Record<string, number>> {
         counts[value] = (counts[value] ?? 0) + 1;
     }
     return Object.fromEntries(
-        Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)),
+        Object.entries(counts).sort(([left], [right]) => left.localeCompare(right))
     );
 }
 
@@ -856,28 +868,32 @@ function isString(value: unknown): value is string {
 function agentMatchesMemberInGroup(
     agent: RallarBlackBoxControlAgentCandidate,
     member: RallarBlackBoxGroupMemberCandidate,
-    group: RallarBlackBoxDistributedGroupRef,
+    group: RallarBlackBoxDistributedGroupRef
 ): boolean {
     const identity = agent.identity;
     if (!identityMatchesGroup(identity, group)) {
         return false;
     }
 
-    const memberIds = new Set([
-        member.principalId,
-        member.username,
-    ].map(cleanString).filter((value): value is string => Boolean(value)));
+    const memberIds = new Set(
+        [
+            member.principalId,
+            member.username
+        ].map(cleanString).filter((value): value is string => Boolean(value))
+    );
     const identityIds = [
         identity?.principalId,
         identity?.clientId,
-        identity?.username,
+        identity?.username
     ].map(cleanString).filter((value): value is string => Boolean(value));
 
-    if (!identityIds.some(id => memberIds.has(id))) {
+    if (!identityIds.some((id) => memberIds.has(id))) {
         return false;
     }
 
-    const memberSessionIds = new Set((member.sessionIds ?? []).map(cleanString).filter((value): value is string => Boolean(value)));
+    const memberSessionIds = new Set(
+        (member.sessionIds ?? []).map(cleanString).filter((value): value is string => Boolean(value))
+    );
     if (memberSessionIds.size === 0) {
         return true;
     }
@@ -887,7 +903,7 @@ function agentMatchesMemberInGroup(
 
 function identityMatchesGroup(
     identity: RallarBlackBoxControlAgentIdentity | undefined,
-    group: RallarBlackBoxDistributedGroupRef,
+    group: RallarBlackBoxDistributedGroupRef
 ): identity is RallarBlackBoxControlAgentIdentity {
     if (!identity) {
         return false;
@@ -901,7 +917,7 @@ function identityMatchesGroup(
 function agentIsStale(
     agent: RallarBlackBoxControlAgentCandidate,
     nowEpochMs: number,
-    staleAfterMs: number,
+    staleAfterMs: number
 ): boolean {
     const lastSeen = agent.lastHeartbeatAtEpochMs ?? agent.lastSeenAtEpochMs ?? agent.identity?.updatedAtEpochMs;
     return typeof lastSeen === 'number' && nowEpochMs - lastSeen > staleAfterMs;
@@ -910,7 +926,7 @@ function agentIsStale(
 function requireNonEmptyString(
     value: string,
     path: string,
-    errors: RallarBlackBoxDistributedRunValidationIssue[],
+    errors: RallarBlackBoxDistributedRunValidationIssue[]
 ): void {
     if (!cleanString(value)) {
         errors.push({ path, message: 'A non-empty string is required.' });

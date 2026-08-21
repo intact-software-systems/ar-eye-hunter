@@ -1,27 +1,19 @@
-import type {
-    ControlAgentBoardRow,
-} from './control-agent-board.ts';
-import type {
-    ControlRunSnapshot,
-} from './control-run-manager.ts';
+import { fleetGeographyRouteEvidenceFromControlRun } from '@shared-test/rallar-bb-test/fleet-geography.ts';
 import type {
     ControlFleetAgentLabel,
     ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,
-    ControlFleetRunReport,
+    ControlFleetRunReport
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
-import { fleetGeographyRouteEvidenceFromControlRun } from
-    '@shared-test/rallar-bb-test/fleet-geography.ts';
-import {
-    resolveFleetWorldMapLocation,
-    type FleetWorldMapLocation,
-} from './world-map-geo-fixtures.ts';
+import type { ControlAgentBoardRow } from './control-agent-board.ts';
+import type { ControlRunSnapshot } from './control-run-manager.ts';
+import { resolveFleetWorldMapLocation, type FleetWorldMapLocation } from './world-map-geo-fixtures.ts';
 
 export const FLEET_WORLD_MAP_LAYER_IDS = [
     'live-agents',
     'historical-regions',
     'failures',
-    'observed-routes',
+    'observed-routes'
 ] as const;
 
 export type FleetWorldMapLayerId = typeof FLEET_WORLD_MAP_LAYER_IDS[number];
@@ -32,7 +24,7 @@ export const DEFAULT_FLEET_WORLD_MAP_LAYER_STATE: FleetWorldMapLayerState = {
     'live-agents': true,
     'historical-regions': true,
     failures: true,
-    'observed-routes': true,
+    'observed-routes': true
 };
 
 export type FleetWorldMapAgentState =
@@ -136,7 +128,7 @@ type MutableMapAgent = {
 };
 
 export function deriveFleetWorldMapModel(
-    input: DeriveFleetWorldMapModelInput,
+    input: DeriveFleetWorldMapModelInput
 ): FleetWorldMapViewModel {
     const agents = new Map<string, MutableMapAgent>();
     const liveAgents = new Map<string, MutableMapAgent>();
@@ -180,13 +172,13 @@ export function deriveFleetWorldMapModel(
             failedAgents: agentList.filter((agent) =>
                 agent.state === 'failed' ||
                 agent.failureSignatureIds.length > 0
-            ).length,
-        },
+            ).length
+        }
     };
 }
 
 function sortedFrozenAgents(
-    agents: ReadonlyMap<string, MutableMapAgent>,
+    agents: ReadonlyMap<string, MutableMapAgent>
 ): readonly FleetWorldMapAgent[] {
     return [...agents.values()]
         .map(freezeAgent)
@@ -194,22 +186,22 @@ function sortedFrozenAgents(
 }
 
 export function routeEvidenceFromControlRun(
-    run: ControlRunSnapshot | undefined,
+    run: ControlRunSnapshot | undefined
 ): readonly FleetWorldMapRouteEvidence[] {
     return fleetGeographyRouteEvidenceFromControlRun(run, {
-        observationOrder: 'source',
-    }).observations.map(observation => ({
+        observationOrder: 'source'
+    }).observations.map((observation) => ({
         sourceAgentId: observation.sourceAgentId,
         targetAgentId: observation.targetAgentId,
         atEpochMs: observation.atEpochMs,
         transport: observation.transport,
-        failed: observation.failed,
+        failed: observation.failed
     }));
 }
 
 function agentFromOutcome(
     outcome: ControlFleetAgentRunOutcome,
-    report: ControlFleetRunReport,
+    report: ControlFleetRunReport
 ): MutableMapAgent {
     return {
         agentId: outcome.agentId,
@@ -222,7 +214,7 @@ function agentFromOutcome(
         datacenter: outcome.label.datacenter,
         lastHeartbeatAtEpochMs: outcome.lastHeartbeatAtEpochMs,
         runIds: new Set([report.distributedRunId]),
-        failureSignatureIds: new Set(outcome.failureSignatureIds),
+        failureSignatureIds: new Set(outcome.failureSignatureIds)
     };
 }
 
@@ -234,7 +226,7 @@ function agentFromLiveRow(row: ControlAgentBoardRow): MutableMapAgent {
             location: identity?.location,
             region: row.region ?? identity?.region,
             provider: row.provider ?? identity?.provider,
-            datacenter: row.datacenter ?? identity?.datacenter,
+            datacenter: row.datacenter ?? identity?.datacenter
         }),
         state: stateFromLiveRow(row),
         connected: row.connected,
@@ -245,13 +237,13 @@ function agentFromLiveRow(row: ControlAgentBoardRow): MutableMapAgent {
         lastSeenAtEpochMs: row.lastSeenAtEpochMs,
         lastHeartbeatAtEpochMs: row.lastHeartbeatAtEpochMs,
         runIds: new Set(row.activeRuns.map((run) => run.distributedRunId)),
-        failureSignatureIds: new Set(),
+        failureSignatureIds: new Set()
     };
 }
 
 function upsertAgent(
     agents: Map<string, MutableMapAgent>,
-    next: MutableMapAgent,
+    next: MutableMapAgent
 ): void {
     const current = agents.get(next.agentId);
     if (!current) {
@@ -269,24 +261,22 @@ function upsertAgent(
     current.lastSeenAtEpochMs = maxDefined(current.lastSeenAtEpochMs, next.lastSeenAtEpochMs);
     current.lastHeartbeatAtEpochMs = maxDefined(
         current.lastHeartbeatAtEpochMs,
-        next.lastHeartbeatAtEpochMs,
+        next.lastHeartbeatAtEpochMs
     );
     next.runIds.forEach((runId) => current.runIds.add(runId));
-    next.failureSignatureIds.forEach((signatureId) =>
-        current.failureSignatureIds.add(signatureId)
-    );
+    next.failureSignatureIds.forEach((signatureId) => current.failureSignatureIds.add(signatureId));
 }
 
 function freezeAgent(agent: MutableMapAgent): FleetWorldMapAgent {
     return {
         ...agent,
         runIds: [...agent.runIds].sort(),
-        failureSignatureIds: [...agent.failureSignatureIds].sort(),
+        failureSignatureIds: [...agent.failureSignatureIds].sort()
     };
 }
 
 function deriveRegions(
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ): readonly FleetWorldMapRegion[] {
     type MutableRegion = {
         region: string;
@@ -320,17 +310,25 @@ function deriveRegions(
                 missing: 0,
                 stale: 0,
                 failures: new Map<string, number>(),
-                latestRunId: report.distributedRunId,
+                latestRunId: report.distributedRunId
             };
             current.agentIds.add(outcome.agentId);
-            if (outcome.state === 'passed') current.passed += 1;
-            if (outcome.state === 'failed' || outcome.state === 'timed-out') current.failed += 1;
-            if (outcome.missing || outcome.state === 'missing') current.missing += 1;
-            if (outcome.stale) current.stale += 1;
+            if (outcome.state === 'passed') {
+                current.passed += 1;
+            }
+            if (outcome.state === 'failed' || outcome.state === 'timed-out') {
+                current.failed += 1;
+            }
+            if (outcome.missing || outcome.state === 'missing') {
+                current.missing += 1;
+            }
+            if (outcome.stale) {
+                current.stale += 1;
+            }
             outcome.failureSignatureIds.forEach((signatureId) => {
                 current.failures.set(
                     signatureId,
-                    (current.failures.get(signatureId) ?? 0) + 1,
+                    (current.failures.get(signatureId) ?? 0) + 1
                 );
             });
             regions.set(identity, current);
@@ -352,7 +350,7 @@ function deriveRegions(
                 stale: region.stale,
                 passRate: total > 0 ? region.passed / total : 0,
                 dominantFailureSignatureId: topFailure(region.failures),
-                latestRunId: region.latestRunId,
+                latestRunId: region.latestRunId
             };
         })
         .sort((left, right) =>
@@ -363,7 +361,7 @@ function deriveRegions(
 
 function deriveRoutes(
     evidence: readonly FleetWorldMapRouteEvidence[],
-    agents: ReadonlyMap<string, MutableMapAgent>,
+    agents: ReadonlyMap<string, MutableMapAgent>
 ): readonly FleetWorldMapRoute[] {
     type MutableRoute = {
         routeId: string;
@@ -387,7 +385,7 @@ function deriveRoutes(
         const identity = tupleIdentity([
             entry.sourceAgentId,
             entry.targetAgentId,
-            entry.transport ?? null,
+            entry.transport ?? null
         ]);
         const routeId = fleetRouteId(entry);
         const current = routes.get(identity) ?? {
@@ -400,7 +398,7 @@ function deriveRoutes(
             transport: entry.transport,
             eventCount: 0,
             failedCount: 0,
-            lastSeenAtEpochMs: entry.atEpochMs,
+            lastSeenAtEpochMs: entry.atEpochMs
         };
         current.eventCount += 1;
         current.failedCount += entry.failed ? 1 : 0;
@@ -415,7 +413,7 @@ function deriveRoutes(
 }
 
 function stateFromOutcome(
-    outcome: ControlFleetAgentRunOutcome,
+    outcome: ControlFleetAgentRunOutcome
 ): FleetWorldMapAgentState {
     if (outcome.state === 'cancelled' || outcome.state === 'timed-out') {
         return outcome.state === 'timed-out' ? 'failed' : 'unknown';
@@ -434,20 +432,18 @@ function stateFromLiveRow(row: ControlAgentBoardRow): FleetWorldMapAgentState {
 }
 
 function locationFromLabel(
-    label: ControlFleetAgentLabel,
+    label: ControlFleetAgentLabel
 ): FleetWorldMapLocation | undefined {
     return resolveFleetWorldMapLocation({
         location: label.location,
         region: label.region,
         provider: label.provider,
-        datacenter: label.datacenter,
+        datacenter: label.datacenter
     });
 }
 
 function regionIdentity(label: ControlFleetAgentLabel): string {
-    return `${encodeURIComponent(label.region ?? 'unlabeled')} / ${
-        encodeURIComponent(label.provider ?? 'unknown')
-    }`;
+    return `${encodeURIComponent(label.region ?? 'unlabeled')} / ${encodeURIComponent(label.provider ?? 'unknown')}`;
 }
 
 function fleetRouteId(entry: FleetWorldMapRouteEvidence): string {
@@ -456,9 +452,7 @@ function fleetRouteId(entry: FleetWorldMapRouteEvidence): string {
         : entry.transport === 'unknown'
         ? 'unknown%00'
         : encodeURIComponent(entry.transport);
-    return `${encodeURIComponent(entry.sourceAgentId)}->${
-        encodeURIComponent(entry.targetAgentId)
-    }:${transport}`;
+    return `${encodeURIComponent(entry.sourceAgentId)}->${encodeURIComponent(entry.targetAgentId)}:${transport}`;
 }
 
 function tupleIdentity(parts: readonly (string | null)[]): string {
@@ -466,7 +460,7 @@ function tupleIdentity(parts: readonly (string | null)[]): string {
 }
 
 function topFailure(
-    failures: ReadonlyMap<string, number>,
+    failures: ReadonlyMap<string, number>
 ): string | undefined {
     return [...failures.entries()]
         .sort((left, right) => right[1] - left[1])[0]?.[0];
@@ -474,22 +468,30 @@ function topFailure(
 
 function preferredLocation(
     current: FleetWorldMapLocation | undefined,
-    next: FleetWorldMapLocation | undefined,
+    next: FleetWorldMapLocation | undefined
 ): FleetWorldMapLocation | undefined {
-    if (!current) return next;
-    if (!next) return current;
+    if (!current) {
+        return next;
+    }
+    if (!next) {
+        return current;
+    }
     return locationRank(next) < locationRank(current) ? next : current;
 }
 
 function locationRank(location: FleetWorldMapLocation): number {
-    if (location.source === 'agent') return 0;
-    if (location.source === 'datacenter-lookup') return 1;
+    if (location.source === 'agent') {
+        return 0;
+    }
+    if (location.source === 'datacenter-lookup') {
+        return 1;
+    }
     return 2;
 }
 
 function preferredState(
     current: FleetWorldMapAgentState,
-    next: FleetWorldMapAgentState,
+    next: FleetWorldMapAgentState
 ): FleetWorldMapAgentState {
     const rank: Record<FleetWorldMapAgentState, number> = {
         failed: 0,
@@ -499,17 +501,21 @@ function preferredState(
         connected: 4,
         offline: 5,
         passed: 6,
-        unknown: 7,
+        unknown: 7
     };
     return rank[next] < rank[current] ? next : current;
 }
 
 function maxDefined(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): number | undefined {
-    if (left === undefined) return right;
-    if (right === undefined) return left;
+    if (left === undefined) {
+        return right;
+    }
+    if (right === undefined) {
+        return left;
+    }
     return Math.max(left, right);
 }
 

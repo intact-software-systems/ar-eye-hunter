@@ -1,7 +1,3 @@
-import type {
-    RallarBlackBoxDistributedRoleAssignment,
-    RallarBlackBoxDistributedRunRecipeSelection,
-} from './distributed-run.ts';
 import type { ControlDistributedRunSnapshot } from './control-snapshots.ts';
 import type {
     DistributedRunArtifactValidationStatus,
@@ -9,11 +5,21 @@ import type {
     DistributedRunEventRow,
     DistributedRunFailureRow,
     DistributedRunMonitor,
-    DistributedRunTimelineItem,
+    DistributedRunTimelineItem
 } from './distributed-run-monitor.ts';
+import type {
+    RallarBlackBoxDistributedRoleAssignment,
+    RallarBlackBoxDistributedRunRecipeSelection
+} from './distributed-run.ts';
 
 export type DistributedRunFailureEvidenceDestinationKind =
-    'agent' | 'recipe' | 'command' | 'diagnostic' | 'timeline' | 'event' | 'artifact';
+    | 'agent'
+    | 'recipe'
+    | 'command'
+    | 'diagnostic'
+    | 'timeline'
+    | 'event'
+    | 'artifact';
 export type DistributedRunFailureEvidenceDestination = Readonly<{
     kind: DistributedRunFailureEvidenceDestinationKind;
     id: string;
@@ -27,7 +33,7 @@ export type DistributedRunFailureEvidenceDestination = Readonly<{
     artifactStatus?: DistributedRunArtifactValidationStatus;
 }>;
 export function distributedRunRecipeSelectionKey(
-    selection: RallarBlackBoxDistributedRunRecipeSelection,
+    selection: RallarBlackBoxDistributedRunRecipeSelection
 ): string | undefined {
     return cleanRecipeSelectionPart(selection.recipeId) ??
         cleanRecipeSelectionPart(selection.recipe?.recipeId) ??
@@ -35,16 +41,18 @@ export function distributedRunRecipeSelectionKey(
 }
 export function distributedRunExpectedAgentIdsForRecipe(
     distributedRun: ControlDistributedRunSnapshot,
-    selection: RallarBlackBoxDistributedRunRecipeSelection,
+    selection: RallarBlackBoxDistributedRunRecipeSelection
 ): readonly string[] {
-    return distributedRun.targetAgentIds.filter(agentId =>
+    return distributedRun.targetAgentIds.filter((agentId) =>
         distributedRecipeSelectionsForAgent(distributedRun, agentId).includes(selection)
     );
 }
-export function deriveDistributedRunFailureEvidenceDestinations(input: Readonly<{
-    failure: DistributedRunFailureRow;
-    monitor: DistributedRunMonitor;
-}>): readonly DistributedRunFailureEvidenceDestination[] {
+export function deriveDistributedRunFailureEvidenceDestinations(
+    input: Readonly<{
+        failure: DistributedRunFailureRow;
+        monitor: DistributedRunMonitor;
+    }>
+): readonly DistributedRunFailureEvidenceDestination[] {
     const destinations: DistributedRunFailureEvidenceDestination[] = [];
     const seen = new Set<string>();
     const add = (destination: DistributedRunFailureEvidenceDestination): void => {
@@ -55,50 +63,65 @@ export function deriveDistributedRunFailureEvidenceDestinations(input: Readonly<
         }
     };
     const matchingDrilldowns = input.monitor.compositeDrilldowns
-        .filter(drilldown => compositeDrilldownMatchesFailure(drilldown, input.failure));
+        .filter((drilldown) => compositeDrilldownMatchesFailure(drilldown, input.failure));
     const directCommandIds = uniqueStrings([
-        input.failure.commandId, ...matchingDrilldowns.map(drilldown => drilldown.commandId).sort(),
+        input.failure.commandId,
+        ...matchingDrilldowns.map((drilldown) => drilldown.commandId).sort()
     ]);
     const inferScopedDestinations = input.failure.kind === 'participant' ||
         input.failure.kind === 'recipe';
     const initiallyMatchingTimeline = input.monitor.timeline
-        .filter(item => timelineMatchesFailure(item, input.failure, directCommandIds));
+        .filter((item) => timelineMatchesFailure(item, input.failure, directCommandIds));
     const commandIds = uniqueStrings([
         ...directCommandIds,
         ...(inferScopedDestinations
-            ? initiallyMatchingTimeline.map(item => item.commandId).sort()
-            : []),
+            ? initiallyMatchingTimeline.map((item) => item.commandId).sort()
+            : [])
     ]);
     const matchingTimeline = input.monitor.timeline
-        .filter(item => timelineMatchesFailure(item, input.failure, commandIds));
+        .filter((item) => timelineMatchesFailure(item, input.failure, commandIds));
     const agentIds = uniqueStrings([
         input.failure.agentId,
-        ...(inferScopedDestinations ? matchingTimeline.map(item => item.agentId).sort() : []),
+        ...(inferScopedDestinations ? matchingTimeline.map((item) => item.agentId).sort() : [])
     ]);
     const recipeIds = uniqueStrings([
         input.failure.recipeId,
-        ...(inferScopedDestinations ? matchingTimeline.map(item => item.recipeId).sort() : []),
+        ...(inferScopedDestinations ? matchingTimeline.map((item) => item.recipeId).sort() : [])
     ]);
-    agentIds.forEach(agentId => add({
-        kind: 'agent', id: agentId, label: `Agent ${agentId}`, agentId,
-    }));
-    recipeIds.forEach(recipeId => add({
-        kind: 'recipe', id: recipeId, label: `Recipe ${recipeId}`, recipeId,
-    }));
-    commandIds.forEach(commandId => add({
-        kind: 'command',
-        id: commandId,
-        label: `Command ${commandId}`,
-        agentId: input.failure.agentId,
-        recipeId: input.failure.recipeId,
-        commandId,
-    }));
-    const recipeCommandIds = new Set(input.monitor.timeline
-        .filter(item => item.recipeId === input.failure.recipeId)
-        .map(item => item.commandId)
-        .filter((commandId): commandId is string => commandId !== undefined));
+    agentIds.forEach((agentId) =>
+        add({
+            kind: 'agent',
+            id: agentId,
+            label: `Agent ${agentId}`,
+            agentId
+        })
+    );
+    recipeIds.forEach((recipeId) =>
+        add({
+            kind: 'recipe',
+            id: recipeId,
+            label: `Recipe ${recipeId}`,
+            recipeId
+        })
+    );
+    commandIds.forEach((commandId) =>
+        add({
+            kind: 'command',
+            id: commandId,
+            label: `Command ${commandId}`,
+            agentId: input.failure.agentId,
+            recipeId: input.failure.recipeId,
+            commandId
+        })
+    );
+    const recipeCommandIds = new Set(
+        input.monitor.timeline
+            .filter((item) => item.recipeId === input.failure.recipeId)
+            .map((item) => item.commandId)
+            .filter((commandId): commandId is string => commandId !== undefined)
+    );
     input.monitor.runtimeDiagnostics
-        .filter(diagnostic => {
+        .filter((diagnostic) => {
             if (!diagnostic.correlatedFailureKeys.includes(input.failure.key)) {
                 return false;
             }
@@ -114,58 +137,66 @@ export function deriveDistributedRunFailureEvidenceDestinations(input: Readonly<
             return diagnostic.commandId !== undefined && commandIds.includes(diagnostic.commandId) &&
                 (!input.failure.agentId || diagnostic.agentId === input.failure.agentId);
         })
-        .forEach(diagnostic => add({
-            kind: 'diagnostic',
-            id: diagnostic.eventId,
-            label: `${diagnostic.transport ?? 'Runtime'} diagnostic · ${diagnostic.diagnosticTypeId}`,
-            agentId: diagnostic.agentId,
-            commandId: diagnostic.commandId,
-            diagnosticId: diagnostic.eventId,
-        }));
-    matchingTimeline.forEach(item => add({
-        kind: 'timeline',
-        id: item.id,
-        label: item.label,
-        agentId: item.agentId,
-        recipeId: item.recipeId,
-        commandId: item.commandId,
-        timelineId: item.id,
-    }));
+        .forEach((diagnostic) =>
+            add({
+                kind: 'diagnostic',
+                id: diagnostic.eventId,
+                label: `${diagnostic.transport ?? 'Runtime'} diagnostic · ${diagnostic.diagnosticTypeId}`,
+                agentId: diagnostic.agentId,
+                commandId: diagnostic.commandId,
+                diagnosticId: diagnostic.eventId
+            })
+        );
+    matchingTimeline.forEach((item) =>
+        add({
+            kind: 'timeline',
+            id: item.id,
+            label: item.label,
+            agentId: item.agentId,
+            recipeId: item.recipeId,
+            commandId: item.commandId,
+            timelineId: item.id
+        })
+    );
     input.monitor.events
-        .filter(event => event.kind !== 'diagnostic')
-        .filter(event => eventMatchesFailure(
-            event,
-            input.failure,
-            commandIds,
-            recipeCommandIds,
-        ))
-        .forEach(event => add({
-            kind: 'event',
-            id: event.eventId,
-            label: event.summary,
-            agentId: event.agentId,
-            commandId: event.commandId,
-            eventId: event.eventId,
-        }));
+        .filter((event) => event.kind !== 'diagnostic')
+        .filter((event) =>
+            eventMatchesFailure(
+                event,
+                input.failure,
+                commandIds,
+                recipeCommandIds
+            )
+        )
+        .forEach((event) =>
+            add({
+                kind: 'event',
+                id: event.eventId,
+                label: event.summary,
+                agentId: event.agentId,
+                commandId: event.commandId,
+                eventId: event.eventId
+            })
+        );
     if (input.monitor.artifact.status === 'valid') {
         add({
             kind: 'artifact',
             id: input.monitor.artifact.status,
             label: 'Valid distributed artifact',
-            artifactStatus: input.monitor.artifact.status,
+            artifactStatus: input.monitor.artifact.status
         });
     }
     return destinations;
 }
 function distributedRecipeSelectionsForAgent(
     distributedRun: ControlDistributedRunSnapshot,
-    agentId: string,
+    agentId: string
 ): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
     const assignments = distributedRecipeRoleAssignmentsForAgent(distributedRun, agentId);
     const assignedRecipeIds = new Set(assignments
-        .flatMap(assignment => assignment.recipeIds ?? []));
+        .flatMap((assignment) => assignment.recipeIds ?? []));
     const roles = distributedRecipeRolesForAgent(distributedRun, agentId);
-    const selections = distributedRun.manifest.recipes.filter(selection => {
+    const selections = distributedRun.manifest.recipes.filter((selection) => {
         const recipeId = distributedRunRecipeSelectionKey(selection);
         if (assignedRecipeIds.size > 0 && recipeId && assignedRecipeIds.has(recipeId)) {
             return true;
@@ -177,16 +208,16 @@ function distributedRecipeSelectionsForAgent(
     });
     return selections.length > 0
         ? selections
-        : distributedRun.manifest.recipes.filter(selection => !selection.role);
+        : distributedRun.manifest.recipes.filter((selection) => !selection.role);
 }
 function distributedRecipeRolesForAgent(
     distributedRun: ControlDistributedRunSnapshot,
-    agentId: string,
+    agentId: string
 ): ReadonlySet<string> {
     const roles = new Set<string>();
     const resolvedAssignments = distributedRun.targetResolution?.roleAssignments;
     if (resolvedAssignments) {
-        resolvedAssignments.forEach(assignment => {
+        resolvedAssignments.forEach((assignment) => {
             if (assignment.agentId === agentId) {
                 roles.add(assignment.role);
             }
@@ -198,7 +229,7 @@ function distributedRecipeRolesForAgent(
             roles.add(role);
         }
     });
-    (distributedRun.manifest.roleAssignments ?? []).forEach(assignment => {
+    (distributedRun.manifest.roleAssignments ?? []).forEach((assignment) => {
         if (assignment.agentId === agentId) {
             roles.add(assignment.role);
         }
@@ -207,16 +238,16 @@ function distributedRecipeRolesForAgent(
 }
 function distributedRecipeRoleAssignmentsForAgent(
     distributedRun: ControlDistributedRunSnapshot,
-    agentId: string,
+    agentId: string
 ): readonly RallarBlackBoxDistributedRoleAssignment[] {
     const assignments = distributedRun.targetResolution?.roleAssignments ??
         distributedRun.manifest.roleAssignments ??
         [];
-    return assignments.filter(assignment => assignment.agentId === agentId);
+    return assignments.filter((assignment) => assignment.agentId === agentId);
 }
 function compositeDrilldownMatchesFailure(
     drilldown: DistributedRunCompositeDrilldown,
-    failure: DistributedRunFailureRow,
+    failure: DistributedRunFailureRow
 ): boolean {
     if (!failure.commandId) {
         return false;
@@ -228,13 +259,13 @@ function compositeDrilldownMatchesFailure(
         return false;
     }
     return drilldown.commandId === failure.commandId ||
-        drilldown.rows.some(row => row.commandId === failure.commandId);
+        drilldown.rows.some((row) => row.commandId === failure.commandId);
 }
 
 function timelineMatchesFailure(
     item: DistributedRunTimelineItem,
     failure: DistributedRunFailureRow,
-    commandIds: readonly string[],
+    commandIds: readonly string[]
 ): boolean {
     if (isDirectFailureTimeline(item, failure)) {
         return true;
@@ -253,7 +284,7 @@ function timelineMatchesFailure(
 
 function isDirectFailureTimeline(
     item: DistributedRunTimelineItem,
-    failure: DistributedRunFailureRow,
+    failure: DistributedRunFailureRow
 ): boolean {
     return item.kind === 'failure' &&
         item.detail === failure.message &&
@@ -266,7 +297,7 @@ function eventMatchesFailure(
     event: DistributedRunEventRow,
     failure: DistributedRunFailureRow,
     commandIds: readonly string[],
-    recipeCommandIds: ReadonlySet<string>,
+    recipeCommandIds: ReadonlySet<string>
 ): boolean {
     if (commandIds.length > 0) {
         return event.commandId !== undefined && commandIds.includes(event.commandId);

@@ -1,31 +1,31 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { type AppInboxEnqueueInput, AppInboxType } from './app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
-  readonly valid: true;
-  readonly identity: Readonly<{
-    operation: AppInboxType;
-    operationSource: 'command';
-  }>;
-  readonly command: AppInboxEnqueueInput<unknown>;
+    readonly valid: true;
+    readonly identity: Readonly<{
+        operation: AppInboxType;
+        operationSource: 'command';
+    }>;
+    readonly command: AppInboxEnqueueInput<unknown>;
 }
 
 interface InvalidAppInboxCommandIdentity {
-  readonly valid: false;
-  readonly identity: Readonly<{
-    operation: AppInboxUnavailableOperation;
-    operationSource: 'corrupt' | 'unavailable';
-  }>;
+    readonly valid: false;
+    readonly identity: Readonly<{
+        operation: AppInboxUnavailableOperation;
+        operationSource: 'corrupt' | 'unavailable';
+    }>;
 }
 
 export type AppInboxCommandIdentityValidation =
-  | ValidAppInboxCommandIdentity
-  | InvalidAppInboxCommandIdentity;
+    | ValidAppInboxCommandIdentity
+    | InvalidAppInboxCommandIdentity;
 
 type AppInboxUnavailableOperation =
-  | 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
-  | 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
-  | 'APP_INBOX_OPERATION_UNAVAILABLE';
+    | 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
+    | 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
+    | 'APP_INBOX_OPERATION_UNAVAILABLE';
 
 const APP_INBOX_CLIENT_TOPIC = 'app-inbox.client-state';
 const APP_INBOX_GROUP_TOPIC = 'app-inbox.group-state';
@@ -34,164 +34,161 @@ const APP_INBOX_CRDT_TOPIC = 'app-inbox.crdt-state';
 const APP_INBOX_ADMIN_TOPIC = 'app-inbox.admin-operations';
 const APP_INBOX_OPERATIONS = new Set<string>(Object.values(AppInboxType));
 const APP_INBOX_GROUP_OPERATIONS = new Set<AppInboxType>([
-  ...Object.values(AppInboxType).filter((operation) => operation.startsWith('GROUP_')),
-  AppInboxType.TOPOLOGY_CONFIG_PUT,
-  AppInboxType.TOPOLOGY_CONFIG_DELETE,
-  AppInboxType.TOPOLOGY_OVERRIDE_PUT,
-  AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
-  AppInboxType.TOPOLOGY_RECONFIGURE,
-  AppInboxType.RTC_RTT_SUBMIT,
+    ...Object.values(AppInboxType).filter((operation) => operation.startsWith('GROUP_')),
+    AppInboxType.TOPOLOGY_CONFIG_PUT,
+    AppInboxType.TOPOLOGY_CONFIG_DELETE,
+    AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+    AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
+    AppInboxType.TOPOLOGY_RECONFIGURE,
+    AppInboxType.RTC_RTT_SUBMIT
 ]);
-const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<
-  Partial<Record<AppInboxType, string>>
-> = {
-  [AppInboxType.CLIENT_EXPIRED_SESSIONS]: AppInboxType.CLIENT_EXPIRED_SESSIONS,
-  [AppInboxType.AUTH_USER_REGISTER]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.AUTH_SESSION_ISSUE]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.AUTH_SESSION_LOGOUT]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.AUTH_WS_TICKET_ISSUE]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.AUTH_WS_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
-  [AppInboxType.CRDT_UPDATE_APPEND]: APP_INBOX_CRDT_TOPIC,
-  [AppInboxType.CRDT_PROJECTION_REBUILD]: APP_INBOX_CRDT_TOPIC,
-  [AppInboxType.CRDT_SNAPSHOT_COMPACT]: APP_INBOX_CRDT_TOPIC,
-  [AppInboxType.CRDT_LIFECYCLE_UPDATE]: APP_INBOX_CRDT_TOPIC,
-  [AppInboxType.CRDT_ERASE]: APP_INBOX_CRDT_TOPIC,
-  [AppInboxType.ADMIN_PRUNE_EXPIRED]: APP_INBOX_ADMIN_TOPIC,
+const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<Partial<Record<AppInboxType, string>>> = {
+    [AppInboxType.CLIENT_EXPIRED_SESSIONS]: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+    [AppInboxType.AUTH_USER_REGISTER]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.AUTH_SESSION_ISSUE]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.AUTH_SESSION_LOGOUT]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.AUTH_WS_TICKET_ISSUE]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.AUTH_WS_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: APP_INBOX_AUTH_TOPIC,
+    [AppInboxType.CRDT_UPDATE_APPEND]: APP_INBOX_CRDT_TOPIC,
+    [AppInboxType.CRDT_PROJECTION_REBUILD]: APP_INBOX_CRDT_TOPIC,
+    [AppInboxType.CRDT_SNAPSHOT_COMPACT]: APP_INBOX_CRDT_TOPIC,
+    [AppInboxType.CRDT_LIFECYCLE_UPDATE]: APP_INBOX_CRDT_TOPIC,
+    [AppInboxType.CRDT_ERASE]: APP_INBOX_CRDT_TOPIC,
+    [AppInboxType.ADMIN_PRUNE_EXPIRED]: APP_INBOX_ADMIN_TOPIC
 };
 const OPTIONAL_STRING_FIELDS = [
-  'topicId',
-  'resourceId',
-  'contextId',
-  'senderId',
+    'topicId',
+    'resourceId',
+    'contextId',
+    'senderId'
 ] as const;
 
 export class AppInboxCommandIdentityError extends Error {
-  readonly code = 'app-inbox-malformed-command';
-  readonly status = 400;
+    readonly code = 'app-inbox-malformed-command';
+    readonly status = 400;
 
-  readonly operationSource: 'corrupt' | 'unavailable';
+    readonly operationSource: 'corrupt' | 'unavailable';
 
-  constructor(operationSource: 'corrupt' | 'unavailable') {
-    super(
-      operationSource === 'corrupt'
-        ? 'App inbox command identity is corrupt'
-        : 'App inbox command identity is unavailable',
-    );
-    this.operationSource = operationSource;
-    this.name = 'AppInboxCommandIdentityError';
-  }
+    constructor(operationSource: 'corrupt' | 'unavailable') {
+        super(
+            operationSource === 'corrupt'
+                ? 'App inbox command identity is corrupt'
+                : 'App inbox command identity is unavailable'
+        );
+        this.operationSource = operationSource;
+        this.name = 'AppInboxCommandIdentityError';
+    }
 }
 
 export function validateAppInboxCommandIdentity(
-  entry: ResourceEntry,
+    entry: ResourceEntry
 ): AppInboxCommandIdentityValidation {
-  return validatePersistedAppInboxCommandIdentity({
-    topicId: entry.key.topicId,
-    resource: entry.resource,
-  });
+    return validatePersistedAppInboxCommandIdentity({
+        topicId: entry.key.topicId,
+        resource: entry.resource
+    });
 }
 
 export function validatePersistedAppInboxCommandIdentity(
-  input: Readonly<{ topicId: string; resource: string }>,
+    input: Readonly<{ topicId: string; resource: string; }>
 ): AppInboxCommandIdentityValidation {
-  let outer: unknown;
-  try {
-    outer = JSON.parse(input.resource) as unknown;
-  } catch {
-    return toInvalidIdentity(input.topicId, 'corrupt');
-  }
-  if (
-    !isRecord(outer) ||
-    !isRecord(outer.payload) ||
-    typeof outer.payload.typeId !== 'string' ||
-    typeof outer.payload.resource !== 'string'
-  ) {
-    return toInvalidIdentity(input.topicId, 'corrupt');
-  }
-  const dispatchedOperation = outer.payload.typeId;
+    let outer: unknown;
+    try {
+        outer = JSON.parse(input.resource) as unknown;
+    }
+    catch {
+        return toInvalidIdentity(input.topicId, 'corrupt');
+    }
+    if (
+        !isRecord(outer) ||
+        !isRecord(outer.payload) ||
+        typeof outer.payload.typeId !== 'string' ||
+        typeof outer.payload.resource !== 'string'
+    ) {
+        return toInvalidIdentity(input.topicId, 'corrupt');
+    }
+    const dispatchedOperation = outer.payload.typeId;
 
-  let command: unknown;
-  try {
-    command = JSON.parse(outer.payload.resource) as unknown;
-  } catch {
-    return toInvalidIdentity(input.topicId, 'corrupt');
-  }
-  if (!isAppInboxEnqueueShape(command)) {
-    return toInvalidIdentity(input.topicId, 'corrupt');
-  }
-  if (
-    !APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
-    !APP_INBOX_OPERATIONS.has(command.type)
-  ) {
-    return toInvalidIdentity(input.topicId, 'unavailable');
-  }
-  if (
-    dispatchedOperation !== command.type ||
-    !isOperationForTopic(dispatchedOperation as AppInboxType, input.topicId)
-  ) {
-    return toInvalidIdentity(input.topicId, 'corrupt');
-  }
-  return {
-    valid: true,
-    identity: {
-      operation: dispatchedOperation as AppInboxType,
-      operationSource: 'command',
-    },
-    command: command as AppInboxEnqueueInput<unknown>,
-  };
+    let command: unknown;
+    try {
+        command = JSON.parse(outer.payload.resource) as unknown;
+    }
+    catch {
+        return toInvalidIdentity(input.topicId, 'corrupt');
+    }
+    if (!isAppInboxEnqueueShape(command)) {
+        return toInvalidIdentity(input.topicId, 'corrupt');
+    }
+    if (
+        !APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
+        !APP_INBOX_OPERATIONS.has(command.type)
+    ) {
+        return toInvalidIdentity(input.topicId, 'unavailable');
+    }
+    if (
+        dispatchedOperation !== command.type ||
+        !isOperationForTopic(dispatchedOperation as AppInboxType, input.topicId)
+    ) {
+        return toInvalidIdentity(input.topicId, 'corrupt');
+    }
+    return {
+        valid: true,
+        identity: {
+            operation: dispatchedOperation as AppInboxType,
+            operationSource: 'command'
+        },
+        command: command as AppInboxEnqueueInput<unknown>
+    };
 }
 
 function toInvalidIdentity(
-  topicId: string,
-  operationSource: 'corrupt' | 'unavailable',
+    topicId: string,
+    operationSource: 'corrupt' | 'unavailable'
 ): InvalidAppInboxCommandIdentity {
-  const operation = topicId === APP_INBOX_GROUP_TOPIC
-    ? 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
-    : topicId === APP_INBOX_CLIENT_TOPIC
-    ? 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
-    : 'APP_INBOX_OPERATION_UNAVAILABLE';
-  return {
-    valid: false,
-    identity: { operation, operationSource },
-  };
+    const operation = topicId === APP_INBOX_GROUP_TOPIC
+        ? 'APP_INBOX_GROUP_OPERATION_UNAVAILABLE'
+        : topicId === APP_INBOX_CLIENT_TOPIC
+        ? 'APP_INBOX_CLIENT_OPERATION_UNAVAILABLE'
+        : 'APP_INBOX_OPERATION_UNAVAILABLE';
+    return {
+        valid: false,
+        identity: { operation, operationSource }
+    };
 }
 
 function isOperationForTopic(
-  operation: AppInboxType,
-  topicId: string,
+    operation: AppInboxType,
+    topicId: string
 ): boolean {
-  if (operation === topicId) {
-    return true;
-  }
-  if (APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION[operation] === topicId) {
-    return true;
-  }
-  return topicId === APP_INBOX_GROUP_TOPIC
-    ? APP_INBOX_GROUP_OPERATIONS.has(operation)
-    : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
+    if (operation === topicId) {
+        return true;
+    }
+    if (APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION[operation] === topicId) {
+        return true;
+    }
+    return topicId === APP_INBOX_GROUP_TOPIC
+        ? APP_INBOX_GROUP_OPERATIONS.has(operation)
+        : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
 }
 
 function isAppInboxEnqueueShape(value: unknown): value is
-  & Record<
-    string,
-    unknown
-  >
-  & {
-    type: string;
-    data: unknown;
-  } {
-  return (
-    isRecord(value) &&
-    typeof value.type === 'string' &&
-    Object.prototype.hasOwnProperty.call(value, 'data') &&
-    OPTIONAL_STRING_FIELDS.every(
-      (field) => value[field] === undefined || typeof value[field] === 'string',
-    )
-  );
+    & Record<string, unknown>
+    & {
+        type: string;
+        data: unknown;
+    } {
+    return (
+        isRecord(value) &&
+        typeof value.type === 'string' &&
+        Object.prototype.hasOwnProperty.call(value, 'data') &&
+        OPTIONAL_STRING_FIELDS.every(
+            (field) => value[field] === undefined || typeof value[field] === 'string'
+        )
+    );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

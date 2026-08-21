@@ -18,20 +18,21 @@ function httpResultValue(result: RallarBlackBoxTestResult | undefined): HttpResu
 describe('http.request result redaction', () => {
     it('redacts sensitive response headers and body fields in the recorded result and mirrored event', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () => new Response(
-                JSON.stringify({
-                    profile: { username: 'alice' },
-                    accessToken: 'live-access-token',
-                }),
-                {
-                    status: 200,
-                    headers: {
-                        'content-type': 'application/json',
-                        'x-session-cookie': 'session=live-cookie-value',
-                        'x-rallar-ticket': 'live-ticket-value',
-                    },
-                },
-            )) as typeof fetch,
+            fetch: (async () =>
+                new Response(
+                    JSON.stringify({
+                        profile: { username: 'alice' },
+                        accessToken: 'live-access-token'
+                    }),
+                    {
+                        status: 200,
+                        headers: {
+                            'content-type': 'application/json',
+                            'x-session-cookie': 'session=live-cookie-value',
+                            'x-rallar-ticket': 'live-ticket-value'
+                        }
+                    }
+                )) as typeof fetch
         });
 
         const result = await runtime.execute({
@@ -39,11 +40,11 @@ describe('http.request result redaction', () => {
             commandId: 'http-sensitive-response',
             request: {
                 url: 'https://api.example.test/api/session',
-                method: 'GET',
+                method: 'GET'
             },
             response: {
-                body: 'json',
-            },
+                body: 'json'
+            }
         });
 
         const value = httpResultValue(result);
@@ -59,31 +60,32 @@ describe('http.request result redaction', () => {
         expect(cachedValue.body.accessToken).toBe('<redacted>');
 
         const mirroredEvent = runtime.state().events
-            .find(event => event.topic === 'rallar.bb.http.response');
+            .find((event) => event.topic === 'rallar.bb.http.response');
         expect(mirroredEvent?.payload).toMatchObject({
             status: 200,
             headers: {
                 'x-session-cookie': '<redacted>',
-                'x-rallar-ticket': '<redacted>',
+                'x-rallar-ticket': '<redacted>'
             },
             body: {
-                accessToken: '<redacted>',
-            },
+                accessToken: '<redacted>'
+            }
         });
     });
 
     it('redacts the http result recorded for a rejected status code', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
-            fetch: (async () => new Response(
-                JSON.stringify({ error: 'denied', refreshToken: 'live-refresh-token' }),
-                {
-                    status: 403,
-                    headers: {
-                        'content-type': 'application/json',
-                        authorization: 'Bearer leaked-server-echo',
-                    },
-                },
-            )) as typeof fetch,
+            fetch: (async () =>
+                new Response(
+                    JSON.stringify({ error: 'denied', refreshToken: 'live-refresh-token' }),
+                    {
+                        status: 403,
+                        headers: {
+                            'content-type': 'application/json',
+                            authorization: 'Bearer leaked-server-echo'
+                        }
+                    }
+                )) as typeof fetch
         });
 
         const result = await runtime.execute({
@@ -91,12 +93,12 @@ describe('http.request result redaction', () => {
             commandId: 'http-rejected-status',
             request: {
                 url: 'https://api.example.test/api/denied',
-                method: 'GET',
+                method: 'GET'
             },
             response: {
                 body: 'json',
-                acceptedStatusCodes: [200],
-            },
+                acceptedStatusCodes: [200]
+            }
         });
 
         expect(result.ok).toBe(false);

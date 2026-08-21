@@ -9,7 +9,7 @@ export function SegmentedControl<Value extends string>({
     label,
     options,
     value,
-    onChange,
+    onChange
 }: Readonly<{
     label: string;
     options: readonly SegmentedOption<Value>[];
@@ -18,7 +18,7 @@ export function SegmentedControl<Value extends string>({
 }>) {
     return (
         <div aria-label={label} className={styles.segmentedControl} role="group">
-            {options.map(option => (
+            {options.map((option) => (
                 <button
                     aria-pressed={option.value === value}
                     className={styles.segment}

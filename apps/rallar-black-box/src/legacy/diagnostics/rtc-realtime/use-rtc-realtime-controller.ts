@@ -1,42 +1,26 @@
+import type { RallarBlackBoxTestSeverity, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
-import {
-    configureDirectRallarFacade,
-    createDirectRallarRuntimeEvent,
-} from '../../../direct-rallar-operations.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../../runtime-store.ts';
+import { configureDirectRallarFacade, createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
-import {
-    json,
-    parseJsonText,
-    splitCsvValues,
-} from '../../shared/json-presentation.ts';
-import {
-    recordArray,
-    recordValue as optionalRecord,
-} from '../../shared/record-value.ts';
+import { json, parseJsonText, splitCsvValues } from '../../shared/json-presentation.ts';
+import { recordArray, recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { stringValue } from '../../shared/string-value.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import {
-    type CommandCenterActionFeedback,
     completedActionFeedback,
     idleActionFeedback,
     runningActionFeedback,
+    type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import type {
     RtcRealtimeReceivedRow,
     RtcRealtimeSubscriptionRow,
-    RtcRealtimeTransport,
+    RtcRealtimeTransport
 } from './rtc-realtime-contracts.ts';
-import type {
-    RallarBlackBoxTestSeverity,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { useEffect, useRef, useState } from 'react';
 
 export type UseRtcRealtimeControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -51,10 +35,9 @@ export function useRtcRealtimeController({
     state,
     bootstrap,
     authSession,
-    globalValues,
+    globalValues
 }: UseRtcRealtimeControllerInput) {
-    const [transport, setTransport] =
-        useState<RtcRealtimeTransport>('realtime');
+    const [transport, setTransport] = useState<RtcRealtimeTransport>('realtime');
     const [laneId, setLaneId] = useState('realtime');
     const [peerIdsText, setPeerIdsText] = useState('');
     const [typeId, setTypeId] = useState('room.manual.message');
@@ -63,38 +46,31 @@ export function useRtcRealtimeController({
     const [payloadText, setPayloadText] = useState(() =>
         json({
             text: 'hello from direct RTC/Realtimes',
-            seq: 1,
-        }),
+            seq: 1
+        })
     );
     const [minSnapshotVersion, setMinSnapshotVersion] = useState('');
-    const [reliability, setReliability] = useState<
-        'best-effort' | 'at-least-once'
-    >('best-effort');
-    const [ack, setAck] = useState<
-        'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'
-    >('none');
+    const [reliability, setReliability] = useState<'best-effort' | 'at-least-once'>('best-effort');
+    const [ack, setAck] = useState<'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'>('none');
     const [ownership, setOwnership] = useState<'shared' | 'exclusive'>(
-        'shared',
+        'shared'
     );
     const [timeoutMs, setTimeoutMs] = useState<number>(
-        RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+        RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
     );
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
-    const [actionFeedback, setActionFeedback] =
-        useState<CommandCenterActionFeedback>(() =>
-            idleActionFeedback(
-                'Run an RTC/Realtimes operation to see action status.',
-            ),
-        );
+    const [actionFeedback, setActionFeedback] = useState<CommandCenterActionFeedback>(() =>
+        idleActionFeedback(
+            'Run an RTC/Realtimes operation to see action status.'
+        )
+    );
     const [result, setResult] = useState<unknown>();
     const [received, setReceived] = useState<readonly RtcRealtimeReceivedRow[]>(
-        [],
+        []
     );
     const [health, setHealth] = useState<unknown>();
-    const [subscriptions, setSubscriptions] = useState<
-        readonly RtcRealtimeSubscriptionRow[]
-    >([]);
+    const [subscriptions, setSubscriptions] = useState<readonly RtcRealtimeSubscriptionRow[]>([]);
     const subscriptionsRef = useRef<readonly RtcRealtimeSubscriptionRow[]>([]);
     const providerMode = bootstrap.providerMode;
     const realBackendReady = providerMode === 'browser-rallar';
@@ -106,18 +82,16 @@ export function useRtcRealtimeController({
         setContextId((current) =>
             current && current !== 'room'
                 ? current
-                : globalValues.roomId || 'room',
+                : globalValues.roomId || 'room'
         );
     }, [globalValues.roomId]);
 
     useEffect(
         () => () => {
-            subscriptionsRef.current.forEach((subscription) =>
-                subscription.unsubscribe(),
-            );
+            subscriptionsRef.current.forEach((subscription) => subscription.unsubscribe());
             subscriptionsRef.current = [];
         },
-        [],
+        []
     );
 
     const context = () => ({
@@ -126,18 +100,17 @@ export function useRtcRealtimeController({
         applicationId: globalValues.applicationId,
         workspaceId: globalValues.workspaceId,
         roomId: activeGroupId,
-        actor:
-            authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
         connection: 'rtc-realtime',
         authSession,
-        timeoutMs,
+        timeoutMs
     });
 
     const recordDirectEvent = (
         topic: string,
         severity: RallarBlackBoxTestSeverity,
         payload: unknown,
-        lastAction?: string,
+        lastAction?: string
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
@@ -145,30 +118,29 @@ export function useRtcRealtimeController({
                 context: context(),
                 transport,
                 severity,
-                payload,
+                payload
             }),
-            lastAction,
+            lastAction
         );
     };
 
-    const nowMs = (): number =>
-        typeof performance === 'undefined' ? Date.now() : performance.now();
+    const nowMs = (): number => typeof performance === 'undefined' ? Date.now() : performance.now();
 
     const recordPhase = (
         phase: string,
         severity: RallarBlackBoxTestSeverity,
-        payload: Record<string, unknown>,
+        payload: Record<string, unknown>
     ): void => {
         recordDirectEvent('rallar.direct.rtc_realtime.phase', severity, {
             phase,
-            ...payload,
+            ...payload
         });
     };
 
-    const runTimedPhase = async <T,>(
+    const runTimedPhase = async <T>(
         phase: string,
         action: () => Promise<T> | T,
-        details: Record<string, unknown> = {},
+        details: Record<string, unknown> = {}
     ): Promise<T> => {
         const startedAtMs = nowMs();
         try {
@@ -176,24 +148,24 @@ export function useRtcRealtimeController({
             recordPhase(phase, 'info', {
                 ...details,
                 status: 'ok',
-                durationMs: Math.round((nowMs() - startedAtMs) * 100) / 100,
+                durationMs: Math.round((nowMs() - startedAtMs) * 100) / 100
             });
             return value;
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             recordPhase(phase, 'error', {
                 ...details,
                 status: 'error',
                 durationMs: Math.round((nowMs() - startedAtMs) * 100) / 100,
-                error: message,
+                error: message
             });
             throw error;
         }
     };
 
     const isFacadeJoinedToActiveGroup = (
-        facade: BrowserRallarFacade,
+        facade: BrowserRallarFacade
     ): boolean => {
         if (!activeGroupId || !authSession?.sessionId) {
             return false;
@@ -207,13 +179,12 @@ export function useRtcRealtimeController({
         }
 
         return recordArray(snapshot.activeSessions).some(
-            (session) =>
-                stringValue(session.sessionId) === authSession.sessionId,
+            (session) => stringValue(session.sessionId) === authSession.sessionId
         );
     };
 
     const ensureActiveGroupJoined = async (
-        facade: BrowserRallarFacade,
+        facade: BrowserRallarFacade
     ): Promise<void> => {
         if (!activeGroupId) {
             return;
@@ -223,7 +194,7 @@ export function useRtcRealtimeController({
             recordPhase('join', 'info', {
                 status: 'skipped',
                 groupId: activeGroupId,
-                reason: 'current browser session is already active in the group',
+                reason: 'current browser session is already active in the group'
             });
             return;
         }
@@ -234,31 +205,29 @@ export function useRtcRealtimeController({
                 facade.rooms.join(activeGroupId, {
                     scope: {
                         applicationId: globalValues.applicationId,
-                        workspaceId: globalValues.workspaceId,
+                        workspaceId: globalValues.workspaceId
                     },
-                    timeoutMs,
+                    timeoutMs
                 }),
             {
-                groupId: activeGroupId,
-            },
+                groupId: activeGroupId
+            }
         );
     };
 
-    const withFacade = async <T,>(
+    const withFacade = async <T>(
         actionLabel: string,
-        action: (facade: BrowserRallarFacade) => Promise<T>,
+        action: (facade: BrowserRallarFacade) => Promise<T>
     ): Promise<T> => {
         if (!realBackendReady) {
             throw new Error('RTC/Realtimes requires provider=browser-rallar.');
         }
         if (!authSession) {
             throw new Error(
-                'RTC/Realtimes requires a logged-in browser session.',
+                'RTC/Realtimes requires a logged-in browser session.'
             );
         }
-        const facade = await runTimedPhase('load-facade', () =>
-            loadBrowserRallarFacade(),
-        );
+        const facade = await runTimedPhase('load-facade', () => loadBrowserRallarFacade());
         await runTimedPhase('configure', () => {
             configureDirectRallarFacade(facade, context());
         });
@@ -267,16 +236,15 @@ export function useRtcRealtimeController({
                 connect: true,
                 refreshRooms: false,
                 refreshPeople: false,
-                timeoutMs,
-            }),
-        );
+                timeoutMs
+            }));
         await ensureActiveGroupJoined(facade);
         return await runTimedPhase(actionLabel, () => action(facade));
     };
 
     const runAction = async (
         label: string,
-        action: () => Promise<unknown>,
+        action: () => Promise<unknown>
     ): Promise<void> => {
         setBusyAction(label);
         setLocalError(undefined);
@@ -285,8 +253,8 @@ export function useRtcRealtimeController({
             runningActionFeedback(
                 label,
                 `${activeGroupId || '-'} / ${transport}`,
-                'Calling the browser Rallar facade.',
-            ),
+                'Calling the browser Rallar facade.'
+            )
         );
         try {
             const nextResult = await action();
@@ -298,18 +266,18 @@ export function useRtcRealtimeController({
                     target: `${activeGroupId || '-'} / ${transport}`,
                     ok: true,
                     status: 'completed',
-                    message: `${label} completed.`,
-                }),
+                    message: `${label} completed.`
+                })
             );
             recordDirectEvent(
                 `rallar.direct.${transport}.${label.toLowerCase().replaceAll(' ', '_')}.completed`,
                 'info',
                 nextResult,
-                `${label} completed`,
+                `${label} completed`
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -318,33 +286,34 @@ export function useRtcRealtimeController({
                     target: `${activeGroupId || '-'} / ${transport}`,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
             recordDirectEvent(
                 `rallar.direct.${transport}.${label.toLowerCase().replaceAll(' ', '_')}.failed`,
                 'error',
                 { error: message },
-                `${label} failed`,
+                `${label} failed`
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
     const addSubscription = (
-        subscription: RtcRealtimeSubscriptionRow,
+        subscription: RtcRealtimeSubscriptionRow
     ): void => {
         subscriptionsRef.current
             .filter(
-                (entry) => entry.subscriptionId === subscription.subscriptionId,
+                (entry) => entry.subscriptionId === subscription.subscriptionId
             )
             .forEach((entry) => entry.unsubscribe());
         subscriptionsRef.current = [
             ...subscriptionsRef.current.filter(
-                (entry) => entry.subscriptionId !== subscription.subscriptionId,
+                (entry) => entry.subscriptionId !== subscription.subscriptionId
             ),
-            subscription,
+            subscription
         ];
         setSubscriptions(subscriptionsRef.current);
     };
@@ -355,7 +324,7 @@ export function useRtcRealtimeController({
             'rallar.direct.rtc_realtime.message',
             'info',
             row,
-            'RTC/Realtimes message received',
+            'RTC/Realtimes message received'
         );
     };
 
@@ -376,9 +345,9 @@ export function useRtcRealtimeController({
                             topicId: '-',
                             contextId: activeGroupId || '-',
                             payload: message.data,
-                            raw: message,
+                            raw: message
                         });
-                    },
+                    }
                 );
                 addSubscription({
                     subscriptionId: `realtime:${activeGroupId || '-'}:${laneId || '-'}`,
@@ -387,11 +356,11 @@ export function useRtcRealtimeController({
                     laneId,
                     groupId: activeGroupId || '-',
                     subscribedAtEpochMs: Date.now(),
-                    unsubscribe,
+                    unsubscribe
                 });
                 return {
                     subscribed: 'realtime',
-                    laneId,
+                    laneId
                 };
             });
         });
@@ -403,7 +372,7 @@ export function useRtcRealtimeController({
                 async (facade) => {
                     const selector = {
                         typeId,
-                        ...(topicId ? { topicId } : {}),
+                        ...(topicId ? { topicId } : {})
                     };
                     const unsubscribe = facade.messages.rtc.onMessage(
                         selector,
@@ -414,21 +383,21 @@ export function useRtcRealtimeController({
                                 atEpochMs: Date.now(),
                                 transport: 'messages.rtc',
                                 peerId: String(
-                                    record.senderId ?? record.peerId ?? '-',
+                                    record.senderId ?? record.peerId ?? '-'
                                 ),
                                 laneId,
                                 roomId: String(
-                                    record.roomId ?? activeGroupId ?? '-',
+                                    record.roomId ?? activeGroupId ?? '-'
                                 ),
                                 typeId: String(record.typeId ?? typeId),
                                 topicId: String(record.topicId ?? topicId),
                                 contextId: String(
-                                    record.contextId ?? contextId,
+                                    record.contextId ?? contextId
                                 ),
                                 payload: record.payload ?? message,
-                                raw: message,
+                                raw: message
                             });
-                        },
+                        }
                     );
                     addSubscription({
                         subscriptionId: `messages.rtc:${activeGroupId || '-'}:${topicId || '*'}:${typeId}`,
@@ -437,21 +406,19 @@ export function useRtcRealtimeController({
                         laneId,
                         groupId: activeGroupId || '-',
                         subscribedAtEpochMs: Date.now(),
-                        unsubscribe,
+                        unsubscribe
                     });
                     return {
                         subscribed: 'messages.rtc',
-                        selector,
+                        selector
                     };
-                },
+                }
             );
         });
 
     const clearSubscriptions = (): void => {
         const startedAtEpochMs = Date.now();
-        subscriptionsRef.current.forEach((subscription) =>
-            subscription.unsubscribe(),
-        );
+        subscriptionsRef.current.forEach((subscription) => subscription.unsubscribe());
         subscriptionsRef.current = [];
         setSubscriptions([]);
         setActionFeedback(
@@ -461,14 +428,14 @@ export function useRtcRealtimeController({
                 target: activeGroupId || '-',
                 ok: true,
                 status: 'cleared',
-                message: 'RTC/Realtimes subscriptions cleared.',
-            }),
+                message: 'RTC/Realtimes subscriptions cleared.'
+            })
         );
         recordDirectEvent(
             'rallar.direct.rtc_realtime.unsubscribe.completed',
             'info',
             {},
-            'RTC/Realtimes subscriptions cleared',
+            'RTC/Realtimes subscriptions cleared'
         );
     };
 
@@ -484,14 +451,14 @@ export function useRtcRealtimeController({
                         roomId: activeGroupId,
                         roomRef: activeGroupId
                             ? {
-                                  applicationId: globalValues.applicationId,
-                                  workspaceId: globalValues.workspaceId,
-                                  groupId: activeGroupId,
-                              }
+                                applicationId: globalValues.applicationId,
+                                workspaceId: globalValues.workspaceId,
+                                groupId: activeGroupId
+                            }
                             : undefined,
                         peerIds: peerIds.length > 0 ? peerIds : undefined,
-                        openTimeoutMs: timeoutMs,
-                    }),
+                        openTimeoutMs: timeoutMs
+                    })
             );
         });
 
@@ -505,10 +472,10 @@ export function useRtcRealtimeController({
                         roomId: activeGroupId,
                         roomRef: activeGroupId
                             ? {
-                                  applicationId: globalValues.applicationId,
-                                  workspaceId: globalValues.workspaceId,
-                                  groupId: activeGroupId,
-                              }
+                                applicationId: globalValues.applicationId,
+                                workspaceId: globalValues.workspaceId,
+                                groupId: activeGroupId
+                            }
                             : undefined,
                         typeId,
                         topicId,
@@ -520,10 +487,9 @@ export function useRtcRealtimeController({
                         reliability,
                         ack,
                         ownership,
-                        nextHopPeerIds:
-                            peerIds.length > 0 ? peerIds : undefined,
-                        overlayId: activeGroupId || undefined,
-                    }),
+                        nextHopPeerIds: peerIds.length > 0 ? peerIds : undefined,
+                        overlayId: activeGroupId || undefined
+                    })
             );
         });
 
@@ -538,12 +504,12 @@ export function useRtcRealtimeController({
                             {
                                 applicationId: globalValues.applicationId,
                                 workspaceId: globalValues.workspaceId,
-                                groupId: activeGroupId,
+                                groupId: activeGroupId
                             },
                             laneId,
-                            { timeoutMs },
-                        ),
-                ),
+                            { timeoutMs }
+                        )
+                )
         );
 
     const refreshHealth = (): Promise<void> =>
@@ -551,7 +517,7 @@ export function useRtcRealtimeController({
             return await withFacade('refresh-lane-health', async (facade) => {
                 const nextHealth = facade.realtime.health({
                     peerIds: peerIds.length > 0 ? peerIds : undefined,
-                    laneIds: laneId ? [laneId] : undefined,
+                    laneIds: laneId ? [laneId] : undefined
                 });
                 setHealth(nextHealth);
                 return nextHealth;
@@ -562,7 +528,8 @@ export function useRtcRealtimeController({
         const payload = (() => {
             try {
                 return parseJsonText(payloadText, {});
-            } catch {
+            }
+            catch {
                 return {};
             }
         })();
@@ -574,7 +541,7 @@ export function useRtcRealtimeController({
                     requirements: [
                         'provider=browser-rallar',
                         'logged-in browser session',
-                        'joined group with RTC signaling available',
+                        'joined group with RTC signaling available'
                     ],
                     commands: [
                         {
@@ -589,9 +556,9 @@ export function useRtcRealtimeController({
                                 roomRef: {
                                     applicationId: globalValues.applicationId,
                                     workspaceId: globalValues.workspaceId,
-                                    groupId: activeGroupId,
-                                },
-                            },
+                                    groupId: activeGroupId
+                                }
+                            }
                         },
                         {
                             kind: 'rtc.send',
@@ -604,15 +571,15 @@ export function useRtcRealtimeController({
                                 typeId,
                                 topicId,
                                 contextId,
-                                laneId,
+                                laneId
                             },
-                            timeoutMs,
-                        },
-                    ],
+                            timeoutMs
+                        }
+                    ]
                 },
                 state,
-                authSession,
-            ),
+                authSession
+            )
         );
     };
     return {
@@ -659,10 +626,8 @@ export function useRtcRealtimeController({
         sendRtcMessage,
         waitForRoomLane,
         refreshHealth,
-        copyRecipe,
+        copyRecipe
     };
 }
 
-export type RtcRealtimeControllerModel = ReturnType<
-    typeof useRtcRealtimeController
->;
+export type RtcRealtimeControllerModel = ReturnType<typeof useRtcRealtimeController>;

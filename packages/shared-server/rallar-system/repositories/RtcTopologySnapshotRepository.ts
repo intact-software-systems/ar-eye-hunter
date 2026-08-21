@@ -1,44 +1,39 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
-    RuntimeStateRepositoryLike,
+    RuntimeStateRepositoryLike
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateOptimisticTransactionalRepositoryLike,
     isRuntimeStateTransactionalRepositoryLike,
-    type RuntimeStateOptimisticTransactionalRepositoryLike,
+    type RuntimeStateOptimisticTransactionalRepositoryLike
 } from '../../runtime-state/RuntimeStateRepository.ts';
-import {
-    RuntimeStateWriteConflictError,
-} from '../../runtime-state/optimistic-runtime-state-write.ts';
-import {
-    decodeGroupStateGroupStorageKey,
-    groupStateGroupStorageKey,
-} from '../group-state-storage-keys.ts';
+import { decodeGroupStateGroupStorageKey, groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
+import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import {
     decideTopologySnapshot,
-    type RtcTopologySnapshotObservation,
     validateTopologySnapshot,
+    type RtcTopologySnapshotObservation
 } from '../rtc-topology-snapshot-contract.ts';
-import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 
+export {
+    RtcTopologyRepositoryInvariantCorruptionError,
+    RtcTopologySnapshotRevisionConflictError
+} from '../rtc-topology-errors.ts';
 export {
     compareTopologyTuple,
     decideTopologySnapshot,
     type RtcTopologySnapshotObservation,
-    validateTopologySnapshot,
+    validateTopologySnapshot
 } from '../rtc-topology-snapshot-contract.ts';
-export {
-    RtcTopologyRepositoryInvariantCorruptionError,
-    RtcTopologySnapshotRevisionConflictError,
-} from '../rtc-topology-errors.ts';
 
 export const RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE = 'rtc-topology:snapshots';
 
@@ -58,59 +53,57 @@ export type RtcTopologySnapshotCommitResult =
     }>;
 
 export type RtcTopologySnapshotConditionalResult =
-    | Readonly<{ status: 'accepted'; storageRevision: number }>
-    | Readonly<{ status: 'conflict' }>;
+    | Readonly<{ status: 'accepted'; storageRevision: number; }>
+    | Readonly<{ status: 'conflict'; }>;
 
 export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
     readonly runtimeRepository: RuntimeStateRepositoryLike;
 
     constructor(
-        runtimeRepository: RuntimeStateRepositoryLike,
+        runtimeRepository: RuntimeStateRepositoryLike
     ) {
         super(runtimeRepository);
         this.runtimeRepository = runtimeRepository;
     }
 
     async findSnapshotEntry(
-        ref: GroupRef,
+        ref: GroupRef
     ): Promise<RuntimeStateEntryValue<RallarOverlayTopologySnapshot> | undefined> {
         const key = this.snapshotKey(ref);
         const entry = await this.runtimeRepository.findEntry(
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            key,
+            key
         );
         return entry ? decodeSnapshotEntry(entry, ref) : undefined;
     }
 
     async findSnapshot(
-        ref: GroupRef,
+        ref: GroupRef
     ): Promise<RallarOverlayTopologySnapshot | undefined> {
         return (await this.findSnapshotEntry(ref))?.value;
     }
 
-    async listSnapshotEntries(): Promise<
-        readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[]
-    > {
+    async listSnapshotEntries(): Promise<readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[]> {
         const entries = await this.runtimeRepository.findAllEntries(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
         );
         return entries.map((entry) => decodeSnapshotEntry(entry));
     }
 
     async listSnapshotEntriesPage(
-        options: RuntimeStateEntryPageOptions,
+        options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntryValue<RallarOverlayTopologySnapshot>[]> {
         const entries = await this.listEntriesPage(
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
             '',
-            options,
+            options
         );
         return entries.map((entry) => decodeSnapshotEntry(entry));
     }
 
     async commitSnapshotGuard(
         snapshot: RallarOverlayTopologySnapshot,
-        expectedRevision: number | null,
+        expectedRevision: number | null
     ): Promise<RtcTopologySnapshotConditionalResult> {
         const storedSnapshot = canonicalSnapshot(snapshot);
         validateTopologySnapshot(storedSnapshot, storedSnapshot.groupRef);
@@ -119,14 +112,14 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
                 RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
                 this.snapshotKey(storedSnapshot.groupRef),
                 storedSnapshot,
-                NEVER_EXPIRE_AT_TIMESTAMP,
+                NEVER_EXPIRE_AT_TIMESTAMP
             )
             : await this.putValueIfRevision(
                 RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
                 this.snapshotKey(storedSnapshot.groupRef),
                 storedSnapshot,
                 NEVER_EXPIRE_AT_TIMESTAMP,
-                expectedRevision,
+                expectedRevision
             );
         return result.status === 'applied'
             ? { status: 'accepted', storageRevision: result.revision }
@@ -135,14 +128,14 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
 
     async observeSnapshot(
         snapshot: RallarOverlayTopologySnapshot,
-        _purgeAfterEpochMs: number = this.neverExpireAtTimestamp(),
+        _purgeAfterEpochMs: number = this.neverExpireAtTimestamp()
     ): Promise<RtcTopologySnapshotObservation> {
         const current = await this.findSnapshotEntry(snapshot.groupRef);
         const observation = decideTopologySnapshot(current?.value, snapshot);
         if (observation === 'inserted' || observation === 'advanced') {
             const written = await this.commitSnapshotGuard(
                 snapshot,
-                current?.entry.revision ?? null,
+                current?.entry.revision ?? null
             );
             if (written.status === 'conflict') {
                 throw new RuntimeStateWriteConflictError();
@@ -151,10 +144,12 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         return observation;
     }
 
-    async commitSnapshot(input: Readonly<{
-        expected?: RallarOverlayTopologySnapshot;
-        candidate: RallarOverlayTopologySnapshot;
-    }>): Promise<RtcTopologySnapshotCommitResult> {
+    async commitSnapshot(
+        input: Readonly<{
+            expected?: RallarOverlayTopologySnapshot;
+            candidate: RallarOverlayTopologySnapshot;
+        }>
+    ): Promise<RtcTopologySnapshotCommitResult> {
         const current = await this.findSnapshotEntry(input.candidate.groupRef);
         if (!sameSnapshot(current?.value, input.expected)) {
             return { status: 'retry', current: current?.value };
@@ -166,25 +161,27 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         if (observation === 'inserted' || observation === 'advanced') {
             const written = await this.commitSnapshotGuard(
                 input.candidate,
-                current?.entry.revision ?? null,
+                current?.entry.revision ?? null
             );
             if (written.status === 'conflict') {
                 return {
                     status: 'retry',
-                    current: await this.findSnapshot(input.candidate.groupRef),
+                    current: await this.findSnapshot(input.candidate.groupRef)
                 };
             }
         }
         return {
             status: 'accepted',
             observation,
-            snapshot: input.candidate,
+            snapshot: input.candidate
         };
     }
 
     async removeSnapshot(ref: GroupRef): Promise<void> {
         const current = await this.findSnapshotEntry(ref);
-        if (!current) return;
+        if (!current) {
+            return;
+        }
         const deleted = await this.removeSnapshotGuard(ref, current.entry.revision);
         if (deleted.status === 'conflict') {
             throw new RuntimeStateWriteConflictError();
@@ -193,12 +190,12 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
 
     async removeSnapshotGuard(
         ref: GroupRef,
-        expectedRevision: number,
-    ): Promise<Readonly<{ status: 'accepted' | 'conflict' }>> {
+        expectedRevision: number
+    ): Promise<Readonly<{ status: 'accepted' | 'conflict'; }>> {
         const deleted = await this.deleteValueIfRevision(
             RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
             this.snapshotKey(ref),
-            expectedRevision,
+            expectedRevision
         );
         return deleted.status === 'applied'
             ? { status: 'accepted' }
@@ -211,7 +208,7 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
 }
 
 function canonicalSnapshot(
-    snapshot: RallarOverlayTopologySnapshot,
+    snapshot: RallarOverlayTopologySnapshot
 ): RallarOverlayTopologySnapshot {
     const ref = snapshot.groupRef;
     return {
@@ -219,8 +216,8 @@ function canonicalSnapshot(
         groupRef: {
             applicationId: ref.applicationId,
             workspaceId: ref.workspaceId,
-            groupId: ref.groupId,
-        },
+            groupId: ref.groupId
+        }
     };
 }
 
@@ -229,7 +226,7 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
     options: Readonly<{
         oldWritersStopped: true;
         observedAtEpochMs: number;
-    }>,
+    }>
 ): Promise<void> {
     if (options.oldWritersStopped !== true) {
         throw new Error('RTC topology legacy migration requires old writers to be stopped');
@@ -242,7 +239,7 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
     }
     const runtime = requireOptimisticRuntime(repository.runtimeRepository);
     const entries = await repository.runtimeRepository.findAllEntries(
-        RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+        RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE
     );
     for (const source of entries) {
         const value = parseSnapshot(source);
@@ -255,44 +252,47 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
         if (source.key !== legacySnapshotKey(value.groupRef)) {
             throw topologyCorruption(
                 source.key,
-                'RTC topology legacy snapshot key differs from its stored scope',
+                'RTC topology legacy snapshot key differs from its stored scope'
             );
         }
         await runtime.begin(async (transaction) => {
             const current = await transaction.findEntry(
                 RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                source.key,
+                source.key
             );
-            if (!current) return;
+            if (!current) {
+                return;
+            }
             const currentValue = parseSnapshot(current);
             validateTopologySnapshot(currentValue, value.groupRef);
             if (current.expireAtTimestamp <= options.observedAtEpochMs) {
                 throw topologyCorruption(
                     current.key,
-                    'RTC topology legacy snapshot expired before migration observation',
+                    'RTC topology legacy snapshot expired before migration observation'
                 );
             }
             const destination = await transaction.findEntry(
                 RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                canonicalKey,
+                canonicalKey
             );
             if (destination) {
                 const destinationValue = decodeSnapshotEntry(
                     destination,
-                    value.groupRef,
+                    value.groupRef
                 ).value;
                 if (!rtcTopologySemanticEqual(destinationValue, currentValue)) {
                     throw topologyCorruption(
                         canonicalKey,
-                        'RTC topology migration destination differs',
+                        'RTC topology migration destination differs'
                     );
                 }
-            } else {
+            }
+            else {
                 const inserted = await transaction.insertIfAbsent(
                     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
                     canonicalKey,
                     current.value,
-                    NEVER_EXPIRE_AT_TIMESTAMP,
+                    NEVER_EXPIRE_AT_TIMESTAMP
                 );
                 if (inserted.status === 'conflict') {
                     throw new RuntimeStateWriteConflictError();
@@ -301,7 +301,7 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
             const deleted = await transaction.deleteIfRevision(
                 RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
                 current.key,
-                current.revision,
+                current.revision
             );
             if (deleted.status === 'conflict') {
                 throw new RuntimeStateWriteConflictError();
@@ -312,15 +312,16 @@ export async function migrateLegacyRtcTopologySnapshotKeys(
 
 function decodeSnapshotEntry(
     entry: RuntimeStateEntry,
-    trustedRef?: GroupRef,
+    trustedRef?: GroupRef
 ): RuntimeStateEntryValue<RallarOverlayTopologySnapshot> {
     let decoded: GroupRef;
     try {
         decoded = decodeGroupStateGroupStorageKey(entry.key);
-    } catch (error) {
+    }
+    catch (error) {
         throw topologyCorruption(
             entry.key,
-            error instanceof Error ? error.message : 'RTC topology key is invalid',
+            error instanceof Error ? error.message : 'RTC topology key is invalid'
         );
     }
     if (trustedRef && !sameGroupRef(decoded, trustedRef)) {
@@ -332,10 +333,11 @@ function decodeSnapshotEntry(
     const value = parseSnapshot(entry);
     try {
         validateTopologySnapshot(value, decoded);
-    } catch (error) {
+    }
+    catch (error) {
         throw topologyCorruption(
             entry.key,
-            error instanceof Error ? error.message : 'RTC topology snapshot is invalid',
+            error instanceof Error ? error.message : 'RTC topology snapshot is invalid'
         );
     }
     return { entry, value };
@@ -346,10 +348,11 @@ function parseSnapshot(entry: RuntimeStateEntry): RallarOverlayTopologySnapshot 
         const value: unknown = JSON.parse(entry.value);
         validateTopologySnapshot(value, valueGroupRef(value));
         return value;
-    } catch (error) {
+    }
+    catch (error) {
         throw topologyCorruption(
             entry.key,
-            error instanceof Error ? error.message : 'RTC topology JSON is invalid',
+            error instanceof Error ? error.message : 'RTC topology JSON is invalid'
         );
     }
 }
@@ -383,12 +386,12 @@ function legacySnapshotKey(ref: GroupRef): string {
     return [
         `app=${encodeURIComponent(ref.applicationId)}`,
         `ws=${encodeURIComponent(ref.workspaceId ?? '_')}`,
-        `group=${encodeURIComponent(ref.groupId)}`,
+        `group=${encodeURIComponent(ref.groupId)}`
     ].join(':');
 }
 
 function requireOptimisticRuntime(
-    runtime: RuntimeStateRepositoryLike,
+    runtime: RuntimeStateRepositoryLike
 ): RuntimeStateOptimisticTransactionalRepositoryLike {
     if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
         throw new Error('RTC topology migration requires optimistic transactions');
@@ -398,7 +401,7 @@ function requireOptimisticRuntime(
 
 function sameSnapshot(
     left: RallarOverlayTopologySnapshot | undefined,
-    right: RallarOverlayTopologySnapshot | undefined,
+    right: RallarOverlayTopologySnapshot | undefined
 ): boolean {
     return left === right || rtcTopologySemanticEqual(left, right);
 }
@@ -411,7 +414,7 @@ function sameGroupRef(left: GroupRef, right: GroupRef): boolean {
 
 function topologyCorruption(
     storageKey: string,
-    message: string,
+    message: string
 ): RtcTopologyRepositoryInvariantCorruptionError {
     return new RtcTopologyRepositoryInvariantCorruptionError(storageKey, message);
 }

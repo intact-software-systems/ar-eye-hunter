@@ -49,23 +49,26 @@ with a `0.05` tolerance, but compares four resource metrics with **strict `>` an
 tolerance at all**:
 
 ```js
-if (candidateMedian > baselineMedian && !hasRecordedReason(candidate, name, `${container}.${metric}`)) {
-  errors.push(`${name} median ${container}.${metric} increased without a recorded reason: ...`);
+if (
+    candidateMedian > baselineMedian &&
+    !hasRecordedReason(candidate, name, `${container}.${metric}`)
+) {
+    errors.push(`${name} median ${container}.${metric} increased without a recorded reason: ...`);
 }
 ```
 
 Measured drift on byte-identical code, pooled over 18 runs per role:
 
-| workload | metric | drift |
-| --- | --- | --- |
+| workload    | metric                           | drift   |
+| ----------- | -------------------------------- | ------- |
 | uncontended | `postgres.transactionDurationMs` | +0.122% |
-| uncontended | `sql.statements` | +0.204% |
-| shared | `sql.rowsRead` | +0.147% |
-| shared | `sql.statements` | +0.317% |
-| shared | `sql.serializedResultBytes` | +0.383% |
-| shared | `postgres.transactionDurationMs` | +1.550% |
-| hot | `postgres.transactionDurationMs` | +1.409% |
-| hot | `sql.statements` | +2.655% |
+| uncontended | `sql.statements`                 | +0.204% |
+| shared      | `sql.rowsRead`                   | +0.147% |
+| shared      | `sql.statements`                 | +0.317% |
+| shared      | `sql.serializedResultBytes`      | +0.383% |
+| shared      | `postgres.transactionDurationMs` | +1.550% |
+| hot         | `postgres.transactionDurationMs` | +1.409% |
+| hot         | `sql.statements`                 | +2.655% |
 
 These counters are not deterministic. The workloads contend deliberately —
 the `hot` workload drove 4,516 conflicts and 11,716 attempts for 6,300 accepted
@@ -86,13 +89,13 @@ design problem, not an environment problem:
 
 - The four resource metrics need a tolerance band, calibrated from the drift this
   control measured. The observed floor on identical code is up to **+2.7%**.
-- The existing escape hatch (`hasRecordedReason`) is built for *intentional*
+- The existing escape hatch (`hasRecordedReason`) is built for _intentional_
   regressions with a substantive written justification. It is the wrong instrument
   for measurement noise, and requiring a written reason for a coin flip trains
   reviewers to write meaningless ones.
 
 Until the band exists, "environment-limited" remains the honest verdict for these
-four metrics — but it should be recorded as *gate-limited*, and no amount of
+four metrics — but it should be recorded as _gate-limited_, and no amount of
 environment pinning will change it.
 
 ## Known limitation: the `image_id` pin is store-dependent
@@ -103,7 +106,7 @@ amd64, arm, and other platform manifests, each with its own digest.
 
 This machine runs the **containerd image store** (`docker info` reports
 `io.containerd.snapshotter.v1`), and under that store `docker image inspect`
-reports the *index* digest as the image `Id` and resolves `Architecture` to the
+reports the _index_ digest as the image `Id` and resolves `Architecture` to the
 host's. That is why the capture satisfies the validator's pin
 `image_id == sha256:081f1bc7…` exactly.
 

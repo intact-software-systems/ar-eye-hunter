@@ -15,35 +15,38 @@ export type AnalyzeSafeArtifactIdentity = Readonly<{
 const UNSAFE_ID_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028-\u202e\u2066-\u2069]/u;
 
 export function safeAnalyzeArtifactIdentity(
-    identity: AnalyzeImportedArtifactIdentity,
+    identity: AnalyzeImportedArtifactIdentity
 ): AnalyzeSafeArtifactIdentity {
     const distributedRunId = safeId(
         identity.distributedRunId,
-        identity.distributedRunIdExact,
+        identity.distributedRunIdExact
     );
-    if (!distributedRunId) return {};
+    if (!distributedRunId) {
+        return {};
+    }
     const controlRunId = safeId(identity.controlRunId, identity.controlRunIdExact);
     return {
         distributedRunId,
-        ...(controlRunId ? { controlRunId } : {}),
+        ...(controlRunId ? { controlRunId } : {})
     };
 }
 
 export function analyzeArtifactIdentityIssues(
-    identity: AnalyzeImportedArtifactIdentity,
+    identity: AnalyzeImportedArtifactIdentity
 ): readonly string[] {
     return [
         identityIssue(
-            'distributed run ID', identity.distributedRunId,
-            identity.distributedRunIdExact,
+            'distributed run ID',
+            identity.distributedRunId,
+            identity.distributedRunIdExact
         ),
-        identityIssue('control run ID', identity.controlRunId, identity.controlRunIdExact),
+        identityIssue('control run ID', identity.controlRunId, identity.controlRunIdExact)
     ].filter((issue): issue is string => issue !== undefined);
 }
 
 function safeId(
     value: string | undefined,
-    exact: boolean | undefined,
+    exact: boolean | undefined
 ): string | undefined {
     if (
         exact === false || value === undefined || value.length === 0 ||
@@ -59,9 +62,11 @@ function safeId(
 function identityIssue(
     label: string,
     value: string | undefined,
-    exact: boolean | undefined,
+    exact: boolean | undefined
 ): string | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
     if (exact === false) {
         return `The artifact ${label} is represented by a bounded display handle and was not copied into the URL.`;
     }
@@ -82,9 +87,12 @@ function hasLoneSurrogate(value: string): boolean {
         const code = value.charCodeAt(index);
         if (code >= 0xd800 && code <= 0xdbff) {
             const next = value.charCodeAt(index + 1);
-            if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+            if (!(next >= 0xdc00 && next <= 0xdfff)) {
+                return true;
+            }
             index += 1;
-        } else if (code >= 0xdc00 && code <= 0xdfff) {
+        }
+        else if (code >= 0xdc00 && code <= 0xdfff) {
             return true;
         }
     }

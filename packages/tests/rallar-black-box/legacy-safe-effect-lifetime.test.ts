@@ -3,21 +3,18 @@
 import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    resolveRallarBlackBoxBootstrapConfig,
-    type RallarBlackBoxBootstrapConfig,
-} from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import { TopologyGraphPanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx';
 import { DistributedRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
-import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
 import { RunnerFleetPanel } from '../../../apps/rallar-black-box/src/legacy/runner/fleet/RunnerFleetPanel.tsx';
 import { RunnerRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx';
+import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
 import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx';
-import { TopologyGraphPanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx';
+import { resolveRallarBlackBoxBootstrapConfig, type RallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 
 const sigmaLifecycle = vi.hoisted(() => ({
     constructed: 0,
-    killed: 0,
+    killed: 0
 }));
 
 vi.mock('sigma', () => ({
@@ -29,10 +26,10 @@ vi.mock('sigma', () => ({
         kill(): void {
             sigmaLifecycle.killed += 1;
         }
-    },
+    }
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('legacy safe-surface effect lifetime', () => {
@@ -63,7 +60,9 @@ describe('legacy safe-surface effect lifetime', () => {
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
             paths.push(pathname);
-            if (pathname === '/runs') return firstResponse.promise;
+            if (pathname === '/runs') {
+                return firstResponse.promise;
+            }
             if (pathname === '/runs/control-a') {
                 return jsonResponse(controlRunSnapshot('control-a'));
             }
@@ -74,7 +73,7 @@ describe('legacy safe-surface effect lifetime', () => {
             root.render(createElement(RunManagerPanel, {
                 state: baseState(),
                 bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
+                control: controlSnapshot('control-a')
             }));
             await Promise.resolve();
         });
@@ -83,7 +82,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => root.render(null));
         await act(async () => {
             firstResponse.resolve(jsonResponse({
-                runs: [controlRunSnapshot('control-a')],
+                runs: [controlRunSnapshot('control-a')]
             }));
             await flushAsyncWork();
         });
@@ -98,7 +97,9 @@ describe('legacy safe-surface effect lifetime', () => {
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
             paths.push(pathname);
-            if (pathname === '/runs') return runsResponse.promise;
+            if (pathname === '/runs') {
+                return runsResponse.promise;
+            }
             if (pathname === '/distributed-runs') {
                 return distributedResponse.promise;
             }
@@ -119,8 +120,8 @@ describe('legacy safe-surface effect lifetime', () => {
                     workspaceId: 'workspace-a',
                     clientId: 'client-a',
                     sessionId: 'session-a',
-                    roomId: 'group-a',
-                },
+                    roomId: 'group-a'
+                }
             }));
             await Promise.resolve();
         });
@@ -129,7 +130,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => root.render(null));
         await act(async () => {
             runsResponse.resolve(jsonResponse({
-                runs: [controlRunSnapshot('control-a')],
+                runs: [controlRunSnapshot('control-a')]
             }));
             distributedResponse.resolve(jsonResponse({ distributedRuns: [] }));
             await flushAsyncWork();
@@ -144,8 +145,12 @@ describe('legacy safe-surface effect lifetime', () => {
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
             paths.push(pathname);
-            if (pathname === '/runs') return runsResponse.promise;
-            if (pathname.startsWith('/api/')) return jsonResponse({});
+            if (pathname === '/runs') {
+                return runsResponse.promise;
+            }
+            if (pathname.startsWith('/api/')) {
+                return jsonResponse({});
+            }
             if (pathname === '/runs/control-a') {
                 return jsonResponse(controlRunSnapshot('control-a'));
             }
@@ -161,7 +166,7 @@ describe('legacy safe-surface effect lifetime', () => {
                 busy: false,
                 runState: 'idle',
                 onDistributedRunStarted: vi.fn(),
-                onOpenTab: vi.fn(),
+                onOpenTab: vi.fn()
             }));
             await Promise.resolve();
         });
@@ -170,7 +175,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => root.render(null));
         await act(async () => {
             runsResponse.resolve(jsonResponse({
-                runs: [controlRunSnapshot('control-a')],
+                runs: [controlRunSnapshot('control-a')]
             }));
             await flushAsyncWork();
         });
@@ -197,7 +202,7 @@ describe('legacy safe-surface effect lifetime', () => {
             root.render(createElement(RunnerRunsPanel, {
                 state: baseState(),
                 bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
+                control: controlSnapshot('control-a')
             }));
             await Promise.resolve();
         });
@@ -206,7 +211,7 @@ describe('legacy safe-surface effect lifetime', () => {
         await act(async () => root.render(null));
         await act(async () => {
             distributedRunsResponse.resolve(jsonResponse({
-                distributedRuns: [distributedRunSnapshot()],
+                distributedRuns: [distributedRunSnapshot()]
             }));
             await flushAsyncWork();
         });
@@ -220,14 +225,14 @@ describe('legacy safe-surface effect lifetime', () => {
             null,
             '',
             '/?experience=legacy&workspace=black-box-runner&tab=runs' +
-                '&controlRunId=control-a&distributedRunId=distributed-a',
+                '&controlRunId=control-a&distributedRunId=distributed-a'
         );
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
             paths.push(pathname);
             if (pathname === '/distributed-runs') {
                 return jsonResponse({
-                    distributedRuns: [distributedRunSnapshot()],
+                    distributedRuns: [distributedRunSnapshot()]
                 });
             }
             if (pathname === '/distributed-runs/distributed-a') {
@@ -246,64 +251,72 @@ describe('legacy safe-surface effect lifetime', () => {
                 createElement(RunnerRunsPanel, {
                     state: baseState(),
                     bootstrap: bootstrapConfig(),
-                    control: controlSnapshot('control-a'),
-                }),
+                    control: controlSnapshot('control-a')
+                })
             ));
             await flushAsyncWork();
         });
 
         const distributedRunSelect = [...container.querySelectorAll('select')]
-            .find((select) => select.previousElementSibling?.textContent ===
-                'Distributed Run');
+            .find((select) =>
+                select.previousElementSibling?.textContent ===
+                    'Distributed Run'
+            );
         expect(distributedRunSelect?.value).toBe('distributed-a');
         expect(paths).toContain('/distributed-runs/distributed-a');
         expect(paths).toContain('/runs/control-a');
     });
 
-    it.each([
+    it.each(
         [
-            'Run Manager',
-            () => createElement(RunManagerPanel, {
-                state: baseState(),
-                bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
-            }),
-            '/runs/control-a',
-        ],
-        [
-            'Distributed Recipes',
-            () => createElement(DistributedRecipesPanel, {
-                state: baseState(),
-                bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
-                globalValues: globalValues(),
-            }),
-            '/runs/control-a',
-        ],
-        [
-            'Recipes',
-            () => createElement(RunnerRecipesPanel, {
-                state: baseState(),
-                bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
-                globalValues: globalValues(),
-                busy: false,
-                runState: 'idle',
-                onDistributedRunStarted: vi.fn(),
-                onOpenTab: vi.fn(),
-            }),
-            '/runs/control-a',
-        ],
-        [
-            'Fleet',
-            () => createElement(RunnerFleetPanel, {
-                bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
-                globalValues: globalValues(),
-            }),
-            '/runs',
-        ],
-    ] as const)(
+            [
+                'Run Manager',
+                () =>
+                    createElement(RunManagerPanel, {
+                        state: baseState(),
+                        bootstrap: bootstrapConfig(),
+                        control: controlSnapshot('control-a')
+                    }),
+                '/runs/control-a'
+            ],
+            [
+                'Distributed Recipes',
+                () =>
+                    createElement(DistributedRecipesPanel, {
+                        state: baseState(),
+                        bootstrap: bootstrapConfig(),
+                        control: controlSnapshot('control-a'),
+                        globalValues: globalValues()
+                    }),
+                '/runs/control-a'
+            ],
+            [
+                'Recipes',
+                () =>
+                    createElement(RunnerRecipesPanel, {
+                        state: baseState(),
+                        bootstrap: bootstrapConfig(),
+                        control: controlSnapshot('control-a'),
+                        globalValues: globalValues(),
+                        busy: false,
+                        runState: 'idle',
+                        onDistributedRunStarted: vi.fn(),
+                        onOpenTab: vi.fn()
+                    }),
+                '/runs/control-a'
+            ],
+            [
+                'Fleet',
+                () =>
+                    createElement(RunnerFleetPanel, {
+                        bootstrap: bootstrapConfig(),
+                        control: controlSnapshot('control-a'),
+                        globalValues: globalValues()
+                    }),
+                '/runs'
+            ]
+        ] as const
+    )(
         'completes the %s initial refresh after the Strict Mode effect replay',
         async (_name, component, expectedFollowUpPath) => {
             const paths: string[] = [];
@@ -312,7 +325,7 @@ describe('legacy safe-surface effect lifetime', () => {
                 paths.push(pathname);
                 if (pathname === '/runs') {
                     return jsonResponse({
-                        runs: [controlRunSnapshot('control-a')],
+                        runs: [controlRunSnapshot('control-a')]
                     });
                 }
                 if (pathname === '/runs/control-a') {
@@ -320,7 +333,7 @@ describe('legacy safe-surface effect lifetime', () => {
                 }
                 if (pathname === '/distributed-runs') {
                     return jsonResponse({
-                        distributedRuns: [distributedRunSnapshot()],
+                        distributedRuns: [distributedRunSnapshot()]
                     });
                 }
                 if (pathname === '/fleet/reports') {
@@ -339,10 +352,10 @@ describe('legacy safe-surface effect lifetime', () => {
 
             expect(paths).toContain(expectedFollowUpPath);
             if (expectedFollowUpPath === '/runs') {
-                expect(paths.filter(path => path === '/runs').length)
+                expect(paths.filter((path) => path === '/runs').length)
                     .toBeGreaterThan(0);
             }
-        },
+        }
     );
 
     it('does not let a Runs poll supersede an in-flight operator refresh', async () => {
@@ -350,12 +363,12 @@ describe('legacy safe-surface effect lifetime', () => {
         const paths: string[] = [];
         let operatorRefreshPending = false;
         let poll: (() => void) | undefined;
-        vi.spyOn(window, 'setInterval').mockImplementation((
+        vi.spyOn(window, 'setInterval').mockImplementation(
             ((handler: () => void) => {
                 poll = handler;
                 return 1;
             }) as typeof window.setInterval
-        ));
+        );
         vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined);
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
@@ -364,7 +377,7 @@ describe('legacy safe-surface effect lifetime', () => {
                 return operatorRefreshPending
                     ? operatorResponse.promise
                     : jsonResponse({
-                        distributedRuns: [distributedRunSnapshot()],
+                        distributedRuns: [distributedRunSnapshot()]
                     });
             }
             if (pathname === '/distributed-runs/distributed-a') {
@@ -380,7 +393,7 @@ describe('legacy safe-surface effect lifetime', () => {
             root.render(createElement(RunnerRunsPanel, {
                 state: baseState(),
                 bootstrap: bootstrapConfig(),
-                control: controlSnapshot('control-a'),
+                control: controlSnapshot('control-a')
             }));
             await flushAsyncWork();
         });
@@ -402,12 +415,12 @@ describe('legacy safe-surface effect lifetime', () => {
             await Promise.resolve();
         });
         const requestCount = paths.filter(
-            (path) => path === '/distributed-runs',
+            (path) => path === '/distributed-runs'
         ).length;
 
         await act(async () => {
             operatorResponse.resolve(jsonResponse({
-                distributedRuns: [distributedRunSnapshot()],
+                distributedRuns: [distributedRunSnapshot()]
             }));
             await flushAsyncWork();
         });
@@ -421,7 +434,9 @@ describe('legacy safe-surface effect lifetime', () => {
         globalThis.fetch = vi.fn(async (input) => {
             const pathname = new URL(String(input)).pathname;
             paths.push(pathname);
-            if (pathname === '/fleet/reports') return reportsResponse.promise;
+            if (pathname === '/fleet/reports') {
+                return reportsResponse.promise;
+            }
             if (pathname === '/runs') {
                 return jsonResponse({ runs: [] });
             }
@@ -432,7 +447,7 @@ describe('legacy safe-surface effect lifetime', () => {
             root.render(createElement(RunnerFleetPanel, {
                 bootstrap: bootstrapConfig(),
                 control: controlSnapshot('control-a'),
-                globalValues: globalValues(),
+                globalValues: globalValues()
             }));
             await Promise.resolve();
         });
@@ -452,7 +467,7 @@ describe('legacy safe-surface effect lifetime', () => {
             root.render(createElement(TopologyGraphPanel, {
                 state: baseState(),
                 active: true,
-                onSelectCommand: vi.fn(),
+                onSelectCommand: vi.fn()
             }));
         });
 
@@ -472,7 +487,7 @@ function baseState(): RallarBlackBoxTestState {
         commandHistory: [],
         events: [],
         failures: [],
-        resultCache: {},
+        resultCache: {}
     };
 }
 
@@ -480,7 +495,7 @@ function bootstrapConfig(): RallarBlackBoxBootstrapConfig {
     return resolveRallarBlackBoxBootstrapConfig(
         '?controlUrl=ws%3A%2F%2Fcontrol.test%2Fcontrol&provider=simulated',
         {},
-        '',
+        ''
     );
 }
 
@@ -491,7 +506,7 @@ function controlSnapshot(runId: string) {
         runId,
         reconnectAttempt: 0,
         sentCount: 0,
-        receivedCount: 0,
+        receivedCount: 0
     } as const;
 }
 
@@ -506,7 +521,7 @@ function controlRunSnapshot(runId: string) {
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     } as const;
 }
 
@@ -521,13 +536,13 @@ function distributedRunSnapshot() {
             group: {
                 applicationId: 'application-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
             recipes: [],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: [],
-            },
+                agentIds: []
+            }
         },
         state: 'running',
         createdAtEpochMs: 1,
@@ -547,10 +562,10 @@ function distributedRunSnapshot() {
                 requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
-                blockingFailures: 0,
+                blockingFailures: 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     } as const;
 }
 
@@ -561,7 +576,7 @@ function globalValues() {
         workspaceId: 'workspace-a',
         clientId: 'client-a',
         sessionId: 'session-a',
-        roomId: 'group-a',
+        roomId: 'group-a'
     } as const;
 }
 
@@ -580,24 +595,24 @@ function emptyFleetReportsResponse() {
             failureGroupCount: 0,
             timing: {
                 runs: { count: 0, p95Ms: 0 },
-                commands: { count: 0, p95Ms: 0 },
+                commands: { count: 0, p95Ms: 0 }
             },
             regions: [],
-            failureSignatures: [],
-        },
+            failureSignatures: []
+        }
     } as const;
 }
 
 function jsonResponse(value: unknown): Response {
     return new Response(JSON.stringify(value), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }
     });
 }
 
 function deferred<Value>() {
     let resolve!: (value: Value) => void;
-    const promise = new Promise<Value>(next => {
+    const promise = new Promise<Value>((next) => {
         resolve = next;
     });
     return { promise, resolve } as const;
@@ -605,5 +620,5 @@ function deferred<Value>() {
 
 async function flushAsyncWork(): Promise<void> {
     await Promise.resolve();
-    await new Promise(resolve => window.setTimeout(resolve, 0));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
 }

@@ -1,12 +1,9 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
-import {
-    acceptArenaDirectorPeerMessage,
-    type ArenaDirectorPeerMessageInput,
-} from './arena-director-peer-message.ts';
+import { GAME_PROTOCOL, type ArenaEvent, type GameRealtimeMessage } from '../../types.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
-import { type ArenaEvent, GAME_PROTOCOL, type GameRealtimeMessage } from '../../types.ts';
+import { acceptArenaDirectorPeerMessage, type ArenaDirectorPeerMessageInput } from './arena-director-peer-message.ts';
 
 interface ArenaDirectorMessageHandlerInput
     extends
@@ -17,7 +14,7 @@ interface ArenaDirectorMessageHandlerInput
 }
 
 export function useArenaDirectorMessageHandler(
-    input: ArenaDirectorMessageHandlerInput,
+    input: ArenaDirectorMessageHandlerInput
 ): (message: GameRealtimeMessage) => void {
     const {
         acceptEyeAttack,
@@ -30,11 +27,11 @@ export function useArenaDirectorMessageHandler(
         setArenaSnapshot,
         setRemoteEvents,
         setRemotePlayers,
-        setRemoteShots,
+        setRemoteShots
     } = input;
 
     const acceptDirectorOutput = useCallback((
-        message: GameRealtimeMessage,
+        message: GameRealtimeMessage
     ) => {
         if (message.protocol !== GAME_PROTOCOL) {
             return;
@@ -47,7 +44,7 @@ export function useArenaDirectorMessageHandler(
                 sessionRef,
                 setArenaSnapshot,
                 setRemotePlayers,
-                setRemoteShots,
+                setRemoteShots
             }, message)
         ) {
             return;
@@ -79,8 +76,8 @@ export function useArenaDirectorMessageHandler(
                         expiresAtEpochMs: message.accepted.acceptedAtEpochMs + 4_000,
                         revision: message.accepted.revision,
                         source: 'director' as const,
-                        headline: 'Arena match started',
-                    },
+                        headline: 'Arena match started'
+                    }
                 };
                 arenaSnapshotRef.current = next;
                 return next;
@@ -96,7 +93,7 @@ export function useArenaDirectorMessageHandler(
                 const next = {
                     ...previous,
                     revision: message.accepted.revision,
-                    match: message.accepted.match,
+                    match: message.accepted.match
                 };
                 arenaSnapshotRef.current = next;
                 return next;
@@ -112,7 +109,7 @@ export function useArenaDirectorMessageHandler(
         if (message.kind === 'arena-event') {
             setRemoteEvents((previous) => [
                 ...previous.filter((event) => event.id !== message.event.id).slice(-12),
-                message.event,
+                message.event
             ]);
             setActiveEvent(message.event);
             return;

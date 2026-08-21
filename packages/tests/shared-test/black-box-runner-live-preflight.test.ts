@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     runBlackBoxRunnerLivePreflight,
     shouldRunBlackBoxRunnerLivePreflight,
-    type BlackBoxRunnerLivePreflightInput,
+    type BlackBoxRunnerLivePreflightInput
 } from '../../shared-test/black-box-runner/preflight/live-preflight.ts';
 
 type FetchCall = Readonly<{
@@ -59,8 +59,8 @@ function jsonResponse(value: unknown, init: ResponseInit = {}): Response {
         status: init.status ?? 200,
         headers: {
             'content-type': 'application/json',
-            ...(init.headers ? Object.fromEntries(new Headers(init.headers).entries()) : {}),
-        },
+            ...(init.headers ? Object.fromEntries(new Headers(init.headers).entries()) : {})
+        }
     });
 }
 
@@ -73,37 +73,37 @@ function standardConfig(): BlackBoxRunnerLivePreflightInput {
             env: [
                 'RALLAR_API_BASE_URL',
                 'RALLAR_ALICE_USERNAME',
-                'RALLAR_ALICE_PASSWORD',
+                'RALLAR_ALICE_PASSWORD'
             ],
             httpServices: [
                 {
                     name: 'Rallar API',
-                    env: 'RALLAR_API_BASE_URL',
-                },
+                    env: 'RALLAR_API_BASE_URL'
+                }
             ],
-            playwright: true,
+            playwright: true
         },
         config: {
             variables: {
                 aliceUsername: {
-                    env: 'RALLAR_ALICE_USERNAME',
+                    env: 'RALLAR_ALICE_USERNAME'
                 },
                 alicePassword: {
                     env: 'RALLAR_ALICE_PASSWORD',
-                    secret: true,
+                    secret: true
                 },
                 applicationId: {
                     env: 'RALLAR_BB_APPLICATION_ID',
-                    default: 'app',
+                    default: 'app'
                 },
                 workspaceId: {
                     env: 'RALLAR_BB_WORKSPACE_ID',
-                    default: 'workspace',
+                    default: 'workspace'
                 },
                 groupId: {
                     env: 'RALLAR_BB_GROUP_ID',
-                    default: 'group',
-                },
+                    default: 'group'
+                }
             },
             connections: {
                 aliceRtc: {
@@ -111,19 +111,19 @@ function standardConfig(): BlackBoxRunnerLivePreflightInput {
                     roomRef: {
                         applicationId: '{applicationId}',
                         workspaceId: '{workspaceId}',
-                        groupId: '{groupId}',
-                    },
-                },
+                        groupId: '{groupId}'
+                    }
+                }
             },
             steps: [
                 {
                     name: 'createWebSocketTicket',
                     type: 'http',
                     request: {
-                        path: '/api/auth/ws-ticket/requests/example-request-id',
-                    },
-                },
-            ],
+                        path: '/api/auth/ws-ticket/requests/example-request-id'
+                    }
+                }
+            ]
         },
         environment: {
             RALLAR_API_BASE_URL: 'http://rallar.test',
@@ -131,10 +131,10 @@ function standardConfig(): BlackBoxRunnerLivePreflightInput {
             RALLAR_ALICE_PASSWORD: 'secret',
             RALLAR_PREFLIGHT_CORS_ORIGIN: 'https://spa.test',
             RALLAR_BB_GROUP_ID: 'recipe-group',
-            RALLAR_BB_RUN_ID: 'run-123',
+            RALLAR_BB_RUN_ID: 'run-123'
         },
         checkPlaywright: async () => true,
-        webSocketImplementation: OpeningWebSocket,
+        webSocketImplementation: OpeningWebSocket
     };
 }
 
@@ -146,31 +146,31 @@ describe('black-box runner live preflight', () => {
                 httpServices: [
                     {
                         name: 'Rallar API',
-                        env: 'RALLAR_API_BASE_URL',
-                    },
-                ],
+                        env: 'RALLAR_API_BASE_URL'
+                    }
+                ]
             },
             environment: {},
             config: {},
             fetchImplementation: async () => {
                 throw new Error('fetch should not run');
-            },
+            }
         });
 
         expect(report.ok).toBe(false);
-        expect(report.issues.map(issue => issue.code)).toEqual(expect.arrayContaining([
+        expect(report.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
             'MISSING_ENV',
-            'RALLAR_API_BASE_URL_MISSING',
+            'RALLAR_API_BASE_URL_MISSING'
         ]));
         expect(report.checks).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 id: 'env:RALLAR_API_BASE_URL',
-                status: 'failed',
+                status: 'failed'
             }),
             expect.objectContaining({
                 id: 'rallar-api-config',
-                status: 'skipped',
-            }),
+                status: 'skipped'
+            })
         ]));
     });
 
@@ -181,25 +181,25 @@ describe('black-box runner live preflight', () => {
                 httpServices: [
                     {
                         name: 'Rallar API',
-                        env: 'RALLAR_API_BASE_URL',
-                    },
-                ],
+                        env: 'RALLAR_API_BASE_URL'
+                    }
+                ]
             },
             environment: {
-                RALLAR_API_BASE_URL: 'http://rallar.test',
+                RALLAR_API_BASE_URL: 'http://rallar.test'
             },
             config: {},
             fetchImplementation: async () => {
                 throw new Error('connection refused');
-            },
+            }
         });
 
         expect(report.ok).toBe(false);
         expect(report.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'HTTP_SERVICE_UNAVAILABLE',
-                checkId: 'rallar-api-config',
-            }),
+                checkId: 'rallar-api-config'
+            })
         ]));
     });
 
@@ -211,23 +211,23 @@ describe('black-box runner live preflight', () => {
                 if (String(url).endsWith('/api/config')) {
                     return jsonResponse({ ok: true }, {
                         headers: {
-                            'access-control-allow-origin': 'https://spa.test',
-                        },
+                            'access-control-allow-origin': 'https://spa.test'
+                        }
                     });
                 }
                 if (new URL(String(url)).pathname.startsWith('/api/auth/login/requests/')) {
                     return jsonResponse({ error: 'Invalid username or password' }, { status: 401 });
                 }
                 throw new Error(`unexpected fetch ${String(url)} ${init?.method}`);
-            },
+            }
         });
 
         expect(report.ok).toBe(false);
         expect(report.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'BAD_AUTH',
-                checkId: 'auth-login:alice',
-            }),
+                checkId: 'auth-login:alice'
+            })
         ]));
         expect(JSON.stringify(report)).not.toContain('secret');
     });
@@ -242,45 +242,45 @@ describe('black-box runner live preflight', () => {
                     {
                         type: 'http',
                         request: {
-                            path: '/api/auth/ws-ticket/requests/example-request-id',
-                        },
-                    },
-                ],
+                            path: '/api/auth/ws-ticket/requests/example-request-id'
+                        }
+                    }
+                ]
             },
             fetchImplementation: async (url) => {
                 const path = new URL(String(url)).pathname;
                 if (path === '/api/config') {
                     return jsonResponse({ ok: true }, {
                         headers: {
-                            'access-control-allow-origin': 'https://spa.test',
-                        },
+                            'access-control-allow-origin': 'https://spa.test'
+                        }
                     });
                 }
                 if (path.startsWith('/api/auth/login/requests/')) {
                     return jsonResponse({
                         clientId: 'alice-client',
                         sessionId: 'alice-session',
-                        accessToken: 'alice-token',
+                        accessToken: 'alice-token'
                     });
                 }
                 if (path.startsWith('/api/auth/ws-ticket/requests/')) {
                     return jsonResponse({
                         ticket: 'super-secret-ticket',
                         sessionId: 'alice-session',
-                        expiresAtEpochMs: 123,
+                        expiresAtEpochMs: 123
                     });
                 }
                 throw new Error(`unexpected fetch ${String(url)}`);
             },
-            webSocketImplementation: FailingWebSocket,
+            webSocketImplementation: FailingWebSocket
         });
 
         expect(report.ok).toBe(false);
         expect(report.issues).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 code: 'WS_UPGRADE_FAILED',
-                checkId: 'ws-upgrade',
-            }),
+                checkId: 'ws-upgrade'
+            })
         ]));
     });
 
@@ -296,21 +296,21 @@ describe('black-box runner live preflight', () => {
                     url: String(url),
                     method: init?.method ?? 'GET',
                     headers: headersFrom(init),
-                    body,
+                    body
                 });
 
                 if (parsed.pathname === '/api/config') {
                     return jsonResponse({ ok: true }, {
                         headers: {
-                            'access-control-allow-origin': 'https://spa.test',
-                        },
+                            'access-control-allow-origin': 'https://spa.test'
+                        }
                     });
                 }
                 if (parsed.pathname.startsWith('/api/auth/login/requests/')) {
                     return jsonResponse({
                         clientId: 'alice-client',
                         sessionId: 'alice-session',
-                        accessToken: 'alice-token',
+                        accessToken: 'alice-token'
                     });
                 }
                 if (/\/groups\/requests\/[^/]+$/.test(parsed.pathname) && init?.method === 'POST') {
@@ -321,27 +321,27 @@ describe('black-box runner live preflight', () => {
                     init?.method === 'PUT'
                 ) {
                     return jsonResponse({
-                        members: [{ principalId: 'alice-client', status: 'active' }],
+                        members: [{ principalId: 'alice-client', status: 'active' }]
                     });
                 }
                 if (parsed.pathname.startsWith('/api/auth/ws-ticket/requests/')) {
                     return jsonResponse({
                         ticket: 'super-secret-ticket',
                         sessionId: 'alice-session',
-                        expiresAtEpochMs: 123,
+                        expiresAtEpochMs: 123
                     });
                 }
                 if (parsed.pathname === '/api/webrtc/ice') {
                     return jsonResponse({
                         iceServers: [
                             {
-                                urls: 'stun:stun.example.test',
-                            },
-                        ],
+                                urls: 'stun:stun.example.test'
+                            }
+                        ]
                     });
                 }
                 throw new Error(`unexpected fetch ${String(url)}`);
-            },
+            }
         });
 
         expect(report.ok).toBe(true);
@@ -354,36 +354,30 @@ describe('black-box runner live preflight', () => {
             'ws-ticket',
             'ws-upgrade',
             'ice-config',
-            'playwright',
+            'playwright'
         ]));
-        expect(report.checks.every(check => check.status === 'passed')).toBe(true);
-        expect(calls.some(call => call.url.endsWith('/api/webrtc/ice'))).toBe(true);
-        const mutationCalls = calls.filter(call =>
-            call.method === 'POST' || call.method === 'PUT'
-        );
+        expect(report.checks.every((check) => check.status === 'passed')).toBe(true);
+        expect(calls.some((call) => call.url.endsWith('/api/webrtc/ice'))).toBe(true);
+        const mutationCalls = calls.filter((call) => call.method === 'POST' || call.method === 'PUT');
         expect(mutationCalls).toHaveLength(4);
-        expect(mutationCalls.every(call =>
-            /\/requests\/[^/]+$/.test(new URL(call.url).pathname)
-        )).toBe(true);
-        expect(mutationCalls.every(call =>
+        expect(mutationCalls.every((call) => /\/requests\/[^/]+$/.test(new URL(call.url).pathname))).toBe(true);
+        expect(mutationCalls.every((call) =>
             !call.body ||
             typeof call.body !== 'object' ||
             !Object.hasOwn(call.body, 'requestId')
         )).toBe(true);
-        const requestIds = mutationCalls.map(call => new URL(call.url).pathname.split('/').at(-1));
+        const requestIds = mutationCalls.map((call) => new URL(call.url).pathname.split('/').at(-1));
         expect(new Set(requestIds).size).toBe(mutationCalls.length);
-        expect(requestIds.every(requestId =>
+        expect(requestIds.every((requestId) =>
             typeof requestId === 'string' &&
             !requestId.includes('recipe-group') &&
             !requestId.includes('alice-client') &&
             !requestId.includes('alice-session')
         )).toBe(true);
-        const createGroup = calls.find(call =>
-            call.method === 'POST' && /\/groups\/requests\/[^/]+$/.test(new URL(call.url).pathname)
-        );
+        const createGroup = calls.find((call) => call.method === 'POST' && /\/groups\/requests\/[^/]+$/.test(new URL(call.url).pathname));
         expect(createGroup?.body).toMatchObject({
             groupId: 'bb-live-preflight-live-entry-run-123',
-            kind: 'room',
+            kind: 'room'
         });
         expect(createGroup?.url).not.toContain('recipe-group');
         expect(JSON.stringify(report)).not.toContain('secret');
@@ -394,28 +388,28 @@ describe('black-box runner live preflight', () => {
     it('detects recipes that need live preflight', () => {
         expect(shouldRunBlackBoxRunnerLivePreflight({
             requires: {
-                env: ['RALLAR_API_BASE_URL'],
+                env: ['RALLAR_API_BASE_URL']
             },
-            config: {},
+            config: {}
         })).toBe(true);
         expect(shouldRunBlackBoxRunnerLivePreflight({
             config: {
                 connections: {
                     aliceRtc: {
-                        provider: 'rallar-browser',
-                    },
-                },
-            },
+                        provider: 'rallar-browser'
+                    }
+                }
+            }
         })).toBe(true);
         expect(shouldRunBlackBoxRunnerLivePreflight({
             config: {
                 steps: [
                     {
                         type: 'set',
-                        value: 'local',
-                    },
-                ],
-            },
+                        value: 'local'
+                    }
+                ]
+            }
         })).toBe(false);
     });
 });

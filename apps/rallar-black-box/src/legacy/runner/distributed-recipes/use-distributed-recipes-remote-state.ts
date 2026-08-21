@@ -8,13 +8,14 @@ import {
     type ControlDistributedRunSnapshot,
     type ControlRunSnapshot,
     type ControlServerSnapshot,
-    type RallarBlackBoxDistributedTargetResolution,
+    type RallarBlackBoxDistributedTargetResolution
 } from '../../../control-run-manager.ts';
 import { deriveDistributedRunMonitor } from '../../../distributed-recipes.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import {
+    useLegacyDiagnosticSelectionAuthority
+} from '../../diagnostics/context/use-legacy-diagnostic-selection-authority.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
-import { useLegacyDiagnosticSelectionAuthority } from
-    '../../diagnostics/context/use-legacy-diagnostic-selection-authority.ts';
 
 type UseDistributedRecipesRemoteStateInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -29,73 +30,61 @@ export function useDistributedRecipesRemoteState({
     bootstrap,
     control,
     initialControlRunId,
-    initialDistributedRunId,
+    initialDistributedRunId
 }: UseDistributedRecipesRemoteStateInput) {
-    const [baseUrl, setBaseUrl] = useState(() =>
-        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl),
-    );
+    const [baseUrl, setBaseUrl] = useState(() => controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl));
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
-        initialControlRunId ?? control.runId ?? bootstrap.runId ?? '',
+        initialControlRunId ?? control.runId ?? bootstrap.runId ?? ''
     );
-    const [snapshot, setSnapshot] = useState<
-        ControlServerSnapshot | undefined
-    >();
+    const [snapshot, setSnapshot] = useState<ControlServerSnapshot | undefined>();
     const [run, setRun] = useState<ControlRunSnapshot | undefined>();
-    const [distributedRuns, setDistributedRuns] = useState<
-        readonly ControlDistributedRunSnapshot[]
-    >([]);
-    const [selectedDistributedRun, setSelectedDistributedRun] = useState<
-        ControlDistributedRunSnapshot | undefined
-    >();
+    const [distributedRuns, setDistributedRuns] = useState<readonly ControlDistributedRunSnapshot[]>([]);
+    const [selectedDistributedRun, setSelectedDistributedRun] = useState<ControlDistributedRunSnapshot | undefined>();
     const [targetResolutionPreview, setTargetResolutionPreview] = useState<
         RallarBlackBoxDistributedTargetResolution | undefined
     >();
-    const [artifactBundle, setArtifactBundle] = useState<
-        ControlDistributedRunArtifactBundle | undefined
-    >();
+    const [artifactBundle, setArtifactBundle] = useState<ControlDistributedRunArtifactBundle | undefined>();
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
-    const diagnosticSelectionAuthority =
-        useLegacyDiagnosticSelectionAuthority(Boolean(
-            initialControlRunId || initialDistributedRunId,
-        ));
+    const diagnosticSelectionAuthority = useLegacyDiagnosticSelectionAuthority(Boolean(
+        initialControlRunId || initialDistributedRunId
+    ));
     const runOptions = useMemo(
         () =>
             [...(snapshot?.runs ?? [])].sort(
-                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
             ),
-        [snapshot],
+        [snapshot]
     );
     const currentDistributedRuns = useMemo(
         () =>
             distributedRuns
                 .filter((item) => item.controlRunId === selectedRunId)
                 .sort(
-                    (left, right) =>
-                        right.updatedAtEpochMs - left.updatedAtEpochMs,
+                    (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
                 ),
-        [distributedRuns, selectedRunId],
+        [distributedRuns, selectedRunId]
     );
     const selectedMonitor = useMemo(
         () =>
             selectedDistributedRun
                 ? deriveDistributedRunMonitor({
-                      distributedRun: selectedDistributedRun,
-                      controlRun: run,
-                      artifactBundle,
-                  })
+                    distributedRun: selectedDistributedRun,
+                    controlRun: run,
+                    artifactBundle
+                })
                 : undefined,
-        [artifactBundle, run, selectedDistributedRun],
+        [artifactBundle, run, selectedDistributedRun]
     );
     const redactedError = error
         ? String(
-              redactRallarBlackBoxValue(
-                  error,
-                  uiRedactionOptions(state, undefined, [token]),
-              ),
-          )
+            redactRallarBlackBoxValue(
+                error,
+                uiRedactionOptions(state, undefined, [token])
+            )
+        )
         : undefined;
     return {
         baseUrl,
@@ -129,9 +118,8 @@ export function useDistributedRecipesRemoteState({
         diagnosticControlRunId: initialControlRunId,
         diagnosticDistributedRunId: initialDistributedRunId,
         diagnosticSelectionAuthority,
-        diagnosticSelectionIssue: diagnosticSelectionAuthority.issue,
+        diagnosticSelectionIssue: diagnosticSelectionAuthority.issue
     };
 }
 
-export type DistributedRecipesRemoteStateModel =
-    ReturnType<typeof useDistributedRecipesRemoteState>;
+export type DistributedRecipesRemoteStateModel = ReturnType<typeof useDistributedRecipesRemoteState>;

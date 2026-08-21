@@ -1,19 +1,8 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    useEffect,
-    useRef,
-    useState,
-    type KeyboardEvent,
-    type MouseEvent,
-} from 'react';
-import type {
-    RecipeConsolePreferencesControllerValue,
-} from '../app/RecipeConsolePreferencesController.tsx';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import type { RecipeConsolePreferencesControllerValue } from '../app/RecipeConsolePreferencesController.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
-import {
-    AccountSettingsFields,
-    accountSettingsDraftFromValues,
-} from './AccountSettingsFields.tsx';
+import { accountSettingsDraftFromValues, AccountSettingsFields } from './AccountSettingsFields.tsx';
 import styles from './AccountSettingsPanel.module.css';
 
 export type RecipeConsoleAccountSettings = Readonly<{
@@ -24,9 +13,11 @@ export type RecipeConsoleAccountSettings = Readonly<{
     preferences: RecipeConsolePreferencesControllerValue;
 }>;
 
-export type AccountSettingsPanelProps = RecipeConsoleAccountSettings & Readonly<{
-    lastControlError?: string;
-}>;
+export type AccountSettingsPanelProps =
+    & RecipeConsoleAccountSettings
+    & Readonly<{
+        lastControlError?: string;
+    }>;
 
 export function AccountSettingsPanel({
     authBusy,
@@ -34,25 +25,31 @@ export function AccountSettingsPanel({
     authSession,
     lastControlError,
     onLogout,
-    preferences,
+    preferences
 }: AccountSettingsPanelProps) {
     const [open, setOpen] = useState(false);
-    const [draft, setDraft] = useState(() => accountSettingsDraftFromValues(
-        preferences.state.values,
-    ));
+    const [draft, setDraft] = useState(() =>
+        accountSettingsDraftFromValues(
+            preferences.state.values
+        )
+    );
     const [saveStatus, setSaveStatus] = useState<string>();
     const triggerRef = useRef<HTMLButtonElement>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
     const initialFocusRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (!open) return;
+        if (!open) {
+            return;
+        }
         setSaveStatus(undefined);
         initialFocusRef.current?.focus();
         return () => triggerRef.current?.focus();
     }, [open]);
     useEffect(() => {
-        if (!open) return;
+        if (!open) {
+            return;
+        }
         setDraft(accountSettingsDraftFromValues(preferences.state.values));
     }, [
         open,
@@ -61,7 +58,7 @@ export function AccountSettingsPanel({
         preferences.state.values.controlReadTimeoutMs,
         preferences.state.values.controlUrl,
         preferences.state.values.groupId,
-        preferences.state.values.workspaceId,
+        preferences.state.values.workspaceId
     ]);
 
     function close(): void {
@@ -87,7 +84,7 @@ export function AccountSettingsPanel({
             groupId: locks.groupId
                 ? current.groupId
                 : optional(draft.groupId),
-            controlReadTimeoutMs: Number(draft.controlReadTimeoutMs),
+            controlReadTimeoutMs: Number(draft.controlReadTimeoutMs)
         });
         setSaveStatus(saved ? 'Defaults saved.' : undefined);
     }
@@ -103,11 +100,13 @@ export function AccountSettingsPanel({
             close();
             return;
         }
-        if (event.key !== 'Tab') return;
+        if (event.key !== 'Tab') {
+            return;
+        }
         const focusable = Array.from(
             dialogRef.current?.querySelectorAll<HTMLElement>(
-                'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
-            ) ?? [],
+                'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+            ) ?? []
         );
         if (focusable.length === 0) {
             event.preventDefault();
@@ -119,14 +118,17 @@ export function AccountSettingsPanel({
         if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        }
+        else if (!event.shiftKey && document.activeElement === last) {
             event.preventDefault();
             first?.focus();
         }
     }
 
     function dismissFromBackdrop(event: MouseEvent<HTMLDivElement>): void {
-        if (event.target === event.currentTarget) close();
+        if (event.target === event.currentTarget) {
+            close();
+        }
     }
 
     return (
@@ -139,105 +141,115 @@ export function AccountSettingsPanel({
                 onClick={() => setOpen(true)}
                 ref={triggerRef}
             />
-            {open ? (
-                <div
-                    className={styles.backdrop}
-                    data-account-settings-backdrop
-                    onMouseDown={dismissFromBackdrop}
-                >
+            {open
+                ? (
                     <div
-                        aria-labelledby="account-settings-heading"
-                        aria-modal="true"
-                        className={styles.panel}
-                        data-account-settings-panel
-                        onKeyDown={trapFocus}
-                        ref={dialogRef}
-                        role="dialog"
-                        tabIndex={-1}
+                        className={styles.backdrop}
+                        data-account-settings-backdrop
+                        onMouseDown={dismissFromBackdrop}
                     >
-                        <header className={styles.header}>
-                            <div>
-                                <p className={styles.eyebrow}>Recipe Console</p>
-                                <h2 id="account-settings-heading">
-                                    Account and settings
-                                </h2>
-                            </div>
-                            <IconButton
-                                aria-label="Close account and settings"
-                                icon="close"
-                                onClick={close}
-                            />
-                        </header>
-
-                        <section aria-labelledby="account-heading" className={styles.section}>
-                            <div className={styles.sectionHeading}>
-                                <h3 id="account-heading">Account</h3>
-                                <span
-                                    className={`${styles.sessionState} ${authSession ? '' : styles.inactiveSession}`}
-                                >
-                                    {authSession ? 'Session active' : 'No active session'}
-                                </span>
-                            </div>
-                            <p className={styles.accountName}>
-                                {authSession?.username ?? 'No authenticated account'}
-                            </p>
-                            {authError ? (
-                                <p className={styles.error} role="alert">{authError}</p>
-                            ) : null}
-                            <button
-                                className={styles.secondaryButton}
-                                disabled={authBusy || !authSession}
-                                onClick={() => void onLogout()}
-                                type="button"
-                            >{authBusy ? 'Logging out…' : 'Logout'}</button>
-                        </section>
-
-                        <section aria-labelledby="defaults-heading" className={styles.section}>
-                            <div className={styles.sectionHeading}>
+                        <div
+                            aria-labelledby="account-settings-heading"
+                            aria-modal="true"
+                            className={styles.panel}
+                            data-account-settings-panel
+                            onKeyDown={trapFocus}
+                            ref={dialogRef}
+                            role="dialog"
+                            tabIndex={-1}
+                        >
+                            <header className={styles.header}>
                                 <div>
-                                    <h3 id="defaults-heading">Personal defaults</h3>
-                                    <p>Stored only in this browser.</p>
+                                    <p className={styles.eyebrow}>Recipe Console</p>
+                                    <h2 id="account-settings-heading">
+                                        Account and settings
+                                    </h2>
                                 </div>
-                            </div>
-                            <AccountSettingsFields
-                                draft={draft}
-                                initialFocusRef={initialFocusRef}
-                                locks={preferences.state.locks}
-                                onChange={next => {
-                                    setDraft(next);
-                                    setSaveStatus(undefined);
-                                }}
-                            />
-                            {preferences.error ? (
-                                <p className={styles.error} role="alert">
-                                    {preferences.error}
+                                <IconButton
+                                    aria-label="Close account and settings"
+                                    icon="close"
+                                    onClick={close}
+                                />
+                            </header>
+
+                            <section aria-labelledby="account-heading" className={styles.section}>
+                                <div className={styles.sectionHeading}>
+                                    <h3 id="account-heading">Account</h3>
+                                    <span
+                                        className={`${styles.sessionState} ${
+                                            authSession ? '' : styles.inactiveSession
+                                        }`}
+                                    >
+                                        {authSession ? 'Session active' : 'No active session'}
+                                    </span>
+                                </div>
+                                <p className={styles.accountName}>
+                                    {authSession?.username ?? 'No authenticated account'}
                                 </p>
-                            ) : null}
-                            {lastControlError ? (
-                                <div className={styles.controlError} role="status">
-                                    <strong>Latest control error</strong>
-                                    <span>{lastControlError}</span>
-                                </div>
-                            ) : null}
-                            {saveStatus ? (
-                                <p className={styles.success} role="status">{saveStatus}</p>
-                            ) : null}
-                            <div className={styles.actions}>
+                                {authError ? <p className={styles.error} role="alert">{authError}</p> : null}
                                 <button
                                     className={styles.secondaryButton}
-                                    onClick={reset}
+                                    disabled={authBusy || !authSession}
+                                    onClick={() => void onLogout()}
                                     type="button"
-                                >Reset defaults</button>
-                                <button
-                                    className={styles.primaryButton}
-                                    onClick={save}
-                                    type="button"
-                                >Save defaults</button>
-                            </div>
-                        </section>
+                                >
+                                    {authBusy ? 'Logging out…' : 'Logout'}
+                                </button>
+                            </section>
+
+                            <section aria-labelledby="defaults-heading" className={styles.section}>
+                                <div className={styles.sectionHeading}>
+                                    <div>
+                                        <h3 id="defaults-heading">Personal defaults</h3>
+                                        <p>Stored only in this browser.</p>
+                                    </div>
+                                </div>
+                                <AccountSettingsFields
+                                    draft={draft}
+                                    initialFocusRef={initialFocusRef}
+                                    locks={preferences.state.locks}
+                                    onChange={(next) => {
+                                        setDraft(next);
+                                        setSaveStatus(undefined);
+                                    }}
+                                />
+                                {preferences.error
+                                    ? (
+                                        <p className={styles.error} role="alert">
+                                            {preferences.error}
+                                        </p>
+                                    )
+                                    : null}
+                                {lastControlError
+                                    ? (
+                                        <div className={styles.controlError} role="status">
+                                            <strong>Latest control error</strong>
+                                            <span>{lastControlError}</span>
+                                        </div>
+                                    )
+                                    : null}
+                                {saveStatus ? <p className={styles.success} role="status">{saveStatus}</p> : null}
+                                <div className={styles.actions}>
+                                    <button
+                                        className={styles.secondaryButton}
+                                        onClick={reset}
+                                        type="button"
+                                    >
+                                        Reset defaults
+                                    </button>
+                                    <button
+                                        className={styles.primaryButton}
+                                        onClick={save}
+                                        type="button"
+                                    >
+                                        Save defaults
+                                    </button>
+                                </div>
+                            </section>
+                        </div>
                     </div>
-                </div>
-            ) : null}
+                )
+                : null}
         </>
     );
 }

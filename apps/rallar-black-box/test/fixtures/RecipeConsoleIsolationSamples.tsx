@@ -1,10 +1,16 @@
 import { MetricStrip } from '../../src/recipe-console/ui/MetricStrip.tsx';
 import { OverlaySheet } from '../../src/recipe-console/ui/OverlaySheet.tsx';
-import { StatusMark, type OperationalStatus } from '../../src/recipe-console/ui/StatusMark.tsx';
 import styles from '../../src/recipe-console/ui/primitives.module.css';
+import { StatusMark, type OperationalStatus } from '../../src/recipe-console/ui/StatusMark.tsx';
 
 const STATUSES: readonly OperationalStatus[] = [
-    'running', 'passed', 'failed', 'warning', 'stale', 'partial', 'disabled',
+    'running',
+    'passed',
+    'failed',
+    'warning',
+    'stale',
+    'partial',
+    'disabled'
 ];
 
 export function RecipeConsoleIsolationSamples() {
@@ -16,20 +22,32 @@ export function RecipeConsoleIsolationSamples() {
                 <button className={styles.primaryButton} data-isolation-recipe-button type="button">
                     Start Preview
                 </button>
-                <MetricStrip items={[
-                    { label: 'Targets', value: '2/2' },
-                    { label: 'Commands', value: 5 },
-                ]} />
+                <MetricStrip
+                    items={[
+                        { label: 'Targets', value: '2/2' },
+                        { label: 'Commands', value: 5 }
+                    ]}
+                />
                 <div aria-label="Operational statuses" data-isolation-recipe-status>
-                    {STATUSES.map(status => <StatusMark key={status} status={status} />)}
+                    {STATUSES.map((status) => <StatusMark key={status} status={status} />)}
                 </div>
                 <label data-isolation-recipe-form>
                     Recipe search
                     <input defaultValue="RTC Realtime Stability" />
                 </label>
                 <table data-isolation-recipe-table>
-                    <thead><tr><th>Agent</th><th>State</th></tr></thead>
-                    <tbody><tr><td>seed-agent-a</td><td>Matched</td></tr></tbody>
+                    <thead>
+                        <tr>
+                            <th>Agent</th>
+                            <th>State</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>seed-agent-a</td>
+                            <td>Matched</td>
+                        </tr>
+                    </tbody>
                 </table>
                 <div data-isolation-recipe-dialog>
                     <OverlaySheet label="Sample inspector" mode="sheet" onClose={() => undefined} open>

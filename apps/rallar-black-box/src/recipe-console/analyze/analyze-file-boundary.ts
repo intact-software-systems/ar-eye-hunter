@@ -9,18 +9,18 @@ import {
     type AnalyzeArtifactTransferIntake,
     type AnalyzeFileLike,
     type AnalyzeTransferFile,
-    type AnalyzeTransferFileLike,
+    type AnalyzeTransferFileLike
 } from './analyze-file-contract.ts';
 import {
     acceptedFileMetadata,
     fileTooLarge,
     prepareAnalyzeArtifactFileIntake,
     readFailure,
-    totalTooLarge,
+    totalTooLarge
 } from './analyze-file-intake-policy.ts';
 
 export async function readAnalyzeArtifactFiles(
-    selectedFiles: readonly AnalyzeFileLike[],
+    selectedFiles: readonly AnalyzeFileLike[]
 ): Promise<AnalyzeArtifactFileIntake> {
     const prepared = prepareAnalyzeArtifactFileIntake(selectedFiles);
     const texts: [string, string][] = [];
@@ -32,7 +32,8 @@ export async function readAnalyzeArtifactFiles(
             if (typeof contents !== 'string') {
                 throw new TypeError('the selected file did not return text');
             }
-        } catch (error) {
+        }
+        catch (error) {
             throw readFailure(selected.basename, error);
         }
 
@@ -44,12 +45,12 @@ export async function readAnalyzeArtifactFiles(
         files: Object.fromEntries(texts),
         acceptedFiles,
         ignoredFiles: prepared.ignoredFiles,
-        totalSelectedBytes: prepared.totalSelectedBytes,
+        totalSelectedBytes: prepared.totalSelectedBytes
     };
 }
 
 export async function readAnalyzeArtifactTransferFiles(
-    selectedFiles: readonly AnalyzeTransferFileLike[],
+    selectedFiles: readonly AnalyzeTransferFileLike[]
 ): Promise<AnalyzeArtifactTransferIntake> {
     const prepared = prepareAnalyzeArtifactFileIntake(selectedFiles);
     const files: AnalyzeTransferFile[] = [];
@@ -58,7 +59,7 @@ export async function readAnalyzeArtifactTransferFiles(
     const seenBuffers = new Set<ArrayBuffer>();
     const ignoredDeclaredBytes = prepared.totalSelectedBytes - prepared.accepted.reduce(
         (sum, selected) => sum + selected.file.size,
-        0,
+        0
     );
     let totalActualBytes = ignoredDeclaredBytes;
 
@@ -72,7 +73,8 @@ export async function readAnalyzeArtifactTransferFiles(
             if (seenBuffers.has(bytes)) {
                 throw new TypeError('multiple selected files returned the same ArrayBuffer');
             }
-        } catch (error) {
+        }
+        catch (error) {
             throw readFailure(selected.basename, error);
         }
 
@@ -87,7 +89,7 @@ export async function readAnalyzeArtifactTransferFiles(
         if (actualSize !== selected.file.size) {
             throw new AnalyzeFileIntakeError(
                 'file-size-mismatch',
-                `File "${selected.basename}" reported ${selected.file.size} bytes but returned ${actualSize} bytes. No files were imported.`,
+                `File "${selected.basename}" reported ${selected.file.size} bytes but returned ${actualSize} bytes. No files were imported.`
             );
         }
 
@@ -102,6 +104,6 @@ export async function readAnalyzeArtifactTransferFiles(
         acceptedFiles,
         ignoredFiles: prepared.ignoredFiles,
         totalSelectedBytes: prepared.totalSelectedBytes,
-        transferList,
+        transferList
     };
 }

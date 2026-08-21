@@ -2,14 +2,11 @@ import type { ControlFleetFailureSignature } from '../../../../control-run-manag
 import { formatTime } from '../../../shared/time-format.ts';
 import { shortRunId } from '../../shared/run-id-presentation.ts';
 import type { fleetAgentDetail } from '../fleet-derivations.ts';
-import {
-    fleetAgentStateTone,
-    fleetRegionLabel,
-} from '../fleet-presentation.ts';
+import { fleetAgentStateTone, fleetRegionLabel } from '../fleet-presentation.ts';
 
 export function RunnerFleetSelectedDetails({
     selectedFailure,
-    selectedAgent,
+    selectedAgent
 }: {
     selectedFailure: ControlFleetFailureSignature | undefined;
     selectedAgent: ReturnType<typeof fleetAgentDetail>;
@@ -62,7 +59,7 @@ export function RunnerFleetSelectedDetails({
                             <dt>Region</dt>
                             <dd>
                                 {fleetRegionLabel(
-                                    selectedAgent.agent.label,
+                                    selectedAgent.agent.label
                                 )}
                             </dd>
                         </div>
@@ -71,7 +68,7 @@ export function RunnerFleetSelectedDetails({
                             <dd>
                                 {formatTime(
                                     selectedAgent.agent
-                                        .lastHeartbeatAtEpochMs,
+                                        .lastHeartbeatAtEpochMs
                                 )}
                             </dd>
                         </div>
@@ -86,9 +83,9 @@ export function RunnerFleetSelectedDetails({
                         <div>
                             <dt>Trend</dt>
                             <dd>
-                                {selectedAgent.passed} passed /{' '}
-                                {selectedAgent.failed} failed /{' '}
-                                {selectedAgent.missing} missing
+                                {selectedAgent.passed} passed / {selectedAgent.failed} failed / {selectedAgent.missing}
+                                {' '}
+                                missing
                             </dd>
                         </div>
                     </dl>
@@ -96,11 +93,13 @@ export function RunnerFleetSelectedDetails({
                         {selectedAgent.runs.map((entry) => (
                             <div
                                 className="runner-analysis-row"
-                                key={`${entry.run.distributedRunId}-${entry.outcome?.agentId ?? selectedAgent.agent.agentId}`}
+                                key={`${entry.run.distributedRunId}-${
+                                    entry.outcome?.agentId ?? selectedAgent.agent.agentId
+                                }`}
                             >
                                 <strong>
                                     {shortRunId(
-                                        entry.run.distributedRunId,
+                                        entry.run.distributedRunId
                                     )}
                                 </strong>
                                 <span

@@ -1,12 +1,12 @@
 import {
     schemaAuthoringSummary,
     schemaAuthoringTone,
-    type SchemaAuthoringValidation,
+    type SchemaAuthoringValidation
 } from '../../../schema-authoring.ts';
 
 export function SchemaAuthoringPanel({
     validation,
-    compact = false,
+    compact = false
 }: {
     validation: SchemaAuthoringValidation;
     compact?: boolean;
@@ -34,22 +34,20 @@ export function SchemaAuthoringPanel({
                     ))}
                 </div>
             )}
-            {validation.ok && validation.capabilities.length > 0 && (
-                <SchemaCapabilitySummary validation={validation} />
-            )}
+            {validation.ok && validation.capabilities.length > 0 && <SchemaCapabilitySummary validation={validation} />}
             {validation.ok &&
                 validation.capabilities.length === 0 &&
                 validation.target === 'runner-scenario' && (
-                    <div className="schema-capability-empty">
-                        Provider-neutral runner scenario schema valid.
-                    </div>
-                )}
+                <div className="schema-capability-empty">
+                    Provider-neutral runner scenario schema valid.
+                </div>
+            )}
         </section>
     );
 }
 
 export function SchemaCapabilitySummary({
-    validation,
+    validation
 }: {
     validation: SchemaAuthoringValidation;
 }) {
@@ -113,7 +111,7 @@ export function SchemaCapabilitySummary({
 
 function SchemaCapabilityList({
     title,
-    values,
+    values
 }: {
     title: string;
     values: readonly string[];

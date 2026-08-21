@@ -1,10 +1,10 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import type { DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
 export type QueueMessageReader = Readonly<{
     onMessageDo(type: string, callback: OnMessageCallback): void;
@@ -12,20 +12,22 @@ export type QueueMessageReader = Readonly<{
     enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry>;
     enqueueIf(
         message: ALMessage,
-        enqueueIf: (entry: ResourceEntry) => boolean,
+        enqueueIf: (entry: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined>;
     dequeue(
         typesToDequeue: Set<string>,
-        resilience: ResilienceDto,
+        resilience: ResilienceDto
     ): Promise<void>;
 }>;
 
-export function createQueueMessageReader(options: Readonly<{
-    repository: QueueBoxResourceEntryRepository;
-    enqueueType: string;
-    queueName: string;
-    dequeueOptions?: DequeueResourceEntryOptions;
-}>): QueueMessageReader {
+export function createQueueMessageReader(
+    options: Readonly<{
+        repository: QueueBoxResourceEntryRepository;
+        enqueueType: string;
+        queueName: string;
+        dequeueOptions?: DequeueResourceEntryOptions;
+    }>
+): QueueMessageReader {
     const callbacks = new Map<string, OnMessageCallback>();
 
     return {
@@ -37,16 +39,16 @@ export function createQueueMessageReader(options: Readonly<{
             await options.repository.enqueueIfAbsent(
                 QueueBoxUtilities.toResourceEntryFromMsg(
                     message,
-                    options.enqueueType,
-                ),
+                    options.enqueueType
+                )
             ),
         enqueueIf: async (message, enqueueIf) =>
             await options.repository.enqueueIf(
                 QueueBoxUtilities.toResourceEntryFromMsg(
                     message,
-                    options.enqueueType,
+                    options.enqueueType
                 ),
-                enqueueIf,
+                enqueueIf
             ),
         dequeue: async (typesToDequeue, resilience) => {
             await QueueBoxUtilities.defaultDequeue(
@@ -58,14 +60,14 @@ export function createQueueMessageReader(options: Readonly<{
                     const callback = callbacks.get(message.payload.typeId);
                     if (!callback) {
                         throw new Error(
-                            `No ${options.queueName} callback registered for type ${message.payload.typeId}`,
+                            `No ${options.queueName} callback registered for type ${message.payload.typeId}`
                         );
                     }
 
                     await callback.onMessage(message, entry);
                 },
-                options.dequeueOptions,
+                options.dequeueOptions
             );
-        },
+        }
     };
 }

@@ -1,3 +1,7 @@
+import {
+    createDefaultGroupLifecyclePolicy,
+    resolveGroupLifecyclePolicyPreset
+} from './group-lifecycle-policy-presets.ts';
 import type {
     GroupActivationCriterion,
     GroupAdmissionPolicy,
@@ -5,12 +9,8 @@ import type {
     GroupEstablishmentPolicy,
     GroupLifecyclePolicy,
     GroupLifecyclePolicyInput,
-    GroupManagerPolicy,
+    GroupManagerPolicy
 } from './group-lifecycle-policy.ts';
-import {
-    createDefaultGroupLifecyclePolicy,
-    resolveGroupLifecyclePolicyPreset,
-} from './group-lifecycle-policy-presets.ts';
 
 export const MAX_GROUP_FORMATION_DEADLINE_MS = 600_000;
 export const MAX_GROUP_MANAGERS = 16;
@@ -26,7 +26,7 @@ export const MAX_GROUP_ADMISSION_MEMBER_COUNT = 100_000;
  * are a separate concern and belong to validateGroupLifecyclePolicy.
  */
 export function toNormalizedGroupLifecyclePolicy(
-    input: GroupLifecyclePolicyInput = {},
+    input: GroupLifecyclePolicyInput = {}
 ): GroupLifecyclePolicy {
     const base = input.preset === undefined
         ? createDefaultGroupLifecyclePolicy()
@@ -38,25 +38,25 @@ export function toNormalizedGroupLifecyclePolicy(
         establishment: toEstablishmentPolicy(base.establishment, input.establishment),
         activation: toActivationCriterion(base.activation, input.activation),
         admission: toAdmissionPolicy(base.admission, input.admission),
-        data: toDataPolicy(base.data, input.data),
+        data: toDataPolicy(base.data, input.data)
     };
 }
 
 function toManagerPolicy(
     base: GroupManagerPolicy,
-    input: Partial<GroupManagerPolicy> | undefined,
+    input: Partial<GroupManagerPolicy> | undefined
 ): GroupManagerPolicy {
     return {
         selection: input?.selection ?? base.selection,
         assignedPrincipalIds: input?.assignedPrincipalIds ?? base.assignedPrincipalIds,
         count: toClampedInteger(input?.count ?? base.count, 1, MAX_GROUP_MANAGERS),
-        succession: input?.succession ?? base.succession,
+        succession: input?.succession ?? base.succession
     };
 }
 
 function toEstablishmentPolicy(
     base: GroupEstablishmentPolicy,
-    input: Partial<GroupEstablishmentPolicy> | undefined,
+    input: Partial<GroupEstablishmentPolicy> | undefined
 ): GroupEstablishmentPolicy {
     return {
         transports: input?.transports ?? base.transports,
@@ -64,14 +64,14 @@ function toEstablishmentPolicy(
         maxConcurrentEdgeSetups: toClampedInteger(
             input?.maxConcurrentEdgeSetups ?? base.maxConcurrentEdgeSetups,
             1,
-            MAX_GROUP_CONCURRENT_EDGE_SETUPS,
-        ),
+            MAX_GROUP_CONCURRENT_EDGE_SETUPS
+        )
     };
 }
 
 function toActivationCriterion(
     base: GroupActivationCriterion,
-    input: Partial<GroupActivationCriterion> | undefined,
+    input: Partial<GroupActivationCriterion> | undefined
 ): GroupActivationCriterion {
     return {
         mode: input?.mode ?? base.mode,
@@ -80,20 +80,20 @@ function toActivationCriterion(
         deadlineMs: toClampedInteger(
             input?.deadlineMs ?? base.deadlineMs,
             0,
-            MAX_GROUP_FORMATION_DEADLINE_MS,
+            MAX_GROUP_FORMATION_DEADLINE_MS
         ),
         maxFormationAttempts: toClampedInteger(
             input?.maxFormationAttempts ?? base.maxFormationAttempts,
             1,
-            MAX_GROUP_FORMATION_ATTEMPTS,
+            MAX_GROUP_FORMATION_ATTEMPTS
         ),
-        strictConfirmation: input?.strictConfirmation ?? base.strictConfirmation,
+        strictConfirmation: input?.strictConfirmation ?? base.strictConfirmation
     };
 }
 
 function toAdmissionPolicy(
     base: GroupAdmissionPolicy,
-    input: Partial<GroupAdmissionPolicy> | undefined,
+    input: Partial<GroupAdmissionPolicy> | undefined
 ): GroupAdmissionPolicy {
     const untilEpochMs = input?.untilEpochMs === undefined
         ? base.untilEpochMs
@@ -109,16 +109,16 @@ function toAdmissionPolicy(
             : toClampedInteger(untilEpochMs, 0, Number.MAX_SAFE_INTEGER),
         untilMemberCount: untilMemberCount === null
             ? null
-            : toClampedInteger(untilMemberCount, 1, MAX_GROUP_ADMISSION_MEMBER_COUNT),
+            : toClampedInteger(untilMemberCount, 1, MAX_GROUP_ADMISSION_MEMBER_COUNT)
     };
 }
 
 function toDataPolicy(
     base: GroupDataPolicy,
-    input: Partial<GroupDataPolicy> | undefined,
+    input: Partial<GroupDataPolicy> | undefined
 ): GroupDataPolicy {
     return {
-        preActivationAppData: input?.preActivationAppData ?? base.preActivationAppData,
+        preActivationAppData: input?.preActivationAppData ?? base.preActivationAppData
     };
 }
 

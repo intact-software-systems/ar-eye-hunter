@@ -1,18 +1,17 @@
-import { type ChangeEvent, useState } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import {
-    RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT,
     parseRallarBlackBoxSharedTestArtifactBundle,
-    type RallarBlackBoxSharedTestArtifactBundleFiles,
+    RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT,
+    type RallarBlackBoxSharedTestArtifactBundleFiles
 } from '../../../shared-test-handoff-fixtures.ts';
-import { Metric } from '../../shared/Metric.tsx';
 import { json } from '../../shared/json-presentation.ts';
+import { Metric } from '../../shared/Metric.tsx';
 import { artifactIssueText } from '../shared/artifact-issue-presentation.ts';
-import { SharedTestArtifactIndexPanel } from
-    './SharedTestArtifactIndexPanel.tsx';
+import { SharedTestArtifactIndexPanel } from './SharedTestArtifactIndexPanel.tsx';
 
 const SHARED_TEST_ARTIFACT_FILE_NAMES = [
     ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles,
-    ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.optionalFiles,
+    ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.optionalFiles
 ] as const;
 
 function artifactEventTitle(event: Record<string, unknown>): string {
@@ -28,8 +27,7 @@ function artifactEventDetail(event: Record<string, unknown>): string {
 }
 
 export function SharedTestArtifactImportPanel() {
-    const [files, setFiles] =
-        useState<RallarBlackBoxSharedTestArtifactBundleFiles>({});
+    const [files, setFiles] = useState<RallarBlackBoxSharedTestArtifactBundleFiles>({});
     const [parseResult, setParseResult] = useState<
         | ReturnType<typeof parseRallarBlackBoxSharedTestArtifactBundle>
         | undefined
@@ -39,14 +37,14 @@ export function SharedTestArtifactImportPanel() {
     const acceptedFileNames = new Set<string>(SHARED_TEST_ARTIFACT_FILE_NAMES);
 
     const parseFiles = (
-        nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles,
+        nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles
     ): void => {
         setFiles(nextFiles);
         setParseResult(parseRallarBlackBoxSharedTestArtifactBundle(nextFiles));
     };
 
     const handleFiles = async (
-        event: ChangeEvent<HTMLInputElement>,
+        event: ChangeEvent<HTMLInputElement>
     ): Promise<void> => {
         setReadError(undefined);
         const selectedFiles = Array.from(event.target.files ?? []);
@@ -62,9 +60,10 @@ export function SharedTestArtifactImportPanel() {
                 ] = await file.text();
             }
             parseFiles(nextFiles);
-        } catch (error) {
+        }
+        catch (error) {
             setReadError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
         }
     };
@@ -72,7 +71,7 @@ export function SharedTestArtifactImportPanel() {
     const copyReplayRecipe = (): void => {
         if (parsed?.views.replayRecipe) {
             void navigator.clipboard?.writeText(
-                json(parsed.views.replayRecipe),
+                json(parsed.views.replayRecipe)
             );
         }
     };
@@ -89,8 +88,8 @@ export function SharedTestArtifactImportPanel() {
                     {parseResult?.ok
                         ? 'valid'
                         : parseResult
-                          ? 'invalid'
-                          : 'idle'}
+                        ? 'invalid'
+                        : 'idle'}
                 </span>
             </div>
             <div className="artifact-import-controls">
@@ -113,10 +112,9 @@ export function SharedTestArtifactImportPanel() {
             </div>
             <div className="artifact-file-grid">
                 {SHARED_TEST_ARTIFACT_FILE_NAMES.map((fileName) => {
-                    const required =
-                        RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles.includes(
-                            fileName,
-                        );
+                    const required = RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles.includes(
+                        fileName
+                    );
                     const loaded = files[fileName] !== undefined;
                     return (
                         <div
@@ -130,8 +128,8 @@ export function SharedTestArtifactImportPanel() {
                                 {loaded
                                     ? 'loaded'
                                     : required
-                                      ? 'required'
-                                      : 'optional'}
+                                    ? 'required'
+                                    : 'optional'}
                             </span>
                         </div>
                     );
@@ -139,9 +137,7 @@ export function SharedTestArtifactImportPanel() {
             </div>
             {(readError || (parseResult && parseResult.issues.length > 0)) && (
                 <div className="artifact-issue-list" role="status">
-                    {readError && (
-                        <div className="workbench-error">{readError}</div>
-                    )}
+                    {readError && <div className="workbench-error">{readError}</div>}
                     {parseResult?.issues.map((issue, index) => (
                         <div
                             className={`artifact-issue-row ${issue.severity}`}
@@ -173,11 +169,9 @@ export function SharedTestArtifactImportPanel() {
                             <Metric
                                 label="Failure"
                                 value={String(parsed.report.summary.failure)}
-                                tone={
-                                    parsed.report.summary.failure > 0
-                                        ? 'bad'
-                                        : 'good'
-                                }
+                                tone={parsed.report.summary.failure > 0
+                                    ? 'bad'
+                                    : 'good'}
                             />
                             <Metric
                                 label="Events"
@@ -186,7 +180,7 @@ export function SharedTestArtifactImportPanel() {
                             <Metric
                                 label="RTC diagnostics"
                                 value={String(
-                                    parsed.views.rtcDiagnostics.length,
+                                    parsed.views.rtcDiagnostics.length
                                 )}
                             />
                             <Metric
@@ -199,22 +193,20 @@ export function SharedTestArtifactImportPanel() {
                             />
                             <Metric
                                 label="Replay"
-                                value={
-                                    parsed.views.replayRecipe
-                                        ? 'available'
-                                        : 'none'
-                                }
-                                tone={
-                                    parsed.views.replayRecipe ? 'good' : 'muted'
-                                }
+                                value={parsed.views.replayRecipe
+                                    ? 'available'
+                                    : 'none'}
+                                tone={parsed.views.replayRecipe ? 'good' : 'muted'}
                             />
                         </div>
                     </section>
-                    {parsed.views.artifactIndex ? (
-                        <SharedTestArtifactIndexPanel
-                            artifactIndex={parsed.views.artifactIndex}
-                        />
-                    ) : null}
+                    {parsed.views.artifactIndex
+                        ? (
+                            <SharedTestArtifactIndexPanel
+                                artifactIndex={parsed.views.artifactIndex}
+                            />
+                        )
+                        : null}
                     <section className="shared-test-subpanel">
                         <div className="section-heading">
                             <h3>Imported Event Stream</h3>

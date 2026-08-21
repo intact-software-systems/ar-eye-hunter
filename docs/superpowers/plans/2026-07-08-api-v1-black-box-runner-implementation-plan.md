@@ -72,6 +72,7 @@
 ### Task 1: Add API-v1 Recipe Matrix Coverage
 
 **Files:**
+
 - Create: `packages/shared-test/black-box-runner/examples/api-v1-auth-session.json`
 - Create: `packages/shared-test/black-box-runner/examples/api-v1-group-presence.json`
 - Create: `packages/shared-test/black-box-runner/examples/api-v1-client-state.json`
@@ -84,6 +85,7 @@
 - Modify: `packages/tests/shared-test/recipe-matrix.test.ts`
 
 **Interfaces:**
+
 - Produces matrix profile `api-v1-black-box`.
 - Produces matrix entry ids:
   - `api-v1-auth-session`
@@ -107,17 +109,17 @@ Add these tests to `packages/tests/shared-test/recipe-matrix.test.ts`:
 ```ts
 it('defines a no-browser API-v1 black-box profile', () => {
     const { entries } = readMatrix();
-    const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
+    const apiEntries = entries.filter((entry) => entry.profiles.includes('api-v1-black-box'));
 
-    expect(apiEntries.map(entry => entry.id).sort()).toEqual([
+    expect(apiEntries.map((entry) => entry.id).sort()).toEqual([
         'api-v1-auth-session',
         'api-v1-client-state',
         'api-v1-group-presence',
         'api-v1-scope-isolation',
-        'api-v1-websocket-topic-routing',
+        'api-v1-websocket-topic-routing'
     ]);
 
-    apiEntries.forEach(entry => {
+    apiEntries.forEach((entry) => {
         expect(entry.category).toBe('api-v1-black-box');
         expect(entry.mode).toBe('run');
         expect(entry.expectedExitCode).toBe(0);
@@ -129,20 +131,22 @@ it('defines a no-browser API-v1 black-box profile', () => {
             {
                 name: 'Rallar API',
                 env: 'RALLAR_API_BASE_URL',
-                default: 'http://127.0.0.1:18080',
-            },
+                default: 'http://127.0.0.1:18080'
+            }
         ]);
     });
 });
 
 it('keeps API-v1 black-box recipes free of RTC connections', () => {
     const { entries } = readMatrix();
-    const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
+    const apiEntries = entries.filter((entry) => entry.profiles.includes('api-v1-black-box'));
 
-    apiEntries.forEach(entry => {
+    apiEntries.forEach((entry) => {
         const recipe = readRecipe(entry.recipe);
-        const connections = recipe.connections as Record<string, { type?: string }> | undefined;
-        const connectionTypes = Object.values(connections ?? {}).map(connection => connection.type);
+        const connections = recipe.connections as Record<string, { type?: string; }> | undefined;
+        const connectionTypes = Object.values(connections ?? {}).map((connection) =>
+            connection.type
+        );
 
         expect(connectionTypes).not.toContain('rtc');
         expect(JSON.stringify(recipe)).not.toContain('rallar-browser');
@@ -549,11 +553,13 @@ git commit -m "test: add api-v1 black-box recipes"
 ### Task 2: Add API-v1 Black-Box Run CLI
 
 **Files:**
+
 - Create: `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`
 - Create: `packages/tests/shared-test/api-v1-black-box-run.test.ts`
 - Modify: `packages/shared-test/package.json`
 
 **Interfaces:**
+
 - Produces `parseApiV1BlackBoxArgs(args: string[]): ApiV1BlackBoxOptions`
 - Produces `toApiV1BlackBoxEnvironment(options: ApiV1BlackBoxOptions, baseEnv: Record<string, string | undefined>): Record<string, string>`
 - Produces `toApiV1ServerCommand(options: ApiV1BlackBoxOptions): readonly string[]`
@@ -576,7 +582,7 @@ import { describe, expect, it } from 'vitest';
 import {
     parseApiV1BlackBoxArgs,
     toApiV1BlackBoxEnvironment,
-    toApiV1ServerCommand,
+    toApiV1ServerCommand
 } from '../../shared-test/black-box-runner/api-v1-black-box-run.mts';
 
 describe('api-v1 black-box run helper', () => {
@@ -588,7 +594,7 @@ describe('api-v1 black-box run helper', () => {
             artifactDir: '.artifacts/api-v1-black-box/postgres',
             requireGates: true,
             runMigrations: true,
-            recipesOnly: false,
+            recipesOnly: false
         });
     });
 
@@ -597,7 +603,7 @@ describe('api-v1 black-box run helper', () => {
             backend: 'postgres',
             requireGates: true,
             runMigrations: false,
-            recipesOnly: true,
+            recipesOnly: true
         });
     });
 
@@ -616,7 +622,7 @@ describe('api-v1 black-box run helper', () => {
     it('preserves explicit Postgres DATABASE_URL values', () => {
         const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
         const env = toApiV1BlackBoxEnvironment(options, {
-            DATABASE_URL: 'postgres://custom:custom@localhost:15432/customdb',
+            DATABASE_URL: 'postgres://custom:custom@localhost:15432/customdb'
         });
 
         expect(env.RALLAR_SQL_BACKEND).toBe('postgres');
@@ -627,7 +633,7 @@ describe('api-v1 black-box run helper', () => {
         const options = parseApiV1BlackBoxArgs(['--recipes-only']);
         const env = toApiV1BlackBoxEnvironment(options, {
             RALLAR_API_BASE_URL: 'http://127.0.0.1:19999',
-            RALLAR_WS_BASE_URL: 'ws://127.0.0.1:19999',
+            RALLAR_WS_BASE_URL: 'ws://127.0.0.1:19999'
         });
 
         expect(env.RALLAR_API_BASE_URL).toBe('http://127.0.0.1:19999');
@@ -638,7 +644,7 @@ describe('api-v1 black-box run helper', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=pglite-memory',
             '--port=19090',
-            '--run-id=local-123',
+            '--run-id=local-123'
         ]);
         const env = toApiV1BlackBoxEnvironment(options, {});
 
@@ -666,7 +672,7 @@ describe('api-v1 black-box run helper', () => {
             '--allow-net',
             '--allow-env',
             '--allow-read',
-            'apps/api-v1/src/main.ts',
+            'apps/api-v1/src/main.ts'
         ]);
     });
 });
@@ -719,7 +725,7 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
 
     const runId = String(values.get('--run-id') ?? defaultRunId());
     const artifactDir = String(
-        values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`,
+        values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`
     );
     const recipesOnly = values.get('--recipes-only') === true;
 
@@ -730,8 +736,9 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
         artifactDir,
         runId,
         requireGates: values.get('--no-require-gates') !== true,
-        runMigrations: backend === 'postgres' && !recipesOnly && values.get('--no-migrate') !== true,
-        recipesOnly,
+        runMigrations: backend === 'postgres' && !recipesOnly &&
+            values.get('--no-migrate') !== true,
+        recipesOnly
     };
 }
 
@@ -741,10 +748,12 @@ function defaultRunId(): string {
 
 export function toApiV1BlackBoxEnvironment(
     options: ApiV1BlackBoxOptions,
-    baseEnv: Record<string, string | undefined>,
+    baseEnv: Record<string, string | undefined>
 ): Record<string, string> {
     const env: Record<string, string> = Object.fromEntries(
-        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        Object.entries(baseEnv).filter((entry): entry is [string, string] =>
+            typeof entry[1] === 'string'
+        )
     );
     env.PORT = String(options.port);
     const defaultApiBaseUrl = `http://127.0.0.1:${options.port}`;
@@ -765,7 +774,8 @@ export function toApiV1BlackBoxEnvironment(
     if (options.backend === 'postgres') {
         env.RALLAR_SQL_BACKEND = 'postgres';
         env.DATABASE_URL = env.DATABASE_URL ?? 'postgres://app:app@localhost:5432/appdb';
-    } else {
+    }
+    else {
         env.RALLAR_SQL_BACKEND = 'pglite-memory';
         env.RALLAR_PGLITE_DATA_DIR = 'memory://';
         env.RALLAR_PGLITE_SCHEMA_INIT = 'auto';
@@ -785,7 +795,7 @@ export function toApiV1ServerCommand(_options: ApiV1BlackBoxOptions): readonly s
         '--allow-net',
         '--allow-env',
         '--allow-read',
-        'apps/api-v1/src/main.ts',
+        'apps/api-v1/src/main.ts'
     ];
 }
 ```
@@ -827,13 +837,13 @@ Call `main()` only when the file is executed as a Deno script, not when Vitest
 imports the helper functions:
 
 ```ts
-const importMeta = import.meta as ImportMeta & { main?: boolean }
+const importMeta = import.meta as ImportMeta & { main?: boolean; };
 
 if (importMeta.main) {
-    main().catch(error => {
-        console.error(error instanceof Error ? error.message : String(error))
-        Deno.exit(1)
-    })
+    main().catch((error) => {
+        console.error(error instanceof Error ? error.message : String(error));
+        Deno.exit(1);
+    });
 }
 ```
 
@@ -888,10 +898,12 @@ git commit -m "test: add api-v1 black-box runner helper"
 ### Task 3: Add Local Convenience Scripts
 
 **Files:**
+
 - Modify: `packages/shared-test/package.json`
 - Modify: `package.json`
 
 **Interfaces:**
+
 - Produces workspace scripts:
   - `bb:api-v1:recipes`
   - `bb:api-v1:postgres`
@@ -971,9 +983,11 @@ git commit -m "test: add api-v1 black-box scripts"
 ### Task 4: Add Reusable API-v1 Black-Box Action
 
 **Files:**
+
 - Create: `.github/actions/api-v1-black-box-test/action.yml`
 
 **Interfaces:**
+
 - Consumes inputs:
   - `backend`
   - `api-port`
@@ -994,12 +1008,12 @@ description: Start apps/api-v1 and run no-browser black-box-runner recipes.
 inputs:
   backend:
     description: Backend to use: postgres or pglite-memory.
-    required: false
-    default: postgres
+      required: false
+      default: postgres
   api-port:
     description: Local API port.
     required: false
-    default: "18080"
+    default: '18080'
   artifact-dir:
     description: Directory for runner artifacts and API logs.
     required: false
@@ -1011,7 +1025,7 @@ inputs:
   run-migrations:
     description: Run Postgres migrations before starting API.
     required: false
-    default: "true"
+    default: 'true'
   run-id:
     description: Stable run id for test data isolation.
     required: false
@@ -1022,7 +1036,7 @@ runs:
     - name: Run API v1 black-box recipes
       shell: bash
       env:
-        RALLAR_BB_RUN_ID: "${{ inputs.run-id }}"
+        RALLAR_BB_RUN_ID: '${{ inputs.run-id }}'
       run: |
         set -euo pipefail
 
@@ -1065,10 +1079,12 @@ git commit -m "ci: add api-v1 black-box action"
 ### Task 5: Add Required Postgres Gate And Manual Memory Workflow
 
 **Files:**
+
 - Modify: `.github/workflows/release-gate.yml`
 - Create: `.github/workflows/api-v1-black-box.yml`
 
 **Interfaces:**
+
 - Release gate invokes `.github/actions/api-v1-black-box-test` with Postgres.
 - Manual workflow can run Postgres only or Postgres plus pglite-memory.
 
@@ -1077,23 +1093,23 @@ git commit -m "ci: add api-v1 black-box action"
 In `.github/workflows/release-gate.yml`, after `Run Postgres migrations` and before `Run Postgres full-stack smoke tests`, add:
 
 ```yaml
-      - name: Run API v1 black-box recipes
-        uses: ./.github/actions/api-v1-black-box-test
-        with:
-          backend: postgres
-          api-port: "18080"
-          artifact-dir: .artifacts/api-v1-black-box/postgres
-          profile: api-v1-black-box
-          run-migrations: "false"
-          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
+- name: Run API v1 black-box recipes
+  uses: ./.github/actions/api-v1-black-box-test
+  with:
+    backend: postgres
+    api-port: '18080'
+    artifact-dir: .artifacts/api-v1-black-box/postgres
+    profile: api-v1-black-box
+    run-migrations: 'false'
+    run-id: '${{ github.run_id }}-${{ github.run_attempt }}-postgres'
 
-      - name: Upload API v1 black-box artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-v1-black-box-postgres
-          path: .artifacts/api-v1-black-box/postgres
-          if-no-files-found: warn
+- name: Upload API v1 black-box artifacts
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: api-v1-black-box-postgres
+    path: .artifacts/api-v1-black-box/postgres
+    if-no-files-found: warn
 ```
 
 Keep the existing Postgres service and migration step. The action uses the existing `DATABASE_URL` and does not run migrations again.
@@ -1139,8 +1155,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
-      RALLAR_STATE_STRICT_READ_AUTH: "1"
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_STATE_STRICT_READ_AUTH: '1'
       AUTH_STATIC_CLIENTS_MODE: demo
       AUTH_REGISTRATION_MODE: public
     steps:
@@ -1158,9 +1174,9 @@ jobs:
         uses: ./.github/actions/api-v1-black-box-test
         with:
           backend: postgres
-          api-port: "18080"
+          api-port: '18080'
           artifact-dir: .artifacts/api-v1-black-box/postgres
-          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-postgres'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1176,8 +1192,8 @@ jobs:
     timeout-minutes: 20
     env:
       RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
-      RALLAR_STATE_STRICT_READ_AUTH: "1"
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_STATE_STRICT_READ_AUTH: '1'
       AUTH_STATIC_CLIENTS_MODE: demo
       AUTH_REGISTRATION_MODE: public
     steps:
@@ -1195,10 +1211,10 @@ jobs:
         uses: ./.github/actions/api-v1-black-box-test
         with:
           backend: pglite-memory
-          api-port: "18081"
+          api-port: '18081'
           artifact-dir: .artifacts/api-v1-black-box/memory
-          run-migrations: "false"
-          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-memory"
+          run-migrations: 'false'
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-memory'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1232,10 +1248,12 @@ git commit -m "ci: run api-v1 black-box gate"
 ### Task 6: Validate End-To-End And Document Commands
 
 **Files:**
+
 - Modify: `packages/shared-test/docs/shared-test-verification.md`
 - Modify: `packages/shared-test/black-box-runner/docs/black-box-runner-recipe-matrix.md`
 
 **Interfaces:**
+
 - Documents root commands:
   - `npm run test:api-v1:black-box:postgres`
   - `npm run test:api-v1:black-box:memory`

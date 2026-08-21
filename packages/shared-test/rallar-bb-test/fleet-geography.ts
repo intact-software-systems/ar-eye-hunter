@@ -1,9 +1,6 @@
 import type { ControlRunSnapshot } from './control-snapshots.ts';
 import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
-import type {
-    ControlFleetAgentRunOutcome,
-    ControlFleetRunReport,
-} from './fleet-report.ts';
+import type { ControlFleetAgentRunOutcome, ControlFleetRunReport } from './fleet-report.ts';
 
 export const FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL =
     'Observed in the bounded control snapshot event window; not a complete network topology.';
@@ -50,21 +47,24 @@ export type FleetGeographyDocumentedLocationInput = Readonly<{
 }>;
 
 export type FleetGeographyDocumentedLocation =
-    RallarBlackBoxGeoLocation & Readonly<{
+    & RallarBlackBoxGeoLocation
+    & Readonly<{
         label: string;
         precision: 'exact' | 'approximate';
         source: FleetGeographyDocumentedLocationSource;
     }>;
 
-export type FleetGeographyLocation = RallarBlackBoxGeoLocation & Readonly<{
-    label: string;
-    precision: 'exact' | 'approximate';
-    source: FleetGeographyLocationSource;
-    evidenceKind: 'live' | 'historical';
-    observedAtEpochMs?: number;
-    distributedRunId?: string;
-    generatedAtEpochMs?: number;
-}>;
+export type FleetGeographyLocation =
+    & RallarBlackBoxGeoLocation
+    & Readonly<{
+        label: string;
+        precision: 'exact' | 'approximate';
+        source: FleetGeographyLocationSource;
+        evidenceKind: 'live' | 'historical';
+        observedAtEpochMs?: number;
+        distributedRunId?: string;
+        generatedAtEpochMs?: number;
+    }>;
 
 export type FleetGeographyHistoricalOutcome = Readonly<{
     distributedRunId: string;
@@ -229,95 +229,87 @@ export type FleetGeographyHistoricalCollection = Readonly<{
     [FLEET_GEOGRAPHY_HISTORY_SOURCE]: FleetGeographyHistoricalSource;
 }>;
 
-const DATACENTER_LOCATIONS: Readonly<Record<
-    string,
-    Readonly<RallarBlackBoxGeoLocation & { label: string }>
->> = {
+const DATACENTER_LOCATIONS: Readonly<Record<string, Readonly<RallarBlackBoxGeoLocation & { label: string; }>>> = {
     'hetzner/fsn1': {
         latitude: 52.5333,
         longitude: 13.3833,
-        label: 'Hetzner FSN1, Germany',
+        label: 'Hetzner FSN1, Germany'
     },
     'hetzner/nbg1': {
         latitude: 49.4521,
         longitude: 11.0767,
-        label: 'Hetzner NBG1, Germany',
+        label: 'Hetzner NBG1, Germany'
     },
     'hetzner/hel1': {
         latitude: 60.1699,
         longitude: 24.9384,
-        label: 'Hetzner HEL1, Finland',
+        label: 'Hetzner HEL1, Finland'
     },
     'hetzner/ash': {
         latitude: 39.0438,
         longitude: -77.4874,
-        label: 'Hetzner ASH, US East',
+        label: 'Hetzner ASH, US East'
     },
     'hetzner/hil': {
         latitude: 45.5229,
         longitude: -122.9898,
-        label: 'Hetzner HIL, US West',
-    },
+        label: 'Hetzner HIL, US West'
+    }
 };
 
-const REGION_LOCATIONS: Readonly<Record<
-    string,
-    Readonly<RallarBlackBoxGeoLocation & { label: string }>
->> = {
+const REGION_LOCATIONS: Readonly<Record<string, Readonly<RallarBlackBoxGeoLocation & { label: string; }>>> = {
     'eu-north': {
         latitude: 60,
         longitude: 18,
-        label: 'Europe north',
+        label: 'Europe north'
     },
     'eu-central': {
         latitude: 50.8,
         longitude: 10.3,
-        label: 'Europe central',
+        label: 'Europe central'
     },
     'eu-west': {
         latitude: 53,
         longitude: -7.5,
-        label: 'Europe west',
+        label: 'Europe west'
     },
     'us-east': {
         latitude: 39.5,
         longitude: -77,
-        label: 'US east',
+        label: 'US east'
     },
     'us-west': {
         latitude: 45.5,
         longitude: -122.6,
-        label: 'US west',
-    },
+        label: 'US west'
+    }
 };
 
 export function deriveFleetGeography(
-    input: DeriveFleetGeographyInput,
+    input: DeriveFleetGeographyInput
 ): FleetGeographyModel {
     return deriveFleetGeographyFromHistoricalCollection(
         createFleetGeographyHistoricalCollection(input.reports ?? []),
         {
             liveAgents: input.liveAgents,
-            routeEvidence: input.routeEvidence,
-        },
+            routeEvidence: input.routeEvidence
+        }
     );
 }
 
 export function createFleetGeographyHistoricalCollection(
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ): FleetGeographyHistoricalCollection {
     const work = { reportVisits: 0, outcomeVisits: 0 };
     const historical = indexHistoricalEvidence(reports, work);
     const recordsByAgent = historical.recordsByAgent;
-    const agents = [...recordsByAgent.entries()].map(([agentId, records]) =>
-        deriveHistoricalAgent(agentId, records)
-    );
+    const agents = [...recordsByAgent.entries()].map(([agentId, records]) => deriveHistoricalAgent(agentId, records));
     return {
         regions: historical.regions,
         work,
         [FLEET_GEOGRAPHY_HISTORY_SOURCE]: {
-            agentsById: new Map(agents.map(agent => [agent.agentId, agent])),
-        },
+            agentsById: new Map(agents.map((agent) => [agent.agentId, agent]))
+        }
     };
 }
 
@@ -326,36 +318,38 @@ export function deriveFleetGeographyFromHistoricalCollection(
     input: Readonly<{
         liveAgents?: readonly FleetGeographyLiveAgentEvidence[];
         routeEvidence?: FleetGeographyRouteEvidenceWindow;
-    }> = {},
+    }> = {}
 ): FleetGeographyModel {
     const liveByAgent = groupLiveEvidence(input.liveAgents ?? []);
     const historical = history[FLEET_GEOGRAPHY_HISTORY_SOURCE];
-    const agentIds = [...new Set([
-        ...liveByAgent.keys(),
-        ...historical.agentsById.keys(),
-    ])].sort(compareText);
+    const agentIds = [
+        ...new Set([
+            ...liveByAgent.keys(),
+            ...historical.agentsById.keys()
+        ])
+    ].sort(compareText);
     const agents = agentIds.map((agentId) => {
         const liveEvidence = liveByAgent.get(agentId) ?? [];
         const historicalAgent = historical.agentsById.get(agentId);
-        if (liveEvidence.length === 0 && historicalAgent) return historicalAgent;
+        if (liveEvidence.length === 0 && historicalAgent) {
+            return historicalAgent;
+        }
         return composeAgentWithCachedHistory(
             agentId,
             liveEvidence,
-            historicalAgent,
+            historicalAgent
         );
     });
-    const agentsById = new Map(agents.map(agent => [agent.agentId, agent]));
+    const agentsById = new Map(agents.map((agent) => [agent.agentId, agent]));
     const routeModel = deriveRoutes(input.routeEvidence, agentsById);
-    const failedHistoricalAgents = agents.filter(agent =>
-        (agent.historical?.failedOutcomes ?? 0) > 0
-    ).length;
+    const failedHistoricalAgents = agents.filter((agent) => (agent.historical?.failedOutcomes ?? 0) > 0).length;
     const failedHistoricalOutcomes = agents.reduce(
         (count, agent) => count + (agent.historical?.failedOutcomes ?? 0),
-        0,
+        0
     );
     const unresolvedAgentIds = agents
-        .filter(agent => agent.location === undefined)
-        .map(agent => agent.agentId);
+        .filter((agent) => agent.location === undefined)
+        .map((agent) => agent.agentId);
     const regions = history.regions;
 
     return {
@@ -366,24 +360,24 @@ export function deriveFleetGeographyFromHistoricalCollection(
         routeEvidence: routeModel.evidence,
         summary: {
             agents: agents.length,
-            liveAgents: agents.filter(agent => agent.live !== undefined).length,
-            historicalAgents: agents.filter(agent => agent.historical !== undefined)
+            liveAgents: agents.filter((agent) => agent.live !== undefined).length,
+            historicalAgents: agents.filter((agent) => agent.historical !== undefined)
                 .length,
             unresolvedAgents: unresolvedAgentIds.length,
             regions: regions.length,
             routes: routeModel.routes.length,
             failedHistoricalAgents,
             failedHistoricalOutcomes,
-            failedRouteObservations: routeModel.evidence.failedObservationCount,
-        },
+            failedRouteObservations: routeModel.evidence.failedObservationCount
+        }
     };
 }
 
 export function fleetGeographyRouteEvidenceFromControlRun(
     run: ControlRunSnapshot | undefined,
-    options: FleetGeographyRouteExtractionOptions = {},
+    options: FleetGeographyRouteExtractionOptions = {}
 ): FleetGeographyRouteEvidenceWindow {
-    const observations = (run?.events ?? []).flatMap(event => {
+    const observations = (run?.events ?? []).flatMap((event) => {
         const payload = asRecord(event.payload);
         const data = asRecord(payload.data);
         const requestedTargets = [
@@ -392,12 +386,12 @@ export function fleetGeographyRouteEvidenceFromControlRun(
             stringValue(payload.remoteAgentId),
             ...stringArray(payload.targetAgentIds),
             ...stringArray(payload.destinationAgentIds),
-            ...stringArray(data.targetAgentIds),
+            ...stringArray(data.targetAgentIds)
         ];
         const targets = (options.observationOrder === 'source'
             ? uniqueNormalizedStringsInOrder(requestedTargets)
             : uniqueSortedStrings(requestedTargets))
-            .filter(targetAgentId => targetAgentId !== event.agentId);
+            .filter((targetAgentId) => targetAgentId !== event.agentId);
         const transport = stringValue(payload.transport) ??
             stringValue(data.transport);
         const failed = payload.failed === true || payload.ok === false ||
@@ -407,7 +401,7 @@ export function fleetGeographyRouteEvidenceFromControlRun(
             targetAgentId,
             atEpochMs: event.atEpochMs,
             ...(transport ? { transport } : {}),
-            failed,
+            failed
         }));
     });
     const orderedObservations = options.observationOrder === 'source'
@@ -420,33 +414,37 @@ export function fleetGeographyRouteEvidenceFromControlRun(
         sourceEventCount: run?.events.length ?? 0,
         observations: orderedObservations,
         topologyComplete: false,
-        label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
+        label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
     };
 }
 
 export function resolveFleetGeographyDocumentedLocation(
-    input: FleetGeographyDocumentedLocationInput,
+    input: FleetGeographyDocumentedLocationInput
 ): FleetGeographyDocumentedLocation | undefined {
     const explicit = explicitLocation(input.location);
-    if (explicit) return { ...explicit, source: 'explicit' };
+    if (explicit) {
+        return { ...explicit, source: 'explicit' };
+    }
     const lookup = lookupLocation(input);
     return lookup
         ? {
             ...lookup.location,
             source: lookup.kind === 'datacenter'
                 ? 'datacenter-lookup'
-                : 'region-lookup',
+                : 'region-lookup'
         }
         : undefined;
 }
 
 function groupLiveEvidence(
-    evidence: readonly FleetGeographyLiveAgentEvidence[],
+    evidence: readonly FleetGeographyLiveAgentEvidence[]
 ): ReadonlyMap<string, readonly FleetGeographyLiveAgentEvidence[]> {
     const grouped = new Map<string, FleetGeographyLiveAgentEvidence[]>();
     for (const item of evidence) {
         const agentId = stringValue(item.agentId);
-        if (!agentId) continue;
+        if (!agentId) {
+            continue;
+        }
         const current = grouped.get(agentId) ?? [];
         current.push(item);
         grouped.set(agentId, current);
@@ -459,7 +457,7 @@ function groupLiveEvidence(
 
 function indexHistoricalEvidence(
     reports: readonly ControlFleetRunReport[],
-    work: { reportVisits: number; outcomeVisits: number },
+    work: { reportVisits: number; outcomeVisits: number; }
 ): Readonly<{
     recordsByAgent: ReadonlyMap<string, readonly HistoricalRecord[]>;
     regions: readonly FleetGeographyRegionEvidence[];
@@ -473,7 +471,9 @@ function indexHistoricalEvidence(
             const record = { report, outcome };
             indexHistoricalRegion(regions, record);
             const agentId = stringValue(outcome.agentId);
-            if (!agentId) continue;
+            if (!agentId) {
+                continue;
+            }
             const current = grouped.get(agentId) ?? [];
             current.push(record);
             grouped.set(agentId, current);
@@ -484,20 +484,18 @@ function indexHistoricalEvidence(
     }
     return {
         recordsByAgent: grouped,
-        regions: historicalRegionsFromIndex(regions),
+        regions: historicalRegionsFromIndex(regions)
     };
 }
 
 function deriveHistoricalAgent(
     agentId: string,
-    historicalRecords: readonly HistoricalRecord[],
+    historicalRecords: readonly HistoricalRecord[]
 ): FleetGeographyAgentEvidence {
     const latestHistorical = historicalRecords[0];
-    const runIds = uniqueInOrder(historicalRecords.map(record =>
-        record.report.distributedRunId
-    ));
+    const runIds = uniqueInOrder(historicalRecords.map((record) => record.report.distributedRunId));
     const failureSignatureIds = uniqueSortedStrings(historicalRecords.flatMap(
-        record => record.outcome.failureSignatureIds,
+        (record) => record.outcome.failureSignatureIds
     ));
 
     return {
@@ -508,31 +506,27 @@ function deriveHistoricalAgent(
                 historical: {
                     latest: historicalOutcome(latestHistorical),
                     outcomeCount: historicalRecords.length,
-                    failedOutcomes: historicalRecords.filter(record =>
-                        isFailedOutcome(record.outcome)
-                    ).length,
-                    missingOutcomes: historicalRecords.filter(record =>
-                        isMissingOutcome(record.outcome)
-                    ).length,
+                    failedOutcomes: historicalRecords.filter((record) => isFailedOutcome(record.outcome)).length,
+                    missingOutcomes: historicalRecords.filter((record) => isMissingOutcome(record.outcome)).length,
                     runIds,
-                    failureSignatureIds,
-                },
+                    failureSignatureIds
+                }
             }
-            : {}),
+            : {})
     };
 }
 
 function composeAgentWithCachedHistory(
     agentId: string,
     liveEvidence: readonly FleetGeographyLiveAgentEvidence[],
-    historicalAgent: FleetGeographyAgentEvidence | undefined,
+    historicalAgent: FleetGeographyAgentEvidence | undefined
 ): FleetGeographyAgentEvidence {
     const currentLive = liveEvidence[0];
     return {
         agentId,
         location: resolveAgentLocationFromCachedHistory(
             liveEvidence,
-            historicalAgent?.location,
+            historicalAgent?.location
         ),
         ...(currentLive
             ? {
@@ -547,19 +541,19 @@ function composeAgentWithCachedHistory(
                     provider: normalizedText(currentLive.provider),
                     datacenter: normalizedText(currentLive.datacenter),
                     activeRunIds: uniqueSortedStrings(
-                        currentLive.activeRunIds ?? [],
-                    ),
-                },
+                        currentLive.activeRunIds ?? []
+                    )
+                }
             }
             : {}),
         ...(historicalAgent?.historical
             ? { historical: historicalAgent.historical }
-            : {}),
+            : {})
     };
 }
 
 function historicalOutcome(
-    record: HistoricalRecord,
+    record: HistoricalRecord
 ): FleetGeographyHistoricalOutcome {
     return {
         distributedRunId: record.report.distributedRunId,
@@ -571,12 +565,12 @@ function historicalOutcome(
         stale: record.outcome.stale,
         region: normalizedText(record.outcome.label.region),
         provider: normalizedText(record.outcome.label.provider),
-        datacenter: normalizedText(record.outcome.label.datacenter),
+        datacenter: normalizedText(record.outcome.label.datacenter)
     };
 }
 
 function resolveHistoricalAgentLocation(
-    historicalRecords: readonly HistoricalRecord[],
+    historicalRecords: readonly HistoricalRecord[]
 ): FleetGeographyLocation | undefined {
     for (const record of historicalRecords) {
         const location = explicitLocation(record.outcome.label.location);
@@ -586,7 +580,7 @@ function resolveHistoricalAgentLocation(
                 source: 'historical-explicit',
                 evidenceKind: 'historical',
                 distributedRunId: record.report.distributedRunId,
-                generatedAtEpochMs: record.report.generatedAtEpochMs,
+                generatedAtEpochMs: record.report.generatedAtEpochMs
             };
         }
     }
@@ -600,7 +594,7 @@ function resolveHistoricalAgentLocation(
                     : 'historical-region-lookup',
                 evidenceKind: 'historical',
                 distributedRunId: record.report.distributedRunId,
-                generatedAtEpochMs: record.report.generatedAtEpochMs,
+                generatedAtEpochMs: record.report.generatedAtEpochMs
             };
         }
     }
@@ -609,7 +603,7 @@ function resolveHistoricalAgentLocation(
 
 function resolveAgentLocationFromCachedHistory(
     liveEvidence: readonly FleetGeographyLiveAgentEvidence[],
-    historicalLocation: FleetGeographyLocation | undefined,
+    historicalLocation: FleetGeographyLocation | undefined
 ): FleetGeographyLocation | undefined {
     for (const evidence of liveEvidence) {
         const location = explicitLocation(evidence.location);
@@ -618,7 +612,7 @@ function resolveAgentLocationFromCachedHistory(
                 ...location,
                 source: 'live-explicit',
                 evidenceKind: 'live',
-                observedAtEpochMs: evidence.observedAtEpochMs,
+                observedAtEpochMs: evidence.observedAtEpochMs
             };
         }
     }
@@ -634,7 +628,7 @@ function resolveAgentLocationFromCachedHistory(
                     ? 'live-datacenter-lookup'
                     : 'live-region-lookup',
                 evidenceKind: 'live',
-                observedAtEpochMs: evidence.observedAtEpochMs,
+                observedAtEpochMs: evidence.observedAtEpochMs
             };
         }
     }
@@ -643,10 +637,12 @@ function resolveAgentLocationFromCachedHistory(
 
 function indexHistoricalRegion(
     regions: Map<string, MutableHistoricalRegion>,
-    record: HistoricalRecord,
+    record: HistoricalRecord
 ): void {
     const location = historicalRecordLocation(record);
-    if (!location) return;
+    if (!location) {
+        return;
+    }
     const normalizedRegion = normalizeKey(record.outcome.label.region);
     const provider = normalizeKey(record.outcome.label.provider);
     const region = normalizedRegion ?? 'unlabeled';
@@ -665,7 +661,7 @@ function indexHistoricalRegion(
         missing: 0,
         stale: 0,
         failures: new Map<string, number>(),
-        latestRecord: record,
+        latestRecord: record
     };
     if (compareRegionLocations(record, location, current) < 0) {
         current.locationRecord = record;
@@ -676,24 +672,30 @@ function indexHistoricalRegion(
     }
     current.agentIds.add(record.outcome.agentId);
     current.outcomeCount += 1;
-    if (record.outcome.state === 'passed') current.passed += 1;
+    if (record.outcome.state === 'passed') {
+        current.passed += 1;
+    }
     if (isFailedOutcome(record.outcome)) {
         current.failed += 1;
         current.failedAgentIds.add(record.outcome.agentId);
     }
-    if (isMissingOutcome(record.outcome)) current.missing += 1;
-    if (record.outcome.stale) current.stale += 1;
+    if (isMissingOutcome(record.outcome)) {
+        current.missing += 1;
+    }
+    if (record.outcome.stale) {
+        current.stale += 1;
+    }
     for (const signatureId of record.outcome.failureSignatureIds) {
         current.failures.set(
             signatureId,
-            (current.failures.get(signatureId) ?? 0) + 1,
+            (current.failures.get(signatureId) ?? 0) + 1
         );
     }
     regions.set(identity, current);
 }
 
 function historicalRegionsFromIndex(
-    regions: ReadonlyMap<string, MutableHistoricalRegion>,
+    regions: ReadonlyMap<string, MutableHistoricalRegion>
 ): readonly FleetGeographyRegionEvidence[] {
     return [...regions.values()].map((region): FleetGeographyRegionEvidence => {
         const decidedOutcomes = region.passed + region.failed + region.missing;
@@ -713,16 +715,13 @@ function historicalRegionsFromIndex(
                 ? region.passed / decidedOutcomes
                 : 0,
             dominantFailureSignatureId: dominantFailure(region.failures),
-            latestDistributedRunId:
-                region.latestRecord.report.distributedRunId,
+            latestDistributedRunId: region.latestRecord.report.distributedRunId
         };
-    }).sort((left, right) =>
-        right.failed - left.failed || compareText(left.key, right.key)
-    );
+    }).sort((left, right) => right.failed - left.failed || compareText(left.key, right.key));
 }
 
 function historicalRecordLocation(
-    record: HistoricalRecord,
+    record: HistoricalRecord
 ): FleetGeographyLocation | undefined {
     const explicit = explicitLocation(record.outcome.label.location);
     if (explicit) {
@@ -731,7 +730,7 @@ function historicalRecordLocation(
             source: 'historical-explicit',
             evidenceKind: 'historical',
             distributedRunId: record.report.distributedRunId,
-            generatedAtEpochMs: record.report.generatedAtEpochMs,
+            generatedAtEpochMs: record.report.generatedAtEpochMs
         };
     }
     const lookup = lookupLocation(record.outcome.label);
@@ -743,7 +742,7 @@ function historicalRecordLocation(
                 : 'historical-region-lookup',
             evidenceKind: 'historical',
             distributedRunId: record.report.distributedRunId,
-            generatedAtEpochMs: record.report.generatedAtEpochMs,
+            generatedAtEpochMs: record.report.generatedAtEpochMs
         }
         : undefined;
 }
@@ -754,7 +753,7 @@ function compareRegionLocations(
     current: Readonly<{
         locationRecord: HistoricalRecord;
         location: FleetGeographyLocation;
-    }>,
+    }>
 ): number {
     return locationRank(location) - locationRank(current.location) ||
         compareHistoricalRecords(record, current.locationRecord);
@@ -762,7 +761,7 @@ function compareRegionLocations(
 
 function deriveRoutes(
     window: FleetGeographyRouteEvidenceWindow | undefined,
-    agents: ReadonlyMap<string, FleetGeographyAgentEvidence>,
+    agents: ReadonlyMap<string, FleetGeographyAgentEvidence>
 ): Readonly<{
     routes: readonly FleetGeographyRoute[];
     evidence: FleetGeographyModel['routeEvidence'];
@@ -787,20 +786,26 @@ function deriveRoutes(
     let failedObservationCount = 0;
 
     for (const observation of observations) {
-        if (observation.failed) failedObservationCount += 1;
+        if (observation.failed) {
+            failedObservationCount += 1;
+        }
         const source = agents.get(observation.sourceAgentId)?.location;
         const target = agents.get(observation.targetAgentId)?.location;
         if (!source || !target) {
             unresolvedEndpointObservationCount += 1;
-            if (!source) unresolvedEndpointAgentIds.add(observation.sourceAgentId);
-            if (!target) unresolvedEndpointAgentIds.add(observation.targetAgentId);
+            if (!source) {
+                unresolvedEndpointAgentIds.add(observation.sourceAgentId);
+            }
+            if (!target) {
+                unresolvedEndpointAgentIds.add(observation.targetAgentId);
+            }
             continue;
         }
         resolvedObservationCount += 1;
         const identity = tupleIdentity([
             observation.sourceAgentId,
             observation.targetAgentId,
-            observation.transport ?? null,
+            observation.transport ?? null
         ]);
         const routeId = fleetRouteId(observation);
         const current = routes.get(identity) ?? {
@@ -812,13 +817,15 @@ function deriveRoutes(
             transport: observation.transport,
             eventCount: 0,
             failedCount: 0,
-            lastSeenAtEpochMs: observation.atEpochMs,
+            lastSeenAtEpochMs: observation.atEpochMs
         };
         current.eventCount += 1;
-        if (observation.failed) current.failedCount += 1;
+        if (observation.failed) {
+            current.failedCount += 1;
+        }
         current.lastSeenAtEpochMs = maxDefined(
             current.lastSeenAtEpochMs,
-            observation.atEpochMs,
+            observation.atEpochMs
         );
         routes.set(identity, current);
     }
@@ -839,21 +846,24 @@ function deriveRoutes(
             explicitObservationCount: observations.length,
             resolvedObservationCount,
             unresolvedEndpointObservationCount,
-            unresolvedEndpointAgentIds:
-                [...unresolvedEndpointAgentIds].sort(compareText),
+            unresolvedEndpointAgentIds: [...unresolvedEndpointAgentIds].sort(compareText),
             failedObservationCount,
             topologyComplete: false,
-            label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
-        },
+            label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
+        }
     };
 }
 
 function explicitLocation(
-    location: RallarBlackBoxGeoLocation | undefined,
-): Readonly<RallarBlackBoxGeoLocation & {
-    label: string;
-    precision: 'exact' | 'approximate';
-}> | undefined {
+    location: RallarBlackBoxGeoLocation | undefined
+):
+    | Readonly<
+        RallarBlackBoxGeoLocation & {
+            label: string;
+            precision: 'exact' | 'approximate';
+        }
+    >
+    | undefined {
     if (
         !location ||
         !Number.isFinite(location.latitude) ||
@@ -869,21 +879,27 @@ function explicitLocation(
         latitude: location.latitude,
         longitude: location.longitude,
         label: location.label ?? 'Agent location',
-        precision: location.precision ?? 'exact',
+        precision: location.precision ?? 'exact'
     };
 }
 
-function lookupLocation(input: Readonly<{
-    region?: string;
-    provider?: string;
-    datacenter?: string;
-}>): Readonly<{
-    kind: 'datacenter' | 'region';
-    location: Readonly<RallarBlackBoxGeoLocation & {
-        label: string;
-        precision: 'approximate';
-    }>;
-}> | undefined {
+function lookupLocation(
+    input: Readonly<{
+        region?: string;
+        provider?: string;
+        datacenter?: string;
+    }>
+):
+    | Readonly<{
+        kind: 'datacenter' | 'region';
+        location: Readonly<
+            RallarBlackBoxGeoLocation & {
+                label: string;
+                precision: 'approximate';
+            }
+        >;
+    }>
+    | undefined {
     const provider = normalizeKey(input.provider);
     const datacenter = normalizeKey(input.datacenter);
     if (provider && datacenter) {
@@ -891,7 +907,7 @@ function lookupLocation(input: Readonly<{
         if (location) {
             return {
                 kind: 'datacenter',
-                location: { ...location, precision: 'approximate' },
+                location: { ...location, precision: 'approximate' }
             };
         }
     }
@@ -900,14 +916,14 @@ function lookupLocation(input: Readonly<{
     return location
         ? {
             kind: 'region',
-            location: { ...location, precision: 'approximate' },
+            location: { ...location, precision: 'approximate' }
         }
         : undefined;
 }
 
 function compareLiveEvidence(
     left: FleetGeographyLiveAgentEvidence,
-    right: FleetGeographyLiveAgentEvidence,
+    right: FleetGeographyLiveAgentEvidence
 ): number {
     return (right.observedAtEpochMs ?? -1) -
             (left.observedAtEpochMs ?? -1) ||
@@ -931,7 +947,7 @@ function liveEvidenceKey(evidence: FleetGeographyLiveAgentEvidence): string {
         evidence.location?.longitude ?? null,
         evidence.location?.label ?? null,
         evidence.location?.precision ?? null,
-        [...(evidence.activeRunIds ?? [])].sort(compareText),
+        [...(evidence.activeRunIds ?? [])].sort(compareText)
     ]);
 }
 
@@ -941,18 +957,18 @@ function tupleIdentity(parts: readonly unknown[]): string {
 
 function fleetRegionPublicId(
     region: string | undefined,
-    provider: string | undefined,
+    provider: string | undefined
 ): string {
-    return `${publicIdentitySegment(region, 'unlabeled')} / ${
-        publicIdentitySegment(provider, 'unknown')
-    }`;
+    return `${publicIdentitySegment(region, 'unlabeled')} / ${publicIdentitySegment(provider, 'unknown')}`;
 }
 
 function publicIdentitySegment(
     value: string | undefined,
-    missingLabel: string,
+    missingLabel: string
 ): string {
-    if (value === undefined) return missingLabel;
+    if (value === undefined) {
+        return missingLabel;
+    }
     const encoded = encodeOperatorText(value);
     return value === missingLabel ? `${encoded}:literal` : encoded;
 }
@@ -971,7 +987,8 @@ function encodeOperatorText(value: string): string {
                 index += 1;
                 continue;
             }
-        } else if (codeUnit < 0xd800 || codeUnit > 0xdfff) {
+        }
+        else if (codeUnit < 0xd800 || codeUnit > 0xdfff) {
             continue;
         }
         encoded += encodeURIComponent(value.slice(start, index));
@@ -989,20 +1006,24 @@ function fleetRouteId(observation: FleetGeographyRouteObservation): string {
 }
 
 function fleetRouteTransportId(transport: string | undefined): string {
-    if (transport === undefined) return 'unknown';
-    if (transport === 'unknown') return 'unknown%00';
+    if (transport === undefined) {
+        return 'unknown';
+    }
+    if (transport === 'unknown') {
+        return 'unknown%00';
+    }
     const encoded = encodeOperatorText(transport);
     return encoded === 'unknown%00' ? `${encoded}:literal` : encoded;
 }
 
 function compareHistoricalRecords(
     left: HistoricalRecord,
-    right: HistoricalRecord,
+    right: HistoricalRecord
 ): number {
     return right.report.generatedAtEpochMs - left.report.generatedAtEpochMs ||
         compareText(
             left.report.distributedRunId,
-            right.report.distributedRunId,
+            right.report.distributedRunId
         ) ||
         compareText(outcomeKey(left.outcome), outcomeKey(right.outcome));
 }
@@ -1021,13 +1042,13 @@ function outcomeKey(outcome: ControlFleetAgentRunOutcome): string {
         outcome.label.location?.longitude ?? null,
         outcome.label.location?.label ?? null,
         outcome.label.location?.precision ?? null,
-        [...outcome.failureSignatureIds].sort(compareText),
+        [...outcome.failureSignatureIds].sort(compareText)
     ]);
 }
 
 function compareRouteObservations(
     left: FleetGeographyRouteObservation,
-    right: FleetGeographyRouteObservation,
+    right: FleetGeographyRouteObservation
 ): number {
     return (left.atEpochMs ?? -1) - (right.atEpochMs ?? -1) ||
         compareText(left.sourceAgentId, right.sourceAgentId) ||
@@ -1037,11 +1058,9 @@ function compareRouteObservations(
 }
 
 function dominantFailure(
-    failures: ReadonlyMap<string, number>,
+    failures: ReadonlyMap<string, number>
 ): string | undefined {
-    return [...failures.entries()].sort((left, right) =>
-        right[1] - left[1] || compareText(left[0], right[0])
-    )[0]?.[0];
+    return [...failures.entries()].sort((left, right) => right[1] - left[1] || compareText(left[0], right[0]))[0]?.[0];
 }
 
 function isFailedOutcome(outcome: ControlFleetAgentRunOutcome): boolean {
@@ -1062,10 +1081,14 @@ function locationRank(location: FleetGeographyLocation): number {
 
 function maxDefined(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): number | undefined {
-    if (left === undefined) return right;
-    if (right === undefined) return left;
+    if (left === undefined) {
+        return right;
+    }
+    if (right === undefined) {
+        return left;
+    }
     return Math.max(left, right);
 }
 
@@ -1083,7 +1106,7 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): readonly string[] {
     return Array.isArray(value)
-        ? value.flatMap(entry => {
+        ? value.flatMap((entry) => {
             const normalized = stringValue(entry);
             return normalized ? [normalized] : [];
         })
@@ -1091,18 +1114,20 @@ function stringArray(value: unknown): readonly string[] {
 }
 
 function uniqueSortedStrings(
-    values: readonly (string | undefined)[],
+    values: readonly (string | undefined)[]
 ): readonly string[] {
-    return [...new Set(values.flatMap(value => {
-        const normalized = stringValue(value);
-        return normalized ? [normalized] : [];
-    }))].sort(compareText);
+    return [
+        ...new Set(values.flatMap((value) => {
+            const normalized = stringValue(value);
+            return normalized ? [normalized] : [];
+        }))
+    ].sort(compareText);
 }
 
 function uniqueNormalizedStringsInOrder(
-    values: readonly (string | undefined)[],
+    values: readonly (string | undefined)[]
 ): readonly string[] {
-    const normalized = values.flatMap(value => {
+    const normalized = values.flatMap((value) => {
         const item = stringValue(value);
         return item ? [item] : [];
     });

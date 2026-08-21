@@ -1,31 +1,24 @@
+import type { ControlServerSnapshot, ControlSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ControlServerSnapshot, ControlSnapshotBounds } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
-    type ControlRunManagerFetch,
     ControlRunManagerHttpError,
+    type ControlRunManagerFetch
 } from '../../control-run-manager.ts';
 import {
-    type RecipeConsoleControlCredentialPolicy,
-} from './control-credential-policy.ts';
-import { createControlAuthorizedTransport } from './control-authorized-transport.ts';
+    createRecipeConsoleControlAgentLaunchApi,
+    type RecipeConsoleControlAgentLaunchApi
+} from './control-agent-launch-api.ts';
 import { isControlAbortError } from './control-authorized-fetch.ts';
+import { createControlAuthorizedTransport } from './control-authorized-transport.ts';
+import { type RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
 import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
-import {
-    createRecipeConsoleControlAgentLaunchApi,
-    type RecipeConsoleControlAgentLaunchApi,
-} from './control-agent-launch-api.ts';
-import {
-    createControlLazyCapability,
-    type ControlLazyCapability,
-} from './control-lazy-capability.ts';
 import type { RecipeConsoleControlFleetApi } from './control-fleet-api.ts';
+import { createControlLazyCapability, type ControlLazyCapability } from './control-lazy-capability.ts';
 import type { RecipeConsoleControlRetentionApi } from './control-retention-api.ts';
 import { createControlSnapshotReader } from './control-snapshot-reader.ts';
-import type { RecipeConsoleControlSnapshotResult } from
-    './control-snapshot-reader.ts';
+import type { RecipeConsoleControlSnapshotResult } from './control-snapshot-reader.ts';
 
 export const RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS = {
     commands: 0,
@@ -33,7 +26,7 @@ export const RECIPE_CONSOLE_CONTROL_INDEX_BOUNDS = {
     events: 0,
     stats: 0,
     reports: 0,
-    heartbeats: 0,
+    heartbeats: 0
 } as const satisfies ControlSnapshotBounds;
 
 export const RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS = {
@@ -42,11 +35,10 @@ export const RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS = {
     events: 160,
     stats: 60,
     reports: 40,
-    heartbeats: 80,
+    heartbeats: 80
 } as const satisfies ControlSnapshotBounds;
 
-export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS =
-    RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS;
+export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS;
 
 const MISSING_CONTROL_CREDENTIAL_POLICY = {
     allowManualToken: false,
@@ -55,13 +47,11 @@ const MISSING_CONTROL_CREDENTIAL_POLICY = {
     controlUrlFromLocation: false,
     apiBaseUrlFromLocation: false,
     controlTokenFromLocation: false,
-    blockedMessage: 'Automatic control credentials are blocked because endpoint credential provenance was not provided.',
+    blockedMessage: 'Automatic control credentials are blocked because endpoint credential provenance was not provided.'
 } as const satisfies RecipeConsoleControlCredentialPolicy;
 
-export type RecipeConsoleControlRetentionCapability =
-    ControlLazyCapability<RecipeConsoleControlRetentionApi>;
-export type RecipeConsoleControlFleetCapability =
-    ControlLazyCapability<RecipeConsoleControlFleetApi>;
+export type RecipeConsoleControlRetentionCapability = ControlLazyCapability<RecipeConsoleControlRetentionApi>;
+export type RecipeConsoleControlFleetCapability = ControlLazyCapability<RecipeConsoleControlFleetApi>;
 
 export type RecipeConsoleControlApi = Readonly<{
     baseUrl: string;
@@ -73,7 +63,7 @@ export type RecipeConsoleControlApi = Readonly<{
     readSnapshot(
         input?: Readonly<{
             signal?: AbortSignal;
-        }>,
+        }>
     ): Promise<RecipeConsoleControlSnapshotResult>;
 }>;
 
@@ -99,7 +89,7 @@ export class RecipeConsoleControlProtocolError extends Error {
 }
 
 export function createRecipeConsoleControlApi(
-    config: RecipeConsoleControlApiConfig,
+    config: RecipeConsoleControlApiConfig
 ): RecipeConsoleControlApi {
     const baseUrl = recipeConsoleControlBaseUrl(config.controlUrl);
     const indexBounds = config.indexBounds ??
@@ -115,15 +105,15 @@ export function createRecipeConsoleControlApi(
         fetchFn: config.fetchFn,
         credentialPolicy,
         protocolError: controlProtocolError,
-        isProtocolCandidate,
+        isProtocolCandidate
     });
     const execution = createRecipeConsoleControlExecutionApi({
         baseUrl,
-        transport,
+        transport
     });
     const agentLaunch = createRecipeConsoleControlAgentLaunchApi({
         baseUrl,
-        endpoint: transport.createAuthorizedEndpoint(),
+        endpoint: transport.createAuthorizedEndpoint()
     });
     const lifetime = new AbortController();
     const retention = createControlLazyCapability({
@@ -133,9 +123,9 @@ export function createRecipeConsoleControlApi(
             return feature.createRecipeConsoleControlRetentionApi({
                 baseUrl,
                 endpoint: transport.createAuthorizedEndpoint(),
-                contextSignal: lifetime.signal,
+                contextSignal: lifetime.signal
             });
-        },
+        }
     });
     const fleet = createControlLazyCapability({
         signal: lifetime.signal,
@@ -144,9 +134,9 @@ export function createRecipeConsoleControlApi(
             return feature.createRecipeConsoleControlFleetApi({
                 baseUrl,
                 endpoint: transport.createAuthorizedEndpoint(),
-                contextSignal: lifetime.signal,
+                contextSignal: lifetime.signal
             });
-        },
+        }
     });
     const readSnapshot = createControlSnapshotReader({
         baseUrl,
@@ -155,7 +145,7 @@ export function createRecipeConsoleControlApi(
         detailRunIds: config.detailRunIds,
         transport,
         protocolError: controlProtocolError,
-        isProtocolCandidate,
+        isProtocolCandidate
     });
 
     return {
@@ -165,7 +155,7 @@ export function createRecipeConsoleControlApi(
         retention,
         fleet,
         close: () => lifetime.abort(),
-        readSnapshot,
+        readSnapshot
     };
 }
 
@@ -173,7 +163,7 @@ function controlProtocolError(error: unknown): RecipeConsoleControlProtocolError
     return error instanceof RecipeConsoleControlProtocolError
         ? error
         : new RecipeConsoleControlProtocolError(
-            error instanceof Error ? error.message : String(error),
+            error instanceof Error ? error.message : String(error)
         );
 }
 
@@ -192,7 +182,8 @@ function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
         let parsed: URL;
         try {
             parsed = new URL(configured);
-        } catch (_error) {
+        }
+        catch (_error) {
             throw new Error('The configured control URL is invalid.');
         }
         if (!['http:', 'https:', 'ws:', 'wss:'].includes(parsed.protocol)) {
@@ -208,12 +199,11 @@ function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
 export type {
     ControlDistributedRunSnapshot,
     ControlServerSnapshot,
-    ControlSnapshotBounds,
+    ControlSnapshotBounds
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-export type { RecipeConsoleControlAuthorization } from
-    './control-authorized-transport.ts';
+export type { RecipeConsoleControlAuthorization } from './control-authorized-transport.ts';
 export type {
     RecipeConsoleControlDistributedRunsSource,
     RecipeConsoleControlQueryProvenance,
-    RecipeConsoleControlSnapshotResult,
+    RecipeConsoleControlSnapshotResult
 } from './control-snapshot-reader.ts';

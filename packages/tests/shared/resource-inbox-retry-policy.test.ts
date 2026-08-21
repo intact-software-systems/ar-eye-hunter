@@ -1,8 +1,5 @@
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-    retryAfterAttempt,
-} from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
 describe('ResourceInboxRetryPolicy', () => {
     it('schedules failures after attempts one through nineteen exactly', () => {
@@ -25,12 +22,12 @@ describe('ResourceInboxRetryPolicy', () => {
             30_000,
             30_000,
             30_000,
-            30_000,
+            30_000
         ];
 
-        expect(expected.map((_, index) =>
-            retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, index + 1, 0.5)
-        )).toEqual(expected.map((delayMs) => ({ status: 'retry', delayMs })));
+        expect(expected.map((_, index) => retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, index + 1, 0.5))).toEqual(
+            expected.map((delayMs) => ({ status: 'retry', delayMs }))
+        );
     });
 
     it('fails retryable work after the twentieth processing attempt', () => {
@@ -55,7 +52,7 @@ describe('ResourceInboxRetryPolicy', () => {
             maxAttempts: 20,
             maxDelayMs: 30_000,
             jitterRatio: 0.2,
-            staleDueThresholdMs: 30_000,
+            staleDueThresholdMs: 30_000
         });
     });
 });

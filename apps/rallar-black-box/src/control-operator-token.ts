@@ -9,12 +9,12 @@ export type BlackBoxControlTokenSession = Readonly<{
 }>;
 
 export type ResolvedBlackBoxControlToken =
-    | Readonly<{ source: 'manual'; token: string }>
-    | Readonly<{ source: 'brokered'; token: string; session: BlackBoxControlTokenSession }>;
+    | Readonly<{ source: 'manual'; token: string; }>
+    | Readonly<{ source: 'brokered'; token: string; session: BlackBoxControlTokenSession; }>;
 
 export type BlackBoxControlTokenFetch = (
     input: RequestInfo | URL,
-    init?: RequestInit,
+    init?: RequestInit
 ) => Promise<Response>;
 
 export const BLACK_BOX_CONTROL_TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
@@ -22,31 +22,33 @@ export const BLACK_BOX_CONTROL_TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
 export function shouldRefreshBlackBoxControlToken(
     session: BlackBoxControlTokenSession | undefined,
     nowEpochMs = Date.now(),
-    refreshSkewMs = BLACK_BOX_CONTROL_TOKEN_REFRESH_SKEW_MS,
+    refreshSkewMs = BLACK_BOX_CONTROL_TOKEN_REFRESH_SKEW_MS
 ): boolean {
     return !session || session.expiresAtEpochMs - nowEpochMs <= refreshSkewMs;
 }
 
-export async function resolveBlackBoxControlToken(input: Readonly<{
-    manualToken?: string;
-    brokeredToken?: BlackBoxControlTokenSession;
-    apiBaseUrl: string;
-    authSession?: AuthSession;
-    fetchFn?: BlackBoxControlTokenFetch;
-    nowEpochMs?: number;
-    refreshSkewMs?: number;
-}>): Promise<ResolvedBlackBoxControlToken> {
+export async function resolveBlackBoxControlToken(
+    input: Readonly<{
+        manualToken?: string;
+        brokeredToken?: BlackBoxControlTokenSession;
+        apiBaseUrl: string;
+        authSession?: AuthSession;
+        fetchFn?: BlackBoxControlTokenFetch;
+        nowEpochMs?: number;
+        refreshSkewMs?: number;
+    }>
+): Promise<ResolvedBlackBoxControlToken> {
     const manualToken = input.manualToken?.trim();
     if (manualToken) {
         return {
             source: 'manual',
-            token: manualToken,
+            token: manualToken
         };
     }
 
     if (!input.authSession) {
         throw new Error(
-            'Sign in or enter a Control Token to run recipes on connected agents.',
+            'Sign in or enter a Control Token to run recipes on connected agents.'
         );
     }
 
@@ -54,43 +56,45 @@ export async function resolveBlackBoxControlToken(input: Readonly<{
         !shouldRefreshBlackBoxControlToken(
             input.brokeredToken,
             input.nowEpochMs,
-            input.refreshSkewMs,
+            input.refreshSkewMs
         ) &&
         input.brokeredToken
     ) {
         return {
             source: 'brokered',
             token: input.brokeredToken.token,
-            session: input.brokeredToken,
+            session: input.brokeredToken
         };
     }
 
     const session = await fetchBlackBoxControlToken({
         apiBaseUrl: input.apiBaseUrl,
         authSession: input.authSession,
-        fetchFn: input.fetchFn,
+        fetchFn: input.fetchFn
     });
     return {
         source: 'brokered',
         token: session.token,
-        session,
+        session
     };
 }
 
-export async function fetchBlackBoxControlToken(input: Readonly<{
-    apiBaseUrl: string;
-    authSession: AuthSession;
-    fetchFn?: BlackBoxControlTokenFetch;
-}>): Promise<BlackBoxControlTokenSession> {
+export async function fetchBlackBoxControlToken(
+    input: Readonly<{
+        apiBaseUrl: string;
+        authSession: AuthSession;
+        fetchFn?: BlackBoxControlTokenFetch;
+    }>
+): Promise<BlackBoxControlTokenSession> {
     const response = await (input.fetchFn ?? fetch)(
         blackBoxControlTokenUrl(input.apiBaseUrl),
         {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${input.authSession.accessToken}`,
-                'x-client-id': input.authSession.clientId,
-            },
-        },
+                'x-client-id': input.authSession.clientId
+            }
+        }
     );
 
     if (!response.ok) {
@@ -121,7 +125,7 @@ export async function fetchBlackBoxControlToken(input: Readonly<{
         token: payload.token,
         issuedAtEpochMs: payload.issuedAtEpochMs,
         expiresAtEpochMs: payload.expiresAtEpochMs,
-        ttlMs: payload.ttlMs,
+        ttlMs: payload.ttlMs
     };
 }
 
@@ -133,11 +137,12 @@ function blackBoxControlTokenUrl(apiBaseUrl: string): string {
 async function blackBoxControlTokenErrorMessage(response: Response): Promise<string> {
     const fallback = `Black-box control token request failed with HTTP ${response.status}.`;
     try {
-        const payload = await response.json() as { error?: unknown };
+        const payload = await response.json() as { error?: unknown; };
         return typeof payload.error === 'string' && payload.error.trim().length > 0
             ? payload.error
             : fallback;
-    } catch (_error) {
+    }
+    catch (_error) {
         return fallback;
     }
 }

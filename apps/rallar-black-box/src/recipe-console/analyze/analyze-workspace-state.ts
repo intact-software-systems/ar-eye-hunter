@@ -31,41 +31,43 @@ export type AnalyzeWorkspaceState<Artifact extends AnalyzeArtifactIdentity> = Re
     operationError?: unknown;
 }>;
 
-export function createAnalyzeWorkspaceContext(input: Readonly<{
-    baseUrl: string;
-    controlRunId?: string;
-    distributedRunId: string;
-}>): AnalyzeWorkspaceContext {
+export function createAnalyzeWorkspaceContext(
+    input: Readonly<{
+        baseUrl: string;
+        controlRunId?: string;
+        distributedRunId: string;
+    }>
+): AnalyzeWorkspaceContext {
     const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
     const identity = compact({
         baseUrl,
         controlRunId: input.controlRunId,
-        distributedRunId: input.distributedRunId,
+        distributedRunId: input.distributedRunId
     });
     return { key: JSON.stringify(identity), ...identity };
 }
 
-export function createInitialAnalyzeWorkspaceState<
-    Artifact extends AnalyzeArtifactIdentity,
->(): AnalyzeWorkspaceState<Artifact> {
+export function createInitialAnalyzeWorkspaceState<Artifact extends AnalyzeArtifactIdentity>(): AnalyzeWorkspaceState<
+    Artifact
+> {
     return {
         artifactStatus: 'idle',
-        operationGeneration: 0,
+        operationGeneration: 0
     };
 }
 
-export function reconcileAnalyzeWorkspaceContext<
-    Artifact extends AnalyzeArtifactIdentity,
->(
+export function reconcileAnalyzeWorkspaceContext<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
-    context: AnalyzeWorkspaceContext | undefined,
+    context: AnalyzeWorkspaceContext | undefined
 ): AnalyzeWorkspaceState<Artifact> {
-    if (state.contextKey === context?.key) return state;
+    if (state.contextKey === context?.key) {
+        return state;
+    }
     if (state.activeOperation?.action !== 'load-control') {
         return reconcileRetainedArtifactContext(state, context);
     }
     const error = abortError(
-        'Analyze control artifact load was interrupted by a context change.',
+        'Analyze control artifact load was interrupted by a context change.'
     );
     return {
         ...state,
@@ -73,26 +75,24 @@ export function reconcileAnalyzeWorkspaceContext<
         artifactStatus: 'error',
         operationGeneration: Math.max(
             state.operationGeneration + 1,
-            state.activeOperation.generation + 1,
+            state.activeOperation.generation + 1
         ),
         activeOperation: undefined,
-        operationError: error,
+        operationError: error
     };
 }
 
-export function beginAnalyzeWorkspaceOperation<
-    Artifact extends AnalyzeArtifactIdentity,
->(
+export function beginAnalyzeWorkspaceOperation<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
     input: Omit<AnalyzeWorkspaceOperationAuthority, 'generation'>,
-    requestedGeneration = state.operationGeneration + 1,
+    requestedGeneration = state.operationGeneration + 1
 ): Readonly<{
     state: AnalyzeWorkspaceState<Artifact>;
     authority: AnalyzeWorkspaceOperationAuthority;
 }> {
     const generation = Math.max(
         requestedGeneration,
-        state.operationGeneration + 1,
+        state.operationGeneration + 1
     );
     const authority = { ...input, generation };
     if (
@@ -108,23 +108,23 @@ export function beginAnalyzeWorkspaceOperation<
             artifactStatus: 'pending',
             operationGeneration: generation,
             activeOperation: authority,
-            operationError: undefined,
-        },
+            operationError: undefined
+        }
     };
 }
 
-export function completeAnalyzeWorkspaceOperation<
-    Artifact extends AnalyzeArtifactIdentity,
->(
+export function completeAnalyzeWorkspaceOperation<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
     authority: AnalyzeWorkspaceOperationAuthority,
     completion: Readonly<{
         artifact: Artifact;
         selectedEvidenceId?: string;
         controlIdentityValidated?: boolean;
-    }>,
+    }>
 ): AnalyzeWorkspaceState<Artifact> {
-    if (!hasAnalyzeWorkspaceAuthority(state, authority)) return state;
+    if (!hasAnalyzeWorkspaceAuthority(state, authority)) {
+        return state;
+    }
     const exactControlIdentityValidated = authority.action === 'load-control' &&
         completion.controlIdentityValidated === true;
     if (
@@ -136,8 +136,8 @@ export function completeAnalyzeWorkspaceOperation<
         return failWithAuthority(
             state,
             new Error(
-                `Artifact response belongs to ${completion.artifact.distributedRunId}, not ${authority.expectedDistributedRunId}.`,
-            ),
+                `Artifact response belongs to ${completion.artifact.distributedRunId}, not ${authority.expectedDistributedRunId}.`
+            )
         );
     }
     if (
@@ -148,8 +148,10 @@ export function completeAnalyzeWorkspaceOperation<
         return failWithAuthority(
             state,
             new Error(
-                `Artifact response belongs to control run ${completion.artifact.controlRunId ?? 'unknown'}, not ${authority.expectedControlRunId}.`,
-            ),
+                `Artifact response belongs to control run ${
+                    completion.artifact.controlRunId ?? 'unknown'
+                }, not ${authority.expectedControlRunId}.`
+            )
         );
     }
     return {
@@ -161,52 +163,52 @@ export function completeAnalyzeWorkspaceOperation<
         artifactStatus: 'ready',
         selectedEvidenceId: completion.selectedEvidenceId,
         activeOperation: undefined,
-        operationError: undefined,
+        operationError: undefined
     };
 }
 
-export function failAnalyzeWorkspaceOperation<
-    Artifact extends AnalyzeArtifactIdentity,
->(
+export function failAnalyzeWorkspaceOperation<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
     authority: AnalyzeWorkspaceOperationAuthority,
-    error: unknown,
+    error: unknown
 ): AnalyzeWorkspaceState<Artifact> {
     return hasAnalyzeWorkspaceAuthority(state, authority)
         ? failWithAuthority(state, error)
         : state;
 }
 
-export function clearAnalyzeWorkspaceArtifact<
-    Artifact extends AnalyzeArtifactIdentity,
->(state: AnalyzeWorkspaceState<Artifact>): AnalyzeWorkspaceState<Artifact> {
+export function clearAnalyzeWorkspaceArtifact<Artifact extends AnalyzeArtifactIdentity>(
+    state: AnalyzeWorkspaceState<Artifact>
+): AnalyzeWorkspaceState<Artifact> {
     return {
         contextKey: state.contextKey,
         artifactStatus: 'idle',
-        operationGeneration: state.operationGeneration + 1,
+        operationGeneration: state.operationGeneration + 1
     };
 }
 
 function reconcileRetainedArtifactContext<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
-    context: AnalyzeWorkspaceContext | undefined,
+    context: AnalyzeWorkspaceContext | undefined
 ): AnalyzeWorkspaceState<Artifact> {
     const next = { ...state, contextKey: context?.key };
-    if (!state.artifact) return next;
+    if (!state.artifact) {
+        return next;
+    }
 
     const mismatch = retainedArtifactContextError(state, context);
     if (mismatch) {
         return {
             ...next,
             artifactStatus: 'error',
-            operationError: mismatch,
+            operationError: mismatch
         };
     }
     if (state.operationError instanceof AnalyzeArtifactContextError) {
         return {
             ...next,
             artifactStatus: 'ready',
-            operationError: undefined,
+            operationError: undefined
         };
     }
     return next;
@@ -214,25 +216,27 @@ function reconcileRetainedArtifactContext<Artifact extends AnalyzeArtifactIdenti
 
 function retainedArtifactContextError<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
-    context: AnalyzeWorkspaceContext | undefined,
+    context: AnalyzeWorkspaceContext | undefined
 ): Error | undefined {
     const artifact = state.artifact;
-    if (!artifact) return undefined;
+    if (!artifact) {
+        return undefined;
+    }
     if (!context) {
         return new AnalyzeArtifactContextError(
-            `Loaded artifact ${artifact.distributedRunId} is retained, but no distributed run is selected.`,
+            `Loaded artifact ${artifact.distributedRunId} is retained, but no distributed run is selected.`
         );
     }
     if (state.artifactContextKey) {
         return state.artifactContextKey === context.key
             ? undefined
             : new AnalyzeArtifactContextError(
-                `Loaded control artifact ${artifact.distributedRunId} is retained from another control context; load ${context.distributedRunId} to replace it.`,
+                `Loaded control artifact ${artifact.distributedRunId} is retained from another control context; load ${context.distributedRunId} to replace it.`
             );
     }
     if (artifact.distributedRunId !== context.distributedRunId) {
         return new AnalyzeArtifactContextError(
-            `Loaded artifact ${artifact.distributedRunId} does not match selected distributed run ${context.distributedRunId}; previous analysis is retained.`,
+            `Loaded artifact ${artifact.distributedRunId} does not match selected distributed run ${context.distributedRunId}; previous analysis is retained.`
         );
     }
     if (
@@ -240,7 +244,7 @@ function retainedArtifactContextError<Artifact extends AnalyzeArtifactIdentity>(
         artifact.controlRunId !== context.controlRunId
     ) {
         return new AnalyzeArtifactContextError(
-            `Loaded artifact belongs to control run ${artifact.controlRunId}, not selected control run ${context.controlRunId}; previous analysis is retained.`,
+            `Loaded artifact belongs to control run ${artifact.controlRunId}, not selected control run ${context.controlRunId}; previous analysis is retained.`
         );
     }
     return undefined;
@@ -253,11 +257,9 @@ class AnalyzeArtifactContextError extends Error {
     }
 }
 
-export function selectAnalyzeWorkspaceEvidence<
-    Artifact extends AnalyzeArtifactIdentity,
->(
+export function selectAnalyzeWorkspaceEvidence<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
-    selectedEvidenceId: string | undefined,
+    selectedEvidenceId: string | undefined
 ): AnalyzeWorkspaceState<Artifact> {
     return state.selectedEvidenceId === selectedEvidenceId
         ? state
@@ -266,7 +268,7 @@ export function selectAnalyzeWorkspaceEvidence<
 
 export function hasAnalyzeWorkspaceAuthority(
     state: AnalyzeWorkspaceState<AnalyzeArtifactIdentity>,
-    authority: AnalyzeWorkspaceOperationAuthority,
+    authority: AnalyzeWorkspaceOperationAuthority
 ): boolean {
     const active = state.activeOperation;
     return active?.action === authority.action &&
@@ -276,13 +278,13 @@ export function hasAnalyzeWorkspaceAuthority(
 
 function failWithAuthority<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
-    error: unknown,
+    error: unknown
 ): AnalyzeWorkspaceState<Artifact> {
     return {
         ...state,
         artifactStatus: 'error',
         activeOperation: undefined,
-        operationError: error,
+        operationError: error
     };
 }
 
@@ -294,6 +296,6 @@ function abortError(message: string): Error {
 
 function compact<Value extends Record<string, unknown>>(value: Value): Value {
     return Object.fromEntries(
-        Object.entries(value).filter(([, entry]) => entry !== undefined),
+        Object.entries(value).filter(([, entry]) => entry !== undefined)
     ) as Value;
 }

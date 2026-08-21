@@ -1,19 +1,13 @@
-import {
-    useCallback,
-    useMemo,
-    useState,
-    type ReactNode,
-} from 'react';
-import type { RecipeConsoleControlBootstrap } from
-    '../control/ControlConnectionProvider.tsx';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import type { RecipeConsoleControlBootstrap } from '../control/ControlConnectionProvider.tsx';
 import {
     readRecipeConsolePreferences,
     resetRecipeConsolePreferences,
     resolveRecipeConsolePreferenceState,
     writeRecipeConsolePreferences,
     type RecipeConsolePreferences,
-    type RecipeConsolePreferenceState,
     type RecipeConsolePreferencesStorage,
+    type RecipeConsolePreferenceState
 } from './recipe-console-preferences.ts';
 
 export type RecipeConsolePreferencesControllerValue = Readonly<{
@@ -26,7 +20,7 @@ export type RecipeConsolePreferencesControllerValue = Readonly<{
 
 export function RecipeConsolePreferencesController({
     bootstrap,
-    children,
+    children
 }: Readonly<{
     bootstrap: RecipeConsoleControlBootstrap;
     children(value: RecipeConsolePreferencesControllerValue): ReactNode;
@@ -34,26 +28,28 @@ export function RecipeConsolePreferencesController({
     const [preferences, setPreferences] = useState(readInitialPreferences);
     const [error, setError] = useState<string>();
     const state = useMemo(
-        () => resolveRecipeConsolePreferenceState({
-            bootstrap,
-            preferences,
-            search: globalThis.location?.search ?? '',
-            env: (import.meta as {
-                env?: Readonly<Record<string, string | undefined>>;
-            }).env ?? {},
-        }),
-        [bootstrap, preferences],
+        () =>
+            resolveRecipeConsolePreferenceState({
+                bootstrap,
+                preferences,
+                search: globalThis.location?.search ?? '',
+                env: (import.meta as {
+                    env?: Readonly<Record<string, string | undefined>>;
+                }).env ?? {}
+            }),
+        [bootstrap, preferences]
     );
     const save = useCallback((next: RecipeConsolePreferences) => {
         try {
             const stored = writeRecipeConsolePreferences(
                 browserStorage(),
-                next,
+                next
             );
             setPreferences(stored);
             setError(undefined);
             return true;
-        } catch (cause) {
+        }
+        catch (cause) {
             setError(errorMessage(cause));
             return false;
         }
@@ -65,7 +61,8 @@ export function RecipeConsolePreferencesController({
             setPreferences(readRecipeConsolePreferences(storage));
             setError(undefined);
             return true;
-        } catch (cause) {
+        }
+        catch (cause) {
             setError(errorMessage(cause));
             return false;
         }
@@ -77,7 +74,8 @@ export function RecipeConsolePreferencesController({
 function readInitialPreferences(): RecipeConsolePreferences {
     try {
         return readRecipeConsolePreferences(browserStorage());
-    } catch (_error) {
+    }
+    catch (_error) {
         return readRecipeConsolePreferences(memoryStorage());
     }
 }
@@ -90,7 +88,7 @@ function memoryStorage(): RecipeConsolePreferencesStorage {
     return {
         getItem: () => null,
         setItem: () => undefined,
-        removeItem: () => undefined,
+        removeItem: () => undefined
     };
 }
 

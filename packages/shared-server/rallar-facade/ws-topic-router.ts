@@ -1,29 +1,29 @@
 import {
-    type ALMessage,
-    type ALTargets,
     isRoomScopedALMessage,
     readALTargetGroupRef,
+    type ALMessage,
+    type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
-import { isALControlTypeId, newALNackControlMessage, } from '@shared/al-contracts/al-control.ts';
+import { isALControlTypeId, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    RALLAR_AL_CONTROL_TOPIC_ID,
-    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
-    RALLAR_USER_WS_TOPIC_PREFIXES,
     assertValidRallarWsUserTopicId,
     isReservedRallarWsTopicId,
+    RALLAR_AL_CONTROL_TOPIC_ID,
+    RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
+    RALLAR_USER_WS_TOPIC_PREFIXES
 } from '@shared/api/rallar-validation.ts';
-import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus, } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import {
     WsQueueBoxServerService,
     type WsServerLiveSendFailure,
     type WsServerLiveSendResult,
-    type WsServerResolvedRecipient,
+    type WsServerResolvedRecipient
 } from '@shared/services/WsQueueBoxServerService.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 const DYNAMIC_TOPIC_ROUTER_CALLBACK_ID = 'dynamic-ws-topic-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
@@ -89,12 +89,12 @@ export type RallarServerWsMessage<T = unknown> = Readonly<{
 
 export type RallarServerWsValidator<T = unknown> = (
     value: unknown,
-    context: RallarServerWsMessageContext<T>,
+    context: RallarServerWsMessageContext<T>
 ) => boolean | Promise<boolean>;
 
 export type RallarServerWsAuthorizer<T = unknown> = (
     message: RallarServerWsMessage<T>,
-    context: RallarServerWsMessageContext<T>,
+    context: RallarServerWsMessageContext<T>
 ) => boolean | Promise<boolean>;
 
 export type RallarServerWsRoomAuthorizationInput = Readonly<{
@@ -111,24 +111,24 @@ export type RallarServerWsRoomAuthorizationInput = Readonly<{
 export type RallarServerWsRoomAuthorizationDecision =
     | boolean
     | Readonly<{
-    authorized: true;
-}>
+        authorized: true;
+    }>
     | Readonly<{
-    authorized: false;
-    reason?: ALNackReason;
-    logMessage?: string;
-    serverSnapshotVersion?: number;
-}>;
+        authorized: false;
+        reason?: ALNackReason;
+        logMessage?: string;
+        serverSnapshotVersion?: number;
+    }>;
 
 export type RallarServerWsRoomAuthorizer = (
-    input: RallarServerWsRoomAuthorizationInput,
+    input: RallarServerWsRoomAuthorizationInput
 ) =>
     | RallarServerWsRoomAuthorizationDecision
     | Promise<RallarServerWsRoomAuthorizationDecision>;
 
 export type RallarServerWsHandler<T = unknown> = (
     message: RallarServerWsMessage<T>,
-    context: RallarServerWsMessageContext<T>,
+    context: RallarServerWsMessageContext<T>
 ) => void | Promise<void>;
 
 export type RallarServerWsTopicDefinition<T = unknown> = Readonly<{
@@ -147,11 +147,11 @@ export type RallarServerWsProxyRule<T = unknown> = Readonly<{
     authorize?: RallarServerWsAuthorizer<T>;
     transform?: (
         message: RallarServerWsMessage<T>,
-        context: RallarServerWsMessageContext<T>,
+        context: RallarServerWsMessageContext<T>
     ) => ALMessage | Promise<ALMessage>;
     targets?: (
         message: RallarServerWsMessage<T>,
-        context: RallarServerWsMessageContext<T>,
+        context: RallarServerWsMessageContext<T>
     ) => ALTargets | Promise<ALTargets>;
     fanout?: RallarServerWsFanout;
     suppressDefaultFanout?: boolean;
@@ -180,12 +180,12 @@ export type RallarServerWsMessageContext<T = unknown> = Readonly<{
 export type RallarServerWsProxyContext = Readonly<{
     toTargets(
         message: ALMessage,
-        fanout?: RallarServerWsFanout,
+        fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult>;
     toPeer(
         peerId: string,
         message: ALMessage,
-        fanout?: RallarServerWsFanout,
+        fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult>;
     toRoom(
         roomId: string,
@@ -193,14 +193,14 @@ export type RallarServerWsProxyContext = Readonly<{
         options?: Readonly<{
             exceptPeerIds?: readonly string[];
             fanout?: RallarServerWsFanout;
-        }>,
+        }>
     ): Promise<RallarServerWsPublishResult>;
     toAll(
         message: ALMessage,
         options?: Readonly<{
             exceptPeerIds?: readonly string[];
             fanout?: RallarServerWsFanout;
-        }>,
+        }>
     ): Promise<RallarServerWsPublishResult>;
 }>;
 
@@ -211,7 +211,7 @@ type RegisteredHandler = Readonly<{
 
 export function initDynamicWsTopicRouter(
     wsQBoxServerService: WsQueueBoxServerService,
-    options: DynamicWsTopicRouterOptions = {},
+    options: DynamicWsTopicRouterOptions = {}
 ): RallarServerWsFacade {
     return new RallarServerWsFacade(wsQBoxServerService, options).install();
 }
@@ -219,10 +219,7 @@ export function initDynamicWsTopicRouter(
 export class RallarServerWsFacade {
     private readonly definitions: RallarServerWsTopicDefinition<unknown>[] = [];
     private readonly handlers = new Map<string, RegisteredHandler>();
-    private readonly proxyRules = new Map<
-        string,
-        RallarServerWsProxyRule<unknown>
-    >();
+    private readonly proxyRules = new Map<string, RallarServerWsProxyRule<unknown>>();
     private readonly maxPayloadBytes: number;
     private readonly sendNacks: boolean;
     private readonly allowImplicitUserTopics: boolean;
@@ -235,7 +232,7 @@ export class RallarServerWsFacade {
 
     constructor(
         wsQBoxServerService: WsQueueBoxServerService,
-        options: RallarServerWsFacadeOptions = {},
+        options: RallarServerWsFacadeOptions = {}
     ) {
         this.wsQBoxServerService = wsQBoxServerService;
         this.maxPayloadBytes = options.maxPayloadBytes ??
@@ -258,11 +255,11 @@ export class RallarServerWsFacade {
                 onMessage: async (
                     message: ALMessage,
                     entry: ResourceEntry,
-                    server: JsonWebSocketServer,
+                    server: JsonWebSocketServer
                 ) => {
                     await this.handle(message, entry, server);
-                },
-            },
+                }
+            }
         );
         this.installed = true;
         return this;
@@ -271,7 +268,7 @@ export class RallarServerWsFacade {
     uninstall(): boolean {
         this.installed = false;
         return this.wsQBoxServerService.removeAnyInboxMessageCallback(
-            DYNAMIC_TOPIC_ROUTER_CALLBACK_ID,
+            DYNAMIC_TOPIC_ROUTER_CALLBACK_ID
         );
     }
 
@@ -284,12 +281,12 @@ export class RallarServerWsFacade {
         );
         if (exists) {
             throw new Error(
-                `Rallar WS topic already defined: ${toSelectorKey(definition)}`,
+                `Rallar WS topic already defined: ${toSelectorKey(definition)}`
             );
         }
 
         this.definitions.push(
-            definition as RallarServerWsTopicDefinition<unknown>,
+            definition as RallarServerWsTopicDefinition<unknown>
         );
         return this;
     }
@@ -298,7 +295,7 @@ export class RallarServerWsFacade {
         const index = this.definitions.findIndex((definition) =>
             matchesSelector(selector, {
                 route: { topicId: definition.topicId },
-                payload: { typeId: definition.typeId ?? '' },
+                payload: { typeId: definition.typeId ?? '' }
             })
         );
         if (index < 0) {
@@ -311,14 +308,14 @@ export class RallarServerWsFacade {
 
     on<T>(
         selector: RallarServerWsSelector,
-        handler: RallarServerWsHandler<T>,
+        handler: RallarServerWsHandler<T>
     ): () => boolean {
         assertSelector(selector);
 
         const id = `handler:${crypto.randomUUID()}`;
         this.handlers.set(id, {
             selector,
-            handler: handler as RallarServerWsHandler<unknown>,
+            handler: handler as RallarServerWsHandler<unknown>
         });
         return () => this.handlers.delete(id);
     }
@@ -337,20 +334,19 @@ export class RallarServerWsFacade {
 
     async publish(
         message: ALMessage,
-        fanout?: RallarServerWsFanout,
+        fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult> {
         return await this.dispatchFanout(message, fanout ?? this.defaultFanout);
     }
 
     status(): RallarServerWsStatus {
         const socketConnections = this.wsQBoxServerService.socket.connections;
-        const connections: readonly RallarServerWsConnectionStatus[] =
-            socketConnections instanceof Map
-                ? [...socketConnections.values()].map((ctx) => ({
-                    connectionId: ctx.id,
-                    isOpen: ctx.isOpen,
-                }))
-                : [];
+        const connections: readonly RallarServerWsConnectionStatus[] = socketConnections instanceof Map
+            ? [...socketConnections.values()].map((ctx) => ({
+                connectionId: ctx.id,
+                isOpen: ctx.isOpen
+            }))
+            : [];
         const openConnectionIds = connections
             .filter((connection) => connection.isOpen)
             .map((connection) => connection.connectionId);
@@ -361,14 +357,14 @@ export class RallarServerWsFacade {
             openConnectionCount: openConnectionIds.length,
             connectionIds: connections.map((connection) => connection.connectionId),
             openConnectionIds,
-            connections,
+            connections
         };
     }
 
     async handle(
         message: ALMessage,
         _entry?: ResourceEntry,
-        _server?: JsonWebSocketServer,
+        _server?: JsonWebSocketServer
     ): Promise<void> {
         if (this.isSystemMessage(message)) {
             return;
@@ -378,7 +374,7 @@ export class RallarServerWsFacade {
             this.reject(
                 message,
                 'unauthorized',
-                `Rejected reserved Rallar WS topic: ${message.route.topicId}`,
+                `Rejected reserved Rallar WS topic: ${message.route.topicId}`
             );
             return;
         }
@@ -388,7 +384,7 @@ export class RallarServerWsFacade {
             this.reject(
                 message,
                 'no-route',
-                `Rejected unknown WS topic: ${message.route.topicId}`,
+                `Rejected unknown WS topic: ${message.route.topicId}`
             );
             return;
         }
@@ -397,7 +393,7 @@ export class RallarServerWsFacade {
             this.reject(
                 message,
                 'no-route',
-                `Rejected dynamic WS message without targets: ${message.route.topicId}`,
+                `Rejected dynamic WS message without targets: ${message.route.topicId}`
             );
             return;
         }
@@ -407,7 +403,7 @@ export class RallarServerWsFacade {
             this.reject(
                 message,
                 'overloaded',
-                `Rejected oversized dynamic WS payload: ${message.route.topicId}`,
+                `Rejected oversized dynamic WS payload: ${message.route.topicId}`
             );
             return;
         }
@@ -417,7 +413,7 @@ export class RallarServerWsFacade {
             this.reject(
                 message,
                 'no-route',
-                `Rejected dynamic WS message with invalid JSON payload: ${message.route.topicId}`,
+                `Rejected dynamic WS message with invalid JSON payload: ${message.route.topicId}`
             );
             return;
         }
@@ -431,10 +427,10 @@ export class RallarServerWsFacade {
                 message,
                 authorization.reason ?? 'unauthorized',
                 authorization.logMessage ??
-                `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
+                    `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
                 {
-                    serverSnapshotVersion: authorization.serverSnapshotVersion,
-                },
+                    serverSnapshotVersion: authorization.serverSnapshotVersion
+                }
             );
             return;
         }
@@ -445,7 +441,7 @@ export class RallarServerWsFacade {
                 this.reject(
                     message,
                     'no-route',
-                    `Rejected schema-invalid dynamic WS payload: ${message.route.topicId}/${message.payload.typeId}`,
+                    `Rejected schema-invalid dynamic WS payload: ${message.route.topicId}/${message.payload.typeId}`
                 );
                 return;
             }
@@ -457,7 +453,7 @@ export class RallarServerWsFacade {
                 this.reject(
                     message,
                     'unauthorized',
-                    `Rejected policy-unauthorised dynamic WS topic: ${message.route.topicId}`,
+                    `Rejected policy-unauthorised dynamic WS topic: ${message.route.topicId}`
                 );
                 return;
             }
@@ -466,20 +462,20 @@ export class RallarServerWsFacade {
         await this.dispatchHandlers(serverMessage, context);
         const suppressDefaultFanout = await this.dispatchProxyRules(
             serverMessage,
-            context,
+            context
         );
 
         if (!suppressDefaultFanout) {
             await this.dispatchFanout(
                 message,
-                definition?.fanout ?? this.defaultFanout,
+                definition?.fanout ?? this.defaultFanout
             );
         }
     }
 
     private async dispatchHandlers<T>(
         message: RallarServerWsMessage<T>,
-        context: RallarServerWsMessageContext<T>,
+        context: RallarServerWsMessageContext<T>
     ): Promise<void> {
         for (const registered of this.handlers.values()) {
             if (!matchesSelector(registered.selector, message.raw)) {
@@ -489,12 +485,13 @@ export class RallarServerWsFacade {
             try {
                 await registered.handler(
                     message as RallarServerWsMessage<unknown>,
-                    context as RallarServerWsMessageContext<unknown>,
+                    context as RallarServerWsMessageContext<unknown>
                 );
-            } catch (error) {
+            }
+            catch (error) {
                 console.error(
                     `Error in Rallar WS handler for ${toSelectorKey(registered.selector)}`,
-                    error,
+                    error
                 );
             }
         }
@@ -502,7 +499,7 @@ export class RallarServerWsFacade {
 
     private async dispatchProxyRules<T>(
         message: RallarServerWsMessage<T>,
-        context: RallarServerWsMessageContext<T>,
+        context: RallarServerWsMessageContext<T>
     ): Promise<boolean> {
         let suppressDefaultFanout = false;
 
@@ -515,7 +512,7 @@ export class RallarServerWsFacade {
                 if (rule.authorize) {
                     const authorised = await rule.authorize(
                         message as RallarServerWsMessage<unknown>,
-                        context as RallarServerWsMessageContext<unknown>,
+                        context as RallarServerWsMessageContext<unknown>
                     );
                     if (!authorised) {
                         continue;
@@ -525,13 +522,13 @@ export class RallarServerWsFacade {
                 const transformed = rule.transform
                     ? await rule.transform(
                         message as RallarServerWsMessage<unknown>,
-                        context as RallarServerWsMessageContext<unknown>,
+                        context as RallarServerWsMessageContext<unknown>
                     )
                     : message.raw;
                 const targets = rule.targets
                     ? await rule.targets(
                         message as RallarServerWsMessage<unknown>,
-                        context as RallarServerWsMessageContext<unknown>,
+                        context as RallarServerWsMessageContext<unknown>
                     )
                     : transformed.targets;
 
@@ -542,17 +539,18 @@ export class RallarServerWsFacade {
                 await this.dispatchFanout(
                     {
                         ...transformed,
-                        targets,
+                        targets
                     },
-                    rule.fanout ?? context.definition?.fanout ?? this.defaultFanout,
+                    rule.fanout ?? context.definition?.fanout ?? this.defaultFanout
                 );
 
                 suppressDefaultFanout = suppressDefaultFanout ||
                     (rule.suppressDefaultFanout ?? false);
-            } catch (error) {
+            }
+            catch (error) {
                 console.error(
                     `Error in Rallar WS proxy for ${toSelectorKey(rule.from)}`,
-                    error,
+                    error
                 );
             }
         }
@@ -562,7 +560,7 @@ export class RallarServerWsFacade {
 
     private async dispatchFanout(
         message: ALMessage,
-        fanout: RallarServerWsFanout,
+        fanout: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult> {
         switch (fanout) {
             case 'none':
@@ -571,22 +569,22 @@ export class RallarServerWsFacade {
                     status: 'none',
                     message,
                     sentCount: 0,
-                    entries: [],
+                    entries: []
                 };
             case 'outbox': {
                 const result = await this.wsQBoxServerService.enqueueOutboxIfAbsent(
-                    message,
+                    message
                 );
                 wakeOutboxIfQueued(this.wakeOutbox, result);
                 return toOutboxPublishResult(message, fanout, result);
             }
             case 'live-only': {
                 const result = this.wsQBoxServerService.sendToTargetsWithResult(
-                    message,
+                    message
                 );
                 if (result.status === 'no-recipients') {
                     console.warn(
-                        `Dynamic WS topic had no recipients: ${message.route.topicId}`,
+                        `Dynamic WS topic had no recipients: ${message.route.topicId}`
                     );
                 }
                 return toLivePublishResult(message, fanout, result);
@@ -596,7 +594,7 @@ export class RallarServerWsFacade {
 
     private toMessageContext<T>(
         definition: RallarServerWsTopicDefinition<T> | undefined,
-        message: ALMessage,
+        message: ALMessage
     ): RallarServerWsMessageContext<T> {
         return {
             service: this.wsQBoxServerService,
@@ -608,7 +606,7 @@ export class RallarServerWsFacade {
                 toTargets: async (targetMessage, fanout) =>
                     await this.dispatchFanout(
                         targetMessage,
-                        fanout ?? definition?.fanout ?? this.defaultFanout,
+                        fanout ?? definition?.fanout ?? this.defaultFanout
                     ),
                 toPeer: async (peerId, targetMessage, fanout) =>
                     await this.dispatchFanout(
@@ -616,10 +614,10 @@ export class RallarServerWsFacade {
                             ...targetMessage,
                             targets: {
                                 mode: 'unicast',
-                                toPeerId: peerId,
-                            },
+                                toPeerId: peerId
+                            }
                         },
-                        fanout ?? definition?.fanout ?? this.defaultFanout,
+                        fanout ?? definition?.fanout ?? this.defaultFanout
                     ),
                 toRoom: async (roomId, targetMessage, options) =>
                     await this.dispatchFanout(
@@ -627,15 +625,15 @@ export class RallarServerWsFacade {
                             ...targetMessage,
                             route: {
                                 ...targetMessage.route,
-                                contextId: roomId,
+                                contextId: roomId
                             },
                             targets: {
                                 mode: 'broadcast',
                                 scope: 'room',
-                                exceptPeerIds: options?.exceptPeerIds,
-                            },
+                                exceptPeerIds: options?.exceptPeerIds
+                            }
                         },
-                        options?.fanout ?? definition?.fanout ?? this.defaultFanout,
+                        options?.fanout ?? definition?.fanout ?? this.defaultFanout
                     ),
                 toAll: async (targetMessage, options) =>
                     await this.dispatchFanout(
@@ -644,17 +642,17 @@ export class RallarServerWsFacade {
                             targets: {
                                 mode: 'broadcast',
                                 scope: 'all',
-                                exceptPeerIds: options?.exceptPeerIds,
-                            },
+                                exceptPeerIds: options?.exceptPeerIds
+                            }
                         },
-                        options?.fanout ?? definition?.fanout ?? this.defaultFanout,
-                    ),
-            },
+                        options?.fanout ?? definition?.fanout ?? this.defaultFanout
+                    )
+            }
         };
     }
 
     private findDefinition(
-        message: ALMessage,
+        message: ALMessage
     ): RallarServerWsTopicDefinition<unknown> | undefined {
         return this.definitions.find((definition) =>
             definition.topicId === message.route.topicId &&
@@ -687,7 +685,7 @@ export class RallarServerWsFacade {
 
     private isPayloadSizeAllowed(
         message: ALMessage,
-        maxPayloadBytes: number,
+        maxPayloadBytes: number
     ): boolean {
         return new TextEncoder().encode(message.payload.resource).length <=
             maxPayloadBytes;
@@ -695,13 +693,15 @@ export class RallarServerWsFacade {
 
     private async authorizeDynamicTopic(
         message: ALMessage,
-        definition?: RallarServerWsTopicDefinition<unknown>,
-    ): Promise<Readonly<{
-        authorized: boolean;
-        reason?: ALNackReason;
-        logMessage?: string;
-        serverSnapshotVersion?: number;
-    }>> {
+        definition?: RallarServerWsTopicDefinition<unknown>
+    ): Promise<
+        Readonly<{
+            authorized: boolean;
+            reason?: ALNackReason;
+            logMessage?: string;
+            serverSnapshotVersion?: number;
+        }>
+    > {
         if (!this.isRoomScoped(message, definition)) {
             return { authorized: true };
         }
@@ -720,15 +720,15 @@ export class RallarServerWsFacade {
                 senderId: message.id.senderId,
                 topicId: message.route.topicId,
                 typeId: message.payload.typeId,
-                minSnapshotVersion: this.readMinSnapshotVersion(message),
+                minSnapshotVersion: this.readMinSnapshotVersion(message)
             }),
-            message,
+            message
         );
     }
 
     private isRoomScoped(
         message: ALMessage,
-        definition?: RallarServerWsTopicDefinition<unknown>,
+        definition?: RallarServerWsTopicDefinition<unknown>
     ): boolean {
         return definition?.scope === 'room' || isRoomScopedALMessage(message);
     }
@@ -773,18 +773,19 @@ export class RallarServerWsFacade {
 
     private decodeMessage(message: ALMessage):
         | Readonly<{
-        ok: true;
-        value: unknown;
-    }>
+            ok: true;
+            value: unknown;
+        }>
         | Readonly<{
-        ok: false;
-    }> {
+            ok: false;
+        }> {
         try {
             return {
                 ok: true,
-                value: JSON.parse(message.payload.resource),
+                value: JSON.parse(message.payload.resource)
             };
-        } catch {
+        }
+        catch {
             return { ok: false };
         }
     }
@@ -795,7 +796,7 @@ export class RallarServerWsFacade {
         logMessage: string,
         nackOptions: Readonly<{
             serverSnapshotVersion?: number;
-        }> = {},
+        }> = {}
     ): void {
         console.warn(logMessage);
         if (!this.sendNacks) {
@@ -810,7 +811,7 @@ export class RallarServerWsFacade {
         reason: ALNackReason,
         options: Readonly<{
             serverSnapshotVersion?: number;
-        }> = {},
+        }> = {}
     ): void {
         try {
             const nack = newALNackControlMessage(
@@ -819,18 +820,19 @@ export class RallarServerWsFacade {
                 message.id.msgId,
                 reason,
                 undefined,
-                options,
+                options
             );
             const sent = this.wsQBoxServerService.sendToTargets(nack);
             if (sent === 0) {
                 console.warn(
-                    `Could not send WS NACK to ${message.id.senderId} for ${message.id.msgId}`,
+                    `Could not send WS NACK to ${message.id.senderId} for ${message.id.msgId}`
                 );
             }
-        } catch (error) {
+        }
+        catch (error) {
             console.warn(
                 `Failed to send WS NACK to ${message.id.senderId} for ${message.id.msgId}`,
-                error,
+                error
             );
         }
     }
@@ -839,7 +841,7 @@ export class RallarServerWsFacade {
 function toLivePublishResult(
     message: ALMessage,
     fanout: RallarServerWsFanout,
-    result: WsServerLiveSendResult,
+    result: WsServerLiveSendResult
 ): RallarServerWsPublishResult {
     return {
         fanout,
@@ -850,14 +852,14 @@ function toLivePublishResult(
         failedCount: result.failedCount,
         recipients: result.recipients,
         failures: result.failures,
-        entries: [],
+        entries: []
     };
 }
 
 function toOutboxPublishResult(
     message: ALMessage,
     fanout: RallarServerWsFanout,
-    result: ALOutboundEnqueueResult,
+    result: ALOutboundEnqueueResult
 ): RallarServerWsPublishResult {
     return {
         fanout,
@@ -866,13 +868,13 @@ function toOutboxPublishResult(
         entry: result.entry,
         entries: result.entries,
         enqueueStatus: result.status,
-        reason: result.reason,
+        reason: result.reason
     };
 }
 
 function wakeOutboxIfQueued(
     wakeOutbox: (() => void) | undefined,
-    result: ALOutboundEnqueueResult,
+    result: ALOutboundEnqueueResult
 ): void {
     if (result.status === 'enqueued' || result.status === 'duplicate') {
         wakeOutbox?.();
@@ -880,7 +882,7 @@ function wakeOutboxIfQueued(
 }
 
 function toOutboxPublishStatus(
-    status: ALOutboundEnqueueStatus,
+    status: ALOutboundEnqueueStatus
 ): RallarServerWsPublishStatus {
     switch (status) {
         case 'enqueued':
@@ -901,18 +903,18 @@ function toOutboxPublishStatus(
 
 function toRallarServerWsMessage<T>(
     payload: T,
-    raw: ALMessage,
+    raw: ALMessage
 ): RallarServerWsMessage<T> {
     return {
         payload,
         raw,
-        receivedAtEpochMs: Date.now(),
+        receivedAtEpochMs: Date.now()
     };
 }
 
 function normalizeRoomAuthorizationDecision(
     decision: RallarServerWsRoomAuthorizationDecision,
-    message: ALMessage,
+    message: ALMessage
 ): Readonly<{
     authorized: boolean;
     reason?: ALNackReason;
@@ -921,13 +923,13 @@ function normalizeRoomAuthorizationDecision(
 }> {
     if (typeof decision === 'boolean') {
         return {
-            authorized: decision,
+            authorized: decision
         };
     }
 
     if (decision.authorized) {
         return {
-            authorized: true,
+            authorized: true
         };
     }
 
@@ -936,7 +938,7 @@ function normalizeRoomAuthorizationDecision(
         reason: decision.reason,
         logMessage: decision.logMessage ??
             `Rejected unauthorised dynamic WS topic: ${message.route.topicId}`,
-        serverSnapshotVersion: decision.serverSnapshotVersion,
+        serverSnapshotVersion: decision.serverSnapshotVersion
     };
 }
 
@@ -951,10 +953,10 @@ function matchesSelector(
     message: Readonly<{
         route: Pick<ALMessage['route'], 'topicId'>;
         payload: Pick<ALMessage['payload'], 'typeId'>;
-    }>,
+    }>
 ): boolean {
     return (selector.topicId === undefined ||
-            selector.topicId === message.route.topicId) &&
+        selector.topicId === message.route.topicId) &&
         (selector.typeId === undefined ||
             selector.typeId === message.payload.typeId);
 }

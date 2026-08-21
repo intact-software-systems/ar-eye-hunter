@@ -122,16 +122,12 @@ import { createDefaultRallarServer } from './src/composition/create-default-rall
 
 const rallar = createDefaultRallarServer();
 
-installRallarGameAuthorityServer<
-  CashChaseCommand,
-  CashChaseSnapshot,
-  CashChaseEvent
->({
-  rallar,
-  protocol: 'cash-chase.authority.v1',
-  topicId: 'room.cash-chase.authority',
-  handleCommand: cashChaseService.handleCommand,
-  readSnapshot: cashChaseService.readSnapshot,
+installRallarGameAuthorityServer<CashChaseCommand, CashChaseSnapshot, CashChaseEvent>({
+    rallar,
+    protocol: 'cash-chase.authority.v1',
+    topicId: 'room.cash-chase.authority',
+    handleCommand: cashChaseService.handleCommand,
+    readSnapshot: cashChaseService.readSnapshot
 });
 
 rallar.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();

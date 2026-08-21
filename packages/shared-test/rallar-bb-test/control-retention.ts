@@ -1,19 +1,16 @@
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-} from './control-snapshots.ts';
-import type { ControlFleetRunReport } from './fleet-report.ts';
 import {
     assertControlRetentionString as assertString,
     boundedControlRetentionArray as boundedArray,
     canonicalControlRetentionJson as canonicalJson,
     CONTROL_RETENTION_PLAN_LIMITS,
-    controlRetentionLimitError as limitError,
+    controlRetentionLimitError as limitError
 } from './control-retention-canonical.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from './control-snapshots.ts';
+import type { ControlFleetRunReport } from './fleet-report.ts';
 export {
     CONTROL_RETENTION_PLAN_LIMITS,
-    ControlRetentionPlanLimitError,
     type ControlRetentionPlanLimit,
+    ControlRetentionPlanLimitError
 } from './control-retention-canonical.ts';
 
 export type ControlRetentionIssuedRunTokenMetadata = Readonly<{
@@ -70,7 +67,7 @@ type CandidateConsequence = Readonly<{
 }>;
 
 export function planControlRunRetention(
-    input: ControlRetentionPlanInput,
+    input: ControlRetentionPlanInput
 ): ControlRetentionPlan {
     assertMaxRuns(input.maxRuns);
     const runs = boundedArray(input.runs, 'runs');
@@ -93,9 +90,7 @@ export function planControlRunRetention(
     }
 
     const deletedIds = new Set(deletedRuns.map((run) => run.runId));
-    const linkedDistributedRuns = distributedRuns.filter((run) =>
-        deletedIds.has(run.controlRunId)
-    );
+    const linkedDistributedRuns = distributedRuns.filter((run) => deletedIds.has(run.controlRunId));
     const distributedByControlId = new Map<string, ControlDistributedRunSnapshot[]>();
     for (const run of linkedDistributedRuns) {
         const linked = distributedByControlId.get(run.controlRunId) ?? [];
@@ -103,7 +98,7 @@ export function planControlRunRetention(
         distributedByControlId.set(run.controlRunId, linked);
     }
     const fleetByDistributedId = new Map(
-        fleetReports.map((report) => [report.distributedRunId, report]),
+        fleetReports.map((report) => [report.distributedRunId, report])
     );
     const consequences = deletedRuns.map((run): CandidateConsequence => {
         const linked = distributedByControlId.get(run.runId) ?? [];
@@ -114,7 +109,7 @@ export function planControlRunRetention(
             fleetReports: linked.flatMap((item) => {
                 const report = fleetByDistributedId.get(item.distributedRunId);
                 return report ? [report] : [];
-            }),
+            })
         };
     });
     const candidates = consequences.map(toCandidate);
@@ -130,7 +125,7 @@ export function planControlRunRetention(
         deletedRunIds: deletedRuns.map((run) => run.runId),
         distributedRunIds,
         fleetReportIds,
-        candidates: consequences.map(toCanonicalConsequence),
+        candidates: consequences.map(toCanonicalConsequence)
     });
 
     return {
@@ -141,15 +136,17 @@ export function planControlRunRetention(
         deletedRunIds: deletedRuns.map((run) => run.runId),
         distributedRunIds,
         fleetReportIds,
-        canonicalConsequence,
+        canonicalConsequence
     };
 }
 
 function retainedRunIds(
     runs: readonly ControlRunSnapshot[],
-    maxRuns: number | undefined,
+    maxRuns: number | undefined
 ): Set<string> | undefined {
-    if (maxRuns === undefined || maxRuns <= 0 || runs.length <= maxRuns) return undefined;
+    if (maxRuns === undefined || maxRuns <= 0 || runs.length <= maxRuns) {
+        return undefined;
+    }
     return new Set(
         runs.map((run, insertionIndex) => ({ run, insertionIndex }))
             .sort((left, right) =>
@@ -157,7 +154,7 @@ function retainedRunIds(
                 left.insertionIndex - right.insertionIndex
             )
             .slice(0, maxRuns)
-            .map(({ run }) => run.runId),
+            .map(({ run }) => run.runId)
     );
 }
 
@@ -170,9 +167,9 @@ function toCandidate(consequence: CandidateConsequence): ControlRetentionCandida
         issuedRunTokenCount: consequence.safety.issuedRunTokens.length,
         distributedRuns: consequence.distributedRuns.map((run) => ({
             distributedRunId: run.distributedRunId,
-            state: run.state,
+            state: run.state
         })),
-        fleetReportIds: consequence.fleetReports.map((report) => report.distributedRunId),
+        fleetReportIds: consequence.fleetReports.map((report) => report.distributedRunId)
     };
 }
 
@@ -185,7 +182,7 @@ function toCanonicalConsequence(consequence: CandidateConsequence): unknown {
             .map(({ agentId, issuedAtEpochMs, expiresAtEpochMs }) => ({
                 agentId,
                 issuedAtEpochMs,
-                expiresAtEpochMs,
+                expiresAtEpochMs
             }))
             .sort(compareTokenMetadata),
         issuedRunTokenCount: consequence.safety.issuedRunTokens.length,
@@ -194,18 +191,20 @@ function toCanonicalConsequence(consequence: CandidateConsequence): unknown {
         distributedRuns: [...consequence.distributedRuns]
             .sort((left, right) => compareText(left.distributedRunId, right.distributedRunId)),
         fleetReports: [...consequence.fleetReports]
-            .sort((left, right) => compareText(left.distributedRunId, right.distributedRunId)),
+            .sort((left, right) => compareText(left.distributedRunId, right.distributedRunId))
     };
 }
 
 function validateRunSafety(
     runs: readonly ControlRunSnapshot[],
-    safety: readonly ControlRetentionRunSafety[],
+    safety: readonly ControlRetentionRunSafety[]
 ): Map<string, ControlRetentionRunSafety> {
     const runIds = new Set(runs.map((run) => run.runId));
     const byRunId = new Map<string, ControlRetentionRunSafety>();
     for (const entry of safety) {
-        if (!runIds.has(entry.runId)) throw new TypeError(`Unknown run safety ${entry.runId}.`);
+        if (!runIds.has(entry.runId)) {
+            throw new TypeError(`Unknown run safety ${entry.runId}.`);
+        }
         const connectedAgentIds = boundedArray(entry.connectedAgentIds, 'connectedAgentIds');
         assertUniqueStrings(connectedAgentIds, 'connected agent');
         const tokens = boundedArray(entry.issuedRunTokens, 'issuedRunTokens');
@@ -223,7 +222,9 @@ function validateRunSafety(
         byRunId.set(entry.runId, entry);
     }
     for (const run of runs) {
-        if (!byRunId.has(run.runId)) throw new TypeError(`Missing run safety ${run.runId}.`);
+        if (!byRunId.has(run.runId)) {
+            throw new TypeError(`Missing run safety ${run.runId}.`);
+        }
     }
     return byRunId;
 }
@@ -236,7 +237,9 @@ function validateRunTimes(runs: readonly ControlRunSnapshot[]): void {
 }
 
 function assertMaxRuns(value: number | undefined): void {
-    if (value !== undefined) assertSafeInteger(value, 'maxRuns');
+    if (value !== undefined) {
+        assertSafeInteger(value, 'maxRuns');
+    }
 }
 
 function assertSafeInteger(value: unknown, label: string): asserts value is number {
@@ -248,10 +251,12 @@ function assertSafeInteger(value: unknown, label: string): asserts value is numb
 function assertUniqueRecords<T>(
     values: readonly T[],
     key: keyof T,
-    label: string,
+    label: string
 ): void {
     const identities = values.map((value) => {
-        if (!value || typeof value !== 'object') throw new TypeError(`${label} must be an object.`);
+        if (!value || typeof value !== 'object') {
+            throw new TypeError(`${label} must be an object.`);
+        }
         const identity = value[key];
         assertString(identity, `${label} identity`);
         return identity;
@@ -263,14 +268,16 @@ function assertUniqueStrings(values: readonly string[], label: string): void {
     const seen = new Set<string>();
     for (const value of values) {
         assertString(value, label);
-        if (seen.has(value)) throw new TypeError(`Duplicate ${label} ${value}.`);
+        if (seen.has(value)) {
+            throw new TypeError(`Duplicate ${label} ${value}.`);
+        }
         seen.add(value);
     }
 }
 
 function compareTokenMetadata(
     left: ControlRetentionIssuedRunTokenMetadata,
-    right: ControlRetentionIssuedRunTokenMetadata,
+    right: ControlRetentionIssuedRunTokenMetadata
 ): number {
     return compareText(left.agentId, right.agentId) ||
         left.issuedAtEpochMs - right.issuedAtEpochMs ||

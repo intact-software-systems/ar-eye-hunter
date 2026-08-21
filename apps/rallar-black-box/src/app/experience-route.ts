@@ -8,12 +8,12 @@ const LEGACY_EXPERIENCE_QUERY_KEYS = [
     'appMode',
     'tab',
     'advancedSurface',
-    'advanced',
+    'advanced'
 ] as const;
 
 export function resolveAppExperience(
     search: string,
-    defaultExperience: AppExperience = DEFAULT_APP_EXPERIENCE,
+    defaultExperience: AppExperience = DEFAULT_APP_EXPERIENCE
 ): AppExperience {
     const params = new URLSearchParams(search);
     const experience = params.get('experience');
@@ -27,7 +27,7 @@ export function resolveAppExperience(
     if (experience !== null || version !== null) {
         return 'legacy';
     }
-    if (LEGACY_EXPERIENCE_QUERY_KEYS.some(key => params.has(key))) {
+    if (LEGACY_EXPERIENCE_QUERY_KEYS.some((key) => params.has(key))) {
         return 'legacy';
     }
     return defaultExperience;

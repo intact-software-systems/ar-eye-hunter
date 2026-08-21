@@ -1,13 +1,8 @@
-import {
-    useEffect,
-    useRef,
-    type KeyboardEvent,
-    type MouseEvent,
-} from 'react';
-import type { RetentionCleanupPreview } from './use-retention-cleanup.ts';
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from 'react';
 import { ExactIdentifier } from './ExactIdentifier.tsx';
-import { RetentionWindowedList } from './RetentionWindowedList.tsx';
 import styles from './RetentionConfirmDialog.module.css';
+import { RetentionWindowedList } from './RetentionWindowedList.tsx';
+import type { RetentionCleanupPreview } from './use-retention-cleanup.ts';
 
 export type RetentionConfirmDialogProps = Readonly<{
     open: boolean;
@@ -26,39 +21,55 @@ export function RetentionConfirmDialog({
     message,
     restoreFocus,
     onCancel,
-    onConfirm,
+    onConfirm
 }: RetentionConfirmDialogProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
     const keepRef = useRef<HTMLButtonElement>(null);
     const submittedRef = useRef(false);
 
     useEffect(() => {
-        if (!open || !preview) return;
+        if (!open || !preview) {
+            return;
+        }
         keepRef.current?.focus();
         return () => {
-            if (focusableRestoreTarget(restoreFocus)) restoreFocus.focus();
+            if (focusableRestoreTarget(restoreFocus)) {
+                restoreFocus.focus();
+            }
         };
     }, [open, preview, restoreFocus]);
     useEffect(() => {
-        if (open && busy) dialogRef.current?.focus();
-        if (!busy) submittedRef.current = false;
+        if (open && busy) {
+            dialogRef.current?.focus();
+        }
+        if (!busy) {
+            submittedRef.current = false;
+        }
     }, [busy, open, preview]);
 
-    if (!open || !preview) return null;
+    if (!open || !preview) {
+        return null;
+    }
     const confirmable = preview.current && !busy;
 
     function cancel(): void {
-        if (!busy) onCancel();
+        if (!busy) {
+            onCancel();
+        }
     }
 
     function confirm(): void {
-        if (!confirmable || submittedRef.current) return;
+        if (!confirmable || submittedRef.current) {
+            return;
+        }
         submittedRef.current = true;
         onConfirm();
     }
 
     function onBackdropClick(event: MouseEvent<HTMLDivElement>): void {
-        if (event.target === event.currentTarget) cancel();
+        if (event.target === event.currentTarget) {
+            cancel();
+        }
     }
 
     function trapFocus(event: KeyboardEvent<HTMLDivElement>): void {
@@ -67,11 +78,13 @@ export function RetentionConfirmDialog({
             cancel();
             return;
         }
-        if (event.key !== 'Tab') return;
+        if (event.key !== 'Tab') {
+            return;
+        }
         const focusable = Array.from(
             dialogRef.current?.querySelectorAll<HTMLElement>(
-                '[tabindex="0"], button:not(:disabled)',
-            ) ?? [],
+                '[tabindex="0"], button:not(:disabled)'
+            ) ?? []
         );
         if (focusable.length === 0) {
             event.preventDefault();
@@ -83,10 +96,12 @@ export function RetentionConfirmDialog({
         if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        }
+        else if (!event.shiftKey && document.activeElement === last) {
             event.preventDefault();
             first?.focus();
-        } else if (!focusable.includes(document.activeElement as HTMLElement)) {
+        }
+        else if (!focusable.includes(document.activeElement as HTMLElement)) {
             event.preventDefault();
             (event.shiftKey ? last : first)?.focus();
         }
@@ -114,19 +129,18 @@ export function RetentionConfirmDialog({
                 </header>
                 <p id="retention-confirm-description">
                     This deletes {preview.candidates.length} control
-                    {preview.candidates.length === 1 ? ' run' : ' runs'} from
-                    in-memory control, distributed, and fleet history. It moves
-                    from {preview.retainedRuns} current runs to{' '}
-                    {preview.projectedRetainedRuns} projected runs.
+                    {preview.candidates.length === 1 ? ' run' : ' runs'}{' '}
+                    from in-memory control, distributed, and fleet history. It moves from {preview.retainedRuns}{' '}
+                    current runs to {preview.projectedRetainedRuns} projected runs.
                 </p>
                 <RetentionWindowedList
                     className={styles.candidates}
                     contextKey="retention-confirm-candidates"
-                    itemKey={candidate => candidate.key}
+                    itemKey={(candidate) => candidate.key}
                     itemLabel="candidates"
                     items={preview.candidates}
                     label="Previewed runs to delete"
-                    renderItem={candidate => (
+                    renderItem={(candidate) => (
                         <li data-retention-dialog-candidate-row>
                             <ExactIdentifier value={candidate.runId} />
                         </li>
@@ -134,32 +148,32 @@ export function RetentionConfirmDialog({
                     revision={preview}
                     scrollRegion={{
                         ariaLabel: 'Previewed runs to delete',
-                        className: styles.candidateScroller,
+                        className: styles.candidateScroller
                     }}
                 />
                 <p className={styles.preservation}>
                     Existing connected sockets and stored artifact files remain.
                 </p>
-                {!preview.current ? (
-                    <p className={styles.stale}>This preview is stale. Preview again.</p>
-                ) : null}
-                {message ? (
-                    <p aria-live="assertive" className={styles.message}>{message}</p>
-                ) : null}
+                {!preview.current ? <p className={styles.stale}>This preview is stale. Preview again.</p> : null}
+                {message ? <p aria-live="assertive" className={styles.message}>{message}</p> : null}
                 <div className={styles.actions}>
                     <button
                         disabled={busy}
                         onClick={cancel}
                         ref={keepRef}
                         type="button"
-                    >Keep history</button>
+                    >
+                        Keep history
+                    </button>
                     <button
                         aria-busy={busy}
                         className={styles.confirm}
                         disabled={!confirmable}
                         onClick={confirm}
                         type="button"
-                    >Delete previewed runs</button>
+                    >
+                        Delete previewed runs
+                    </button>
                 </div>
             </div>
         </div>
@@ -167,7 +181,7 @@ export function RetentionConfirmDialog({
 }
 
 function focusableRestoreTarget(
-    target: HTMLButtonElement | null,
+    target: HTMLButtonElement | null
 ): target is HTMLButtonElement {
     return Boolean(target?.isConnected && !target.disabled);
 }

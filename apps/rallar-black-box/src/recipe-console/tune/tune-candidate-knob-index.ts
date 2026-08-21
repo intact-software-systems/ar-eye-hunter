@@ -1,7 +1,5 @@
-import type { DistributedRunTuningKnob } from
-    '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
-import type { SearchableListboxOption } from
-    '../ui/searchable-listbox-model.ts';
+import type { DistributedRunTuningKnob } from '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import type { SearchableListboxOption } from '../ui/searchable-listbox-model.ts';
 import type { TuneSourceModel } from './tune-source-model.ts';
 
 export type TuneCandidateKnobWork = Readonly<{
@@ -29,7 +27,7 @@ export type TuneCandidateKnobIndex = Readonly<{
 }>;
 
 export function createTuneCandidateKnobIndex(
-    source: TuneSourceModel,
+    source: TuneSourceModel
 ): TuneCandidateKnobIndex {
     const knobs = source.inventory?.knobs ?? [];
     const byPointer = new Map<string, DistributedRunTuningKnob>();
@@ -55,23 +53,31 @@ export function createTuneCandidateKnobIndex(
             knob.commandId,
             knob.recipeId,
             knob.reason,
-            knob.constraint,
+            knob.constraint
         ]);
         revisionKey += `${revisionRow.length}:${revisionRow}`;
         revisionRowsProjected += 1;
-        if (!byPointer.has(knob.pointer)) byPointer.set(knob.pointer, knob);
-        if (knob.effective && effective === undefined) effective = knob.pointer;
+        if (!byPointer.has(knob.pointer)) {
+            byPointer.set(knob.pointer, knob);
+        }
+        if (knob.effective && effective === undefined) {
+            effective = knob.pointer;
+        }
         if (knob.effective && knob.availability === 'configured') {
             configured ??= knob.pointer;
-            if (knob.name === 'rateHz') configuredRate ??= knob.pointer;
-            if (knob.name === 'intervalMs') configuredInterval ??= knob.pointer;
+            if (knob.name === 'rateHz') {
+                configuredRate ??= knob.pointer;
+            }
+            if (knob.name === 'intervalMs') {
+                configuredInterval ??= knob.pointer;
+            }
         }
         if (!knob.effective || knob.availability === 'blocked') {
             const occurrence = blockedOccurrences.get(knob.pointer) ?? 0;
             blockedOccurrences.set(knob.pointer, occurrence + 1);
             blockedKnobs.push({
                 key: JSON.stringify([knob.pointer, occurrence]),
-                knob,
+                knob
             });
             continue;
         }
@@ -88,9 +94,9 @@ export function createTuneCandidateKnobIndex(
                 knob.scope,
                 knob.availability,
                 knob.commandId ?? '',
-                knob.recipeId,
+                knob.recipeId
             ].join(' '),
-            detail: `${knob.scope} · recipe ${knob.recipeId}`,
+            detail: `${knob.scope} · recipe ${knob.recipeId}`
         });
     }
     let hintRowsVisited = 0;
@@ -116,7 +122,7 @@ export function createTuneCandidateKnobIndex(
             blockedRowsProjected: blockedKnobs.length,
             uniquePointersIndexed: byPointer.size,
             revisionRowsProjected,
-            hintRowsVisited,
-        },
+            hintRowsVisited
+        }
     };
 }

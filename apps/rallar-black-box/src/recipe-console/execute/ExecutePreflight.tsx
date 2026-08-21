@@ -1,10 +1,10 @@
 import type {
-    DistributedRecipeCatalogEntryProjection,
+    DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import { StatusMark } from '../ui/StatusMark.tsx';
+import styles from './ExecutePreflight.module.css';
 import { ExecutePreflightIssueList } from './ExecutePreflightIssueList.tsx';
 import { ExecutePreflightTree } from './ExecutePreflightTree.tsx';
-import styles from './ExecutePreflight.module.css';
 
 export type ExecutePreflightProps = Readonly<{
     entry?: DistributedRecipeCatalogEntryProjection;
@@ -30,7 +30,7 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
     const ready = schema.ok && preflight.errors.length === 0;
     const contextKey = JSON.stringify([
         'execute-preflight-v2',
-        entry.item.recipe.recipeId,
+        entry.item.recipe.recipeId
     ]);
     return (
         <section
@@ -55,10 +55,12 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
                 <Fact label="Maximum depth" value={String(preflight.maxDepth)} />
             </dl>
             <details className={styles.details}>
-                <summary>{preflightDetailsLabel({
-                    errorCount: schema.errors.length + preflight.errors.length,
-                    warningCount: schema.warnings.length + preflight.warnings.length,
-                })}</summary>
+                <summary>
+                    {preflightDetailsLabel({
+                        errorCount: schema.errors.length + preflight.errors.length,
+                        warningCount: schema.warnings.length + preflight.warnings.length
+                    })}
+                </summary>
                 <div className={styles.detailsBody}>
                     <div className={styles.serviceFacts}>
                         <FactList label="Provider modes" values={preflight.providerModes} />
@@ -69,21 +71,49 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
                             values={preflight.liveServiceRequirements}
                         />
                     </div>
-                    {preflight.serviceBadges.length > 0 ? (
-                        <div aria-label="Service requirements" className={styles.badges}>
-                            {preflight.serviceBadges.map((badge, index) => (
-                                <span
-                                    className={styles.badge}
-                                    data-tone={badge.tone}
-                                    key={`${badge.label}-${index}`}
-                                >{badge.label}</span>
-                            ))}
-                        </div>
-                    ) : null}
-                    <ExecutePreflightIssueList contextKey={contextKey} id="schema-errors" label="Schema errors" tone="error" values={schema.errors} />
-                    <ExecutePreflightIssueList contextKey={contextKey} id="schema-warnings" label="Schema warnings" tone="warning" values={schema.warnings} />
-                    <ExecutePreflightIssueList contextKey={contextKey} id="errors" label="Preflight errors" tone="error" values={preflight.errors} />
-                    <ExecutePreflightIssueList contextKey={contextKey} id="warnings" label="Preflight warnings" tone="warning" values={preflight.warnings} />
+                    {preflight.serviceBadges.length > 0
+                        ? (
+                            <div aria-label="Service requirements" className={styles.badges}>
+                                {preflight.serviceBadges.map((badge, index) => (
+                                    <span
+                                        className={styles.badge}
+                                        data-tone={badge.tone}
+                                        key={`${badge.label}-${index}`}
+                                    >
+                                        {badge.label}
+                                    </span>
+                                ))}
+                            </div>
+                        )
+                        : null}
+                    <ExecutePreflightIssueList
+                        contextKey={contextKey}
+                        id="schema-errors"
+                        label="Schema errors"
+                        tone="error"
+                        values={schema.errors}
+                    />
+                    <ExecutePreflightIssueList
+                        contextKey={contextKey}
+                        id="schema-warnings"
+                        label="Schema warnings"
+                        tone="warning"
+                        values={schema.warnings}
+                    />
+                    <ExecutePreflightIssueList
+                        contextKey={contextKey}
+                        id="errors"
+                        label="Preflight errors"
+                        tone="error"
+                        values={preflight.errors}
+                    />
+                    <ExecutePreflightIssueList
+                        contextKey={contextKey}
+                        id="warnings"
+                        label="Preflight warnings"
+                        tone="warning"
+                        values={preflight.warnings}
+                    />
                     <ExecutePreflightTree contextKey={contextKey} rows={preflight.tree} />
                 </div>
             </details>
@@ -91,15 +121,24 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
     );
 }
 
-function preflightDetailsLabel(input: Readonly<{
-    errorCount: number;
-    warningCount: number;
-}>): string {
-    return `Preflight details · ${input.errorCount} ${input.errorCount === 1 ? 'error' : 'errors'} · ${input.warningCount} ${input.warningCount === 1 ? 'warning' : 'warnings'}`;
+function preflightDetailsLabel(
+    input: Readonly<{
+        errorCount: number;
+        warningCount: number;
+    }>
+): string {
+    return `Preflight details · ${input.errorCount} ${
+        input.errorCount === 1 ? 'error' : 'errors'
+    } · ${input.warningCount} ${input.warningCount === 1 ? 'warning' : 'warnings'}`;
 }
 
-function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
-    return <div><dt>{label}</dt><dd>{value}</dd></div>;
+function Fact({ label, value }: Readonly<{ label: string; value: string; }>) {
+    return (
+        <div>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+        </div>
+    );
 }
 
 function FactList({ label, values, emptyLabel = 'None' }: Readonly<{

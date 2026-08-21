@@ -1,70 +1,70 @@
 import type {
-  QueueBoxPubSubBridge,
-  QueueBoxPubSubMessage,
+    QueueBoxPubSubBridge,
+    QueueBoxPubSubMessage
 } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 
 type LocalQueuePubSubSubscriber = Readonly<{
-  ignoredPublisherId?: string;
-  onMessage: (message: QueueBoxPubSubMessage) => Promise<void> | void;
+    ignoredPublisherId?: string;
+    onMessage: (message: QueueBoxPubSubMessage) => Promise<void> | void;
 }>;
 
 export type LocalQueuePubSubBus = Readonly<{
-  subscribersByChannel: Map<string, Set<LocalQueuePubSubSubscriber>>;
+    subscribersByChannel: Map<string, Set<LocalQueuePubSubSubscriber>>;
 }>;
 
 export type LocalQueuePubSubBridgeOptions = Readonly<{
-  ignoredPublisherId?: string;
-  bus?: LocalQueuePubSubBus;
+    ignoredPublisherId?: string;
+    bus?: LocalQueuePubSubBus;
 }>;
 
 const defaultBus = createLocalQueuePubSubBus();
 
 export function createLocalQueuePubSubBus(): LocalQueuePubSubBus {
-  return {
-    subscribersByChannel: new Map(),
-  };
+    return {
+        subscribersByChannel: new Map()
+    };
 }
 
 export function createLocalQueuePubSubBridge(
-  options: LocalQueuePubSubBridgeOptions = {},
+    options: LocalQueuePubSubBridgeOptions = {}
 ): QueueBoxPubSubBridge {
-  const bus = options.bus ?? defaultBus;
+    const bus = options.bus ?? defaultBus;
 
-  return {
-    publish: async (channel, message) => {
-      const subscribers = bus.subscribersByChannel.get(channel);
-      if (!subscribers) {
-        return;
-      }
+    return {
+        publish: async (channel, message) => {
+            const subscribers = bus.subscribersByChannel.get(channel);
+            if (!subscribers) {
+                return;
+            }
 
-      for (const subscriber of [...subscribers]) {
-        if (subscriber.ignoredPublisherId === message.publisherId) {
-          continue;
+            for (const subscriber of [...subscribers]) {
+                if (subscriber.ignoredPublisherId === message.publisherId) {
+                    continue;
+                }
+                await subscriber.onMessage(message);
+            }
+        },
+        subscribe: (channel, onMessage) => {
+            let subscribers = bus.subscribersByChannel.get(channel);
+            if (!subscribers) {
+                subscribers = new Set();
+                bus.subscribersByChannel.set(channel, subscribers);
+            }
+
+            subscribers.add({
+                ignoredPublisherId: options.ignoredPublisherId,
+                onMessage
+            });
+            return Promise.resolve();
         }
-        await subscriber.onMessage(message);
-      }
-    },
-    subscribe: (channel, onMessage) => {
-      let subscribers = bus.subscribersByChannel.get(channel);
-      if (!subscribers) {
-        subscribers = new Set();
-        bus.subscribersByChannel.set(channel, subscribers);
-      }
-
-      subscribers.add({
-        ignoredPublisherId: options.ignoredPublisherId,
-        onMessage,
-      });
-      return Promise.resolve();
-    },
-  };
+    };
 }
 
 export function createDisabledQueuePubSubBridge(): QueueBoxPubSubBridge {
-  return {
-    publish: async () => {
-    },
-    subscribe: async () => {
-    },
-  };
+    return {
+        publish: async () => {
+        },
+        subscribe: async () => {
+        }
+    };
 }

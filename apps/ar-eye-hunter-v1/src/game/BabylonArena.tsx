@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { FreeCamera } from '@babylonjs/core/Cameras/freeCamera.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
+import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
 import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
-import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
-import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
@@ -15,27 +14,21 @@ import { Scene } from '@babylonjs/core/scene.js';
 import {
     createRallarMotionBuffer,
     estimateRallarMotionVelocity,
-    type RallarMotionBuffer,
+    type RallarMotionBuffer
 } from '@shared/rallar-motion/mod.ts';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 import {
-    applyArenaEvent,
-    applyPlayerHitAccepted,
-    createInitialArenaState,
-    createInitialPlayerState,
-    EMPTY_INPUT,
-    findPickupNearPlayer,
-    getWeaponStats,
-    hydrateArenaSnapshot,
-    resolveShot,
-    stepLocalPlayer,
-    stepArenaDirectorState,
-    toArenaSnapshot,
-    upsertPlayerPose,
-    type ArenaSimulationState,
-    type LocalPlayerState,
-} from './simulation.ts';
+    calculateArenaMusicLayerState,
+    loadArenaAudioSettings,
+    normalizeArenaAudioSettings,
+    ProceduralArenaAudio,
+    saveArenaAudioSettings,
+    type ArenaAudioSettings,
+    type ArenaMusicLayerState
+} from './arenaAudio.ts';
 import { blocksShot } from './arenaLayout.ts';
+import { avatarAccentForPalette } from './avatarProfile.ts';
 import {
     calculateVirtualStick,
     chooseTouchAimCandidate,
@@ -54,24 +47,32 @@ import {
     type Point2,
     type TouchAimCandidate,
     type TouchControlState,
-    type VirtualStickResult,
+    type VirtualStickResult
 } from './mobileInput.ts';
 import {
-    calculateArenaMusicLayerState,
-    ProceduralArenaAudio,
-    loadArenaAudioSettings,
-    normalizeArenaAudioSettings,
-    saveArenaAudioSettings,
-    type ArenaMusicLayerState,
-    type ArenaAudioSettings,
-} from './arenaAudio.ts';
+    applyArenaEvent,
+    applyPlayerHitAccepted,
+    createInitialArenaState,
+    createInitialPlayerState,
+    EMPTY_INPUT,
+    findPickupNearPlayer,
+    getWeaponStats,
+    hydrateArenaSnapshot,
+    resolveShot,
+    stepArenaDirectorState,
+    stepLocalPlayer,
+    toArenaSnapshot,
+    upsertPlayerPose,
+    type ArenaSimulationState,
+    type LocalPlayerState
+} from './simulation.ts';
 import type { ArenaLinkState, ArenaPresenceNotice } from './squadLink.ts';
 import type {
-    ArenaLayoutSpec,
-    ArenaLayoutProp,
     ArenaEvent,
-    ArenaSnapshot,
+    ArenaLayoutProp,
+    ArenaLayoutSpec,
     ArenaPickupState,
+    ArenaSnapshot,
     EyeAttackCue,
     EyeTargetState,
     PickupIntent,
@@ -86,9 +87,8 @@ import type {
     RemoteShot,
     ShotAccepted,
     ShotIntent,
-    Vec3Tuple,
+    Vec3Tuple
 } from './types.ts';
-import { avatarAccentForPalette } from './avatarProfile.ts';
 
 type BabylonArenaProps = Readonly<{
     localSessionId?: string;
@@ -108,7 +108,7 @@ type BabylonArenaProps = Readonly<{
     onLocalPose: (pose: Omit<PlayerPose, 'sessionId' | 'username' | 'color'>) => void;
     onLocalShot: (
         shot: Omit<ShotIntent, 'sessionId' | 'username' | 'color'>,
-        accepted: ShotAccepted,
+        accepted: ShotAccepted
     ) => void;
     onPlayerHitIntent: (intent: PlayerHitIntent) => void;
     onPickupIntent: (intent: PickupIntent) => void;
@@ -246,7 +246,7 @@ const MATRIX_THEME = {
     magenta: '#ff3df2',
     amber: '#ffe66d',
     danger: '#ff4d7d',
-    white: '#effff7',
+    white: '#effff7'
 } as const;
 
 const MATRIX_TARGET_LABELS = [
@@ -257,7 +257,7 @@ const MATRIX_TARGET_LABELS = [
     'Mandatory Fun Sensor',
     'Cookie Consent Retina',
     'Productivity Gazer',
-    'User Research Victim',
+    'User Research Victim'
 ] as const;
 
 const MATRIX_SIGNS = [
@@ -265,7 +265,7 @@ const MATRIX_SIGNS = [
     ['TERMS ACCEPTED', 'you clicked by existing'],
     ['PRIVACY POLICY WITNESS', 'it has seen enough'],
     ['COMPLIANCE ORB STORAGE', 'please enjoy against policy'],
-    ['EXIT INTERVIEW PORTAL', 'survival is not a benefit'],
+    ['EXIT INTERVIEW PORTAL', 'survival is not a benefit']
 ] as const;
 
 export function BabylonArena({
@@ -289,7 +289,7 @@ export function BabylonArena({
     onPickupIntent,
     onLocalCombatChange,
     onLocalPlayerChange,
-    onArenaSnapshot,
+    onArenaSnapshot
 }: BabylonArenaProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const runtimeRef = useRef<ArenaRuntime | undefined>(undefined);
@@ -308,13 +308,13 @@ export function BabylonArena({
         onPickupIntent,
         onLocalCombatChange,
         onLocalPlayerChange,
-        onArenaSnapshot,
+        onArenaSnapshot
     });
     const poseSeqRef = useRef(0);
     const shotSeqRef = useRef(0);
     const pickupSeqRef = useRef(0);
     const localPoseRef = useRef<LocalPoseHistory | undefined>(undefined);
-    const gyroLastRef = useRef<Readonly<{ beta: number; gamma: number }> | undefined>(undefined);
+    const gyroLastRef = useRef<Readonly<{ beta: number; gamma: number; }> | undefined>(undefined);
     const [mobileSettings, setMobileSettings] = useState<MobileControlSettings>(() =>
         typeof window === 'undefined'
             ? createDefaultMobileControlSettings()
@@ -326,14 +326,16 @@ export function BabylonArena({
             : loadArenaAudioSettings((key) => window.localStorage.getItem(key))
     );
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [stickView, setStickView] = useState<Readonly<{
-        active: boolean;
-        knobX: number;
-        knobY: number;
-    }>>({
+    const [stickView, setStickView] = useState<
+        Readonly<{
+            active: boolean;
+            knobX: number;
+            knobY: number;
+        }>
+    >({
         active: false,
         knobX: 0,
-        knobY: 0,
+        knobY: 0
     });
 
     useEffect(() => {
@@ -376,7 +378,7 @@ export function BabylonArena({
             onPickupIntent,
             onLocalCombatChange,
             onLocalPlayerChange,
-            onArenaSnapshot,
+            onArenaSnapshot
         };
     }, [
         onArenaSnapshot,
@@ -385,7 +387,7 @@ export function BabylonArena({
         onLocalPose,
         onLocalShot,
         onPickupIntent,
-        onPlayerHitIntent,
+        onPlayerHitIntent
     ]);
 
     useEffect(() => {
@@ -425,7 +427,7 @@ export function BabylonArena({
             const delta = mapTouchLookDelta(
                 (event.gamma - previous.gamma) * 2.1,
                 (event.beta - previous.beta) * 1.45,
-                runtime.mobileSettings,
+                runtime.mobileSettings
             );
             applyLook(runtime, delta.yawDelta, delta.pitchDelta);
             runtime.inputDevice = 'gyro-touch';
@@ -475,7 +477,8 @@ export function BabylonArena({
                     updateMobileSettings({ gyroEnabled: false });
                     return;
                 }
-            } catch {
+            }
+            catch {
                 updateMobileSettings({ gyroEnabled: false });
                 return;
             }
@@ -504,13 +507,13 @@ export function BabylonArena({
         setStickView({
             active: true,
             knobX: stick.knobX,
-            knobY: stick.knobY,
+            knobY: stick.knobY
         });
     };
 
     const pointFromPointer = (event: ReactPointerEvent): Point2 => ({
         x: event.clientX,
-        y: event.clientY,
+        y: event.clientY
     });
 
     const onMovePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -525,7 +528,7 @@ export function BabylonArena({
             runtime.touchState,
             'move',
             event.pointerId,
-            pointFromPointer(event),
+            pointFromPointer(event)
         );
         updateMoveStick(runtime);
     };
@@ -540,7 +543,7 @@ export function BabylonArena({
             runtime.touchState,
             'move',
             event.pointerId,
-            pointFromPointer(event),
+            pointFromPointer(event)
         );
         updateMoveStick(runtime);
     };
@@ -572,7 +575,7 @@ export function BabylonArena({
             runtime.touchState,
             'look',
             event.pointerId,
-            pointFromPointer(event),
+            pointFromPointer(event)
         );
         runtime.inputDevice = runtime.mobileSettings.gyroEnabled ? 'gyro-touch' : 'touch';
         runtime.mobileControlsEnabled = true;
@@ -589,7 +592,7 @@ export function BabylonArena({
             const delta = mapTouchLookDelta(
                 point.x - previous.x,
                 point.y - previous.y,
-                runtime.mobileSettings,
+                runtime.mobileSettings
             );
             applyLook(runtime, delta.yawDelta, delta.pitchDelta);
         }
@@ -600,7 +603,7 @@ export function BabylonArena({
     const onActionDown = (
         event: ReactPointerEvent<HTMLButtonElement>,
         action: MutableButtonAction,
-        mode: 'hold' | 'pulse',
+        mode: 'hold' | 'pulse'
     ) => {
         event.preventDefault();
         const runtime = runtimeRef.current;
@@ -624,7 +627,7 @@ export function BabylonArena({
     const onActionUp = (
         event: ReactPointerEvent<HTMLButtonElement>,
         action: MutableButtonAction,
-        mode: 'hold' | 'pulse',
+        mode: 'hold' | 'pulse'
     ) => {
         const runtime = runtimeRef.current;
         if (runtime && mode === 'hold') {
@@ -642,7 +645,7 @@ export function BabylonArena({
     };
 
     const mobileControlStyle = {
-        '--mobile-button-scale': mobileSettings.buttonScale,
+        '--mobile-button-scale': mobileSettings.buttonScale
     } as CSSProperties;
 
     useEffect(() => {
@@ -654,7 +657,7 @@ export function BabylonArena({
         const engine = new Engine(canvas, true, {
             antialias: true,
             preserveDrawingBuffer: true,
-            stencil: true,
+            stencil: true
         });
         const scene = new Scene(engine);
         scene.clearColor = new Color4(0.003, 0.018, 0.014, 1);
@@ -686,7 +689,7 @@ export function BabylonArena({
             layoutPropRoot,
             motionBuffer: createRallarMotionBuffer<PlayerPose>({
                 interpolationDelayMs: 75,
-                maxExtrapolationMs: 130,
+                maxExtrapolationMs: 130
             }),
             motionSampleKeys: new Map(),
             remoteShotIds: new Set(),
@@ -722,14 +725,14 @@ export function BabylonArena({
                 incomingAttack: false,
                 healthRatio: 1,
                 linkTone: linkStateRef.current.tone,
-                reducedIntensity: audioSettings.reducedIntensity,
+                reducedIntensity: audioSettings.reducedIntensity
             }, audioSettings),
             linkTone: linkStateRef.current.tone,
             playedNoticeIds: new Set(),
             lastAudioMatchStatus: 'infinite',
             lastAudioWaveKey: '1:warmup',
             lowHealthWarned: false,
-            touchAimAssistUntilMs: 0,
+            touchAimAssistUntilMs: 0
         };
         runtimeRef.current = runtime;
         syncLocalPlayerFromSnapshot(runtime, localSessionId, toArenaSnapshot(initialArenaState, roomId, now));
@@ -759,7 +762,8 @@ export function BabylonArena({
                 if (lockRequest instanceof Promise) {
                     void lockRequest.catch(() => undefined);
                 }
-            } catch {
+            }
+            catch {
                 // Pointer lock can be blocked in headless smoke runs or embedded previews.
             }
         };
@@ -772,7 +776,7 @@ export function BabylonArena({
                     runtime,
                     event,
                     remotePlayersRef.current,
-                    localSessionId ?? 'local',
+                    localSessionId ?? 'local'
                 );
                 fireLocalShot({
                     runtime,
@@ -785,7 +789,7 @@ export function BabylonArena({
                     shotSeqRef,
                     callbacksRef,
                     directionOverride: aim.direction,
-                    touchAssisted: aim.assisted,
+                    touchAssisted: aim.assisted
                 });
                 return;
             }
@@ -799,7 +803,7 @@ export function BabylonArena({
                     networkEnabled: networkEnabledRef.current,
                     remotePlayers: remotePlayersRef.current,
                     shotSeqRef,
-                    callbacksRef,
+                    callbacksRef
                 });
                 requestPointerLock();
                 return;
@@ -846,7 +850,7 @@ export function BabylonArena({
                 shotSeqRef,
                 pickupSeqRef,
                 localPoseRef,
-                callbacksRef,
+                callbacksRef
             });
         });
 
@@ -915,7 +919,7 @@ export function BabylonArena({
                 </div>
             )}
             <div className="crosshair" aria-hidden="true">
-                <span/>
+                <span />
             </div>
             <div
                 className="mobile-fps-controls"
@@ -936,7 +940,7 @@ export function BabylonArena({
                         <span
                             className="mobile-stick-knob"
                             style={{
-                                transform: `translate(${stickView.knobX}px, ${stickView.knobY}px)`,
+                                transform: `translate(${stickView.knobX}px, ${stickView.knobY}px)`
                             }}
                         />
                     </span>
@@ -1031,9 +1035,10 @@ export function BabylonArena({
                                 max="2.4"
                                 step="0.05"
                                 value={mobileSettings.touchSensitivity}
-                                onChange={(event) => updateMobileSettings({
-                                    touchSensitivity: Number(event.currentTarget.value),
-                                })}
+                                onChange={(event) =>
+                                    updateMobileSettings({
+                                        touchSensitivity: Number(event.currentTarget.value)
+                                    })}
                             />
                         </label>
                         <label>
@@ -1044,18 +1049,20 @@ export function BabylonArena({
                                 max="1.35"
                                 step="0.03"
                                 value={mobileSettings.buttonScale}
-                                onChange={(event) => updateMobileSettings({
-                                    buttonScale: Number(event.currentTarget.value),
-                                })}
+                                onChange={(event) =>
+                                    updateMobileSettings({
+                                        buttonScale: Number(event.currentTarget.value)
+                                    })}
                             />
                         </label>
                         <label className="mobile-setting-check">
                             <input
                                 type="checkbox"
                                 checked={mobileSettings.invertY}
-                                onChange={(event) => updateMobileSettings({
-                                    invertY: event.currentTarget.checked,
-                                })}
+                                onChange={(event) =>
+                                    updateMobileSettings({
+                                        invertY: event.currentTarget.checked
+                                    })}
                             />
                             Invert look Y
                         </label>
@@ -1063,9 +1070,10 @@ export function BabylonArena({
                             <input
                                 type="checkbox"
                                 checked={mobileSettings.hapticsEnabled}
-                                onChange={(event) => updateMobileSettings({
-                                    hapticsEnabled: event.currentTarget.checked,
-                                })}
+                                onChange={(event) =>
+                                    updateMobileSettings({
+                                        hapticsEnabled: event.currentTarget.checked
+                                    })}
                             />
                             Haptics
                         </label>
@@ -1090,9 +1098,10 @@ export function BabylonArena({
                                 max="0.24"
                                 step="0.01"
                                 value={audioSettings.musicVolume}
-                                onChange={(event) => updateAudioSettings({
-                                    musicVolume: Number(event.currentTarget.value),
-                                })}
+                                onChange={(event) =>
+                                    updateAudioSettings({
+                                        musicVolume: Number(event.currentTarget.value)
+                                    })}
                             />
                         </label>
                         <label>
@@ -1103,18 +1112,20 @@ export function BabylonArena({
                                 max="0.6"
                                 step="0.02"
                                 value={audioSettings.sfxVolume}
-                                onChange={(event) => updateAudioSettings({
-                                    sfxVolume: Number(event.currentTarget.value),
-                                })}
+                                onChange={(event) =>
+                                    updateAudioSettings({
+                                        sfxVolume: Number(event.currentTarget.value)
+                                    })}
                             />
                         </label>
                         <label className="mobile-setting-check">
                             <input
                                 type="checkbox"
                                 checked={audioSettings.reducedIntensity}
-                                onChange={(event) => updateAudioSettings({
-                                    reducedIntensity: event.currentTarget.checked,
-                                })}
+                                onChange={(event) =>
+                                    updateAudioSettings({
+                                        reducedIntensity: event.currentTarget.checked
+                                    })}
                             />
                             Reduced audio intensity
                         </label>
@@ -1122,9 +1133,10 @@ export function BabylonArena({
                             <input
                                 type="checkbox"
                                 checked={audioSettings.autoStartOnGesture}
-                                onChange={(event) => updateAudioSettings({
-                                    autoStartOnGesture: event.currentTarget.checked,
-                                })}
+                                onChange={(event) =>
+                                    updateAudioSettings({
+                                        autoStartOnGesture: event.currentTarget.checked
+                                    })}
                             />
                             Auto-start subtle score
                         </label>
@@ -1174,7 +1186,7 @@ function runFrame({
     shotSeqRef,
     pickupSeqRef,
     localPoseRef,
-    callbacksRef,
+    callbacksRef
 }: Readonly<{
     runtime: ArenaRuntime;
     roomId?: string;
@@ -1229,7 +1241,7 @@ function runFrame({
         freezeInput(runtime.input),
         dtMs,
         now,
-        runtime.arenaState.layout.halfSize,
+        runtime.arenaState.layout.halfSize
     );
     const localPlayerId = localSessionId ?? 'local';
     runtime.arenaState = upsertPlayerPose(
@@ -1244,9 +1256,9 @@ function runFrame({
             vitals: runtime.localPlayer.vitals,
             loadout: runtime.localPlayer.loadout,
             seq: poseSeqRef.current,
-            sentAtEpochMs: now,
+            sentAtEpochMs: now
         },
-        now,
+        now
     );
     runtime.arenaState = stepArenaDirectorState(runtime.arenaState, now);
     syncLocalPlayerFromArenaState(runtime, localPlayerId);
@@ -1258,7 +1270,7 @@ function runFrame({
     runtime.audio.play({
         kind: 'eye-drone',
         threatCount: runtime.arenaState.targets.filter(isHostileEye).length,
-        distanceFactor: runtime.audioSettings.reducedIntensity ? 0.55 : 1,
+        distanceFactor: runtime.audioSettings.reducedIntensity ? 0.55 : 1
     });
     syncRemoteAvatars(runtime, remotePlayers);
     syncRemoteShots(runtime, remoteShots);
@@ -1274,7 +1286,7 @@ function runFrame({
             remotePlayers,
             shotSeqRef,
             callbacksRef,
-            nowEpochMs: now,
+            nowEpochMs: now
         });
         detectLocalPickup(runtime, localPlayerId, pickupSeqRef, callbacksRef);
     }
@@ -1285,13 +1297,13 @@ function runFrame({
     }
     callbacksRef.current.onLocalPlayerChange({
         vitals: runtime.localPlayer.vitals,
-        loadout: runtime.localPlayer.loadout,
+        loadout: runtime.localPlayer.loadout
     });
 
     if (networkEnabled && runtime.lastSnapshotRevision !== runtime.arenaState.revision) {
         runtime.lastSnapshotRevision = runtime.arenaState.revision;
         callbacksRef.current.onArenaSnapshot(
-            toArenaSnapshot(runtime.arenaState, roomId, now),
+            toArenaSnapshot(runtime.arenaState, roomId, now)
         );
     }
 }
@@ -1304,7 +1316,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         'matrix-floor-mat',
         MATRIX_THEME.graphite,
         MATRIX_THEME.acid,
-        0.11,
+        0.11
     );
     const gridTexture = createMatrixGridTexture(scene);
     floorMaterial.diffuseTexture = gridTexture;
@@ -1314,7 +1326,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
     const floor = MeshBuilder.CreateGround('floor', {
         width: arenaSize,
         height: arenaSize,
-        subdivisions: 24,
+        subdivisions: 24
     }, scene);
     floor.material = floorMaterial;
 
@@ -1324,7 +1336,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         MATRIX_THEME.glass,
         MATRIX_THEME.cyan,
         0.16,
-        0.92,
+        0.92
     );
     wallMaterial.specularColor = Color3.FromHexString(MATRIX_THEME.white).scale(0.26);
 
@@ -1334,7 +1346,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         MATRIX_THEME.acid,
         MATRIX_THEME.acid,
         1.0,
-        0.88,
+        0.88
     );
     const warningMaterial = createMatrixMaterial(
         scene,
@@ -1342,14 +1354,14 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         MATRIX_THEME.magenta,
         MATRIX_THEME.magenta,
         0.86,
-        0.86,
+        0.86
     );
 
     const walls = [
         { name: 'north-wall', position: [0, 2.6, halfSize], scaling: [arenaSize, 5.2, 0.7] },
         { name: 'south-wall', position: [0, 2.6, -halfSize], scaling: [arenaSize, 5.2, 0.7] },
         { name: 'east-wall', position: [halfSize, 2.6, 0], scaling: [0.7, 5.2, arenaSize] },
-        { name: 'west-wall', position: [-halfSize, 2.6, 0], scaling: [0.7, 5.2, arenaSize] },
+        { name: 'west-wall', position: [-halfSize, 2.6, 0], scaling: [0.7, 5.2, arenaSize] }
     ] as const;
 
     for (const spec of walls) {
@@ -1366,7 +1378,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         const lane = MeshBuilder.CreateBox(`matrix-longitude-${index}`, {
             width: index % 3 === 0 ? 0.09 : 0.045,
             height: 0.035,
-            depth: arenaSize * 0.88,
+            depth: arenaSize * 0.88
         }, scene);
         lane.position.set(x, 0.055, 0);
         lane.material = index % 3 === 0 ? warningMaterial : laneMaterial;
@@ -1376,7 +1388,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         const lane = MeshBuilder.CreateBox(`matrix-latitude-${index}`, {
             width: arenaSize * 0.88,
             height: 0.035,
-            depth: index % 3 === 0 ? 0.09 : 0.045,
+            depth: index % 3 === 0 ? 0.09 : 0.045
         }, scene);
         lane.position.set(0, 0.06, z);
         lane.material = index % 3 === 0 ? warningMaterial : laneMaterial;
@@ -1388,7 +1400,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
                 height: 4.8,
                 diameterTop: 0.7,
                 diameterBottom: 1.35,
-                tessellation: 6,
+                tessellation: 6
             }, scene);
             pillar.position.set(x, 2.4, z);
             pillar.rotation.y = index * 0.4;
@@ -1397,7 +1409,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
             const ring = MeshBuilder.CreateTorus(`signal-ring-${index}-${z}`, {
                 diameter: 2.0,
                 thickness: 0.055,
-                tessellation: 24,
+                tessellation: 24
             }, scene);
             ring.position.set(x, 4.25, z);
             ring.rotation.x = Math.PI / 2;
@@ -1405,12 +1417,12 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
         }
     }
 
-    createCodeRainPanel(scene, 'matrix-rain-north-a', [ -halfSize * 0.32, 2.85, halfSize - 0.42 ], Math.PI, 11.8, 4.2, 1);
-    createCodeRainPanel(scene, 'matrix-rain-north-b', [ halfSize * 0.32, 2.85, halfSize - 0.42 ], Math.PI, 11.8, 4.2, 2);
-    createCodeRainPanel(scene, 'matrix-rain-south-a', [ -halfSize * 0.32, 2.85, -halfSize + 0.42 ], 0, 11.8, 4.2, 3);
-    createCodeRainPanel(scene, 'matrix-rain-south-b', [ halfSize * 0.32, 2.85, -halfSize + 0.42 ], 0, 11.8, 4.2, 4);
-    createCodeRainPanel(scene, 'matrix-rain-east', [ halfSize - 0.42, 2.85, 0 ], -Math.PI / 2, 15.5, 4.4, 5);
-    createCodeRainPanel(scene, 'matrix-rain-west', [ -halfSize + 0.42, 2.85, 0 ], Math.PI / 2, 15.5, 4.4, 6);
+    createCodeRainPanel(scene, 'matrix-rain-north-a', [-halfSize * 0.32, 2.85, halfSize - 0.42], Math.PI, 11.8, 4.2, 1);
+    createCodeRainPanel(scene, 'matrix-rain-north-b', [halfSize * 0.32, 2.85, halfSize - 0.42], Math.PI, 11.8, 4.2, 2);
+    createCodeRainPanel(scene, 'matrix-rain-south-a', [-halfSize * 0.32, 2.85, -halfSize + 0.42], 0, 11.8, 4.2, 3);
+    createCodeRainPanel(scene, 'matrix-rain-south-b', [halfSize * 0.32, 2.85, -halfSize + 0.42], 0, 11.8, 4.2, 4);
+    createCodeRainPanel(scene, 'matrix-rain-east', [halfSize - 0.42, 2.85, 0], -Math.PI / 2, 15.5, 4.4, 5);
+    createCodeRainPanel(scene, 'matrix-rain-west', [-halfSize + 0.42, 2.85, 0], Math.PI / 2, 15.5, 4.4, 6);
 
     for (const [index, sign] of MATRIX_SIGNS.entries()) {
         const side = index % 2 === 0 ? 1 : -1;
@@ -1424,7 +1436,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
             sign[1],
             [x, 3.35, z],
             rotation,
-            index % 2 === 0 ? MATRIX_THEME.acid : MATRIX_THEME.cyan,
+            index % 2 === 0 ? MATRIX_THEME.acid : MATRIX_THEME.cyan
         );
     }
 
@@ -1455,7 +1467,7 @@ function buildArena(scene: Scene, layout: ArenaLayoutSpec): void {
 function buildLayoutProps(
     scene: Scene,
     root: TransformNode,
-    layout: ArenaLayoutSpec,
+    layout: ArenaLayoutSpec
 ): void {
     for (const prop of layout.props) {
         createLayoutProp(scene, root, prop);
@@ -1469,7 +1481,7 @@ function buildLayoutProps(
             sign.detail,
             sign.position,
             sign.rotationY,
-            MATRIX_THEME.acid,
+            MATRIX_THEME.acid
         );
     }
 }
@@ -1477,7 +1489,7 @@ function buildLayoutProps(
 function createLayoutProp(
     scene: Scene,
     root: TransformNode,
-    prop: ArenaLayoutProp,
+    prop: ArenaLayoutProp
 ): void {
     const color = prop.kind === 'hazard'
         ? MATRIX_THEME.danger
@@ -1492,13 +1504,13 @@ function createLayoutProp(
         prop.blocksShots ? MATRIX_THEME.glass : MATRIX_THEME.graphite,
         color,
         prop.kind === 'cover' ? 0.22 : 0.74,
-        prop.kind === 'cover' ? 0.92 : 0.76,
+        prop.kind === 'cover' ? 0.92 : 0.76
     );
 
     const mesh = MeshBuilder.CreateBox(`layout-prop-${prop.id}`, {
         width: prop.size[0],
         height: prop.size[1],
-        depth: prop.size[2],
+        depth: prop.size[2]
     }, scene);
     mesh.parent = root;
     mesh.position = vector3(prop.position);
@@ -1517,7 +1529,7 @@ function createLayoutProp(
             'facilities says this is intentional',
             [prop.position[0], prop.position[1] + prop.size[1] * 0.72 + 0.9, prop.position[2]],
             prop.rotationY ?? 0,
-            color,
+            color
         );
     }
 }
@@ -1528,7 +1540,7 @@ function createMatrixMaterial(
     diffuseHex: string,
     emissiveHex: string,
     emissiveScale: number,
-    alpha = 1,
+    alpha = 1
 ): StandardMaterial {
     const material = new StandardMaterial(name, scene);
     material.diffuseColor = Color3.FromHexString(diffuseHex);
@@ -1588,7 +1600,7 @@ function createCodeRainPanel(
     rotationY: number,
     width: number,
     height: number,
-    seed: number,
+    seed: number
 ): void {
     const texture = new DynamicTexture(`${name}-texture`, { width: 512, height: 512 }, scene);
     texture.hasAlpha = true;
@@ -1636,7 +1648,7 @@ function createHologramSign(
     detail: string,
     position: Vec3Tuple,
     rotationY: number,
-    accent: string,
+    accent: string
 ): void {
     const texture = new DynamicTexture(`${name}-texture`, { width: 768, height: 256 }, scene);
     texture.hasAlpha = true;
@@ -1666,14 +1678,14 @@ function createPortalRings(scene: Scene, name: string, position: Vec3Tuple, acce
         MATRIX_THEME.acid,
         MATRIX_THEME.acid,
         0.84,
-        0.64,
+        0.64
     );
 
     for (let i = 0; i < 3; i += 1) {
         const ring = MeshBuilder.CreateTorus(`${name}-ring-${i}`, {
             diameter: 2.6 + i * 0.66,
             thickness: 0.035 + i * 0.012,
-            tessellation: 48,
+            tessellation: 48
         }, scene);
         ring.parent = root;
         ring.rotation.x = Math.PI / 2 + i * 0.4;
@@ -1691,7 +1703,7 @@ function drawMatrixPanel(
     texture: DynamicTexture,
     title: string,
     detail: string,
-    accent: string,
+    accent: string
 ): void {
     const ctx = texture.getContext();
     ctx.clearRect(0, 0, 768, 256);
@@ -1722,7 +1734,7 @@ function maybeFireHeldShot({
     remotePlayers,
     shotSeqRef,
     callbacksRef,
-    nowEpochMs,
+    nowEpochMs
 }: Readonly<{
     runtime: ArenaRuntime;
     localSessionId?: string;
@@ -1743,11 +1755,13 @@ function maybeFireHeldShot({
     }>;
     nowEpochMs: number;
 }>): void {
-    if (!shouldFireHeldWeapon(
-        runtime.input.fire,
-        nowEpochMs,
-        runtime.localPlayer.combat.shotReadyAtEpochMs,
-    )) {
+    if (
+        !shouldFireHeldWeapon(
+            runtime.input.fire,
+            nowEpochMs,
+            runtime.localPlayer.combat.shotReadyAtEpochMs
+        )
+    ) {
         return;
     }
 
@@ -1760,7 +1774,7 @@ function maybeFireHeldShot({
         networkEnabled: true,
         remotePlayers,
         shotSeqRef,
-        callbacksRef,
+        callbacksRef
     });
 }
 
@@ -1775,7 +1789,7 @@ function fireLocalShot({
     shotSeqRef,
     callbacksRef,
     directionOverride,
-    touchAssisted,
+    touchAssisted
 }: Readonly<{
     runtime: ArenaRuntime;
     localSessionId?: string;
@@ -1813,18 +1827,18 @@ function fireLocalShot({
         charged: runtime.input.altFire,
         overdrive: runtime.input.overdrive,
         seq: shotSeqRef.current,
-        sentAtEpochMs: now,
+        sentAtEpochMs: now
     };
     const resolution = resolveShot(
         runtime.arenaState,
         runtime.localPlayer.combat,
         shot,
-        now,
+        now
     );
     runtime.arenaState = resolution.state;
     runtime.localPlayer = {
         ...runtime.localPlayer,
-        combat: resolution.combat,
+        combat: resolution.combat
     };
     runtime.recoil = Math.min(1, runtime.recoil + (resolution.accepted.hit ? 0.38 : 0.22));
     runtime.hitStopUntilEpochMs = resolution.accepted.hit ? now + 38 : runtime.hitStopUntilEpochMs;
@@ -1843,7 +1857,7 @@ function fireLocalShot({
                 targetSessionId: playerHit.targetSessionId,
                 targetSeq: playerHit.targetSeq,
                 predictedImpact: playerHit.impact,
-                sentAtEpochMs: now,
+                sentAtEpochMs: now
             });
         }
         createImpact(runtime, vector3(playerHit.impact), MATRIX_THEME.cyan, 1);
@@ -1867,7 +1881,7 @@ function fireLocalShot({
             overdrive: shot.overdrive,
             seq: shot.seq,
             sentAtEpochMs: shot.sentAtEpochMs,
-            weaponKind: shot.weaponKind,
+            weaponKind: shot.weaponKind
         },
         {
             ...resolution.accepted,
@@ -1875,12 +1889,12 @@ function fireLocalShot({
                 ...resolution.accepted.shot,
                 sessionId,
                 username: localUsername,
-                color: localColor,
-            },
-        },
+                color: localColor
+            }
+        }
     );
     callbacksRef.current.onArenaSnapshot(
-        toArenaSnapshot(runtime.arenaState, roomId, now),
+        toArenaSnapshot(runtime.arenaState, roomId, now)
     );
 }
 
@@ -1896,19 +1910,19 @@ function publishLocalPose(
         onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
     }>,
-    localPoseRef: React.MutableRefObject<LocalPoseHistory | undefined>,
+    localPoseRef: React.MutableRefObject<LocalPoseHistory | undefined>
 ): void {
     const now = Date.now();
     const position = player.position;
     const rotation: Vec3Tuple = [
         round3(player.pitch),
         round3(player.yaw),
-        0,
+        0
     ];
     const current: LocalPoseHistory = {
         observedAtEpochMs: now,
         position,
-        rotation,
+        rotation
     };
     const previous = localPoseRef.current;
     const velocity = previous
@@ -1918,12 +1932,12 @@ function publishLocalPose(
         ? estimateRallarMotionVelocity(
             {
                 observedAtEpochMs: previous.observedAtEpochMs,
-                position: previous.rotation,
+                position: previous.rotation
             },
             {
                 observedAtEpochMs: current.observedAtEpochMs,
-                position: current.rotation,
-            },
+                position: current.rotation
+            }
         )
         : undefined;
 
@@ -1940,7 +1954,7 @@ function publishLocalPose(
         vitals: player.vitals,
         loadout: player.loadout,
         seq: poseSeqRef.current,
-        sentAtEpochMs: now,
+        sentAtEpochMs: now
     });
 }
 
@@ -1952,14 +1966,12 @@ function syncCamera(runtime: ArenaRuntime, nowEpochMs: number): void {
     runtime.camera.position = vector3([
         player.position[0],
         player.position[1] + bob + slideDrop,
-        player.position[2],
+        player.position[2]
     ]);
     runtime.camera.rotation.x = player.pitch - runtime.recoil * 0.028;
     runtime.camera.rotation.y = player.yaw;
-    runtime.camera.rotation.z = (
-        (player.dashUntilEpochMs && player.dashUntilEpochMs > nowEpochMs ? 0.04 : 0) +
-        (player.slideUntilEpochMs && player.slideUntilEpochMs > nowEpochMs ? -0.055 : 0)
-    );
+    runtime.camera.rotation.z = (player.dashUntilEpochMs && player.dashUntilEpochMs > nowEpochMs ? 0.04 : 0) +
+        (player.slideUntilEpochMs && player.slideUntilEpochMs > nowEpochMs ? -0.055 : 0);
     runtime.camera.fov = BASE_FOV +
         Math.min(0.24, speed * 0.011) +
         runtime.recoil * 0.055;
@@ -1973,8 +1985,8 @@ function applyLook(runtime: ArenaRuntime, yawDelta: number, pitchDelta: number):
         pitch: clamp(
             runtime.localPlayer.pitch + pitchDelta,
             -1.22,
-            1.1,
-        ),
+            1.1
+        )
     };
 }
 
@@ -1992,12 +2004,12 @@ function syncTargetAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
         avatar.ring.scaling.set(
             (hostile ? 1.28 : 1.08) + Math.sin(nowEpochMs / 180 + target.phase) * 0.08,
             (hostile ? 0.86 : 1.08) + Math.cos(nowEpochMs / 220 + target.phase) * 0.08,
-            1.08,
+            1.08
         );
         avatar.halo.scaling.set(
             (hostile ? 1.7 : 1.28) + Math.sin(nowEpochMs / 160 + target.phase) * 0.12,
             (hostile ? 0.92 : 1.28) + Math.cos(nowEpochMs / 210 + target.phase) * 0.12,
-            1.28,
+            1.28
         );
         avatar.halo.rotation.z -= hostile ? 0.046 : 0.018;
         avatar.shardA.rotation.y += hostile ? 0.065 : 0.035;
@@ -2005,10 +2017,10 @@ function syncTargetAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
         avatar.shardA.scaling.y = hostile ? 1.45 + Math.sin(nowEpochMs / 105) * 0.08 : 1;
         avatar.shardB.scaling.y = hostile ? 1.35 + Math.cos(nowEpochMs / 120) * 0.08 : 1;
         avatar.coreMaterial.emissiveColor = Color3.FromHexString(
-            hostile ? MATRIX_THEME.danger : target.color,
+            hostile ? MATRIX_THEME.danger : target.color
         ).scale(hostile ? 1.05 : 0.64);
         avatar.pupilMaterial.emissiveColor = Color3.FromHexString(
-            hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
+            hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan
         ).scale(hostile ? 0.82 : 0.26);
         avatar.ringMaterial.emissiveColor = target.rarity === 'bounty'
             ? Color3.FromHexString(MATRIX_THEME.amber).scale(1.05)
@@ -2048,7 +2060,7 @@ function syncEyeAttackCues(runtime: ArenaRuntime, nowEpochMs: number): void {
 function createEyeBeamWindup(
     runtime: ArenaRuntime,
     cue: EyeAttackCue,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): void {
     const scene = runtime.scene;
     const origin = vector3(cue.origin);
@@ -2063,13 +2075,13 @@ function createEyeBeamWindup(
         MATRIX_THEME.danger,
         MATRIX_THEME.magenta,
         1,
-        0.52,
+        0.52
     );
 
     const beam = MeshBuilder.CreateBox(`eye-attack-beam-${cue.id}`, {
         width: Math.max(0.12, cue.coneRadians * 0.55),
         height: 0.12,
-        depth: length,
+        depth: length
     }, scene);
     beam.position = midpoint;
     beam.lookAt(aimPoint);
@@ -2078,7 +2090,7 @@ function createEyeBeamWindup(
     const reticle = MeshBuilder.CreateTorus(`eye-attack-reticle-${cue.id}`, {
         diameter: 1.65,
         thickness: 0.045,
-        tessellation: 52,
+        tessellation: 52
     }, scene);
     reticle.position = aimPoint.clone();
     reticle.position.y = Math.max(0.12, reticle.position.y - 0.75);
@@ -2088,7 +2100,7 @@ function createEyeBeamWindup(
     const warning = MeshBuilder.CreateTorus(`eye-attack-warning-${cue.id}`, {
         diameter: 0.76,
         thickness: 0.035,
-        tessellation: 28,
+        tessellation: 28
     }, scene);
     warning.position = aimPoint.clone();
     warning.position.y += 0.72;
@@ -2097,7 +2109,7 @@ function createEyeBeamWindup(
 
     const labelTexture = new DynamicTexture(`eye-attack-label-texture-${cue.id}`, {
         width: 512,
-        height: 128,
+        height: 128
     }, scene);
     labelTexture.hasAlpha = true;
     drawMatrixPanel(labelTexture, 'LASER AUDIT', 'please remain billable', MATRIX_THEME.danger);
@@ -2109,7 +2121,7 @@ function createEyeBeamWindup(
 
     const label = MeshBuilder.CreatePlane(`eye-attack-label-${cue.id}`, {
         width: 2.75,
-        height: 0.7,
+        height: 0.7
     }, scene);
     label.position = aimPoint.clone();
     label.position.y += 1.45;
@@ -2135,7 +2147,7 @@ function createEyeBeamWindup(
             material.alpha = Math.max(0, 0.56 - progress * 0.48);
             label.position.y += Math.sin(ageMs / 64) * 0.002;
             labelMaterial.alpha = Math.max(0, 1 - Math.max(0, ageMs - windupMs) / 320);
-        },
+        }
     });
 }
 
@@ -2170,7 +2182,7 @@ function syncPickupAvatars(runtime: ArenaRuntime, nowEpochMs: number): void {
 function getOrCreatePickupAvatar(
     scene: Scene,
     pickups: Map<string, PickupAvatar>,
-    pickup: ArenaPickupState,
+    pickup: ArenaPickupState
 ): PickupAvatar {
     const existing = pickups.get(pickup.id);
     if (existing) {
@@ -2191,13 +2203,13 @@ function getOrCreatePickupAvatar(
         MATRIX_THEME.glass,
         accent,
         0.92,
-        0.86,
+        0.86
     );
 
     const core = MeshBuilder.CreateBox(`pickup-core-${pickup.id}`, {
         width: 0.72,
         height: 0.72,
-        depth: 0.72,
+        depth: 0.72
     }, scene);
     core.parent = root;
     core.rotation.set(0.4, 0.2, 0.8);
@@ -2206,7 +2218,7 @@ function getOrCreatePickupAvatar(
     const ring = MeshBuilder.CreateTorus(`pickup-ring-${pickup.id}`, {
         diameter: 1.55,
         thickness: 0.04,
-        tessellation: 36,
+        tessellation: 36
     }, scene);
     ring.parent = root;
     ring.rotation.x = Math.PI / 2;
@@ -2214,7 +2226,7 @@ function getOrCreatePickupAvatar(
 
     const labelTexture = new DynamicTexture(`pickup-label-texture-${pickup.id}`, {
         width: 640,
-        height: 160,
+        height: 160
     }, scene);
     labelTexture.hasAlpha = true;
     updatePickupLabel(labelTexture, pickup);
@@ -2227,7 +2239,7 @@ function getOrCreatePickupAvatar(
 
     const label = MeshBuilder.CreatePlane(`pickup-label-${pickup.id}`, {
         width: 2.6,
-        height: 0.64,
+        height: 0.64
     }, scene);
     label.parent = root;
     label.position.y = 1.08;
@@ -2251,7 +2263,7 @@ function detectLocalPickup(
         onLocalCombatChange: BabylonArenaProps['onLocalCombatChange'];
         onLocalPlayerChange: BabylonArenaProps['onLocalPlayerChange'];
         onArenaSnapshot: BabylonArenaProps['onArenaSnapshot'];
-    }>,
+    }>
 ): void {
     const now = Date.now();
     const pickup = findPickupNearPlayer(runtime.arenaState, sessionId, now);
@@ -2265,7 +2277,7 @@ function detectLocalPickup(
         sessionId,
         position: runtime.localPlayer.position,
         seq: pickupSeqRef.current,
-        sentAtEpochMs: now,
+        sentAtEpochMs: now
     });
     createImpact(runtime, vector3(pickup.position), MATRIX_THEME.amber, 3);
     runtime.audio.play({ kind: 'pickup' });
@@ -2275,10 +2287,11 @@ function detectLocalPickup(
 function syncRemotePlayerHits(
     runtime: ArenaRuntime,
     remotePlayerHits: readonly PlayerHitAccepted[],
-    localSessionId: string,
+    localSessionId: string
 ): void {
     for (const accepted of remotePlayerHits) {
-        const id = `${accepted.intent.shot.sessionId}:${accepted.target.sessionId}:${accepted.revision}:${accepted.intent.shot.seq}`;
+        const id =
+            `${accepted.intent.shot.sessionId}:${accepted.target.sessionId}:${accepted.revision}:${accepted.intent.shot.seq}`;
         if (runtime.remoteHitIds.has(id)) {
             continue;
         }
@@ -2292,21 +2305,21 @@ function syncRemotePlayerHits(
                 loadout: accepted.target.loadout,
                 position: accepted.eliminated
                     ? runtime.localPlayer.position
-                    : accepted.target.position,
+                    : accepted.target.position
             };
             runtime.audio.play({ kind: accepted.eliminated ? 'damage' : 'damage' });
         }
         if (accepted.attacker.sessionId === localSessionId) {
             runtime.localPlayer = {
                 ...runtime.localPlayer,
-                vitals: accepted.attacker.vitals,
+                vitals: accepted.attacker.vitals
             };
         }
         createImpact(
             runtime,
             vector3(accepted.impact),
             accepted.eliminated ? MATRIX_THEME.danger : MATRIX_THEME.cyan,
-            accepted.eliminated ? 8 : 2,
+            accepted.eliminated ? 8 : 2
         );
     }
 }
@@ -2314,7 +2327,7 @@ function syncRemotePlayerHits(
 function syncLocalPlayerFromSnapshot(
     runtime: ArenaRuntime,
     localSessionId: string | undefined,
-    snapshot: ArenaSnapshot,
+    snapshot: ArenaSnapshot
 ): void {
     const player = localSessionId
         ? snapshot.players.find((candidate) => candidate.sessionId === localSessionId)
@@ -2343,14 +2356,12 @@ function syncLocalPlayerFromSnapshot(
         yaw: player.rotation[1],
         pitch: player.rotation[0],
         vitals: player.vitals,
-        loadout: player.loadout,
+        loadout: player.loadout
     };
 }
 
 function syncLocalPlayerFromArenaState(runtime: ArenaRuntime, localSessionId: string): void {
-    const player = runtime.arenaState.players.find((candidate) =>
-        candidate.sessionId === localSessionId
-    );
+    const player = runtime.arenaState.players.find((candidate) => candidate.sessionId === localSessionId);
     if (!player) {
         return;
     }
@@ -2367,14 +2378,14 @@ function syncLocalPlayerFromArenaState(runtime: ArenaRuntime, localSessionId: st
             ? runtime.localPlayer.position
             : player.position,
         vitals: player.vitals,
-        loadout: player.loadout,
+        loadout: player.loadout
     };
 }
 
 function animateTargets(
     state: ArenaSimulationState,
     dtMs: number,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     const dt = Math.min(0.05, Math.max(0, dtMs / 1000));
     const bounds = Math.max(8, state.layout.halfSize - 2.5);
@@ -2388,16 +2399,16 @@ function animateTargets(
             position: [
                 clamp(next[0], -bounds, bounds),
                 clamp(next[1], 1.3, 6.2),
-                clamp(next[2], -bounds, bounds),
+                clamp(next[2], -bounds, bounds)
             ] as Vec3Tuple,
             velocity: [
                 bounceX ? -target.velocity[0] : target.velocity[0],
                 bounceY ? -target.velocity[1] : target.velocity[1],
-                bounceZ ? -target.velocity[2] : target.velocity[2],
+                bounceZ ? -target.velocity[2] : target.velocity[2]
             ] as Vec3Tuple,
             rarity: target.bountyUntilEpochMs && target.bountyUntilEpochMs < nowEpochMs
                 ? 'volatile'
-                : target.rarity,
+                : target.rarity
         };
     });
     return { ...state, targets };
@@ -2406,7 +2417,7 @@ function animateTargets(
 function getOrCreateTargetAvatar(
     scene: Scene,
     targets: Map<string, TargetAvatar>,
-    target: EyeTargetState,
+    target: EyeTargetState
 ): TargetAvatar {
     const existing = targets.get(target.id);
     if (existing) {
@@ -2426,7 +2437,7 @@ function getOrCreateTargetAvatar(
     const pupilMaterial = new StandardMaterial(`target-pupil-${target.id}`, scene);
     pupilMaterial.diffuseColor = Color3.FromHexString(MATRIX_THEME.void);
     pupilMaterial.emissiveColor = Color3.FromHexString(
-        hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
+        hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan
     ).scale(hostile ? 0.82 : 0.26);
 
     const ringMaterial = new StandardMaterial(`target-ring-${target.id}`, scene);
@@ -2440,14 +2451,14 @@ function getOrCreateTargetAvatar(
         hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
         hostile ? MATRIX_THEME.magenta : MATRIX_THEME.cyan,
         hostile ? 1.0 : 0.72,
-        0.78,
+        0.78
     );
 
     const iris = MeshBuilder.CreateSphere(`eye-target-${target.id}`, {
         diameterX: target.radius * (hostile ? 3.25 : 2.4),
         diameterY: target.radius * (hostile ? 0.95 : 1.45),
         diameterZ: target.radius * (hostile ? 0.48 : 0.62),
-        segments: 28,
+        segments: 28
     }, scene);
     iris.parent = root;
     iris.material = coreMaterial;
@@ -2456,7 +2467,7 @@ function getOrCreateTargetAvatar(
         diameterX: target.radius * (hostile ? 1.1 : 0.74),
         diameterY: target.radius * (hostile ? 0.32 : 0.74),
         diameterZ: target.radius * 0.18,
-        segments: 18,
+        segments: 18
     }, scene);
     pupil.parent = root;
     pupil.position.z = -target.radius * 0.34;
@@ -2465,7 +2476,7 @@ function getOrCreateTargetAvatar(
     const ring = MeshBuilder.CreateTorus(`eye-ring-${target.id}`, {
         diameter: target.radius * (hostile ? 3.28 : 2.75),
         thickness: 0.035,
-        tessellation: 32,
+        tessellation: 32
     }, scene);
     ring.parent = root;
     ring.rotation.x = Math.PI / 2;
@@ -2474,7 +2485,7 @@ function getOrCreateTargetAvatar(
     const halo = MeshBuilder.CreateTorus(`eye-holo-halo-${target.id}`, {
         diameter: target.radius * (hostile ? 4.15 : 3.65),
         thickness: 0.018,
-        tessellation: 42,
+        tessellation: 42
     }, scene);
     halo.parent = root;
     halo.rotation.x = Math.PI / 2;
@@ -2483,13 +2494,13 @@ function getOrCreateTargetAvatar(
     const shardA = MeshBuilder.CreateBox(`eye-shard-a-${target.id}`, {
         width: hostile ? target.radius * 2.7 : 0.08,
         height: hostile ? 0.07 : target.radius * 1.8,
-        depth: 0.04,
+        depth: 0.04
     }, scene);
     shardA.parent = root;
     shardA.position.set(
         hostile ? 0 : target.radius * 1.8,
         hostile ? target.radius * 0.44 : 0.18,
-        -target.radius * 0.08,
+        -target.radius * 0.08
     );
     shardA.rotation.z = hostile ? 0.13 : 0.45;
     shardA.material = shardMaterial;
@@ -2497,20 +2508,20 @@ function getOrCreateTargetAvatar(
     const shardB = MeshBuilder.CreateBox(`eye-shard-b-${target.id}`, {
         width: hostile ? target.radius * 2.5 : 0.06,
         height: hostile ? 0.07 : target.radius * 1.45,
-        depth: 0.04,
+        depth: 0.04
     }, scene);
     shardB.parent = root;
     shardB.position.set(
         hostile ? 0 : -target.radius * 1.6,
         hostile ? -target.radius * 0.44 : -0.12,
-        -target.radius * 0.06,
+        -target.radius * 0.06
     );
     shardB.rotation.z = hostile ? -0.13 : -0.5;
     shardB.material = shardMaterial;
 
     const labelTexture = new DynamicTexture(`target-label-texture-${target.id}`, {
         width: 768,
-        height: 192,
+        height: 192
     }, scene);
     labelTexture.hasAlpha = true;
     updateTargetLabel(labelTexture, target);
@@ -2523,7 +2534,7 @@ function getOrCreateTargetAvatar(
 
     const label = MeshBuilder.CreatePlane(`target-label-${target.id}`, {
         width: 3.2,
-        height: 0.8,
+        height: 0.8
     }, scene);
     label.parent = root;
     label.position.y = target.radius * 1.75;
@@ -2543,7 +2554,7 @@ function getOrCreateTargetAvatar(
         coreMaterial,
         pupilMaterial,
         ringMaterial,
-        labelMaterial,
+        labelMaterial
     };
     targets.set(target.id, avatar);
     return avatar;
@@ -2551,7 +2562,7 @@ function getOrCreateTargetAvatar(
 
 function syncRemoteAvatars(
     runtime: ArenaRuntime,
-    remotePlayers: ReadonlyMap<string, RemotePlayer>,
+    remotePlayers: ReadonlyMap<string, RemotePlayer>
 ): void {
     syncRemoteMotionSamples(runtime, remotePlayers);
     const estimates = runtime.motionBuffer.sampleAll(Date.now());
@@ -2586,7 +2597,7 @@ function syncRemoteAvatars(
             const healthMaterial = avatar.health.material as StandardMaterial | undefined;
             if (healthMaterial) {
                 healthMaterial.emissiveColor = Color3.FromHexString(
-                    healthRatio <= 0.28 ? MATRIX_THEME.danger : MATRIX_THEME.acid,
+                    healthRatio <= 0.28 ? MATRIX_THEME.danger : MATRIX_THEME.acid
                 ).scale(0.86);
             }
             avatar.root.setEnabled(!(vitals.deadUntilEpochMs && vitals.deadUntilEpochMs > Date.now()));
@@ -2599,7 +2610,7 @@ function syncRemoteAvatars(
             pose.color,
             pose.vitals,
             pose.loadout?.weaponKind,
-            profile,
+            profile
         );
     }
 
@@ -2617,7 +2628,7 @@ function syncRemoteAvatars(
 
 function syncRemoteMotionSamples(
     runtime: ArenaRuntime,
-    remotePlayers: ReadonlyMap<string, RemotePlayer>,
+    remotePlayers: ReadonlyMap<string, RemotePlayer>
 ): void {
     for (const [sessionId, remote] of remotePlayers) {
         const sampleKey = `${remote.pose.seq}:${remote.lastSeenEpochMs}`;
@@ -2633,7 +2644,7 @@ function syncRemoteMotionSamples(
             velocity: remote.pose.velocity,
             angularVelocity: remote.pose.angularVelocity,
             seq: remote.pose.seq,
-            metadata: remote.pose,
+            metadata: remote.pose
         });
         runtime.motionSampleKeys.set(sessionId, sampleKey);
     }
@@ -2654,14 +2665,14 @@ function syncRemoteShots(runtime: ArenaRuntime, remoteShots: readonly RemoteShot
             vector3(shot.origin),
             vector3(shot.direction),
             shot.color,
-            !!remoteShot.accepted?.hit,
+            !!remoteShot.accepted?.hit
         );
         if (remoteShot.accepted?.hit) {
             createImpact(
                 runtime,
                 vector3(remoteShot.accepted.impact),
                 MATRIX_THEME.magenta,
-                remoteShot.accepted.combo,
+                remoteShot.accepted.combo
             );
         }
     }
@@ -2671,7 +2682,7 @@ function getOrCreateAvatar(
     scene: Scene,
     avatars: Map<string, RemoteAvatar>,
     sessionId: string,
-    pose: PlayerPose,
+    pose: PlayerPose
 ): RemoteAvatar {
     const existing = avatars.get(sessionId);
     if (existing) {
@@ -2705,7 +2716,7 @@ function getOrCreateAvatar(
     const body = MeshBuilder.CreateBox(`remote-body-${sessionId}`, {
         width: bodyScale.width * torsoBoost,
         height: bodyScale.height * 0.68,
-        depth: bodyScale.depth * torsoBoost,
+        depth: bodyScale.depth * torsoBoost
     }, scene);
     body.parent = root;
     body.position.y = -0.78;
@@ -2714,7 +2725,7 @@ function getOrCreateAvatar(
     const waist = MeshBuilder.CreateBox(`remote-waist-${sessionId}`, {
         width: bodyScale.width * 0.72,
         height: 0.22,
-        depth: bodyScale.depth * 0.74,
+        depth: bodyScale.depth * 0.74
     }, scene);
     waist.parent = root;
     waist.position.y = -1.38;
@@ -2723,7 +2734,7 @@ function getOrCreateAvatar(
     const head = MeshBuilder.CreateBox(`remote-head-${sessionId}`, {
         width: bodyScale.width * 0.74,
         height: 0.42,
-        depth: bodyScale.depth * 0.72,
+        depth: bodyScale.depth * 0.72
     }, scene);
     head.parent = root;
     head.position.set(0, 0.1, -0.02);
@@ -2736,7 +2747,7 @@ function getOrCreateAvatar(
     const visor = MeshBuilder.CreateBox(`remote-visor-${sessionId}`, {
         width: profile?.visorExpression === 'angry-v' ? 0.64 : 0.52,
         height: profile?.faceplate === 'tax-mask' ? 0.22 : 0.13,
-        depth: 0.08,
+        depth: 0.08
     }, scene);
     visor.parent = root;
     visor.position.set(0, 0.13, -bodyScale.depth * 0.39);
@@ -2749,7 +2760,7 @@ function getOrCreateAvatar(
         accentColor,
         accentColor,
         0.78,
-        0.78,
+        0.78
     );
 
     const shoulderWidth = profile?.shoulderStyle === 'riot-shields'
@@ -2762,7 +2773,7 @@ function getOrCreateAvatar(
     const shoulderLeft = MeshBuilder.CreateBox(`remote-shoulder-l-${sessionId}`, {
         width: shoulderWidth,
         height: 0.2,
-        depth: 0.34,
+        depth: 0.34
     }, scene);
     shoulderLeft.parent = root;
     shoulderLeft.position.set(-bodyScale.width * 0.68, -0.32, -0.02);
@@ -2772,7 +2783,7 @@ function getOrCreateAvatar(
     const shoulderRight = MeshBuilder.CreateBox(`remote-shoulder-r-${sessionId}`, {
         width: shoulderWidth,
         height: 0.2,
-        depth: 0.34,
+        depth: 0.34
     }, scene);
     shoulderRight.parent = root;
     shoulderRight.position.set(bodyScale.width * 0.68, -0.32, -0.02);
@@ -2783,7 +2794,7 @@ function getOrCreateAvatar(
         const arm = MeshBuilder.CreateBox(`remote-arm-${side < 0 ? 'l' : 'r'}-${sessionId}`, {
             width: 0.18,
             height: 0.82,
-            depth: 0.22,
+            depth: 0.22
         }, scene);
         arm.parent = root;
         arm.position.set(side * bodyScale.width * 0.74, -0.86, -0.02);
@@ -2793,7 +2804,7 @@ function getOrCreateAvatar(
         const forearm = MeshBuilder.CreateBox(`remote-forearm-${side < 0 ? 'l' : 'r'}-${sessionId}`, {
             width: 0.2,
             height: 0.42,
-            depth: 0.26,
+            depth: 0.26
         }, scene);
         forearm.parent = root;
         forearm.position.set(side * bodyScale.width * 0.8, -1.24, -0.08);
@@ -2809,7 +2820,7 @@ function getOrCreateAvatar(
         const brow = MeshBuilder.CreateBox(`remote-brow-${side < 0 ? 'l' : 'r'}-${sessionId}`, {
             width: 0.26,
             height: 0.055,
-            depth: 0.05,
+            depth: 0.05
         }, scene);
         brow.parent = root;
         brow.position.set(side * 0.16, 0.28, -bodyScale.depth * 0.43);
@@ -2820,7 +2831,7 @@ function getOrCreateAvatar(
     const mouth = MeshBuilder.CreateBox(`remote-mouth-${sessionId}`, {
         width: profile?.visorExpression === 'grim-smirk' ? 0.28 : 0.18,
         height: 0.035,
-        depth: 0.045,
+        depth: 0.045
     }, scene);
     mouth.parent = root;
     mouth.position.set(profile?.visorExpression === 'grim-smirk' ? 0.04 : 0, -0.08, -bodyScale.depth * 0.43);
@@ -2829,7 +2840,7 @@ function getOrCreateAvatar(
 
     const trail = MeshBuilder.CreatePlane(`remote-trail-${sessionId}`, {
         width: profile?.trailStyle === 'afterimage' ? 0.92 : 0.52,
-        height: 1.28,
+        height: 1.28
     }, scene);
     trail.parent = root;
     trail.position.set(0, -0.62, 0.42);
@@ -2840,7 +2851,7 @@ function getOrCreateAvatar(
     const decal = MeshBuilder.CreateBox(`remote-decal-${sessionId}`, {
         width: 0.2,
         height: 0.2,
-        depth: 0.045,
+        depth: 0.045
     }, scene);
     decal.parent = root;
     decal.position.set(0, -0.52, -0.34);
@@ -2849,7 +2860,7 @@ function getOrCreateAvatar(
     const ring = MeshBuilder.CreateTorus(`remote-floor-ring-${sessionId}`, {
         diameter: 1.05,
         thickness: 0.025,
-        tessellation: 32,
+        tessellation: 32
     }, scene);
     ring.parent = root;
     ring.position.y = -1.55;
@@ -2858,7 +2869,7 @@ function getOrCreateAvatar(
 
     const labelTexture = new DynamicTexture(`label-texture-${sessionId}`, {
         width: 512,
-        height: 128,
+        height: 128
     }, scene);
     labelTexture.hasAlpha = true;
     updateLabel(labelTexture, pose.username, pose.score, pose.combo ?? 0, pose.color, undefined, undefined, profile);
@@ -2871,7 +2882,7 @@ function getOrCreateAvatar(
 
     const label = MeshBuilder.CreatePlane(`remote-label-${sessionId}`, {
         width: 2.35,
-        height: 0.58,
+        height: 0.58
     }, scene);
     label.parent = root;
     label.position.y = 0.92;
@@ -2884,12 +2895,12 @@ function getOrCreateAvatar(
         MATRIX_THEME.acid,
         MATRIX_THEME.acid,
         0.86,
-        0.92,
+        0.92
     );
     const health = MeshBuilder.CreateBox(`remote-health-bar-${sessionId}`, {
         width: 1.1,
         height: 0.07,
-        depth: 0.035,
+        depth: 0.035
     }, scene);
     health.parent = root;
     health.position.set(0, 0.62, 0);
@@ -2908,7 +2919,7 @@ function getOrCreateAvatar(
         health,
         material,
         accentMaterial,
-        labelTexture,
+        labelTexture
     };
     avatars.set(sessionId, avatar);
     return avatar;
@@ -2922,7 +2933,7 @@ function updateLabel(
     color: string,
     vitals?: PlayerArenaState['vitals'],
     weaponKind?: string,
-    profile?: PlayerPose['avatarProfile'],
+    profile?: PlayerPose['avatarProfile']
 ): void {
     const ctx = texture.getContext();
     ctx.clearRect(0, 0, 512, 128);
@@ -3026,7 +3037,7 @@ function createTracer(
     origin: Vector3,
     direction: Vector3,
     color: string,
-    hit: boolean,
+    hit: boolean
 ): void {
     const scene = runtime.scene;
     const length = hit ? 42 : 28;
@@ -3034,8 +3045,8 @@ function createTracer(
     const tracer = MeshBuilder.CreateLines(`shot-tracer-${Date.now()}-${Math.random()}`, {
         points: [
             origin,
-            end,
-        ],
+            end
+        ]
     }, scene);
     tracer.color = Color3.FromHexString(hit ? MATRIX_THEME.amber : color);
 
@@ -3045,12 +3056,12 @@ function createTracer(
         hit ? MATRIX_THEME.amber : MATRIX_THEME.cyan,
         hit ? MATRIX_THEME.amber : MATRIX_THEME.cyan,
         1,
-        0.9,
+        0.9
     );
     const packet = MeshBuilder.CreateBox(`shot-packet-${Date.now()}-${Math.random()}`, {
         width: 0.1,
         height: 0.1,
-        depth: 0.8,
+        depth: 0.8
     }, scene);
     packet.position = Vector3.Center(origin, end);
     packet.lookAt(end);
@@ -3065,7 +3076,7 @@ function createTracer(
             packet.scaling.z = 1 + progress * 2.4;
             packetMaterial.alpha = Math.max(0, 0.9 - progress * 0.9);
             tracer.visibility = Math.max(0, 1 - ageMs / (hit ? 150 : 95));
-        },
+        }
     });
 }
 
@@ -3077,12 +3088,12 @@ function createImpact(runtime: ArenaRuntime, point: Vector3, color: string, comb
         color,
         color,
         1,
-        0.92,
+        0.92
     );
 
     const burst = MeshBuilder.CreateSphere(`impact-${Date.now()}`, {
         diameter: 0.24 + Math.min(combo, 12) * 0.025,
-        segments: 12,
+        segments: 12
     }, scene);
     burst.position = point.clone();
     burst.material = material;
@@ -3090,7 +3101,7 @@ function createImpact(runtime: ArenaRuntime, point: Vector3, color: string, comb
     const ring = MeshBuilder.CreateTorus(`impact-ring-${Date.now()}`, {
         diameter: 0.62,
         thickness: 0.025,
-        tessellation: 28,
+        tessellation: 28
     }, scene);
     ring.position = point.clone();
     ring.material = material;
@@ -3098,7 +3109,7 @@ function createImpact(runtime: ArenaRuntime, point: Vector3, color: string, comb
     const ripple = MeshBuilder.CreateTorus(`impact-ripple-${Date.now()}`, {
         diameter: 1.05,
         thickness: 0.018,
-        tessellation: 44,
+        tessellation: 44
     }, scene);
     ripple.position = point.clone();
     ripple.rotation.x = Math.PI / 2;
@@ -3109,13 +3120,15 @@ function createImpact(runtime: ArenaRuntime, point: Vector3, color: string, comb
         const shard = MeshBuilder.CreateBox(`impact-code-shard-${Date.now()}-${i}`, {
             width: 0.045,
             height: 0.22 + i * 0.015,
-            depth: 0.045,
+            depth: 0.045
         }, scene);
-        shard.position = point.add(new Vector3(
-            Math.sin(i * 2.11) * 0.18,
-            Math.cos(i * 1.37) * 0.12,
-            Math.cos(i * 1.91) * 0.18,
-        ));
+        shard.position = point.add(
+            new Vector3(
+                Math.sin(i * 2.11) * 0.18,
+                Math.cos(i * 1.37) * 0.12,
+                Math.cos(i * 1.91) * 0.18
+            )
+        );
         shard.rotation.set(i * 0.2, i * 0.45, i * 0.31);
         shard.material = material;
         shards.push(shard);
@@ -3140,7 +3153,7 @@ function createImpact(runtime: ArenaRuntime, point: Vector3, color: string, comb
                 shard.rotation.y += 0.16;
             }
             material.alpha = Math.max(0, 1 - age / 320);
-        },
+        }
     });
 }
 
@@ -3152,13 +3165,13 @@ function createScanPulse(runtime: ArenaRuntime, position: Vec3Tuple, color: stri
         color,
         color,
         0.95,
-        0.55,
+        0.55
     );
 
     const ring = MeshBuilder.CreateTorus(`scan-pulse-${Date.now()}`, {
         diameter: 1.2,
         thickness: 0.035,
-        tessellation: 48,
+        tessellation: 48
     }, scene);
     ring.position = vector3(position);
     ring.position.y = 0.12;
@@ -3168,7 +3181,7 @@ function createScanPulse(runtime: ArenaRuntime, position: Vec3Tuple, color: stri
     const column = MeshBuilder.CreateCylinder(`scan-column-${Date.now()}`, {
         height: 6.2,
         diameter: 0.52,
-        tessellation: 24,
+        tessellation: 24
     }, scene);
     column.position = vector3(position);
     column.position.y = 3.1;
@@ -3186,7 +3199,7 @@ function createScanPulse(runtime: ArenaRuntime, position: Vec3Tuple, color: stri
             column.scaling.z = 1 + age / 260;
             column.rotation.y += 0.08;
             material.alpha = Math.max(0, 0.55 - age / 560);
-        },
+        }
     });
 }
 
@@ -3212,7 +3225,7 @@ function createArenaEventEffect(runtime: ArenaRuntime, event: ArenaEvent): void 
     const ring = MeshBuilder.CreateTorus(`event-ring-${event.id}`, {
         diameter: (event.radius ?? 6) * 2,
         thickness: 0.065,
-        tessellation: 64,
+        tessellation: 64
     }, scene);
     ring.position = vector3(event.position ?? [0, 0.16, 0]);
     ring.rotation.x = Math.PI / 2;
@@ -3220,7 +3233,7 @@ function createArenaEventEffect(runtime: ArenaRuntime, event: ArenaEvent): void 
 
     const labelTexture = new DynamicTexture(`event-label-texture-${event.id}`, {
         width: 768,
-        height: 256,
+        height: 256
     }, scene);
     labelTexture.hasAlpha = true;
     drawMatrixPanel(labelTexture, event.kind.toUpperCase(), getArenaEventJoke(event.kind), color);
@@ -3232,7 +3245,7 @@ function createArenaEventEffect(runtime: ArenaRuntime, event: ArenaEvent): void 
 
     const label = MeshBuilder.CreatePlane(`event-label-${event.id}`, {
         width: 4.5,
-        height: 1.5,
+        height: 1.5
     }, scene);
     label.position = vector3(event.position ?? [0, 0.16, 0]);
     label.position.y += 2.35;
@@ -3253,7 +3266,7 @@ function createArenaEventEffect(runtime: ArenaRuntime, event: ArenaEvent): void 
             label.position.y += Math.sin(age / 80) * 0.002;
             material.alpha = Math.max(0, 0.42 - age / duration);
             labelMaterial.alpha = Math.max(0, 1 - Math.max(0, age - duration) / 240);
-        },
+        }
     });
 }
 
@@ -3336,10 +3349,12 @@ function findPredictedPlayerHit(
     localSessionId: string,
     origin: Vec3Tuple,
     direction: Vec3Tuple,
-    range: number,
-): Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple }> | undefined {
+    range: number
+): Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; }> | undefined {
     const ray = normalizeTuple(direction);
-    let best: Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; distance: number }> | undefined;
+    let best:
+        | Readonly<{ targetSessionId: string; targetSeq: number; impact: Vec3Tuple; distance: number; }>
+        | undefined;
     for (const [sessionId, remote] of remotePlayers) {
         if (sessionId === localSessionId) {
             continue;
@@ -3365,7 +3380,7 @@ function findPredictedPlayerHit(
                 targetSessionId: sessionId,
                 targetSeq: remote.pose.seq,
                 impact,
-                distance: along,
+                distance: along
             };
         }
     }
@@ -3376,8 +3391,8 @@ function resolveTouchShotDirection(
     runtime: ArenaRuntime,
     event: PointerEvent,
     remotePlayers: ReadonlyMap<string, RemotePlayer>,
-    localSessionId: string,
-): Readonly<{ direction: Vec3Tuple; assisted: boolean }> {
+    localSessionId: string
+): Readonly<{ direction: Vec3Tuple; assisted: boolean; }> {
     const rect = runtime.engine.getRenderingCanvas()?.getBoundingClientRect();
     const renderWidth = runtime.engine.getRenderWidth();
     const renderHeight = runtime.engine.getRenderHeight();
@@ -3391,20 +3406,20 @@ function resolveTouchShotDirection(
     const origin = runtime.localPlayer.position;
     const candidate = chooseTouchAimCandidate({
         point,
-        candidates: buildTouchAimCandidates(runtime, remotePlayers, localSessionId, origin),
+        candidates: buildTouchAimCandidates(runtime, remotePlayers, localSessionId, origin)
     });
     if (candidate) {
         createTouchAimPulse(runtime, candidate.world);
         return {
             direction: normalizeTuple(subTuple(candidate.world, origin)),
-            assisted: true,
+            assisted: true
         };
     }
 
     const ray = runtime.scene.createPickingRay(x, y, Matrix.Identity(), runtime.camera);
     return {
         direction: normalizeTuple([ray.direction.x, ray.direction.y, ray.direction.z]),
-        assisted: false,
+        assisted: false
     };
 }
 
@@ -3412,7 +3427,7 @@ function buildTouchAimCandidates(
     runtime: ArenaRuntime,
     remotePlayers: ReadonlyMap<string, RemotePlayer>,
     localSessionId: string,
-    origin: Vec3Tuple,
+    origin: Vec3Tuple
 ): readonly TouchAimCandidate[] {
     const candidates: TouchAimCandidate[] = [];
     for (const target of runtime.arenaState.targets) {
@@ -3427,7 +3442,7 @@ function buildTouchAimCandidates(
             screen,
             world,
             distance: distanceTuple(origin, world),
-            blocked: blocksShot(runtime.arenaState.layout, origin, world),
+            blocked: blocksShot(runtime.arenaState.layout, origin, world)
         });
     }
 
@@ -3446,7 +3461,7 @@ function buildTouchAimCandidates(
             screen,
             world,
             distance: distanceTuple(origin, world),
-            blocked: blocksShot(runtime.arenaState.layout, origin, world),
+            blocked: blocksShot(runtime.arenaState.layout, origin, world)
         });
     }
     return candidates;
@@ -3459,8 +3474,8 @@ function projectWorldToScreen(runtime: ArenaRuntime, world: Vec3Tuple): Point2 |
         runtime.scene.getTransformMatrix(),
         runtime.camera.viewport.toGlobal(
             runtime.engine.getRenderWidth(),
-            runtime.engine.getRenderHeight(),
-        ),
+            runtime.engine.getRenderHeight()
+        )
     );
     if (projected.z < 0 || projected.z > 1) {
         return undefined;
@@ -3475,12 +3490,12 @@ function createTouchAimPulse(runtime: ArenaRuntime, world: Vec3Tuple): void {
         MATRIX_THEME.acid,
         MATRIX_THEME.cyan,
         1,
-        0.72,
+        0.72
     );
     const ring = MeshBuilder.CreateTorus(`touch-aim-ring-${performance.now()}`, {
         diameter: 1.15,
         thickness: 0.035,
-        tessellation: 36,
+        tessellation: 36
     }, runtime.scene);
     ring.position = vector3(world);
     ring.position.y += 0.12;
@@ -3495,30 +3510,39 @@ function createTouchAimPulse(runtime: ArenaRuntime, world: Vec3Tuple): void {
             const scale = 1 + progress * 0.9;
             ring.scaling.set(scale, scale, scale);
             material.alpha = Math.max(0, 0.72 - progress * 0.72);
-        },
+        }
     });
 }
 
 function setInputKey(input: MutableInputState, code: string, pressed: boolean): void {
     if (code === 'KeyW') {
         input.moveZ = pressed ? 1 : input.moveZ === 1 ? 0 : input.moveZ;
-    } else if (code === 'KeyS') {
+    }
+    else if (code === 'KeyS') {
         input.moveZ = pressed ? -1 : input.moveZ === -1 ? 0 : input.moveZ;
-    } else if (code === 'KeyA') {
+    }
+    else if (code === 'KeyA') {
         input.moveX = pressed ? -1 : input.moveX === -1 ? 0 : input.moveX;
-    } else if (code === 'KeyD') {
+    }
+    else if (code === 'KeyD') {
         input.moveX = pressed ? 1 : input.moveX === 1 ? 0 : input.moveX;
-    } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
+    }
+    else if (code === 'ShiftLeft' || code === 'ShiftRight') {
         input.sprint = pressed;
-    } else if (code === 'Space') {
+    }
+    else if (code === 'Space') {
         input.jump = pressed;
-    } else if (code === 'KeyE') {
+    }
+    else if (code === 'KeyE') {
         input.dash = pressed;
-    } else if (code === 'ControlLeft' || code === 'KeyC') {
+    }
+    else if (code === 'ControlLeft' || code === 'KeyC') {
         input.slide = pressed;
-    } else if (code === 'KeyQ') {
+    }
+    else if (code === 'KeyQ') {
         input.overdrive = pressed;
-    } else if (code === 'Escape') {
+    }
+    else if (code === 'Escape') {
         input.pause = pressed;
     }
 }
@@ -3526,7 +3550,7 @@ function setInputKey(input: MutableInputState, code: string, pressed: boolean): 
 function setAction(
     runtime: ArenaRuntime,
     action: MutableButtonAction,
-    value: boolean,
+    value: boolean
 ): void {
     runtime.input[action] = value;
 }
@@ -3550,7 +3574,7 @@ function syncAdaptiveAudio(
     linkState: ArenaLinkState,
     presenceNotices: readonly ArenaPresenceNotice[],
     localPlayerId: string,
-    now: number,
+    now: number
 ): void {
     const match = runtime.arenaState.match;
     runtime.linkTone = linkState.tone;
@@ -3567,19 +3591,18 @@ function syncAdaptiveAudio(
         wavePhase: runtime.arenaState.wave.phase,
         waveNumber: runtime.arenaState.wave.number,
         hostileCount,
-        incomingAttack: runtime.arenaState.attacks.some((attack) =>
-            attack.targetSessionId === localPlayerId
-        ),
+        incomingAttack: runtime.arenaState.attacks.some((attack) => attack.targetSessionId === localPlayerId),
         healthRatio,
         linkTone: linkState.tone,
-        reducedIntensity: runtime.audioSettings.reducedIntensity,
+        reducedIntensity: runtime.audioSettings.reducedIntensity
     });
 
     const matchKey = match ? `${match.matchId}:${match.status}` : 'infinite';
     if (runtime.lastAudioMatchStatus !== matchKey) {
         if (match?.status === 'active') {
             runtime.audio.play({ kind: 'match-start' });
-        } else if (match?.status === 'complete') {
+        }
+        else if (match?.status === 'complete') {
             runtime.audio.play({ kind: 'match-end' });
         }
         runtime.lastAudioMatchStatus = matchKey;
@@ -3589,7 +3612,8 @@ function syncAdaptiveAudio(
     if (runtime.lastAudioWaveKey !== waveKey) {
         if (runtime.arenaState.wave.phase === 'active') {
             runtime.audio.play({ kind: 'wave-start' });
-        } else if (runtime.arenaState.wave.phase === 'reward') {
+        }
+        else if (runtime.arenaState.wave.phase === 'reward') {
             runtime.audio.play({ kind: 'wave-complete' });
         }
         runtime.lastAudioWaveKey = waveKey;
@@ -3598,7 +3622,8 @@ function syncAdaptiveAudio(
     if (healthRatio <= 0.3 && !runtime.lowHealthWarned) {
         runtime.audio.play({ kind: 'low-health-warning' });
         runtime.lowHealthWarned = true;
-    } else if (healthRatio > 0.45) {
+    }
+    else if (healthRatio > 0.45) {
         runtime.lowHealthWarned = false;
     }
 
@@ -3615,7 +3640,7 @@ function syncAdaptiveAudio(
 }
 
 function toPresenceAudioKind(
-    kind: ArenaPresenceNotice['kind'],
+    kind: ArenaPresenceNotice['kind']
 ): Exclude<Parameters<ProceduralArenaAudio['play']>[0]['kind'], 'shot' | 'eye-drone'> {
     if (kind === 'joined' || kind === 'link-live') {
         return 'link-joined';
@@ -3640,7 +3665,8 @@ function forceUnlockArenaAudio(runtime: ArenaRuntime): void {
 function safeSetPointerCapture(element: Element, pointerId: number): void {
     try {
         element.setPointerCapture?.(pointerId);
-    } catch {
+    }
+    catch {
         // Synthetic mobile tests and some Safari edge cases can reject capture
         // for a pointer that has already ended. The input state still updates.
     }
@@ -3651,7 +3677,8 @@ function safeReleasePointerCapture(element: Element, pointerId: number): void {
         if (element.hasPointerCapture?.(pointerId)) {
             element.releasePointerCapture(pointerId);
         }
-    } catch {
+    }
+    catch {
         // Best-effort cleanup; pointercancel/up also resets the logical state.
     }
 }
@@ -3667,7 +3694,7 @@ function freezeInput(input: MutableInputState): PlayerInputState {
         fire: input.fire,
         altFire: input.altFire,
         overdrive: input.overdrive,
-        pause: input.pause,
+        pause: input.pause
     };
 }
 
@@ -3682,7 +3709,7 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaSize = String(runtime.arenaState.layout.halfSize * 2);
     canvas.dataset.arenaLayoutId = runtime.arenaState.layout.id;
     canvas.dataset.arenaPickupCount = String(
-        runtime.arenaState.pickups.filter((pickup) => !pickup.pickedBySessionId).length,
+        runtime.arenaState.pickups.filter((pickup) => !pickup.pickedBySessionId).length
     );
     canvas.dataset.arenaWeaponKind = runtime.localPlayer.loadout.weaponKind;
     canvas.dataset.arenaLocalHealth = String(Math.ceil(runtime.localPlayer.vitals.health));
@@ -3693,7 +3720,7 @@ function writeArenaDiagnostics(canvas: HTMLCanvasElement, runtime: ArenaRuntime)
     canvas.dataset.arenaWavePhase = runtime.arenaState.wave.phase;
     canvas.dataset.arenaAttackCount = String(runtime.arenaState.attacks.length);
     canvas.dataset.arenaHostileEyeCount = String(
-        runtime.arenaState.targets.filter(isHostileEye).length,
+        runtime.arenaState.targets.filter(isHostileEye).length
     );
     const touchDiagnostics = createTouchControlDiagnostics(runtime.touchState, runtime.touchStick);
     canvas.dataset.arenaInputMode = touchDiagnostics.lastInputMode;
@@ -3724,7 +3751,7 @@ function forwardFromAngles(yaw: number, pitch: number): Vec3Tuple {
     return [
         Math.sin(yaw) * cosPitch,
         -Math.sin(pitch),
-        Math.cos(yaw) * cosPitch,
+        Math.cos(yaw) * cosPitch
     ];
 }
 

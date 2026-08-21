@@ -34,7 +34,7 @@ export type RallarAiJsonValue =
     | number
     | string
     | readonly RallarAiJsonValue[]
-    | { readonly [key: string]: RallarAiJsonValue };
+    | { readonly [key: string]: RallarAiJsonValue; };
 
 export type RallarAiJsonSchema = Readonly<{
     type?: string | readonly string[];
@@ -120,7 +120,7 @@ export type RallarAiJsonProvider = Readonly<{
     modelId?: string;
     capabilities: RallarAiProviderCapabilities;
     generateJson<TValue = unknown, TContext = unknown>(
-        request: RallarAiJsonRequest<TContext>,
+        request: RallarAiJsonRequest<TContext>
     ): Promise<RallarAiJsonResult<TValue>>;
 }>;
 
@@ -159,7 +159,7 @@ export type RallarAiDiagnosticEvent = Readonly<{
 }>;
 
 export type RallarAiDiagnosticsSink = (
-    event: RallarAiDiagnosticEvent,
+    event: RallarAiDiagnosticEvent
 ) => void | Promise<void>;
 
 export type RallarAiGenerationPolicy = Readonly<{
@@ -206,7 +206,7 @@ export type RallarAiAuthorizationContext = Readonly<{
 }>;
 
 export type RallarAiAuthorize = (
-    context: RallarAiAuthorizationContext,
+    context: RallarAiAuthorizationContext
 ) => boolean | Promise<boolean>;
 
 export type RallarAiProviderGovernanceMetadata = Readonly<{
@@ -242,7 +242,7 @@ export class RallarAiError extends Error {
     constructor(
         code: RallarAiErrorCode,
         message: string,
-        details?: unknown,
+        details?: unknown
     ) {
         super(message);
         this.code = code;

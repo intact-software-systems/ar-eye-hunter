@@ -9,7 +9,7 @@ import {
     mapTouchLookDelta,
     resetTouchPointer,
     shouldFireHeldWeapon,
-    updateTouchPointer,
+    updateTouchPointer
 } from '../../../apps/ar-eye-hunter-v1/src/game/mobileInput.ts';
 
 describe('AR Eye Hunter mobile input', () => {
@@ -49,7 +49,7 @@ describe('AR Eye Hunter mobile input', () => {
         const normal = mapTouchLookDelta(20, -10, {
             ...createDefaultMobileControlSettings(),
             touchSensitivity: 1.5,
-            invertY: false,
+            invertY: false
         });
         expect(normal.yawDelta).toBeCloseTo(0.081, 3);
         expect(normal.pitchDelta).toBeCloseTo(-0.034, 3);
@@ -57,7 +57,7 @@ describe('AR Eye Hunter mobile input', () => {
         const inverted = mapTouchLookDelta(20, -10, {
             ...createDefaultMobileControlSettings(),
             touchSensitivity: 1.5,
-            invertY: true,
+            invertY: true
         });
         expect(inverted.pitchDelta).toBeCloseTo(0.034, 3);
     });
@@ -74,7 +74,7 @@ describe('AR Eye Hunter mobile input', () => {
             invertY: true,
             buttonScale: 0.1,
             gyroEnabled: true,
-            hapticsEnabled: false,
+            hapticsEnabled: false
         });
         const settings = loadMobileControlSettings(() => stored);
 
@@ -98,7 +98,7 @@ describe('AR Eye Hunter mobile input', () => {
                     screen: { x: 438, y: 302 },
                     world: [0, 1.72, 8],
                     distance: 8,
-                    blocked: false,
+                    blocked: false
                 },
                 {
                     id: 'compliance-eye',
@@ -106,9 +106,9 @@ describe('AR Eye Hunter mobile input', () => {
                     screen: { x: 448, y: 302 },
                     world: [0, 2.2, 10],
                     distance: 10,
-                    blocked: false,
-                },
-            ],
+                    blocked: false
+                }
+            ]
         });
 
         expect(selectedEye?.id).toBe('compliance-eye');
@@ -121,8 +121,8 @@ describe('AR Eye Hunter mobile input', () => {
                 screen: { x: 420, y: 302 },
                 world: [0, 2.2, 10],
                 distance: 10,
-                blocked: true,
-            }],
+                blocked: true
+            }]
         });
 
         expect(blocked).toBeUndefined();

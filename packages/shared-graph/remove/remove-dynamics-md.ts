@@ -1,14 +1,13 @@
-import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
-import { degreeLimitOf, degreeOf, neighborsOf, } from './remove-dynamics-helpers.ts';
-import { connectMDE, connectSearchMDE, } from './tree-dynamics-connect.ts';
 import { TreeGraph, VertexId } from '../graph-props.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
+import { degreeLimitOf, degreeOf, neighborsOf } from './remove-dynamics-helpers.ts';
+import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
+import { connectMDE, connectSearchMDE } from './tree-dynamics-connect.ts';
 
 export function rvMDEdge(ctx: RemoveDynamicsContext): RemoveResult {
     const adjacent = new Set(neighborsOf(ctx.groupGraph, ctx.actionVertexId));
 
-    const odAvailableNeighbors =
-        getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) +
+    const odAvailableNeighbors = getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) +
         adjacent.size;
 
     const minOdNeeded = getMinODNeedConnectV(adjacent.size);
@@ -23,23 +22,22 @@ export function rvMDEdge(ctx: RemoveDynamicsContext): RemoveResult {
     const result = connectMDE(
         {
             globalGraph: ctx.globalGraph,
-            groupGraph: next,
+            groupGraph: next
         },
         new Set(adjacent),
-        new Set<VertexId>(),
+        new Set<VertexId>()
     );
 
     return {
         graph: result.graph,
-        changed: true,
+        changed: true
     };
 }
 
 export function rvSearchMDEdge(ctx: RemoveDynamicsContext): RemoveResult {
     const adjacent = new Set(neighborsOf(ctx.groupGraph, ctx.actionVertexId));
 
-    const odAvailableNeighbors =
-        getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) +
+    const odAvailableNeighbors = getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) +
         adjacent.size;
 
     const minOdNeeded = getMinODNeedConnectV(adjacent.size);
@@ -54,22 +52,22 @@ export function rvSearchMDEdge(ctx: RemoveDynamicsContext): RemoveResult {
     const result = connectSearchMDE(
         {
             globalGraph: ctx.globalGraph,
-            groupGraph: next,
+            groupGraph: next
         },
         new Set(adjacent),
-        new Set<VertexId>(),
+        new Set<VertexId>()
     );
 
     return {
         graph: result.graph,
-        changed: true,
+        changed: true
     };
 }
 
 function getAvailableOutDegree(
     graph: TreeGraph,
     globalGraph: TreeGraph,
-    vertices: ReadonlySet<VertexId>,
+    vertices: ReadonlySet<VertexId>
 ): number {
     let total = 0;
 

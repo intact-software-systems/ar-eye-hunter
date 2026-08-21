@@ -20,7 +20,7 @@ export type ControlSnapshotRevisionSession = Readonly<{
             rootDocument: unknown;
             fallbackDocument?: unknown;
             detailDocuments?: readonly unknown[];
-        }>,
+        }>
     ): ControlSnapshotRevision;
 }>;
 
@@ -40,61 +40,61 @@ export function createControlSnapshotRevisionSession(): ControlSnapshotRevisionS
     return {
         associate(snapshot, input) {
             const rootRawText = controlResponseDocumentText(input.rootDocument);
-            const fallbackRawText =
-                input.source === 'canonical-fallback'
-                    ? controlResponseDocumentText(input.fallbackDocument)
-                    : undefined;
+            const fallbackRawText = input.source === 'canonical-fallback'
+                ? controlResponseDocumentText(input.fallbackDocument)
+                : undefined;
             const detailRawTexts = (input.detailDocuments ?? [])
                 .map(controlResponseDocumentText);
-            const cacheable =
-                rootRawText !== undefined &&
+            const cacheable = rootRawText !== undefined &&
                 (input.source !== 'canonical-fallback' ||
                     fallbackRawText !== undefined) &&
                 detailRawTexts.every(
-                    (text): text is string => text !== undefined,
+                    (text): text is string => text !== undefined
                 );
             let token: ControlSnapshotRevision;
 
             if (!cacheable) {
                 previous = undefined;
                 token = createControlSnapshotRevision();
-            } else if (
+            }
+            else if (
                 previous?.source === input.source &&
                 previous.rootRawText === rootRawText &&
                 previous.fallbackRawText === fallbackRawText &&
                 sameTexts(previous.detailRawTexts, detailRawTexts)
             ) {
                 token = previous.token;
-            } else {
+            }
+            else {
                 token = createControlSnapshotRevision();
                 previous = {
                     source: input.source,
                     rootRawText,
                     fallbackRawText,
                     detailRawTexts,
-                    token,
+                    token
                 };
             }
 
             revisionBySnapshot.set(snapshot, token);
             return token;
-        },
+        }
     };
 }
 
 function sameTexts(
     left: readonly string[],
-    right: readonly (string | undefined)[],
+    right: readonly (string | undefined)[]
 ): boolean {
     return left.length === right.length &&
         left.every((text, index) => text === right[index]);
 }
 
 export function controlSnapshotRevisionOf(
-    snapshot: unknown,
+    snapshot: unknown
 ): ControlSnapshotRevision | undefined {
     return snapshot !== null &&
-        (typeof snapshot === 'object' || typeof snapshot === 'function')
+            (typeof snapshot === 'object' || typeof snapshot === 'function')
         ? revisionBySnapshot.get(snapshot as object)
         : undefined;
 }

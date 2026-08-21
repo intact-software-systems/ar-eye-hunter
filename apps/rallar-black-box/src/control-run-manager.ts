@@ -9,8 +9,8 @@ import type {
     ControlFleetAgentRunOutcome,
     ControlFleetAggregateReport,
     ControlFleetFailureSignature,
-    ControlFleetReportFilter,
     ControlFleetReportBundle,
+    ControlFleetReportFilter,
     ControlFleetReportsResponse,
     ControlFleetRunReport,
     ControlFleetTimingDistribution,
@@ -19,19 +19,16 @@ import type {
     ControlRunArtifactFileName,
     ControlRunSnapshot,
     ControlServerSnapshot,
-    ControlSnapshotBounds,
+    ControlSnapshotBounds
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import { ControlRunManagerHttpError } from './control-http-error.ts';
-import {
-    inheritControlResponseDocument,
-    rememberControlResponseDocument,
-} from './control-response-document.ts';
+import { inheritControlResponseDocument, rememberControlResponseDocument } from './control-response-document.ts';
 
 export { ControlRunManagerHttpError };
 
@@ -56,7 +53,7 @@ export type {
     ControlRunSnapshot,
     ControlServerSnapshot,
     ControlSnapshotBounds,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 };
 
 export type ControlRunManagerStats = Readonly<{
@@ -98,7 +95,7 @@ export type ControlRunCommandRow = Readonly<{
 
 export type ControlRunManagerFetch = (
     input: RequestInfo | URL,
-    init?: RequestInit,
+    init?: RequestInit
 ) => Promise<Response>;
 
 type ControlResponseDocument<T> = Readonly<{
@@ -136,7 +133,8 @@ export function controlHttpBaseUrlFromWsUrl(value: string | undefined): string {
         const url = new URL(value);
         if (url.protocol === 'ws:') {
             url.protocol = 'http:';
-        } else if (url.protocol === 'wss:') {
+        }
+        else if (url.protocol === 'wss:') {
             url.protocol = 'https:';
         }
         if (url.pathname.endsWith(CONTROL_PATH_SUFFIX)) {
@@ -145,28 +143,29 @@ export function controlHttpBaseUrlFromWsUrl(value: string | undefined): string {
         url.search = '';
         url.hash = '';
         return url.toString().replace(/\/$/, '');
-    } catch (_error) {
+    }
+    catch (_error) {
         return DEFAULT_CONTROL_HTTP_BASE_URL;
     }
 }
 
 export function controlRunManagerStats(
-    snapshot: ControlServerSnapshot | undefined,
+    snapshot: ControlServerSnapshot | undefined
 ): ControlRunManagerStats {
     const runs = snapshot?.runs ?? [];
     return runs.reduce<ControlRunManagerStats>((stats, run) => ({
         runCount: stats.runCount + 1,
         agentCount: stats.agentCount + run.agents.length,
         connectedAgentCount: stats.connectedAgentCount +
-            run.agents.filter(agent => agent.connected).length,
+            run.agents.filter((agent) => agent.connected).length,
         queuedCommandCount: stats.queuedCommandCount +
-            run.commands.filter(command => command.completedAtEpochMs === undefined).length,
+            run.commands.filter((command) => command.completedAtEpochMs === undefined).length,
         completedCommandCount: stats.completedCommandCount +
-            run.commands.filter(command => command.completedAtEpochMs !== undefined).length,
+            run.commands.filter((command) => command.completedAtEpochMs !== undefined).length,
         resultCount: stats.resultCount + run.results.length,
         eventCount: stats.eventCount + run.events.length,
         reportCount: stats.reportCount + run.reports.length,
-        heartbeatCount: stats.heartbeatCount + run.heartbeats.length,
+        heartbeatCount: stats.heartbeatCount + run.heartbeats.length
     }), {
         runCount: 0,
         agentCount: 0,
@@ -176,7 +175,7 @@ export function controlRunManagerStats(
         resultCount: 0,
         eventCount: 0,
         reportCount: 0,
-        heartbeatCount: 0,
+        heartbeatCount: 0
     });
 }
 
@@ -187,7 +186,7 @@ export function controlRunAgentRows(run: ControlRunSnapshot | undefined): readon
 
     return [...run.agents]
         .sort((left, right) => left.agentId.localeCompare(right.agentId))
-        .map(agent => ({
+        .map((agent) => ({
             agentId: agent.agentId,
             connected: agent.connected,
             status: agent.status ?? (agent.connected ? 'connected' : 'offline'),
@@ -195,19 +194,19 @@ export function controlRunAgentRows(run: ControlRunSnapshot | undefined): readon
             lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
             identity: agent.identity,
             identitySummary: controlAgentIdentitySummary(agent.identity),
-            queuedCommandCount: run.commands.filter(command =>
+            queuedCommandCount: run.commands.filter((command) =>
                 command.envelope.agentId === agent.agentId &&
                 command.completedAtEpochMs === undefined
             ).length,
             completedCommandCount: agent.completedCommandIds.length,
             receivedResultCount: agent.receivedResultCount,
             receivedEventCount: agent.receivedEventCount,
-            reconnectCount: agent.reconnectCount,
+            reconnectCount: agent.reconnectCount
         }));
 }
 
 export function controlAgentIdentitySummary(
-    identity: RallarBlackBoxControlAgentIdentity | undefined,
+    identity: RallarBlackBoxControlAgentIdentity | undefined
 ): string | undefined {
     if (!identity) {
         return undefined;
@@ -224,12 +223,12 @@ export function controlAgentIdentitySummary(
         principal,
         group ? `group ${group}` : undefined,
         session ? `session ${session}` : undefined,
-        scope ? `scope ${scope}` : undefined,
+        scope ? `scope ${scope}` : undefined
     ].filter(Boolean).join(' - ') || undefined;
 }
 
 export function controlRunCommandRows(
-    run: ControlRunSnapshot | undefined,
+    run: ControlRunSnapshot | undefined
 ): readonly ControlRunCommandRow[] {
     if (!run) {
         return [];
@@ -237,7 +236,7 @@ export function controlRunCommandRows(
 
     return [...run.commands]
         .sort((left, right) => right.queuedAtEpochMs - left.queuedAtEpochMs)
-        .map(command => ({
+        .map((command) => ({
             commandId: command.envelope.commandId,
             agentId: command.envelope.agentId ?? '-',
             kind: command.envelope.command.kind,
@@ -248,14 +247,14 @@ export function controlRunCommandRows(
                 : 'queued',
             dispatchCount: command.dispatchCount,
             queuedAtEpochMs: command.queuedAtEpochMs,
-            completedAtEpochMs: command.completedAtEpochMs,
+            completedAtEpochMs: command.completedAtEpochMs
         }));
 }
 
 export function controlRunSnapshotUrl(
     baseUrl: string,
     runId: string | undefined,
-    bounds: ControlSnapshotBounds = {},
+    bounds: ControlSnapshotBounds = {}
 ): string {
     const url = new URL(runId ? `/runs/${encodeURIComponent(runId)}` : '/runs', normalizedBaseUrl(baseUrl));
     applySnapshotBounds(url, bounds);
@@ -263,7 +262,7 @@ export function controlRunSnapshotUrl(
 }
 
 export async function fetchControlServerSnapshot(
-    input: FetchControlServerSnapshotInput,
+    input: FetchControlServerSnapshotInput
 ): Promise<ControlServerSnapshot> {
     const document = await fetchControlServerSnapshotDocument(input);
     rememberControlResponseDocument(document.value, document.text);
@@ -271,300 +270,336 @@ export async function fetchControlServerSnapshot(
 }
 
 async function fetchControlServerSnapshotDocument(
-    input: FetchControlServerSnapshotInput,
+    input: FetchControlServerSnapshotInput
 ): Promise<ControlResponseDocument<ControlServerSnapshot>> {
-    const response = await (input.fetchFn ?? fetch)(controlRunSnapshotUrl(
-        input.baseUrl,
-        undefined,
-        input.bounds,
-    ), {
-        headers: authorizationHeaders(input.token),
-    });
+    const response = await (input.fetchFn ?? fetch)(
+        controlRunSnapshotUrl(
+            input.baseUrl,
+            undefined,
+            input.bounds
+        ),
+        {
+            headers: authorizationHeaders(input.token)
+        }
+    );
     return readJsonResponseDocument<ControlServerSnapshot>(response);
 }
 
-export async function fetchControlRunSnapshot(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    token?: string;
-    bounds?: ControlSnapshotBounds;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlRunSnapshot> {
-    const response = await (input.fetchFn ?? fetch)(controlRunSnapshotUrl(
-        input.baseUrl,
-        input.runId,
-        input.bounds,
-    ), {
-        headers: authorizationHeaders(input.token),
-    });
+export async function fetchControlRunSnapshot(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        token?: string;
+        bounds?: ControlSnapshotBounds;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlRunSnapshot> {
+    const response = await (input.fetchFn ?? fetch)(
+        controlRunSnapshotUrl(
+            input.baseUrl,
+            input.runId,
+            input.bounds
+        ),
+        {
+            headers: authorizationHeaders(input.token)
+        }
+    );
     const document = await readJsonResponseDocument<ControlRunSnapshot>(response);
     rememberControlResponseDocument(document.value, document.text);
     return document.value;
 }
 
-export async function enqueueBulkControlCommand(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    agentIds: readonly string[];
-    command: RallarBlackBoxTestCommand;
-    commandIdPrefix?: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<EnqueueBulkControlCommandResult> {
+export async function enqueueBulkControlCommand(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        agentIds: readonly string[];
+        command: RallarBlackBoxTestCommand;
+        commandIdPrefix?: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<EnqueueBulkControlCommandResult> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/runs/${encodeURIComponent(input.runId)}/commands`, normalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...authorizationHeaders(input.token),
+                ...authorizationHeaders(input.token)
             },
             body: JSON.stringify({
                 agentIds: input.agentIds,
                 commandIdPrefix: input.commandIdPrefix,
-                command: input.command,
-            }),
-        },
+                command: input.command
+            })
+        }
     );
     return readJsonResponse<EnqueueBulkControlCommandResult>(response);
 }
 
-export async function resetControlRun(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlRunSnapshot> {
+export async function resetControlRun(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlRunSnapshot> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/runs/${encodeURIComponent(input.runId)}/reset`, normalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
-    const body = await readJsonResponse<{ run: ControlRunSnapshot }>(response);
+    const body = await readJsonResponse<{ run: ControlRunSnapshot; }>(response);
     return body.run;
 }
 
-export async function deleteControlRun(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<void> {
+export async function deleteControlRun(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<void> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/runs/${encodeURIComponent(input.runId)}`, normalizedBaseUrl(input.baseUrl)),
         {
             method: 'DELETE',
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     await readJsonResponse<unknown>(response);
 }
 
-export async function fetchControlRunArtifactBundle(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlRunArtifactBundle> {
+export async function fetchControlRunArtifactBundle(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlRunArtifactBundle> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/runs/${encodeURIComponent(input.runId)}/artifacts`, normalizedBaseUrl(input.baseUrl)),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<ControlRunArtifactBundle>(response);
 }
 
-export async function fetchControlRunJsonl(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    kind: 'events' | 'results';
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<string> {
+export async function fetchControlRunJsonl(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        kind: 'events' | 'results';
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<string> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(
             `/runs/${encodeURIComponent(input.runId)}/${input.kind}.jsonl`,
-            normalizedBaseUrl(input.baseUrl),
+            normalizedBaseUrl(input.baseUrl)
         ),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readTextResponse(response);
 }
 
-export async function fetchControlRunFailureBundle(input: Readonly<{
-    baseUrl: string;
-    runId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<unknown> {
+export async function fetchControlRunFailureBundle(
+    input: Readonly<{
+        baseUrl: string;
+        runId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<unknown> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/runs/${encodeURIComponent(input.runId)}/failure-bundle`, normalizedBaseUrl(input.baseUrl)),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<unknown>(response);
 }
 
 export async function fetchDistributedRuns(
-    input: FetchDistributedRunsInput,
+    input: FetchDistributedRunsInput
 ): Promise<readonly ControlDistributedRunSnapshot[]> {
     const document = await fetchDistributedRunsDocument(input);
     rememberControlResponseDocument(document.value, document.text);
     inheritControlResponseDocument(
         document.value,
-        document.value.distributedRuns,
+        document.value.distributedRuns
     );
     return document.value.distributedRuns;
 }
 
 async function fetchDistributedRunsDocument(
-    input: FetchDistributedRunsInput,
+    input: FetchDistributedRunsInput
 ): Promise<ControlResponseDocument<ControlDistributedRunListResponse>> {
     const response = await (input.fetchFn ?? fetch)(
         new URL('/distributed-runs', normalizedBaseUrl(input.baseUrl)),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponseDocument<ControlDistributedRunListResponse>(
-        response,
+        response
     );
 }
 
-export async function fetchDistributedRun(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlDistributedRunSnapshot> {
+export async function fetchDistributedRun(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlDistributedRunSnapshot> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/distributed-runs/${encodeURIComponent(input.distributedRunId)}`, normalizedBaseUrl(input.baseUrl)),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<ControlDistributedRunSnapshot>(response);
 }
 
-export async function createDistributedRun(input: Readonly<{
-    baseUrl: string;
-    manifest: RallarBlackBoxDistributedRunManifest;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlDistributedRunSnapshot> {
+export async function createDistributedRun(
+    input: Readonly<{
+        baseUrl: string;
+        manifest: RallarBlackBoxDistributedRunManifest;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlDistributedRunSnapshot> {
     const response = await (input.fetchFn ?? fetch)(
         new URL('/distributed-runs', normalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...authorizationHeaders(input.token),
+                ...authorizationHeaders(input.token)
             },
             body: JSON.stringify({
-                manifest: input.manifest,
-            }),
-        },
+                manifest: input.manifest
+            })
+        }
     );
     return readJsonResponse<ControlDistributedRunSnapshot>(response);
 }
 
-export async function resolveDistributedTargets(input: Readonly<{
-    baseUrl: string;
-    manifest: RallarBlackBoxDistributedRunManifest;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<RallarBlackBoxDistributedTargetResolution> {
+export async function resolveDistributedTargets(
+    input: Readonly<{
+        baseUrl: string;
+        manifest: RallarBlackBoxDistributedRunManifest;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<RallarBlackBoxDistributedTargetResolution> {
     const response = await (input.fetchFn ?? fetch)(
         new URL('/distributed-runs/resolve-targets', normalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...authorizationHeaders(input.token),
+                ...authorizationHeaders(input.token)
             },
             body: JSON.stringify({
-                manifest: input.manifest,
-            }),
-        },
+                manifest: input.manifest
+            })
+        }
     );
     return readJsonResponse<RallarBlackBoxDistributedTargetResolution>(response);
 }
 
-export async function stageDistributedRun(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlDistributedRunSnapshot> {
+export async function stageDistributedRun(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlDistributedRunSnapshot> {
     return mutateDistributedRun(input, 'stage');
 }
 
-export async function startDistributedRun(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlDistributedRunSnapshot> {
+export async function startDistributedRun(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlDistributedRunSnapshot> {
     return mutateDistributedRun(input, 'start');
 }
 
-export async function cancelDistributedRun(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    reason?: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlDistributedRunSnapshot> {
+export async function cancelDistributedRun(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        reason?: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlDistributedRunSnapshot> {
     return mutateDistributedRun(input, 'cancel');
 }
 
-export async function fetchDistributedRunArtifactBundle(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlDistributedRunArtifactBundle> {
+export async function fetchDistributedRunArtifactBundle(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlDistributedRunArtifactBundle> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
-            normalizedBaseUrl(input.baseUrl),
+            normalizedBaseUrl(input.baseUrl)
         ),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<ControlDistributedRunArtifactBundle>(response);
 }
 
-export async function fetchDistributedRunArtifactBundleBytes(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-    maxBytes: number;
-}>): Promise<ArrayBuffer> {
+export async function fetchDistributedRunArtifactBundleBytes(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+        maxBytes: number;
+    }>
+): Promise<ArrayBuffer> {
     if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes <= 0) {
         throw new RangeError('Control artifact byte limit must be a positive safe integer.');
     }
     const response = await (input.fetchFn ?? fetch)(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
-            normalizedBaseUrl(input.baseUrl),
+            normalizedBaseUrl(input.baseUrl)
         ),
-        { headers: authorizationHeaders(input.token) },
+        { headers: authorizationHeaders(input.token) }
     );
     return readBoundedControlArtifactResponseBytes(response, input.maxBytes);
 }
 
 async function readBoundedControlArtifactResponseBytes(
     response: Response,
-    maxBytes: number,
+    maxBytes: number
 ): Promise<ArrayBuffer> {
     const declared = controlArtifactDeclaredByteLength(response);
     const maxResponseBytes = response.ok
@@ -573,10 +608,13 @@ async function readBoundedControlArtifactResponseBytes(
     if (declared !== undefined && declared > maxResponseBytes) {
         try {
             await response.body?.cancel();
-        } catch {
+        }
+        catch {
             // Preserve the bounded protocol error when cancellation itself fails.
         }
-        if (!response.ok) throwControlArtifactHttpError(response);
+        if (!response.ok) {
+            throwControlArtifactHttpError(response);
+        }
         throw controlArtifactTransferLimitError(maxResponseBytes);
     }
     let bytes: ArrayBuffer;
@@ -584,9 +622,10 @@ async function readBoundedControlArtifactResponseBytes(
         bytes = await readBoundedControlArtifactBytes(
             response,
             maxResponseBytes,
-            declared,
+            declared
         );
-    } catch (error) {
+    }
+    catch (error) {
         if (!response.ok && error instanceof ControlArtifactTransferLimitError) {
             throwControlArtifactHttpError(response);
         }
@@ -604,7 +643,7 @@ const CONTROL_FLEET_REPORT_BUNDLE_TRANSFER_MAX_BYTES = 64 * 1_024 * 1_024;
 async function readBoundedControlArtifactBytes(
     response: Response,
     maxBytes: number,
-    declaredBytes: number | undefined,
+    declaredBytes: number | undefined
 ): Promise<ArrayBuffer> {
     if (!response.body) {
         const bytes = await response.arrayBuffer();
@@ -617,13 +656,13 @@ async function readBoundedControlArtifactBytes(
     try {
         const resizableResult = createResizableControlArtifactBuffer(
             declaredBytes ?? 0,
-            maxBytes,
+            maxBytes
         );
         if (resizableResult) {
             return await readResizableControlArtifactBytes(
                 reader,
                 resizableResult,
-                maxBytes,
+                maxBytes
             );
         }
         return declaredBytes === undefined
@@ -631,24 +670,28 @@ async function readBoundedControlArtifactBytes(
             : await readDeclaredControlArtifactBytes(
                 reader,
                 declaredBytes,
-                maxBytes,
+                maxBytes
             );
-    } finally {
+    }
+    finally {
         reader.releaseLock();
     }
 }
 
-type ResizableControlArtifactBuffer = ArrayBuffer & Readonly<{
-    maxByteLength: number;
-    resizable: true;
-}> & {
-    resize(byteLength: number): void;
-    transferToFixedLength(): ArrayBuffer;
-};
+type ResizableControlArtifactBuffer =
+    & ArrayBuffer
+    & Readonly<{
+        maxByteLength: number;
+        resizable: true;
+    }>
+    & {
+        resize(byteLength: number): void;
+        transferToFixedLength(): ArrayBuffer;
+    };
 
 function createResizableControlArtifactBuffer(
     initialBytes: number,
-    maxBytes: number,
+    maxBytes: number
 ): ResizableControlArtifactBuffer | undefined {
     const prototype = ArrayBuffer.prototype as {
         resize?: unknown;
@@ -661,15 +704,16 @@ function createResizableControlArtifactBuffer(
         return undefined;
     }
     try {
-        const ResizableArrayBuffer = ArrayBuffer as unknown as new (
+        const ResizableArrayBuffer = ArrayBuffer as unknown as new(
             byteLength: number,
-            options: { maxByteLength: number },
+            options: { maxByteLength: number; }
         ) => ResizableControlArtifactBuffer;
         const buffer = new ResizableArrayBuffer(initialBytes, {
-            maxByteLength: maxBytes,
+            maxByteLength: maxBytes
         });
         return buffer.resizable ? buffer : undefined;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -677,12 +721,14 @@ function createResizableControlArtifactBuffer(
 async function readResizableControlArtifactBytes(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     result: ResizableControlArtifactBuffer,
-    maxBytes: number,
+    maxBytes: number
 ): Promise<ArrayBuffer> {
     let totalBytes = 0;
     while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        }
         if (value.byteLength > maxBytes - totalBytes) {
             await cancelControlArtifactReader(reader);
             throw controlArtifactTransferLimitError(maxBytes);
@@ -692,20 +738,22 @@ async function readResizableControlArtifactBytes(
             result.resize(controlArtifactBufferCapacity(
                 result.byteLength,
                 nextTotalBytes,
-                maxBytes,
+                maxBytes
             ));
         }
         new Uint8Array(result, totalBytes, value.byteLength).set(value);
         totalBytes = nextTotalBytes;
     }
-    if (result.byteLength !== totalBytes) result.resize(totalBytes);
+    if (result.byteLength !== totalBytes) {
+        result.resize(totalBytes);
+    }
     return result.transferToFixedLength();
 }
 
 function controlArtifactBufferCapacity(
     currentBytes: number,
     requiredBytes: number,
-    maxBytes: number,
+    maxBytes: number
 ): number {
     let capacity = Math.max(1, currentBytes);
     while (capacity < requiredBytes) {
@@ -719,13 +767,15 @@ function controlArtifactBufferCapacity(
 async function readDeclaredControlArtifactBytes(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     declaredBytes: number,
-    maxBytes: number,
+    maxBytes: number
 ): Promise<ArrayBuffer> {
     let result = new Uint8Array(declaredBytes);
     let totalBytes = 0;
     while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        }
         if (value.byteLength > maxBytes - totalBytes) {
             await cancelControlArtifactReader(reader);
             throw controlArtifactTransferLimitError(maxBytes);
@@ -738,7 +788,7 @@ async function readDeclaredControlArtifactBytes(
             const expanded = new Uint8Array(Math.max(
                 nextTotalBytes,
                 doubledCapacity,
-                1,
+                1
             ));
             expanded.set(result.subarray(0, totalBytes));
             result = expanded;
@@ -753,13 +803,15 @@ async function readDeclaredControlArtifactBytes(
 
 async function readControlArtifactChunks(
     reader: ReadableStreamDefaultReader<Uint8Array>,
-    maxBytes: number,
+    maxBytes: number
 ): Promise<ArrayBuffer> {
     const chunks: Uint8Array[] = [];
     let totalBytes = 0;
     while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+            break;
+        }
         if (value.byteLength > maxBytes - totalBytes) {
             await cancelControlArtifactReader(reader);
             throw controlArtifactTransferLimitError(maxBytes);
@@ -777,18 +829,21 @@ async function readControlArtifactChunks(
 }
 
 async function cancelControlArtifactReader(
-    reader: ReadableStreamDefaultReader<Uint8Array>,
+    reader: ReadableStreamDefaultReader<Uint8Array>
 ): Promise<void> {
     try {
         await reader.cancel();
-    } catch {
+    }
+    catch {
         // Preserve the bounded protocol error when cancellation itself fails.
     }
 }
 
 function controlArtifactDeclaredByteLength(response: Response): number | undefined {
     const value = response.headers.get('content-length')?.trim();
-    if (!value || !/^\d+$/.test(value)) return undefined;
+    if (!value || !/^\d+$/.test(value)) {
+        return undefined;
+    }
     const declared = Number(value);
     return Number.isSafeInteger(declared)
         ? declared
@@ -797,108 +852,125 @@ function controlArtifactDeclaredByteLength(response: Response): number | undefin
 
 function throwControlArtifactHttpError(
     response: Response,
-    bytes?: ArrayBuffer,
+    bytes?: ArrayBuffer
 ): never {
     const text = bytes ? new TextDecoder().decode(bytes) : '';
     let value: unknown;
     try {
         value = text.length > 0 ? JSON.parse(text) : undefined;
-    } catch {
+    }
+    catch {
         value = undefined;
     }
     const message = value && typeof value === 'object' && 'error' in value
-        ? String((value as { error: unknown }).error)
+        ? String((value as { error: unknown; }).error)
         : `Control server request failed: ${response.status} ${response.statusText}`;
     throw new ControlRunManagerHttpError(
         message,
         response.status,
-        response.statusText,
+        response.statusText
     );
 }
 
 class ControlArtifactTransferLimitError extends RangeError {}
 
 function controlArtifactTransferLimitError(
-    maxBytes: number,
+    maxBytes: number
 ): ControlArtifactTransferLimitError {
     return new ControlArtifactTransferLimitError(
-        `Control artifact response exceeds the ${maxBytes}-byte transfer limit.`,
+        `Control artifact response exceeds the ${maxBytes}-byte transfer limit.`
     );
 }
 
-export async function fetchFleetReports(input: Readonly<{
-    baseUrl: string;
-    token?: string;
-    filter?: ControlFleetReportFilter;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlFleetReportsResponse> {
+export async function fetchFleetReports(
+    input: Readonly<{
+        baseUrl: string;
+        token?: string;
+        filter?: ControlFleetReportFilter;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlFleetReportsResponse> {
     const url = new URL('/fleet/reports', normalizedBaseUrl(input.baseUrl));
     applyFleetReportFilter(url, input.filter ?? {});
     const response = await (input.fetchFn ?? fetch)(url, {
-        headers: authorizationHeaders(input.token),
+        headers: authorizationHeaders(input.token)
     });
     return readJsonResponse<ControlFleetReportsResponse>(response);
 }
 
-export async function fetchFleetReport(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlFleetRunReport> {
+export async function fetchFleetReport(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlFleetRunReport> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}`, normalizedBaseUrl(input.baseUrl)),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<ControlFleetRunReport>(response);
 }
 
-export async function fetchFleetReportBundle(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlFleetReportBundle> {
+export async function fetchFleetReportBundle(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlFleetReportBundle> {
     const response = await (input.fetchFn ?? fetch)(
-        new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`, normalizedBaseUrl(input.baseUrl)),
+        new URL(
+            `/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`,
+            normalizedBaseUrl(input.baseUrl)
+        ),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<ControlFleetReportBundle>(response);
 }
 
-export async function fetchFleetReportBundleBytes(input: Readonly<{
-    baseUrl: string;
-    distributedRunId: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ArrayBuffer> {
+export async function fetchFleetReportBundleBytes(
+    input: Readonly<{
+        baseUrl: string;
+        distributedRunId: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ArrayBuffer> {
     const response = await (input.fetchFn ?? fetch)(
-        new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`, normalizedBaseUrl(input.baseUrl)),
+        new URL(
+            `/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`,
+            normalizedBaseUrl(input.baseUrl)
+        ),
         {
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readBoundedControlArtifactResponseBytes(
         response,
-        CONTROL_FLEET_REPORT_BUNDLE_TRANSFER_MAX_BYTES,
+        CONTROL_FLEET_REPORT_BUNDLE_TRANSFER_MAX_BYTES
     );
 }
 
-export async function rebuildFleetReports(input: Readonly<{
-    baseUrl: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlFleetReportsResponse> {
+export async function rebuildFleetReports(
+    input: Readonly<{
+        baseUrl: string;
+        token?: string;
+        fetchFn?: ControlRunManagerFetch;
+    }>
+): Promise<ControlFleetReportsResponse> {
     const response = await (input.fetchFn ?? fetch)(
         new URL('/fleet/reports/rebuild', normalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
-            headers: authorizationHeaders(input.token),
-        },
+            headers: authorizationHeaders(input.token)
+        }
     );
     return readJsonResponse<ControlFleetReportsResponse>(response);
 }
@@ -911,23 +983,23 @@ async function mutateDistributedRun(
         token?: string;
         fetchFn?: ControlRunManagerFetch;
     }>,
-    action: ControlDistributedRunCommandPhase,
+    action: ControlDistributedRunCommandPhase
 ): Promise<ControlDistributedRunSnapshot> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/${action}`,
-            normalizedBaseUrl(input.baseUrl),
+            normalizedBaseUrl(input.baseUrl)
         ),
         {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...authorizationHeaders(input.token),
+                ...authorizationHeaders(input.token)
             },
             body: action === 'cancel' && input.reason
                 ? JSON.stringify({ reason: input.reason })
-                : undefined,
-        },
+                : undefined
+        }
     );
     return readJsonResponse<ControlDistributedRunSnapshot>(response);
 }
@@ -940,7 +1012,7 @@ function normalizedBaseUrl(baseUrl: string): string {
 function authorizationHeaders(token: string | undefined): Record<string, string> {
     return token && token.trim().length > 0
         ? {
-            Authorization: `Bearer ${token.trim()}`,
+            Authorization: `Bearer ${token.trim()}`
         }
         : {};
 }
@@ -952,7 +1024,7 @@ function applySnapshotBounds(url: URL, bounds: ControlSnapshotBounds): void {
         ['limitEvents', bounds.events],
         ['limitStats', bounds.stats],
         ['limitReports', bounds.reports],
-        ['limitHeartbeats', bounds.heartbeats],
+        ['limitHeartbeats', bounds.heartbeats]
     ];
     entries.forEach(([name, value]) => {
         if (value !== undefined && Number.isFinite(value) && value >= 0) {
@@ -969,7 +1041,7 @@ function applyFleetReportFilter(url: URL, filter: ControlFleetReportFilter): voi
         ['groupId', filter.groupId],
         ['state', filter.state],
         ['fromEpochMs', filter.fromEpochMs],
-        ['toEpochMs', filter.toEpochMs],
+        ['toEpochMs', filter.toEpochMs]
     ];
     entries.forEach(([name, value]) => {
         if (value !== undefined && String(value).trim().length > 0) {
@@ -984,7 +1056,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function readJsonResponseDocument<T>(
-    response: Response,
+    response: Response
 ): Promise<ControlResponseDocument<T>> {
     const text = await response.text();
     let value: unknown = {};
@@ -992,18 +1064,19 @@ async function readJsonResponseDocument<T>(
     if (text.length > 0) {
         try {
             value = JSON.parse(text);
-        } catch (error) {
+        }
+        catch (error) {
             parseError = error;
         }
     }
     if (!response.ok) {
         const message = value && typeof value === 'object' && 'error' in value
-            ? String((value as { error: unknown }).error)
+            ? String((value as { error: unknown; }).error)
             : `Control server request failed: ${response.status} ${response.statusText}`;
         throw new ControlRunManagerHttpError(
             message,
             response.status,
-            response.statusText,
+            response.statusText
         );
     }
     if (parseError) {
@@ -1011,7 +1084,7 @@ async function readJsonResponseDocument<T>(
     }
     return {
         value: value as T,
-        text,
+        text
     };
 }
 
@@ -1022,9 +1095,10 @@ async function readTextResponse(response: Response): Promise<string> {
         try {
             const value = JSON.parse(text) as unknown;
             if (value && typeof value === 'object' && 'error' in value) {
-                message = String((value as { error: unknown }).error);
+                message = String((value as { error: unknown; }).error);
             }
-        } catch (_error) {
+        }
+        catch (_error) {
             if (text.length > 0) {
                 message = text;
             }
@@ -1032,7 +1106,7 @@ async function readTextResponse(response: Response): Promise<string> {
         throw new ControlRunManagerHttpError(
             message,
             response.status,
-            response.statusText,
+            response.statusText
         );
     }
     return text;

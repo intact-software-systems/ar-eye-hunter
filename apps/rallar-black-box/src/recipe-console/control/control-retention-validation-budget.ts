@@ -1,7 +1,7 @@
 import {
     CONTROL_RETENTION_PLAN_LIMITS,
     ControlRetentionPlanLimitError,
-    type ControlRetentionPlanLimit,
+    type ControlRetentionPlanLimit
 } from '@shared-test/rallar-bb-test/control-retention.ts';
 
 type ValidationBudget = {
@@ -18,7 +18,7 @@ export function assertControlRetentionResponseBudget(value: unknown): void {
         nodes: 0,
         utf8Bytes: 0,
         seen: new Set(),
-        encoder: new TextEncoder(),
+        encoder: new TextEncoder()
     });
 }
 
@@ -38,28 +38,36 @@ function visit(value: unknown, depth: number, budget: ValidationBudget): void {
         return;
     }
     if (typeof value === 'number') {
-        if (!Number.isFinite(value)) throw new TypeError('Retention response numbers must be finite.');
+        if (!Number.isFinite(value)) {
+            throw new TypeError('Retention response numbers must be finite.');
+        }
         append(JSON.stringify(value), budget);
         return;
     }
     if (!value || typeof value !== 'object') {
         throw new TypeError('Retention responses must be JSON-compatible.');
     }
-    if (budget.seen.has(value)) throw new TypeError('Retention responses must not be cyclic.');
+    if (budget.seen.has(value)) {
+        throw new TypeError('Retention responses must not be cyclic.');
+    }
     const prototype = Object.getPrototypeOf(value);
     if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
         throw new TypeError('Retention response records must be plain objects.');
     }
     budget.seen.add(value);
-    if (Array.isArray(value)) visitArray(value, depth, budget);
-    else visitRecord(value as Record<string, unknown>, depth, budget);
+    if (Array.isArray(value)) {
+        visitArray(value, depth, budget);
+    }
+    else {
+        visitRecord(value as Record<string, unknown>, depth, budget);
+    }
     budget.seen.delete(value);
 }
 
 function visitArray(
     value: readonly unknown[],
     depth: number,
-    budget: ValidationBudget,
+    budget: ValidationBudget
 ): void {
     budget.collectionItems += value.length;
     assertMaximum(budget.collectionItems, 'collectionItems');
@@ -68,7 +76,9 @@ function visitArray(
     }
     append('[', budget);
     for (let index = 0; index < value.length; index += 1) {
-        if (index > 0) append(',', budget);
+        if (index > 0) {
+            append(',', budget);
+        }
         const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
         if (!descriptor || !('value' in descriptor)) {
             throw new TypeError('Retention response arrays must be dense data arrays.');
@@ -81,7 +91,7 @@ function visitArray(
 function visitRecord(
     value: Record<string, unknown>,
     depth: number,
-    budget: ValidationBudget,
+    budget: ValidationBudget
 ): void {
     if (Object.getOwnPropertySymbols(value).length > 0) {
         throw new TypeError('Retention response records must not use symbol keys.');
@@ -96,9 +106,13 @@ function visitRecord(
         if (!descriptor || !('value' in descriptor)) {
             throw new TypeError('Retention response records must use data fields.');
         }
-        if (descriptor.value === undefined) continue;
+        if (descriptor.value === undefined) {
+            continue;
+        }
         assertString(key);
-        if (written > 0) append(',', budget);
+        if (written > 0) {
+            append(',', budget);
+        }
         append(`${JSON.stringify(key)}:`, budget);
         visit(descriptor.value, depth + 1, budget);
         written += 1;
@@ -118,12 +132,14 @@ function append(value: string, budget: ValidationBudget): void {
 }
 
 function assertMaximum(value: number, name: ControlRetentionPlanLimit): void {
-    if (value > CONTROL_RETENTION_PLAN_LIMITS[name]) limit(name);
+    if (value > CONTROL_RETENTION_PLAN_LIMITS[name]) {
+        limit(name);
+    }
 }
 
 function limit(name: ControlRetentionPlanLimit): never {
     throw new ControlRetentionPlanLimitError(
         name,
-        CONTROL_RETENTION_PLAN_LIMITS[name],
+        CONTROL_RETENTION_PLAN_LIMITS[name]
     );
 }

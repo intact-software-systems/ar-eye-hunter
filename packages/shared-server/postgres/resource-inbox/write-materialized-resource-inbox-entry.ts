@@ -6,13 +6,15 @@ export async function writeMaterializedResourceInboxEntry(
     repository: ResourceInboxRepository,
     placeholder: ResourceEntry,
     materialize: () => Promise<ResourceEntry>,
-    materializedIdentityError: (key: Key) => Error,
+    materializedIdentityError: (key: Key) => Error
 ): Promise<ResourceEntry> {
     return await repository.begin(async (transaction) => {
         const reserved = await transaction.tryWriteIfAbsentOrReplaceExpired(placeholder);
         if (!reserved) {
             const existing = await transaction.findAnyByKey(placeholder.key);
-            if (existing) return existing;
+            if (existing) {
+                return existing;
+            }
             throw new Error('Materialized write lost its conflicting resource inbox row');
         }
 
@@ -22,14 +24,14 @@ export async function writeMaterializedResourceInboxEntry(
         }
         return await transaction.replace({
             ...reserved,
-            resource: materialized.resource,
+            resource: materialized.resource
         });
     });
 }
 
 function hasReservedIdentity(
     reserved: ResourceEntry,
-    materialized: ResourceEntry,
+    materialized: ResourceEntry
 ): boolean {
     return materialized.key.topicId === reserved.key.topicId &&
         materialized.key.resourceId === reserved.key.resourceId &&

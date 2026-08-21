@@ -6,12 +6,9 @@ import type {
     RallarWsStatus,
     RallarWsStatusListener,
     RallarWsStatusSubscriptionOptions,
-    RallarWsWaitForOpenResult,
+    RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type {
-    RallarWaitForOpenOptions,
-    RallarWaitForOpenStatus,
-} from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarWaitForOpenOptions, RallarWaitForOpenStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -34,11 +31,11 @@ export type RallarWsFacade = Readonly<{
     status(): RallarWsStatus;
     onStatus(
         listener: RallarWsStatusListener,
-        options?: RallarWsStatusSubscriptionOptions,
+        options?: RallarWsStatusSubscriptionOptions
     ): RallarUnsubscribe;
     onLifecycle(
         listener: RallarWsLifecycleListener,
-        options?: RallarWsStatusSubscriptionOptions,
+        options?: RallarWsStatusSubscriptionOptions
     ): RallarUnsubscribe;
     waitForOpen(options?: RallarWaitForOpenOptions): Promise<RallarWsWaitForOpenResult>;
 }>;
@@ -58,15 +55,14 @@ export type RallarWsController = Readonly<{
 }>;
 
 export function createRallarWsController(
-    options: CreateRallarWsControllerOptions,
+    options: CreateRallarWsControllerOptions
 ): RallarWsController {
     return new BrowserRallarWsController(options);
 }
 
 class BrowserRallarWsController implements RallarWsController {
     private readonly wsStatusListeners = new Set<RallarWsStatusSubscription>();
-    private readonly wsLifecycleListeners =
-        new Set<RallarWsLifecycleSubscription>();
+    private readonly wsLifecycleListeners = new Set<RallarWsLifecycleSubscription>();
 
     private readonly options: CreateRallarWsControllerOptions;
 
@@ -78,7 +74,7 @@ class BrowserRallarWsController implements RallarWsController {
         status: (): RallarWsStatus => this.toWsStatus(),
         onStatus: (
             listener: RallarWsStatusListener,
-            options: RallarWsStatusSubscriptionOptions = {},
+            options: RallarWsStatusSubscriptionOptions = {}
         ): RallarUnsubscribe => {
             const subscription: RallarWsStatusSubscription = { listener, options };
             this.wsStatusListeners.add(subscription);
@@ -93,11 +89,11 @@ class BrowserRallarWsController implements RallarWsController {
         },
         onLifecycle: (
             listener: RallarWsLifecycleListener,
-            options: RallarWsStatusSubscriptionOptions = {},
+            options: RallarWsStatusSubscriptionOptions = {}
         ): RallarUnsubscribe => {
             const subscription: RallarWsLifecycleSubscription = {
                 listener,
-                options,
+                options
             };
             this.wsLifecycleListeners.add(subscription);
             this.registerWsStatusCallbacks();
@@ -110,9 +106,8 @@ class BrowserRallarWsController implements RallarWsController {
             };
         },
         waitForOpen: async (
-            options: RallarWaitForOpenOptions = {},
-        ): Promise<RallarWsWaitForOpenResult> =>
-            await this.waitForWsOpen(options),
+            options: RallarWaitForOpenOptions = {}
+        ): Promise<RallarWsWaitForOpenResult> => await this.waitForWsOpen(options)
     };
 
     attach(ctx = this.readMiddleware()): void {
@@ -131,7 +126,7 @@ class BrowserRallarWsController implements RallarWsController {
         this.emitWsLifecycle('disconnected', {
             code: 1000,
             reason: 'rallar-disconnect',
-            intentional: true,
+            intentional: true
         });
     }
 
@@ -147,7 +142,7 @@ class BrowserRallarWsController implements RallarWsController {
                 reconnectEnabled: false,
                 reconnectAttempts: 0,
                 maxReconnectAttempts: 0,
-                reconnectExhausted: false,
+                reconnectExhausted: false
             };
         }
 
@@ -163,12 +158,12 @@ class BrowserRallarWsController implements RallarWsController {
             reconnectEnabled: health.reconnectEnabled,
             reconnectAttempts: health.reconnectAttempts,
             maxReconnectAttempts: health.maxReconnectAttempts,
-            reconnectExhausted: health.reconnectExhausted,
+            reconnectExhausted: health.reconnectExhausted
         };
     }
 
     private waitForWsOpen(
-        options: RallarWaitForOpenOptions = {},
+        options: RallarWaitForOpenOptions = {}
     ): Promise<RallarWsWaitForOpenResult> {
         const current = this.toWsStatus();
         if (current.isOpen) {
@@ -181,7 +176,7 @@ class BrowserRallarWsController implements RallarWsController {
 
         if (!this.readMiddleware()) {
             return Promise.resolve(
-                toWsWaitForOpenResult('not-connected', current),
+                toWsWaitForOpenResult('not-connected', current)
             );
         }
 
@@ -203,7 +198,7 @@ class BrowserRallarWsController implements RallarWsController {
 
             const finish = (
                 status: RallarWaitForOpenStatus,
-                wsStatus: RallarWsStatus = latest,
+                wsStatus: RallarWsStatus = latest
             ): void => {
                 if (settled) {
                     return;
@@ -233,8 +228,8 @@ class BrowserRallarWsController implements RallarWsController {
                     }
                 },
                 {
-                    emitCurrent: false,
-                },
+                    emitCurrent: false
+                }
             );
             options.signal?.addEventListener('abort', onAbort, { once: true });
             timeout = setTimeout(() => finish('timeout'), timeoutMs);
@@ -242,7 +237,7 @@ class BrowserRallarWsController implements RallarWsController {
     }
 
     private registerWsStatusCallbacks(
-        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+        ctx: ApiMiddleware | undefined = this.readMiddleware()
     ): void {
         if (!ctx || !this.hasWsStatusSubscriptions()) {
             return;
@@ -250,7 +245,7 @@ class BrowserRallarWsController implements RallarWsController {
 
         ctx.middleware.webSocketQueueBox.socket.onWebsocketCallbacksDo(
             RALLAR_WS_STATUS_CALLBACK_ID,
-            this.toWsLifecycleCallbacks(),
+            this.toWsLifecycleCallbacks()
         );
     }
 
@@ -258,7 +253,7 @@ class BrowserRallarWsController implements RallarWsController {
         return {
             onOpen: (event) => {
                 this.emitWsLifecycle('open', {
-                    eventType: event.type,
+                    eventType: event.type
                 });
             },
             onClose: (event) => {
@@ -267,15 +262,15 @@ class BrowserRallarWsController implements RallarWsController {
                     reason: event.reason,
                     wasClean: event.wasClean,
                     eventType: event.type,
-                    intentional: false,
+                    intentional: false
                 });
             },
             onError: (event) => {
                 this.emitWsLifecycle('error', {
                     eventType: event.type,
-                    intentional: false,
+                    intentional: false
                 });
-            },
+            }
         };
     }
 
@@ -288,10 +283,10 @@ class BrowserRallarWsController implements RallarWsController {
     }
 
     private unregisterWsStatusCallbacks(
-        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+        ctx: ApiMiddleware | undefined = this.readMiddleware()
     ): void {
         ctx?.middleware.webSocketQueueBox.socket.removeWebsocketCallbackById(
-            RALLAR_WS_STATUS_CALLBACK_ID,
+            RALLAR_WS_STATUS_CALLBACK_ID
         );
     }
 
@@ -308,7 +303,7 @@ class BrowserRallarWsController implements RallarWsController {
             wasClean?: boolean;
             eventType?: string;
             intentional?: boolean;
-        }> = {},
+        }> = {}
     ): void {
         this.emitWsStatus();
         for (const subscription of this.wsLifecycleListeners) {
@@ -331,7 +326,7 @@ class BrowserRallarWsController implements RallarWsController {
             wasClean?: boolean;
             eventType?: string;
             intentional?: boolean;
-        }> = {},
+        }> = {}
     ): void {
         notifyListener(subscription.listener, {
             kind,
@@ -341,7 +336,7 @@ class BrowserRallarWsController implements RallarWsController {
             reason: input.reason,
             wasClean: input.wasClean,
             eventType: input.eventType,
-            intentional: input.intentional,
+            intentional: input.intentional
         });
     }
 
@@ -374,18 +369,19 @@ function toPublicWsStatusUrl(url: string | undefined): string | undefined {
         parsed.search = '';
         parsed.hash = '';
         return parsed.toString();
-    } catch {
+    }
+    catch {
         return url.split(/[?#]/, 1)[0];
     }
 }
 
 function toWsWaitForOpenResult(
     status: RallarWaitForOpenStatus,
-    wsStatus: RallarWsStatus,
+    wsStatus: RallarWsStatus
 ): RallarWsWaitForOpenResult {
     return {
         transport: 'ws',
         status,
-        wsStatus,
+        wsStatus
     };
 }

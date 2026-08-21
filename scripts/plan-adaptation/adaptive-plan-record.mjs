@@ -1,328 +1,328 @@
 import { createHash } from 'node:crypto';
 
-import {
-  isSafeRepositoryPath,
-  validateAdaptivePlanCapabilities,
-} from './adaptive-plan-capabilities.mjs';
+import { isSafeRepositoryPath, validateAdaptivePlanCapabilities } from './adaptive-plan-capabilities.mjs';
 
 export { isPlannedCapability, isSafeRepositoryPath } from './adaptive-plan-capabilities.mjs';
 
 const recordPattern = /```plan-adaptation-v1\s*\n([\s\S]*?)\n```/gu;
 
 export function parseAdaptivePlanRecord(markdown, sourceName = 'adaptive plan') {
-  const matches = [...markdown.matchAll(recordPattern)];
-  if (matches.length !== 1) {
-    throw new Error(`${sourceName} must contain exactly one plan-adaptation-v1 block`);
-  }
+    const matches = [...markdown.matchAll(recordPattern)];
+    if (matches.length !== 1) {
+        throw new Error(`${sourceName} must contain exactly one plan-adaptation-v1 block`);
+    }
 
-  try {
-    return JSON.parse(matches[0][1]);
-  } catch (error) {
-    throw new Error(`${sourceName} contains invalid JSON: ${toError(error).message}`);
-  }
+    try {
+        return JSON.parse(matches[0][1]);
+    }
+    catch (error) {
+        throw new Error(`${sourceName} contains invalid JSON: ${toError(error).message}`);
+    }
 }
 
 export function replaceAdaptivePlanRecord(markdown, record, sourceName = 'adaptive plan') {
-  parseAdaptivePlanRecord(markdown, sourceName);
-  const replacement = `\`\`\`plan-adaptation-v1\n${JSON.stringify(record, null, 2)}\n\`\`\``;
-  return markdown.replace(recordPattern, replacement);
+    parseAdaptivePlanRecord(markdown, sourceName);
+    const replacement = `\`\`\`plan-adaptation-v1\n${JSON.stringify(record, null, 2)}\n\`\`\``;
+    return markdown.replace(recordPattern, replacement);
 }
 
 export function computeAdaptivePlanRecordDigest(record) {
-  return createHash('sha256').update(JSON.stringify(record)).digest('hex');
+    return createHash('sha256').update(JSON.stringify(record)).digest('hex');
 }
 
 export function computeCheckpointDigest(checkpoint) {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        outcome: checkpoint.outcome,
-        learning: checkpoint.learning,
-        structure: checkpoint.structure,
-        decision: checkpoint.decision,
-        nextSlices: checkpoint.nextSlices,
-      }),
-    )
-    .digest('hex');
+    return createHash('sha256')
+        .update(
+            JSON.stringify({
+                outcome: checkpoint.outcome,
+                learning: checkpoint.learning,
+                structure: checkpoint.structure,
+                decision: checkpoint.decision,
+                nextSlices: checkpoint.nextSlices
+            })
+        )
+        .digest('hex');
 }
 
 export function validateAdaptivePlanRecord(record) {
-  const issues = [];
-  if (!isRecord(record) || record.version !== 1) {
-    return ['record.version must be 1'];
-  }
-  if (typeof record.planId !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.planId)) {
-    issues.push('record.planId must use lowercase letters, digits, and single hyphens');
-  }
-  if (!['active', 'postponed'].includes(record.status)) {
-    issues.push('record.status must be active or postponed');
-  }
-  requireText(issues, record.goal, 'record.goal');
-  requireTextArray(issues, record.acceptanceCriteria, 'record.acceptanceCriteria');
-  validateDistributedValidationRequirement(issues, record.distributedValidation);
-  issues.push(...validateAdaptivePlanCapabilities(record.capabilities));
-  validateTextArray(
-    issues,
-    record.completedSlicesSinceCheckpoint,
-    'record.completedSlicesSinceCheckpoint',
-  );
-  validateFacts(issues, record.facts);
-  if (!isRecord(record.checkpoint)) {
-    issues.push('record.checkpoint must be an object');
-  }
-  validateStructuralDispositions(issues, record.structuralDispositions);
-  validateStructuralReview(issues, record.freshStructuralReview);
-  validateColdNavigationEvidence(issues, record.coldNavigationEvidence);
-  validateMaterialDecisions(issues, record.materialDecisions);
-  return issues;
+    const issues = [];
+    if (!isRecord(record) || record.version !== 1) {
+        return ['record.version must be 1'];
+    }
+    if (typeof record.planId !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.planId)) {
+        issues.push('record.planId must use lowercase letters, digits, and single hyphens');
+    }
+    if (!['active', 'postponed'].includes(record.status)) {
+        issues.push('record.status must be active or postponed');
+    }
+    requireText(issues, record.goal, 'record.goal');
+    requireTextArray(issues, record.acceptanceCriteria, 'record.acceptanceCriteria');
+    validateDistributedValidationRequirement(issues, record.distributedValidation);
+    issues.push(...validateAdaptivePlanCapabilities(record.capabilities));
+    validateTextArray(
+        issues,
+        record.completedSlicesSinceCheckpoint,
+        'record.completedSlicesSinceCheckpoint'
+    );
+    validateFacts(issues, record.facts);
+    if (!isRecord(record.checkpoint)) {
+        issues.push('record.checkpoint must be an object');
+    }
+    validateStructuralDispositions(issues, record.structuralDispositions);
+    validateStructuralReview(issues, record.freshStructuralReview);
+    validateColdNavigationEvidence(issues, record.coldNavigationEvidence);
+    validateMaterialDecisions(issues, record.materialDecisions);
+    return issues;
 }
 
 function validateDistributedValidationRequirement(issues, requirement) {
-  if (requirement === undefined) {
-    return;
-  }
-  if (!isRecord(requirement)) {
-    issues.push('record.distributedValidation must be an object when present');
-    return;
-  }
-  if (requirement.required !== true) {
-    issues.push('record.distributedValidation.required must be true when present');
-  }
-  requireText(issues, requirement.reason, 'record.distributedValidation.reason');
-  const supportedFields = new Set(['required', 'reason']);
-  const unsupportedFields = Object.keys(requirement)
-    .filter((field) => !supportedFields.has(field))
-    .sort();
-  if (unsupportedFields.length > 0) {
-    issues.push(
-      `record.distributedValidation contains unsupported fields: ${unsupportedFields.join(', ')}`,
-    );
-  }
+    if (requirement === undefined) {
+        return;
+    }
+    if (!isRecord(requirement)) {
+        issues.push('record.distributedValidation must be an object when present');
+        return;
+    }
+    if (requirement.required !== true) {
+        issues.push('record.distributedValidation.required must be true when present');
+    }
+    requireText(issues, requirement.reason, 'record.distributedValidation.reason');
+    const supportedFields = new Set(['required', 'reason']);
+    const unsupportedFields = Object.keys(requirement)
+        .filter((field) => !supportedFields.has(field))
+        .sort();
+    if (unsupportedFields.length > 0) {
+        issues.push(
+            `record.distributedValidation contains unsupported fields: ${unsupportedFields.join(', ')}`
+        );
+    }
 }
 
 function validateFacts(issues, facts) {
-  if (!isRecord(facts)) {
-    issues.push('record.facts must be an object');
-    return;
-  }
-  requireText(issues, facts.diffBase, 'record.facts.diffBase');
-  if (
-    facts.affectedCodeDigest !== null &&
-    !/^[a-f0-9]{64}$/u.test(facts.affectedCodeDigest ?? '')
-  ) {
-    issues.push('record.facts.affectedCodeDigest must be null or a SHA-256 digest');
-  }
-  validateTextArray(issues, facts.computedTriggers, 'record.facts.computedTriggers');
-  if (!Array.isArray(facts.undeclaredChangedPaths)) {
-    issues.push('record.facts.undeclaredChangedPaths must be an array');
-  } else if (facts.undeclaredChangedPaths.some((value) => !isSafeRepositoryPath(value))) {
-    issues.push('record.facts.undeclaredChangedPaths must contain safe repository-relative paths');
-  }
+    if (!isRecord(facts)) {
+        issues.push('record.facts must be an object');
+        return;
+    }
+    requireText(issues, facts.diffBase, 'record.facts.diffBase');
+    if (
+        facts.affectedCodeDigest !== null &&
+        !/^[a-f0-9]{64}$/u.test(facts.affectedCodeDigest ?? '')
+    ) {
+        issues.push('record.facts.affectedCodeDigest must be null or a SHA-256 digest');
+    }
+    validateTextArray(issues, facts.computedTriggers, 'record.facts.computedTriggers');
+    if (!Array.isArray(facts.undeclaredChangedPaths)) {
+        issues.push('record.facts.undeclaredChangedPaths must be an array');
+    }
+    else if (facts.undeclaredChangedPaths.some((value) => !isSafeRepositoryPath(value))) {
+        issues.push('record.facts.undeclaredChangedPaths must contain safe repository-relative paths');
+    }
 }
 
 function validateStructuralDispositions(issues, dispositions) {
-  if (!Array.isArray(dispositions)) {
-    issues.push('record.structuralDispositions must be an array');
-    return;
-  }
-  for (const [index, disposition] of dispositions.entries()) {
-    const name = `record.structuralDispositions[${index}]`;
-    if (!isRecord(disposition)) {
-      issues.push(`${name} must be an object`);
-      continue;
+    if (!Array.isArray(dispositions)) {
+        issues.push('record.structuralDispositions must be an array');
+        return;
     }
-    if (disposition.kind === 'predecessor-path') {
-      validatePredecessorPathDisposition(issues, disposition, name);
-      continue;
+    for (const [index, disposition] of dispositions.entries()) {
+        const name = `record.structuralDispositions[${index}]`;
+        if (!isRecord(disposition)) {
+            issues.push(`${name} must be an object`);
+            continue;
+        }
+        if (disposition.kind === 'predecessor-path') {
+            validatePredecessorPathDisposition(issues, disposition, name);
+            continue;
+        }
+        if (!['ownership-contract', 'current-fact'].includes(disposition.kind)) {
+            issues.push(`${name}.kind must be ownership-contract or current-fact`);
+            continue;
+        }
+        requireText(issues, disposition.target, `${name}.target`);
+        if (!['keep', 'split', 'move', 'consolidate'].includes(disposition.disposition)) {
+            issues.push(`${name}.disposition must be keep, split, move, or consolidate`);
+        }
+        requireText(issues, disposition.rationale, `${name}.rationale`);
+        if (disposition.kind === 'current-fact') {
+            requireText(issues, disposition.ruleId, `${name}.ruleId`);
+            if (!isSafeRepositoryPath(disposition.target)) {
+                issues.push(`${name}.target must be a safe repository-relative path`);
+            }
+            if (
+                disposition.identity !== null &&
+                (typeof disposition.identity !== 'string' || disposition.identity.trim() === '')
+            ) {
+                issues.push(`${name}.identity must be null or a non-empty string`);
+            }
+            if (!Number.isInteger(disposition.magnitude) || disposition.magnitude < 0) {
+                issues.push(`${name}.magnitude must be a non-negative integer`);
+            }
+            if (!/^[a-f0-9]{64}$/u.test(disposition.affectedCodeDigest ?? '')) {
+                issues.push(`${name}.affectedCodeDigest must be a SHA-256 digest`);
+            }
+        }
     }
-    if (!['ownership-contract', 'current-fact'].includes(disposition.kind)) {
-      issues.push(`${name}.kind must be ownership-contract or current-fact`);
-      continue;
-    }
-    requireText(issues, disposition.target, `${name}.target`);
-    if (!['keep', 'split', 'move', 'consolidate'].includes(disposition.disposition)) {
-      issues.push(`${name}.disposition must be keep, split, move, or consolidate`);
-    }
-    requireText(issues, disposition.rationale, `${name}.rationale`);
-    if (disposition.kind === 'current-fact') {
-      requireText(issues, disposition.ruleId, `${name}.ruleId`);
-      if (!isSafeRepositoryPath(disposition.target)) {
-        issues.push(`${name}.target must be a safe repository-relative path`);
-      }
-      if (
-        disposition.identity !== null &&
-        (typeof disposition.identity !== 'string' || disposition.identity.trim() === '')
-      ) {
-        issues.push(`${name}.identity must be null or a non-empty string`);
-      }
-      if (!Number.isInteger(disposition.magnitude) || disposition.magnitude < 0) {
-        issues.push(`${name}.magnitude must be a non-negative integer`);
-      }
-      if (!/^[a-f0-9]{64}$/u.test(disposition.affectedCodeDigest ?? '')) {
-        issues.push(`${name}.affectedCodeDigest must be a SHA-256 digest`);
-      }
-    }
-  }
 }
 
 function validatePredecessorPathDisposition(issues, disposition, name) {
-  if (!isSafeRepositoryPath(disposition.path)) {
-    issues.push(`${name}.path must be a safe repository-relative path`);
-  }
-  if (!['move', 'consolidate'].includes(disposition.disposition)) {
-    issues.push(`${name}.disposition must be move or consolidate`);
-  }
-  if (!isSafeRepositoryPath(disposition.destination)) {
-    issues.push(`${name}.destination must be a safe repository-relative path`);
-  }
-  requireText(issues, disposition.owner, `${name}.owner`);
-  requireText(issues, disposition.rationale, `${name}.rationale`);
-  const supportedFields = new Set([
-    'kind',
-    'path',
-    'disposition',
-    'destination',
-    'owner',
-    'rationale',
-  ]);
-  const unsupportedFields = Object.keys(disposition)
-    .filter((field) => !supportedFields.has(field))
-    .sort();
-  if (unsupportedFields.length > 0) {
-    issues.push(
-      `${name} predecessor-path contains unsupported fields: ${unsupportedFields.join(', ')}`,
-    );
-  }
+    if (!isSafeRepositoryPath(disposition.path)) {
+        issues.push(`${name}.path must be a safe repository-relative path`);
+    }
+    if (!['move', 'consolidate'].includes(disposition.disposition)) {
+        issues.push(`${name}.disposition must be move or consolidate`);
+    }
+    if (!isSafeRepositoryPath(disposition.destination)) {
+        issues.push(`${name}.destination must be a safe repository-relative path`);
+    }
+    requireText(issues, disposition.owner, `${name}.owner`);
+    requireText(issues, disposition.rationale, `${name}.rationale`);
+    const supportedFields = new Set([
+        'kind',
+        'path',
+        'disposition',
+        'destination',
+        'owner',
+        'rationale'
+    ]);
+    const unsupportedFields = Object.keys(disposition)
+        .filter((field) => !supportedFields.has(field))
+        .sort();
+    if (unsupportedFields.length > 0) {
+        issues.push(
+            `${name} predecessor-path contains unsupported fields: ${unsupportedFields.join(', ')}`
+        );
+    }
 }
 
 function validateStructuralReview(issues, review) {
-  if (review === null) {
-    return;
-  }
-  if (!isRecord(review) || !['complete', 'failed'].includes(review.status)) {
-    issues.push('record.freshStructuralReview must be null or have status complete or failed');
-    return;
-  }
-  if (!Array.isArray(review.failures)) {
-    issues.push('record.freshStructuralReview.failures must be an array');
-    return;
-  }
-  for (const [index, failure] of review.failures.entries()) {
-    if (!isRecord(failure) || !['navigation', 'ownership'].includes(failure.kind)) {
-      issues.push(
-        `record.freshStructuralReview.failures[${index}].kind must be navigation or ownership`,
-      );
-      continue;
+    if (review === null) {
+        return;
     }
-    requireText(issues, failure.summary, `record.freshStructuralReview.failures[${index}].summary`);
-    if (typeof failure.recoverable !== 'boolean') {
-      issues.push(`record.freshStructuralReview.failures[${index}].recoverable must be boolean`);
+    if (!isRecord(review) || !['complete', 'failed'].includes(review.status)) {
+        issues.push('record.freshStructuralReview must be null or have status complete or failed');
+        return;
     }
-    validateTextArray(
-      issues,
-      failure.deepenedBySlices,
-      `record.freshStructuralReview.failures[${index}].deepenedBySlices`,
-    );
-  }
+    if (!Array.isArray(review.failures)) {
+        issues.push('record.freshStructuralReview.failures must be an array');
+        return;
+    }
+    for (const [index, failure] of review.failures.entries()) {
+        if (!isRecord(failure) || !['navigation', 'ownership'].includes(failure.kind)) {
+            issues.push(
+                `record.freshStructuralReview.failures[${index}].kind must be navigation or ownership`
+            );
+            continue;
+        }
+        requireText(issues, failure.summary, `record.freshStructuralReview.failures[${index}].summary`);
+        if (typeof failure.recoverable !== 'boolean') {
+            issues.push(`record.freshStructuralReview.failures[${index}].recoverable must be boolean`);
+        }
+        validateTextArray(
+            issues,
+            failure.deepenedBySlices,
+            `record.freshStructuralReview.failures[${index}].deepenedBySlices`
+        );
+    }
 }
 
 function validateColdNavigationEvidence(issues, evidence) {
-  if (evidence === null) {
-    return;
-  }
-  if (!isRecord(evidence) || !['passed', 'failed'].includes(evidence.status)) {
-    issues.push('record.coldNavigationEvidence must be null or have status passed or failed');
-    return;
-  }
-  requireText(issues, evidence.summary, 'record.coldNavigationEvidence.summary');
-  if (!Array.isArray(evidence.probes) || evidence.probes.length === 0) {
-    issues.push('record.coldNavigationEvidence.probes must be a non-empty array');
-  } else {
-    for (const [index, probe] of evidence.probes.entries()) {
-      requireText(
-        issues,
-        probe?.capabilityOwner,
-        `record.coldNavigationEvidence.probes[${index}].capabilityOwner`,
-      );
-      requireText(issues, probe?.symbol, `record.coldNavigationEvidence.probes[${index}].symbol`);
-      if (!isSafeRepositoryPath(probe?.path)) {
-        issues.push(
-          `record.coldNavigationEvidence.probes[${index}].path must be a safe ` +
-            'repository-relative path',
-        );
-      }
+    if (evidence === null) {
+        return;
     }
-  }
-  if (
-    evidence.consolidationDecisionIndex !== undefined &&
-    (!Number.isInteger(evidence.consolidationDecisionIndex) ||
-      evidence.consolidationDecisionIndex < 0)
-  ) {
-    issues.push(
-      'record.coldNavigationEvidence.consolidationDecisionIndex must be a non-negative integer',
-    );
-  }
+    if (!isRecord(evidence) || !['passed', 'failed'].includes(evidence.status)) {
+        issues.push('record.coldNavigationEvidence must be null or have status passed or failed');
+        return;
+    }
+    requireText(issues, evidence.summary, 'record.coldNavigationEvidence.summary');
+    if (!Array.isArray(evidence.probes) || evidence.probes.length === 0) {
+        issues.push('record.coldNavigationEvidence.probes must be a non-empty array');
+    }
+    else {
+        for (const [index, probe] of evidence.probes.entries()) {
+            requireText(
+                issues,
+                probe?.capabilityOwner,
+                `record.coldNavigationEvidence.probes[${index}].capabilityOwner`
+            );
+            requireText(issues, probe?.symbol, `record.coldNavigationEvidence.probes[${index}].symbol`);
+            if (!isSafeRepositoryPath(probe?.path)) {
+                issues.push(
+                    `record.coldNavigationEvidence.probes[${index}].path must be a safe ` +
+                        'repository-relative path'
+                );
+            }
+        }
+    }
+    if (
+        evidence.consolidationDecisionIndex !== undefined &&
+        (!Number.isInteger(evidence.consolidationDecisionIndex) ||
+            evidence.consolidationDecisionIndex < 0)
+    ) {
+        issues.push(
+            'record.coldNavigationEvidence.consolidationDecisionIndex must be a non-negative integer'
+        );
+    }
 }
 
 function validateMaterialDecisions(issues, decisions) {
-  if (!Array.isArray(decisions)) {
-    issues.push('record.materialDecisions must be an array');
-    return;
-  }
-  for (const [index, decision] of decisions.entries()) {
-    if (!isRecord(decision)) {
-      issues.push(`record.materialDecisions[${index}] must be an object`);
-      continue;
+    if (!Array.isArray(decisions)) {
+        issues.push('record.materialDecisions must be an array');
+        return;
     }
-    if (typeof decision.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(decision.date)) {
-      issues.push(`record.materialDecisions[${index}].date must use YYYY-MM-DD`);
+    for (const [index, decision] of decisions.entries()) {
+        if (!isRecord(decision)) {
+            issues.push(`record.materialDecisions[${index}] must be an object`);
+            continue;
+        }
+        if (typeof decision.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(decision.date)) {
+            issues.push(`record.materialDecisions[${index}].date must use YYYY-MM-DD`);
+        }
+        requireText(issues, decision.decision, `record.materialDecisions[${index}].decision`);
+        if (decision.summary !== undefined) {
+            requireText(issues, decision.summary, `record.materialDecisions[${index}].summary`);
+        }
+        if (
+            decision.decision === 'consolidate' &&
+            (typeof decision.checkpointDigest !== 'string' ||
+                !/^[0-9a-f]{64}$/u.test(decision.checkpointDigest))
+        ) {
+            issues.push(
+                `record.materialDecisions[${index}].checkpointDigest must bind the consolidate checkpoint`
+            );
+        }
     }
-    requireText(issues, decision.decision, `record.materialDecisions[${index}].decision`);
-    if (decision.summary !== undefined) {
-      requireText(issues, decision.summary, `record.materialDecisions[${index}].summary`);
-    }
-    if (
-      decision.decision === 'consolidate' &&
-      (typeof decision.checkpointDigest !== 'string' ||
-        !/^[0-9a-f]{64}$/u.test(decision.checkpointDigest))
-    ) {
-      issues.push(
-        `record.materialDecisions[${index}].checkpointDigest must bind the consolidate checkpoint`,
-      );
-    }
-  }
 }
 
 function requireTextArray(issues, value, name) {
-  if (!Array.isArray(value) || value.length === 0) {
-    issues.push(`${name} must be a non-empty array`);
-    return;
-  }
-  if (value.some((item) => typeof item !== 'string' || item.trim() === '')) {
-    issues.push(`${name} must contain only non-empty strings`);
-  }
+    if (!Array.isArray(value) || value.length === 0) {
+        issues.push(`${name} must be a non-empty array`);
+        return;
+    }
+    if (value.some((item) => typeof item !== 'string' || item.trim() === '')) {
+        issues.push(`${name} must contain only non-empty strings`);
+    }
 }
 
 function validateTextArray(issues, value, name) {
-  if (!Array.isArray(value)) {
-    issues.push(`${name} must be an array`);
-    return;
-  }
-  if (value.some((item) => typeof item !== 'string' || item.trim() === '')) {
-    issues.push(`${name} must contain only non-empty strings`);
-  }
+    if (!Array.isArray(value)) {
+        issues.push(`${name} must be an array`);
+        return;
+    }
+    if (value.some((item) => typeof item !== 'string' || item.trim() === '')) {
+        issues.push(`${name} must contain only non-empty strings`);
+    }
 }
 
 function requireText(issues, value, name) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    issues.push(`${name} must be a non-empty string`);
-  }
+    if (typeof value !== 'string' || value.trim() === '') {
+        issues.push(`${name} must be a non-empty string`);
+    }
 }
 
 function isRecord(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toError(value) {
-  return value instanceof Error ? value : new Error(String(value));
+    return value instanceof Error ? value : new Error(String(value));
 }

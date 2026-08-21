@@ -114,8 +114,8 @@ cut. No legacy surface is hidden or re-homed in Iteration 7.
     fields, legacy handoff URLs, filenames, and React keys using the existing
     Analyze identity policy.
 11. Direction A remains the visual contract: current verdict/decision and
-   timing health precede dense detail; comparison, knobs, and raw patch output
-   remain progressively disclosed but keyboard-operable.
+    timing health precede dense detail; comparison, knobs, and raw patch output
+    remain progressively disclosed but keyboard-operable.
 12. `runner.compare`, legacy Runs, and legacy Distributed Recipes stay visible,
     deep-linkable, and uncut until the complete documented replacement proofs
     pass. Tune includes an exact selected-run legacy Runs handoff.
@@ -135,32 +135,32 @@ cut. No legacy surface is hidden or re-homed in Iteration 7.
 ## Task 0: Lock Scope, Baseline, And Architecture
 
 - [x] Critically inspect the parent plan, product contract, migration row,
-  current Tune seed, retained Analyze model, root control/query boundary,
-  shared performance/comparison contracts, validators, URL history, structure
-  gates, and browser fixture owners.
+      current Tune seed, retained Analyze model, root control/query boundary,
+      shared performance/comparison contracts, validators, URL history, structure
+      gates, and browser fixture owners.
 - [x] Record the binding decisions above, including explicit comparison,
-  one-artifact memory authority, advisory compatibility, operator-entered
-  values, and readiness-first hint precedence.
+      one-artifact memory authority, advisory compatibility, operator-entered
+      values, and readiness-first hint precedence.
 - [x] Run the 118/118 focused baseline plus shared-test/app typechecks.
 - [x] Dispatch independent shared-contract and app/browser plan reviews; close
-  every Critical or Important issue before implementation.
+      every Critical or Important issue before implementation.
 - [x] Commit this implementation plan and the parent/register in-progress
-  checkpoint as `1f21d2d` before behavior code; final review corrections are
-  committed in `902806d`.
+      checkpoint as `1f21d2d` before behavior code; final review corrections are
+      committed in `902806d`.
 
 ## Task 1: Lock Canonical Browser RED Before Implementation
 
 - [x] Create bounded Tune browser data/fixture helpers and
-  `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` with all three
-  exact acceptance names before shared or React implementation.
+      `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` with all three
+      exact acceptance names before shared or React implementation.
 - [x] Build one real RTC stream envelope imported through visible Analyze and a
-  two-run cross-control snapshot fixture with an actual recipe/profile delta,
-  participant delta, failure delta, run-duration delta, and received-message
-  delta. Each legacy run-detail endpoint remains operable after handoff.
+      two-run cross-control snapshot fixture with an actual recipe/profile delta,
+      participant delta, failure delta, run-duration delta, and received-message
+      delta. Each legacy run-detail endpoint remains operable after handoff.
 - [x] Capture the expected seed-era RED: the stream test lacks real RTC health,
-  the comparison test lacks explicit URL-backed categories, and the candidate
-  test lacks validated copy/no-mutation output. Record unrelated fixture/setup
-  failures separately and do not count them as the intended RED.
+      the comparison test lacks explicit URL-backed categories, and the candidate
+      test lacks validated copy/no-mutation output. Record unrelated fixture/setup
+      failures separately and do not count them as the intended RED.
 
 The exact three-test Chromium run reaches Analyze `Artifact ready`, the Tune
 route, and both comparison URLs before failing only on the absent
@@ -182,26 +182,26 @@ Files:
 - Modify focused public-surface/analysis tests only when additive exports require it
 
 - [x] RED-test the additive snapshot performance wrapper against artifact
-  derivation for command and RTC stream evidence, including absent/partial
-  results without invented values.
+      derivation for command and RTC stream evidence, including absent/partial
+      results without invented values.
 - [x] RED-test deterministic knob inventory for manifest ACK/barrier values;
-  inline root, loop, parallel-group, and embedded-recipe commands; JSON Pointer
-  escaping; duplicate command IDs; optional/missing values; effective
-  `intervalMs` precedence over shadowed `rateHz`; explicit ineffective/blocked
-  metadata for that row; and stable order.
+      inline root, loop, parallel-group, and embedded-recipe commands; JSON Pointer
+      escaping; duplicate command IDs; optional/missing values; effective
+      `intervalMs` precedence over shadowed `rateHz`; explicit ineffective/blocked
+      metadata for that row; and stable order.
 - [x] Inventory `rateHz`, `durationMs`, `intervalMs`, `maxInFlight`,
-  `ackTimeoutMs`, `barrier.timeoutMs`, and every numeric RTC stream threshold.
-  Each row carries recipe/command identity, kind, exact pointer, current value,
-  numeric constraint, and source limitation. Optional values render their
-  current value as visibly unset rather than invented.
+      `ackTimeoutMs`, `barrier.timeoutMs`, and every numeric RTC stream threshold.
+      Each row carries recipe/command identity, kind, exact pointer, current value,
+      numeric constraint, and source limitation. Optional values render their
+      current value as visibly unset rather than invented.
 - [x] RED-test that loose/envelope normalization preserves recognized raw
-  manifest tuning fields while still enforcing normalized run/control
-  identities and required structure.
+      manifest tuning fields while still enforcing normalized run/control
+      identities and required structure.
 - [x] RED-test and fix the agent validator's additive loop-threshold drift so a
-  schema-supported loop recipe passes schema, manifest, agent, and preflight
-  validation after an unrelated candidate edit.
+      schema-supported loop recipe passes schema, manifest, agent, and preflight
+      validation after an unrelated candidate edit.
 - [x] Represent reference-only recipes as explicit limitations. Do not import
-  app models, resolve repository fixtures implicitly, or invent current values.
+      app models, resolve repository fixtures implicitly, or invent current values.
 - [x] Preserve every existing public export and compare/control contract.
 
 Task 2 closed after independent review drove focused regressions for normalized
@@ -216,19 +216,19 @@ already exposes the normalized objects consumed by the new public wrapper.
 ## Task 3: Validate Deliberate Candidate Changes Without Mutation
 
 - [x] RED-test exact-path candidate creation, JSON Pointer escaping,
-  deterministic operation/diff order, add versus replace, integer/finite/range
-  rejection, unknown path rejection, stale expected values, duplicate changes,
-  missing-threshold-parent materialization, disabled/missing-barrier blocking,
-  shadowed-rate rejection, and multiple overlapping changes.
+      deterministic operation/diff order, add versus replace, integer/finite/range
+      rejection, unknown path rejection, stale expected values, duplicate changes,
+      missing-threshold-parent materialization, disabled/missing-barrier blocking,
+      shadowed-rate rejection, and multiple overlapping changes.
 - [x] RED-test recursive recipe compatibility plus manifest validation errors
-  and prove a deeply frozen source manifest is unchanged on success and error.
+      and prove a deeply frozen source manifest is unchanged on success and error.
 - [x] Return a typed result containing cloned candidate manifest, copyable JSON
-  Patch, readable manifest diff, and file/path-specific validation issues.
+      Patch, readable manifest diff, and file/path-specific validation issues.
 - [x] Apply every emitted patch in tests and require deep equality with the
-  returned clone, including an absent `thresholds` parent and multiple changes
-  sharing one newly materialized parent.
+      returned clone, including an absent `thresholds` parent and multiple changes
+      sharing one newly materialized parent.
 - [x] Keep candidate helpers pure and deterministic. No clock, random ID,
-  clipboard, network, filesystem, or React dependency enters shared-test.
+      clipboard, network, filesystem, or React dependency enters shared-test.
 
 Task 3 captured 5/5 missing-module RED before implementation. Independent
 review added RED/GREEN coverage for explicit `thresholds: undefined`, malformed
@@ -240,22 +240,22 @@ plus `git diff --check` pass.
 ## Task 4: Derive Evidence-Backed Tuning Hints And Performance Deltas
 
 - [x] RED-test target/readiness-first precedence across missing, stale,
-  offline, wrong-group, identity, and expected-participant blockers.
+      offline, wrong-group, identity, and expected-participant blockers.
 - [x] RED-test lower-rate/cadence hints for drops, in-flight-limit drops,
-  backpressure, and material cadence/drift degradation without recommending a
-  blind `maxInFlight` increase.
+      backpressure, and material cadence/drift degradation without recommending a
+      blind `maxInFlight` increase.
 - [x] RED-test clean ACK and barrier timeout evidence, stream threshold
-  adjustment evidence, and isolated slow-agent evidence with exact affected
-  agent and knob paths when available.
+      adjustment evidence, and isolated slow-agent evidence with exact affected
+      agent and knob paths when available.
 - [x] RED-test insufficient/partial evidence, reference-only recipes, clean
-  runs, multiple streams, duplicate command IDs, multiple equal slow agents,
-  pointer ambiguity, and deterministic priority/order.
+      runs, multiple streams, duplicate command IDs, multiple equal slow agents,
+      pointer ambiguity, and deterministic priority/order.
 - [x] Hints cite shared analysis categories and numeric evidence, state why the
-  action is appropriate, and identify the next exact knob or agent inspection.
+      action is appropriate, and identify the next exact knob or agent inspection.
 - [x] Add a narrow deterministic performance comparison for the selected
-  `timingMetric` and RTC frame/cadence/drift/drop/backpressure evidence. Compose
-  it beside, never instead of or inside, the unchanged public
-  `compareDistributedRuns(...)` structural summary.
+      `timingMetric` and RTC frame/cadence/drift/drop/backpressure evidence. Compose
+      it beside, never instead of or inside, the unchanged public
+      `compareDistributedRuns(...)` structural summary.
 
 Task 4 captured three missing-module RED suites and closed at 32/32 focused
 tests after independent review added safety proof for absent readiness,
@@ -277,21 +277,21 @@ Files:
 - Modify URL/history tests only to cover previously unexercised restoration
 
 - [x] RED-test retained matching artifact authority, mismatched retained
-  artifact warning, unsupported/future-schema candidate blocking, selected
-  live/partial/stale control truth, bounded control provenance, reference-only
-  limitation, missing performance, and no-evidence state.
+      artifact warning, unsupported/future-schema candidate blocking, selected
+      live/partial/stale control truth, bounded control provenance, reference-only
+      limitation, missing performance, and no-evidence state.
 - [x] RED-test explicit left/right lookup, same-run and invalid IDs, control-run
-  pairing, atomic right/focus/control alignment, left-only patching,
-  artifact/control de-duplication, deterministic option order, compatibility
-  warnings, cross-control pairing, and every shared compare category.
+      pairing, atomic right/focus/control alignment, left-only patching,
+      artifact/control de-duplication, deterministic option order, compatibility
+      warnings, cross-control pairing, and every shared compare category.
 - [x] RED-test existing safe identity projection for oversized IDs, control
-  characters, malformed Unicode, and unsafe retained evidence. Quarantined IDs
-  never enter compare fields, legacy URLs, filenames, or React keys.
+      characters, malformed Unicode, and unsafe retained evidence. Quarantined IDs
+      never enter compare fields, legacy URLs, filenames, or React keys.
 - [x] Derive presentation models only from shared performance, hints,
-  inventory, candidate, and compare helpers. Do not duplicate calculations in
-  React or import seeded diagnostics.
+      inventory, candidate, and compare helpers. Do not duplicate calculations in
+      React or import seeded diagnostics.
 - [x] Keep URL patch helpers pure: run/comparison/metric changes push through
-  the existing v1 history contract and clear only dependent state.
+      the existing v1 history contract and clear only dependent state.
 
 Task 5 captured the intended 14/14 model RED plus hardening RED for duplicate
 distributed/control identities, mixed artifact/control authority, missing
@@ -318,75 +318,75 @@ Files:
   structure assertions with no-seed and lazy-Tune gates
 
 - [x] RED-test root composition before React changes: one `TuneWorkspace`, no
-  Tune seed/model/import, no root Tune state machine, and all source owners
-  below structure caps.
+      Tune seed/model/import, no root Tune state machine, and all source owners
+      below structure caps.
 - [x] Load Tune through a local `React.lazy`/Suspense route boundary. Prove its
-  production chunk is absent from inactive Recipe Console views and the Tune UI
-  is unmounted when inactive; root Analyze/control services remain the only
-  view-independent state owners.
+      production chunk is absent from inactive Recipe Console views and the Tune UI
+      is unmounted when inactive; root Analyze/control services remain the only
+      view-independent state owners.
 - [x] Render command min/P50/P95/P99/max, average/spread/outliers and slowest
-  agents; stream planned/scheduled/attempted/completed/failed/dropped/in-flight
-  drops, requested/achieved Hz, drift, late frames, backpressure, duration
-  percentiles, and slowest stream agents.
+      agents; stream planned/scheduled/attempted/completed/failed/dropped/in-flight
+      drops, requested/achieved Hz, drift, late frames, backpressure, duration
+      percentiles, and slowest stream agents.
 - [x] Render decision-first hints, exact knob current values/paths, deliberate
-  candidate input, validation, copyable patch/diff, truthful clipboard status,
-  and unchanged-source evidence. Candidate state fingerprints resolved source
-  identity/support plus deterministic manifest knob truth, not routine control
-  timestamps. A newer `updatedAtEpochMs` with identical knobs preserves the
-  draft; changed identity, support, or knob truth resets it. No action mutates
-  or calls Control.
+      candidate input, validation, copyable patch/diff, truthful clipboard status,
+      and unchanged-source evidence. Candidate state fingerprints resolved source
+      identity/support plus deterministic manifest knob truth, not routine control
+      timestamps. A newer `updatedAtEpochMs` with identical knobs preserves the
+      draft; changed identity, support, or knob truth resets it. No action mutates
+      or calls Control.
 - [x] Render explicit baseline/candidate selectors and all recipe, participant,
-  failure, timing, and received-message deltas with compatibility warnings.
+      failure, timing, and received-message deltas with compatibility warnings.
 - [x] Render honest empty, partial, stale, mismatch, reference-only, invalid
-  comparison, same-run, and unavailable-metric states.
+      comparison, same-run, and unavailable-metric states.
 - [x] Route one contextual inspector through the existing shell callback;
-  preserve focus trap/restore, selection dock, 44px targets, and the exact
-  legacy Runs handoff built from the resolved candidate's own control/run IDs.
+      preserve focus trap/restore, selection dock, 44px targets, and the exact
+      legacy Runs handoff built from the resolved candidate's own control/run IDs.
 
 ## Task 7: Turn Canonical RED Green And Complete Browser QA
 
 - [x] Turn the three Task 1 canonical RED tests green without weakening their
-  visible-control, exact-category, copy, or no-request assertions.
+      visible-control, exact-category, copy, or no-request assertions.
 - [x] Import a real RTC stream artifact through visible Analyze controls,
-  navigate to Tune, and prove frame disposition, P95/P99, cadence, drift,
-  drops, in-flight drops, backpressure, a specific slow agent, and a sourced
-  tuning hint.
+      navigate to Tune, and prove frame disposition, P95/P99, cadence, drift,
+      drops, in-flight drops, backpressure, a specific slow agent, and a sourced
+      tuning hint.
 - [x] Prove an exact knob edit produces valid copyable patch/diff output while
-  source value and request counts remain unchanged.
+      source value and request counts remain unchanged.
 - [x] Compare two explicit runs, reload/copy/back/forward the v1 URL, and prove
-  every shared delta category, the selected performance delta, atomic focus
-  alignment, plus invalid/same-run/compatibility states.
+      every shared delta category, the selected performance delta, atomic focus
+      alignment, plus invalid/same-run/compatibility states.
 - [x] Prove no artifact or mutation request is made by Tune and activate the
-  exact selected-run legacy Runs destination.
+      exact selected-run legacy Runs destination.
 - [x] Cover 1440×900, 900×900, 430×932, and 932×430; keyboard-only selection,
-  metric, agent, knob, candidate, compare, copy, inspector, and handoff paths;
-  focus restore/Escape; 44px targets; reduced motion; announcements; zero
-  document overflow; and actual Tune CSS under both legacy load orders.
+      metric, agent, knob, candidate, compare, copy, inspector, and handoff paths;
+      focus restore/Escape; 44px targets; reduced motion; announcements; zero
+      document overflow; and actual Tune CSS under both legacy load orders.
 - [x] Refresh the approved Direction A Tune baseline only after semantic and
-  geometry assertions pass. Replace the concept test's empty Tune control seed
-  with deterministic real evidence, then inspect the durable image at original
-  detail.
+      geometry assertions pass. Replace the concept test's empty Tune control seed
+      with deterministic real evidence, then inspect the durable image at original
+      detail.
 
 ## Task 8: Fresh Exit, Review, Documentation, And Milestone Commits
 
 - [x] Run the focused validation contract below after every implementation
-  slice and the complete app/Recipe Console suites after the last fix.
+      slice and the complete app/Recipe Console suites after the last fix.
 - [x] Run shared/app typechecks, production build, reciprocal experience-chunk
-  assertion, exact preserved legacy navigation/ticket pair, and control-server
-  tests if a shared contract changes their expectations.
+      assertion, exact preserved legacy navigation/ticket pair, and control-server
+      tests if a shared contract changes their expectations.
 - [x] Try the in-app Browser first; if unavailable, record the exact reason and
-  use controlled Playwright/System Chromium without calling it an in-app pass.
+      use controlled Playwright/System Chromium without calling it an in-app pass.
 - [x] Dispatch independent shared-contract, app/state, browser/accessibility,
-  and cutover reviews. Add RED/GREEN proof for every Critical or Important
-  finding and rerun fresh validation.
+      and cutover reviews. Add RED/GREEN proof for every Critical or Important
+      finding and rerun fresh validation.
 - [x] Update this plan, parent plan, product spec, migration register, and
-  fidelity ledger with actual commits, counts, Ready-State evidence, skips,
-  compatibility decisions, cutover status, and remaining risks.
+      fidelity ledger with actual commits, counts, Ready-State evidence, skips,
+      compatibility decisions, cutover status, and remaining risks.
 - [x] Mark Ready-State #7 and the bounded #8 comparison plane code-backed only
-  after their exact tests pass. Keep Iteration 8 history/retention work open.
+      after their exact tests pass. Keep Iteration 8 history/retention work open.
 - [x] Keep `runner.runs`, `runner.compare`, and
-  `legacy.distributed-recipes` visible and uncut; commit cohesive green
-  milestones locally and do not push or open a PR.
+      `legacy.distributed-recipes` visible and uncut; commit cohesive green
+      milestones locally and do not push or open a PR.
 
 ## Iteration 7 Exit — `cc17169`, `382df72`
 

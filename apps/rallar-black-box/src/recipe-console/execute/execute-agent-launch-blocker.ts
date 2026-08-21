@@ -1,17 +1,21 @@
-import type { RecipeConsoleControlConnection } from
-    '../control/ControlConnectionProvider.tsx';
-import type { RallarBlackBoxDistributedGroupRef } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 
-export function executeAgentLaunchBlocker(input: Readonly<{
-    connection: RecipeConsoleControlConnection;
-    group: RallarBlackBoxDistributedGroupRef;
-    runId: string;
-    prefix: string;
-    count: number;
-}>): string | undefined {
-    if (!input.runId.trim()) return 'Enter a control run ID before launching agents.';
-    if (!input.prefix.trim()) return 'Enter an agent ID prefix before launching agents.';
+export function executeAgentLaunchBlocker(
+    input: Readonly<{
+        connection: RecipeConsoleControlConnection;
+        group: RallarBlackBoxDistributedGroupRef;
+        runId: string;
+        prefix: string;
+        count: number;
+    }>
+): string | undefined {
+    if (!input.runId.trim()) {
+        return 'Enter a control run ID before launching agents.';
+    }
+    if (!input.prefix.trim()) {
+        return 'Enter an agent ID prefix before launching agents.';
+    }
     if (!Number.isInteger(input.count) || input.count < 1 || input.count > 6) {
         return 'Agent count must be an integer from 1 to 6.';
     }

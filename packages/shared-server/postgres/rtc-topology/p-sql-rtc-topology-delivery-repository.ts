@@ -1,70 +1,70 @@
-import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 import type {
-  RtcTopologyDeliveryAppendPort,
+    RtcTopologyDeliveryAppendPort
 } from '../../rallar-system/topology/replay/rtc-topology-delivery-append-port.ts';
 import type {
-  RtcTopologyDeliveryAppendInput,
-  RtcTopologyDeliveryAppendResult,
-  RtcTopologyDeliveryCompactionInput,
-  RtcTopologyDeliveryCompactionResult,
-  RtcTopologyDeliveryLogEntry,
-  RtcTopologyDeliveryStream,
-  RtcTopologyDeliveryStreamLeaseRenewalInput,
-  RtcTopologyDeliveryStreamLeaseRenewalResult,
-  RtcTopologyDeliveryStreamRegistrationInput,
-  RtcTopologyDeliveryStreamRegistrationResult,
+    RtcTopologyDeliveryAppendInput,
+    RtcTopologyDeliveryAppendResult,
+    RtcTopologyDeliveryCompactionInput,
+    RtcTopologyDeliveryCompactionResult,
+    RtcTopologyDeliveryLogEntry,
+    RtcTopologyDeliveryStream,
+    RtcTopologyDeliveryStreamLeaseRenewalInput,
+    RtcTopologyDeliveryStreamLeaseRenewalResult,
+    RtcTopologyDeliveryStreamRegistrationInput,
+    RtcTopologyDeliveryStreamRegistrationResult
 } from '../../rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import {
-  readRtcTopologyDeliverySafeInteger,
-  type RtcTopologyDeliveryBoundaryNumber,
-  RtcTopologyDeliveryCorruptionError,
-  validateRtcTopologyDeliveryAppendInput,
-  validateRtcTopologyDeliveryStreamId,
+    readRtcTopologyDeliverySafeInteger,
+    RtcTopologyDeliveryCorruptionError,
+    validateRtcTopologyDeliveryAppendInput,
+    validateRtcTopologyDeliveryStreamId,
+    type RtcTopologyDeliveryBoundaryNumber
 } from '../../rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
+import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 import { compactRtcTopologyDeliveryEntries } from './compact-rtc-topology-delivery-entries.ts';
 
 interface StreamRow {
-  readonly stream_id: string;
-  readonly head_sequence: RtcTopologyDeliveryBoundaryNumber;
-  readonly retained_from_sequence: RtcTopologyDeliveryBoundaryNumber;
-  readonly lease_expires_at_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
+    readonly stream_id: string;
+    readonly head_sequence: RtcTopologyDeliveryBoundaryNumber;
+    readonly retained_from_sequence: RtcTopologyDeliveryBoundaryNumber;
+    readonly lease_expires_at_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
 }
 
 interface AppendStreamRow extends StreamRow {
-  readonly lease_valid: boolean;
+    readonly lease_valid: boolean;
 }
 
 interface DeliveryLogRow {
-  readonly publisher_stream_id: string;
-  readonly sequence: RtcTopologyDeliveryBoundaryNumber;
-  readonly application_id: string;
-  readonly workspace_id: string;
-  readonly group_id: string;
-  readonly publication_id: string;
-  readonly outbox_topic_id: string;
-  readonly outbox_resource_id: string;
-  readonly outbox_context_id: string;
-  readonly retain_until_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
-  readonly inserted_at_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
+    readonly publisher_stream_id: string;
+    readonly sequence: RtcTopologyDeliveryBoundaryNumber;
+    readonly application_id: string;
+    readonly workspace_id: string;
+    readonly group_id: string;
+    readonly publication_id: string;
+    readonly outbox_topic_id: string;
+    readonly outbox_resource_id: string;
+    readonly outbox_context_id: string;
+    readonly retain_until_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
+    readonly inserted_at_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
 }
 
 interface AppendQueryRow extends DeliveryLogRow {
-  readonly result_kind: 'appended' | 'existing';
+    readonly result_kind: 'appended' | 'existing';
 }
 
 export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryAppendPort {
-  private readonly sql: PSqlSql;
+    private readonly sql: PSqlSql;
 
-  constructor(sql: PSqlSql) {
-    this.sql = sql;
-  }
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
+    }
 
-  async registerStream(
-    input: RtcTopologyDeliveryStreamRegistrationInput,
-  ): Promise<RtcTopologyDeliveryStreamRegistrationResult> {
-    validateRtcTopologyDeliveryStreamId(input.streamId);
-    validatePositiveDuration(input.leaseDurationMs);
-    const rows = await this.sql<StreamRow[]>`
+    async registerStream(
+        input: RtcTopologyDeliveryStreamRegistrationInput
+    ): Promise<RtcTopologyDeliveryStreamRegistrationResult> {
+        validateRtcTopologyDeliveryStreamId(input.streamId);
+        validatePositiveDuration(input.leaseDurationMs);
+        const rows = await this.sql<StreamRow[]>`
       insert into rtc_topology_delivery_stream (
         stream_id,
         head_sequence,
@@ -84,49 +84,49 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
         (extract(epoch from lease_expires_at) * 1000)::double precision
           as lease_expires_at_epoch_ms
     `;
-    const row = rows[0];
-    if (!row) {
-      return { status: 'conflict' };
+        const row = rows[0];
+        if (!row) {
+            return { status: 'conflict' };
+        }
+
+        return { status: 'registered', stream: toStream(row) };
     }
 
-    return { status: 'registered', stream: toStream(row) };
-  }
+    async appendOrValidate(
+        transaction: PSqlTransactionSql,
+        input: RtcTopologyDeliveryAppendInput
+    ): Promise<RtcTopologyDeliveryAppendResult> {
+        validateRtcTopologyDeliveryAppendInput(input);
+        const result = await appendOrReadExistingEntry(transaction, input);
+        if (result) {
+            const entry = toLogEntry(result);
+            validateExistingEntry(entry, input);
+            return { status: result.result_kind, entry };
+        }
 
-  async appendOrValidate(
-    transaction: PSqlTransactionSql,
-    input: RtcTopologyDeliveryAppendInput,
-  ): Promise<RtcTopologyDeliveryAppendResult> {
-    validateRtcTopologyDeliveryAppendInput(input);
-    const result = await appendOrReadExistingEntry(transaction, input);
-    if (result) {
-      const entry = toLogEntry(result);
-      validateExistingEntry(entry, input);
-      return { status: result.result_kind, entry };
+        const stream = await readAppendStream(transaction, input.publisherStreamId);
+        if (!stream?.lease_valid) {
+            return { status: 'lease-lost' };
+        }
+        const headSequence = readRtcTopologyDeliverySafeInteger(
+            stream.head_sequence,
+            'RTC topology delivery HEAD'
+        );
+        if (headSequence === Number.MAX_SAFE_INTEGER) {
+            throw new RtcTopologyDeliveryCorruptionError(
+                `RTC topology delivery HEAD is exhausted for ${input.publisherStreamId}`
+            );
+        }
+
+        return { status: 'conflict' };
     }
 
-    const stream = await readAppendStream(transaction, input.publisherStreamId);
-    if (!stream?.lease_valid) {
-      return { status: 'lease-lost' };
-    }
-    const headSequence = readRtcTopologyDeliverySafeInteger(
-      stream.head_sequence,
-      'RTC topology delivery HEAD',
-    );
-    if (headSequence === Number.MAX_SAFE_INTEGER) {
-      throw new RtcTopologyDeliveryCorruptionError(
-        `RTC topology delivery HEAD is exhausted for ${input.publisherStreamId}`,
-      );
-    }
-
-    return { status: 'conflict' };
-  }
-
-  async renewStreamLease(
-    input: RtcTopologyDeliveryStreamLeaseRenewalInput,
-  ): Promise<RtcTopologyDeliveryStreamLeaseRenewalResult> {
-    validateRtcTopologyDeliveryStreamId(input.streamId);
-    validatePositiveDuration(input.leaseDurationMs);
-    const rows = await this.sql<StreamRow[]>`
+    async renewStreamLease(
+        input: RtcTopologyDeliveryStreamLeaseRenewalInput
+    ): Promise<RtcTopologyDeliveryStreamLeaseRenewalResult> {
+        validateRtcTopologyDeliveryStreamId(input.streamId);
+        validatePositiveDuration(input.leaseDurationMs);
+        const rows = await this.sql<StreamRow[]>`
       update rtc_topology_delivery_stream
       set lease_expires_at = clock_timestamp() +
             ${input.leaseDurationMs} * interval '1 millisecond',
@@ -140,25 +140,25 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
         (extract(epoch from lease_expires_at) * 1000)::double precision
           as lease_expires_at_epoch_ms
     `;
-    const row = rows[0];
-    return row ? { status: 'renewed', stream: toStream(row) } : { status: 'lease-lost' };
-  }
+        const row = rows[0];
+        return row ? { status: 'renewed', stream: toStream(row) } : { status: 'lease-lost' };
+    }
 
-  async compactExpiredEntries(
-    input: RtcTopologyDeliveryCompactionInput,
-  ): Promise<RtcTopologyDeliveryCompactionResult> {
-    return await compactRtcTopologyDeliveryEntries({
-      database: this.sql,
-      compaction: input,
-    });
-  }
+    async compactExpiredEntries(
+        input: RtcTopologyDeliveryCompactionInput
+    ): Promise<RtcTopologyDeliveryCompactionResult> {
+        return await compactRtcTopologyDeliveryEntries({
+            database: this.sql,
+            compaction: input
+        });
+    }
 }
 
 async function appendOrReadExistingEntry(
-  sql: PSqlSql,
-  input: RtcTopologyDeliveryAppendInput,
+    sql: PSqlSql,
+    input: RtcTopologyDeliveryAppendInput
 ): Promise<AppendQueryRow | undefined> {
-  const rows = await sql<AppendQueryRow[]>`
+    const rows = await sql<AppendQueryRow[]>`
     with existing_publication as materialized (
       select
         publisher_stream_id,
@@ -269,14 +269,14 @@ async function appendOrReadExistingEntry(
         as inserted_at_epoch_ms
     from inserted_entry
   `;
-  return rows[0];
+    return rows[0];
 }
 
 async function readAppendStream(
-  sql: PSqlSql,
-  streamId: string,
+    sql: PSqlSql,
+    streamId: string
 ): Promise<AppendStreamRow | undefined> {
-  const rows = await sql<AppendStreamRow[]>`
+    const rows = await sql<AppendStreamRow[]>`
     select
       stream_id::text,
       head_sequence::double precision as head_sequence,
@@ -287,75 +287,75 @@ async function readAppendStream(
     from rtc_topology_delivery_stream
     where stream_id = ${streamId}
   `;
-  return rows[0];
+    return rows[0];
 }
 
 function toStream(row: StreamRow): RtcTopologyDeliveryStream {
-  return {
-    streamId: row.stream_id,
-    headSequence: readRtcTopologyDeliverySafeInteger(
-      row.head_sequence,
-      'RTC topology delivery HEAD',
-    ),
-    retainedFromSequence: readRtcTopologyDeliverySafeInteger(
-      row.retained_from_sequence,
-      'RTC topology delivery retained floor',
-    ),
-    leaseExpiresAtEpochMs: readRtcTopologyDeliverySafeInteger(
-      row.lease_expires_at_epoch_ms,
-      'RTC topology delivery lease expiry',
-    ),
-  };
+    return {
+        streamId: row.stream_id,
+        headSequence: readRtcTopologyDeliverySafeInteger(
+            row.head_sequence,
+            'RTC topology delivery HEAD'
+        ),
+        retainedFromSequence: readRtcTopologyDeliverySafeInteger(
+            row.retained_from_sequence,
+            'RTC topology delivery retained floor'
+        ),
+        leaseExpiresAtEpochMs: readRtcTopologyDeliverySafeInteger(
+            row.lease_expires_at_epoch_ms,
+            'RTC topology delivery lease expiry'
+        )
+    };
 }
 
 function toLogEntry(row: DeliveryLogRow): RtcTopologyDeliveryLogEntry {
-  return {
-    publisherStreamId: row.publisher_stream_id,
-    sequence: readRtcTopologyDeliverySafeInteger(row.sequence, 'RTC topology delivery sequence'),
-    groupRef: {
-      applicationId: row.application_id,
-      workspaceId: row.workspace_id,
-      groupId: row.group_id,
-    },
-    publicationId: row.publication_id,
-    outboxKey: {
-      topicId: row.outbox_topic_id,
-      resourceId: row.outbox_resource_id,
-      contextId: row.outbox_context_id,
-    },
-    retainUntilEpochMs: readRtcTopologyDeliverySafeInteger(
-      row.retain_until_epoch_ms,
-      'RTC topology delivery retention timestamp',
-    ),
-    insertedAtEpochMs: readRtcTopologyDeliverySafeInteger(
-      row.inserted_at_epoch_ms,
-      'RTC topology delivery insertion timestamp',
-    ),
-  };
+    return {
+        publisherStreamId: row.publisher_stream_id,
+        sequence: readRtcTopologyDeliverySafeInteger(row.sequence, 'RTC topology delivery sequence'),
+        groupRef: {
+            applicationId: row.application_id,
+            workspaceId: row.workspace_id,
+            groupId: row.group_id
+        },
+        publicationId: row.publication_id,
+        outboxKey: {
+            topicId: row.outbox_topic_id,
+            resourceId: row.outbox_resource_id,
+            contextId: row.outbox_context_id
+        },
+        retainUntilEpochMs: readRtcTopologyDeliverySafeInteger(
+            row.retain_until_epoch_ms,
+            'RTC topology delivery retention timestamp'
+        ),
+        insertedAtEpochMs: readRtcTopologyDeliverySafeInteger(
+            row.inserted_at_epoch_ms,
+            'RTC topology delivery insertion timestamp'
+        )
+    };
 }
 
 function validateExistingEntry(
-  entry: RtcTopologyDeliveryLogEntry,
-  input: RtcTopologyDeliveryAppendInput,
+    entry: RtcTopologyDeliveryLogEntry,
+    input: RtcTopologyDeliveryAppendInput
 ): void {
-  if (
-    entry.groupRef.applicationId !== input.groupRef.applicationId ||
-    entry.groupRef.workspaceId !== input.groupRef.workspaceId ||
-    entry.groupRef.groupId !== input.groupRef.groupId ||
-    entry.publicationId !== input.publicationId ||
-    entry.outboxKey.topicId !== input.outboxKey.topicId ||
-    entry.outboxKey.resourceId !== input.outboxKey.resourceId ||
-    entry.outboxKey.contextId !== input.outboxKey.contextId ||
-    entry.retainUntilEpochMs !== input.retainUntilEpochMs
-  ) {
-    throw new RtcTopologyDeliveryCorruptionError(
-      `RTC topology delivery publication ${input.publicationId} has conflicting durable identity`,
-    );
-  }
+    if (
+        entry.groupRef.applicationId !== input.groupRef.applicationId ||
+        entry.groupRef.workspaceId !== input.groupRef.workspaceId ||
+        entry.groupRef.groupId !== input.groupRef.groupId ||
+        entry.publicationId !== input.publicationId ||
+        entry.outboxKey.topicId !== input.outboxKey.topicId ||
+        entry.outboxKey.resourceId !== input.outboxKey.resourceId ||
+        entry.outboxKey.contextId !== input.outboxKey.contextId ||
+        entry.retainUntilEpochMs !== input.retainUntilEpochMs
+    ) {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology delivery publication ${input.publicationId} has conflicting durable identity`
+        );
+    }
 }
 
 function validatePositiveDuration(durationMs: number): void {
-  if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
-    throw new TypeError('RTC topology delivery lease duration must be a positive safe integer');
-  }
+    if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
+        throw new TypeError('RTC topology delivery lease duration must be a positive safe integer');
+    }
 }

@@ -1,13 +1,9 @@
-import {
-    legalMoveTargets,
-    type RelicActionInput,
-    type RelicPublicSnapshot,
-} from '@relic-hunters/mod.ts';
+import { legalMoveTargets, type RelicActionInput, type RelicPublicSnapshot } from '@relic-hunters/mod.ts';
 
 export function sceneMoveActionForPickedRoom({
     snapshot,
     localPlayerId,
-    roomId,
+    roomId
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -31,6 +27,6 @@ export function sceneMoveActionForPickedRoom({
 
     return {
         kind: 'move',
-        targetRoomId: roomId,
+        targetRoomId: roomId
     };
 }

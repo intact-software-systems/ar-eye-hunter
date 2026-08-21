@@ -1,13 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-    ConnectionContext,
-    InMemoryQueueBox,
-    JsonWebSocketServer,
-    newALRoute,
-    newALUntargetedMessage,
-} from '@shared/mod.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { ConnectionContext, InMemoryQueueBox, JsonWebSocketServer, newALRoute, newALUntargetedMessage } from '@shared/mod.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('WS server inbound identity', () => {
     it('rejects a forged sender and preserves an exact matching non-CRDT message', async () => {
@@ -18,14 +12,14 @@ describe('WS server inbound identity', () => {
             new InMemoryQueueBox(),
             new InMemoryQueueBox(),
             server,
-            'server-1',
+            'server-1'
         );
         const received: ALMessage[] = [];
         service.onAnyInboxMessageDo('identity-test', {
             onMessage: (message) => {
                 received.push(message);
                 return Promise.resolve();
-            },
+            }
         });
         const forged = message('session-victim', 'forged-message');
         const matching = message('session-attacker', 'matching-message');
@@ -37,7 +31,8 @@ describe('WS server inbound identity', () => {
 
             await socket.dispatchMessage(matching);
             expect(received).toEqual([matching]);
-        } finally {
+        }
+        finally {
             consoleError.mockRestore();
         }
     });
@@ -69,7 +64,7 @@ function message(senderId: string, messageId: string): ALMessage {
         senderId,
         newALRoute('test.identity', 'context-1', messageId),
         'test.identity.v1',
-        { value: messageId },
+        { value: messageId }
     );
     return { ...value, id: { ...value.id, msgId: messageId } };
 }

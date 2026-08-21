@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-    createDistributedRunArtifactDownload,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/distributed-run-artifact-download.ts';
+import { createDistributedRunArtifactDownload } from '../../../apps/rallar-black-box/src/recipe-console/control/distributed-run-artifact-download.ts';
 
 describe('Recipe Console distributed artifact download', () => {
     it('preserves ordinary run IDs in deterministic filenames', () => {
@@ -12,7 +10,7 @@ describe('Recipe Console distributed artifact download', () => {
     it('bounds and sanitizes artifact-controlled filename segments', () => {
         const filename = createDistributedRunArtifactDownload(
             {},
-            `../unsafe\u202E/${'x'.repeat(10_000)}`,
+            `../unsafe\u202E/${'x'.repeat(10_000)}`
         ).filename;
 
         expect(filename).toMatch(/-artifact\.json$/);

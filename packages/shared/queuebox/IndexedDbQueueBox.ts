@@ -1,9 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
+import { EnqueuedType } from '../api/api-config.ts';
 import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
+import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
 import {
+    isIdempotentHandlerFinalizedRelease,
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
@@ -13,14 +15,12 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementInput,
-    isIdempotentHandlerFinalizedRelease,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
-    toResourceInboxWorkAdvertisementOptions,
+    toResourceInboxWorkAdvertisementOptions
 } from './QueueBoxTypes.ts';
-import { EnqueuedType } from '../api/api-config.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -30,7 +30,7 @@ import {
     ResourceEntry,
     ResourceEntryKeyString,
     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
-    toKeyAsString,
+    toKeyAsString
 } from './ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 
@@ -79,7 +79,8 @@ function toPlainTime(value: unknown): Temporal.PlainTime {
     const fallback = Temporal.Now.plainTimeISO();
     try {
         return Temporal.PlainTime.from(temporalText(value, fallback.toString()));
-    } catch {
+    }
+    catch {
         return fallback;
     }
 }
@@ -88,18 +89,20 @@ function toPlainDateTime(value: unknown): Temporal.PlainDateTime {
     const fallback = Temporal.Now.plainDateTimeISO();
     try {
         return Temporal.PlainDateTime.from(temporalText(value, fallback.toString()));
-    } catch {
+    }
+    catch {
         return fallback;
     }
 }
 
 function toInstant(
     value: unknown,
-    fallback: Temporal.Instant = NEVER_EXPIRE_TS,
+    fallback: Temporal.Instant = NEVER_EXPIRE_TS
 ): Temporal.Instant {
     try {
         return Temporal.Instant.from(temporalText(value, fallback.toString()));
-    } catch {
+    }
+    catch {
         return fallback;
     }
 }
@@ -111,7 +114,8 @@ function toOptionalInstant(value: unknown): Temporal.Instant | undefined {
 
     try {
         return Temporal.Instant.from(temporalText(value, ''));
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -130,11 +134,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     private readonly storeName: string;
     private dbPromise?: Promise<IDBDatabase>;
 
-    private readonly cleanupRateLimiter: RateLimiter =
-        RateLimiter.init(
-            ResilienceDto.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
-            ResilienceDto.MAX_NUM_IS_ENTRY_CHECK,
-        );
+    private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
+        ResilienceDto.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
+        ResilienceDto.MAX_NUM_IS_ENTRY_CHECK
+    );
 
     constructor(options: IndexedDbQueueBoxOptions = {}) {
         this.dbName = options.dbName ?? IndexedDbQueueBox.DEFAULT_DB_NAME;
@@ -146,7 +149,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     cleanup(): void {
-        void this.cleanupAsync().catch(e => {
+        void this.cleanupAsync().catch((e) => {
             console.error('Failed to cleanup IndexedDB queue entries', e);
         });
     }
@@ -155,7 +158,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         return await RateLimiter.tryToExecuteOrDefault(
             this.cleanupRateLimiter,
             async () => await this.cleanupNow(),
-            false,
+            false
         );
     }
 
@@ -188,7 +191,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 if (COMPLETED_STATUSES.has(stored.status) || this.isExpiredStoredEntry(stored)) {
                     removedEntries += 1;
                     const deleteRequest = cursor.delete();
-                    deleteRequest.onerror = () => reject(deleteRequest.error ?? new Error('IndexedDB delete failed during cleanup'));
+                    deleteRequest.onerror = () =>
+                        reject(deleteRequest.error ?? new Error('IndexedDB delete failed during cleanup'));
                 }
 
                 cursor.continue();
@@ -235,7 +239,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB enqueueIfAbsent failed'));
 
             const getRequest = store.get(keyString);
-            getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during enqueueIfAbsent'));
+            getRequest.onerror = () =>
+                reject(getRequest.error ?? new Error('IndexedDB get failed during enqueueIfAbsent'));
             getRequest.onsuccess = () => {
                 const stored = getRequest.result as StoredResourceEntry | undefined;
                 if (stored && !this.isExpiredStoredEntry(stored)) {
@@ -247,14 +252,15 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 const writeRequest = stored
                     ? store.put(this.toStoredEntry(resourceEntry))
                     : store.add(this.toStoredEntry(resourceEntry));
-                writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueIfAbsent'));
+                writeRequest.onerror = () =>
+                    reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueIfAbsent'));
             };
         });
     }
 
     async enqueueIf(
         resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean,
+        enqueueIt: (existing: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined> {
         const db = await this.openDb();
 
@@ -279,7 +285,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     let shouldOverwrite: boolean;
                     try {
                         shouldOverwrite = enqueueIt(previous);
-                    } catch (error) {
+                    }
+                    catch (error) {
                         reject(error);
                         tx.abort();
                         return;
@@ -292,14 +299,15 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 }
 
                 const writeRequest = store.put(this.toStoredEntry(resourceEntry));
-                writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueIf'));
+                writeRequest.onerror = () =>
+                    reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueIf'));
             };
         });
     }
 
     async enqueueOrUpdate(
         resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
     ) {
         const db = await this.openDb();
 
@@ -317,7 +325,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 previous?: ResourceEntry;
             } = {
                 action: 'inserted',
-                entry: resourceEntry,
+                entry: resourceEntry
             };
 
             tx.oncomplete = () => resolve(result);
@@ -325,12 +333,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB enqueueOrUpdate failed'));
 
             const getRequest = store.get(keyString);
-            getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during enqueueOrUpdate'));
+            getRequest.onerror = () =>
+                reject(getRequest.error ?? new Error('IndexedDB get failed during enqueueOrUpdate'));
             getRequest.onsuccess = () => {
                 const stored = getRequest.result as StoredResourceEntry | undefined;
                 if (!stored || this.isExpiredStoredEntry(stored)) {
                     const writeRequest = store.put(this.toStoredEntry(resourceEntry));
-                    writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueOrUpdate'));
+                    writeRequest.onerror = () =>
+                        reject(writeRequest.error ?? new Error('IndexedDB write failed during enqueueOrUpdate'));
                     return;
                 }
 
@@ -338,7 +348,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 let updated: ResourceEntry | undefined;
                 try {
                     updated = updateExisting(previous);
-                } catch (error) {
+                }
+                catch (error) {
                     reject(error);
                     tx.abort();
                     return;
@@ -349,7 +360,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     result = {
                         action: 'unchanged',
                         entry: previous,
-                        previous,
+                        previous
                     };
                     return;
                 }
@@ -357,17 +368,18 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 result = {
                     action: 'updated',
                     entry: updated,
-                    previous,
+                    previous
                 };
                 const writeRequest = store.put(this.toStoredEntry(updated));
-                writeRequest.onerror = () => reject(writeRequest.error ?? new Error('IndexedDB update failed during enqueueOrUpdate'));
+                writeRequest.onerror = () =>
+                    reject(writeRequest.error ?? new Error('IndexedDB update failed during enqueueOrUpdate'));
             };
         });
     }
 
     async releaseEntries(
         resources: ResourceEntry[],
-        releaseInput: ResourceInboxReleaseDisposition,
+        releaseInput: ResourceInboxReleaseDisposition
     ): Promise<Map<Key, ResourceEntry>> {
         const disposition = toResourceInboxReleaseDisposition(releaseInput);
         if (resources.length === 0) {
@@ -389,7 +401,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             for (const resource of resources) {
                 const keyString = toKeyAsString(resource.key);
                 const getRequest = store.get(keyString);
-                getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB get failed during releaseEntries'));
+                getRequest.onerror = () =>
+                    reject(getRequest.error ?? new Error('IndexedDB get failed during releaseEntries'));
                 getRequest.onsuccess = () => {
                     const stored = getRequest.result as StoredResourceEntry | undefined;
                     const current = stored ? this.toResourceEntry(stored) : undefined;
@@ -405,14 +418,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                             !isIdempotentHandlerFinalizedRelease(
                                 current,
                                 resource,
-                                disposition,
+                                disposition
                             )
                         )
                     ) {
-                        reject(new ResourceInboxLostReservationError(
-                            resource.key,
-                            resource.dequeueAudit.attempts,
-                        ));
+                        reject(
+                            new ResourceInboxLostReservationError(
+                                resource.key,
+                                resource.dequeueAudit.attempts
+                            )
+                        );
                         tx.abort();
                         return;
                     }
@@ -429,14 +444,15 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                             nextTs: disposition.delayMs !== null
                                 ? releasedAt.add({ milliseconds: disposition.delayMs })
                                 : undefined,
-                            attempts: current.dequeueAudit.attempts,
-                        },
+                            attempts: current.dequeueAudit.attempts
+                        }
                     };
 
                     released.set(updated.key, updated);
 
                     const putRequest = store.put(this.toStoredEntry(updated));
-                    putRequest.onerror = () => reject(putRequest.error ?? new Error('IndexedDB put failed during releaseEntries'));
+                    putRequest.onerror = () =>
+                        reject(putRequest.error ?? new Error('IndexedDB put failed during releaseEntries'));
                 };
             }
         });
@@ -445,11 +461,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         typeIds: Set<string>,
         reservationInput: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration,
+        timeSinceStartTs: Temporal.Duration
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const db = await this.openDb();
         const reserved = new Map<Key, ResourceEntry>();
@@ -464,7 +480,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB reserveTimeoutEntries aborted'));
             tx.onerror = () => reject(tx.error ?? new Error('IndexedDB reserveTimeoutEntries failed'));
 
-            timeoutRequest.onerror = () => reject(timeoutRequest.error ?? new Error('IndexedDB cursor failed during reserveTimeoutEntries'));
+            timeoutRequest.onerror = () =>
+                reject(timeoutRequest.error ?? new Error('IndexedDB cursor failed during reserveTimeoutEntries'));
             timeoutRequest.onsuccess = () => {
                 const cursor = timeoutRequest.result;
                 if (!cursor || reserved.size >= maxToReserve) {
@@ -482,7 +499,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
                 const updated = this.toReservedEntry(this.toResourceEntry(stored), now);
                 const updateRequest = cursor.update(this.toStoredEntry(updated));
-                updateRequest.onerror = () => reject(updateRequest.error ?? new Error('IndexedDB update failed during reserveTimeoutEntries'));
+                updateRequest.onerror = () =>
+                    reject(updateRequest.error ?? new Error('IndexedDB update failed during reserveTimeoutEntries'));
                 updateRequest.onsuccess = () => {
                     reserved.set(updated.key, updated);
                     cursor.continue();
@@ -494,11 +512,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxReservationInput
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const db = await this.openDb();
         const reserved = new Map<Key, ResourceEntry>();
@@ -524,7 +542,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 if (!this.isReservableEntry(stored, typeIds, statusIds, now, maxAttempts)) {
                     if (this.isExpiredStoredEntry(stored)) {
                         const deleteRequest = cursor.delete();
-                        deleteRequest.onerror = () => reject(deleteRequest.error ?? new Error('IndexedDB delete failed during reserveEntries'));
+                        deleteRequest.onerror = () =>
+                            reject(deleteRequest.error ?? new Error('IndexedDB delete failed during reserveEntries'));
                     }
                     cursor.continue();
                     return;
@@ -532,7 +551,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
                 const updated = this.toReservedEntry(this.toResourceEntry(stored), now);
                 const updateRequest = cursor.update(this.toStoredEntry(updated));
-                updateRequest.onerror = () => reject(updateRequest.error ?? new Error('IndexedDB update failed during reserveEntries'));
+                updateRequest.onerror = () =>
+                    reject(updateRequest.error ?? new Error('IndexedDB update failed during reserveEntries'));
                 updateRequest.onsuccess = () => {
                     reserved.set(updated.key, updated);
                     cursor.continue();
@@ -544,11 +564,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxFairnessReservationInput,
+        reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
         const options = toResourceInboxFairnessReservationOptions(
             reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const { maxToReserve, maxAttempts } = options;
         const maxToScan = typeof reservationInput === 'number'
@@ -570,10 +590,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             const tx = db.transaction(this.storeName, 'readwrite');
             const store = tx.objectStore(this.storeName);
             const index = store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME);
-            const states = [...typeIds].map(typeId => ({
+            const states = [...typeIds].map((typeId) => ({
                 typeId,
                 ready: false,
-                cursor: undefined as IDBCursorWithValue | undefined,
+                cursor: undefined as IDBCursorWithValue | undefined
             }));
             let scanned = states.length;
             let stopped = false;
@@ -584,7 +604,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
             const advanceOrDropCursor = (
                 state: typeof states[number],
-                cursor: IDBCursorWithValue,
+                cursor: IDBCursorWithValue
             ) => {
                 if (scanned >= maxToScan) {
                     state.cursor = undefined;
@@ -599,13 +619,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             };
 
             const drain = () => {
-                if (stopped || states.some(state => !state.ready)) {
+                if (stopped || states.some((state) => !state.ready)) {
                     return;
                 }
 
                 const available = states.filter(
-                    (state): state is typeof state & { cursor: IDBCursorWithValue } =>
-                        state.cursor !== undefined,
+                    (state): state is typeof state & { cursor: IDBCursorWithValue; } => state.cursor !== undefined
                 );
                 if (available.length === 0) {
                     return;
@@ -617,11 +636,13 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                     const dueOrder = leftEntry.fairnessDueEpochMs! -
                         rightEntry.fairnessDueEpochMs!;
                     return dueOrder < 0 || (
-                        dueOrder === 0 && indexedDB.cmp(
-                            leftEntry.keyString,
-                            rightEntry.keyString,
-                        ) <= 0
-                    ) ? left : right;
+                            dueOrder === 0 && indexedDB.cmp(
+                                    leftEntry.keyString,
+                                    rightEntry.keyString
+                                ) <= 0
+                        )
+                        ? left
+                        : right;
                 });
                 const cursor = selectedState.cursor;
                 const stored = cursor.value as StoredResourceEntry;
@@ -638,9 +659,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 const entry = this.toReservedEntry(this.toResourceEntry(stored), now);
                 selectedState.ready = false;
                 const updateRequest = cursor.update(this.toStoredEntry(entry));
-                updateRequest.onerror = () => reject(
-                    updateRequest.error ?? new Error('IndexedDB fairness update failed'),
-                );
+                updateRequest.onerror = () =>
+                    reject(
+                        updateRequest.error ?? new Error('IndexedDB fairness update failed')
+                    );
                 updateRequest.onsuccess = () => {
                     reserved.set(entry.key, { entry, selectedDueTs });
                     if (reserved.size >= maxToReserve) {
@@ -658,8 +680,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                         state.typeId,
                         EntityStatus.RETRY,
                         Number(overdueBefore.epochMilliseconds),
-                        '\uffff',
-                    ],
+                        '\uffff'
+                    ]
                 ));
                 request.onerror = () => reject(request.error ?? new Error('IndexedDB fairness cursor failed'));
                 request.onsuccess = () => {
@@ -673,7 +695,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async reserveRetryExhaustionFinalizations(
         typeIds: Set<string>,
-        input: ResourceInboxFinalizationReservationOptions,
+        input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
         if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
@@ -692,7 +714,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             request.onerror = () => reject(request.error ?? new Error('IndexedDB finalization cursor failed'));
             request.onsuccess = () => {
                 const cursor = request.result;
-                if (!cursor || reserved.size >= options.maxToReserve) return;
+                if (!cursor || reserved.size >= options.maxToReserve) {
+                    return;
+                }
                 const stored = cursor.value as StoredResourceEntry;
                 const startTs = stored.dequeueAudit.startTs
                     ? Temporal.Instant.from(stored.dequeueAudit.startTs)
@@ -715,15 +739,15 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                         attempts: entry.dequeueAudit.attempts + 1,
                         startTs: now,
                         endTs: undefined,
-                        nextTs: undefined,
-                    },
+                        nextTs: undefined
+                    }
                 };
                 const update = cursor.update(this.toStoredEntry(updated));
                 update.onerror = () => reject(update.error ?? new Error('IndexedDB finalization update failed'));
                 update.onsuccess = () => {
                     reserved.set(updated.key, {
                         entry: updated,
-                        selectedDueTs: startTs,
+                        selectedDueTs: startTs
                     });
                     cursor.continue();
                 };
@@ -734,40 +758,42 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async isAnyEntryToLock(
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementInput,
-        legacyCheckFairness?: RateLimiter,
+        legacyCheckFairness?: RateLimiter
     ): Promise<boolean> {
-        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } = toResourceInboxWorkAdvertisementOptions(
-            workInput,
-            legacyCheckFairness,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
-        );
-        const isTimedOutEntryToLock =
-            await RateLimiter.tryToExecuteOrDefault(
-                checkTimeout,
-                async () => await this.hasAnyTimedOutReservedEntry(
+        const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
+            toResourceInboxWorkAdvertisementOptions(
+                workInput,
+                legacyCheckFairness,
+                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            );
+        const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
+            checkTimeout,
+            async () =>
+                await this.hasAnyTimedOutReservedEntry(
                     typeIds,
                     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
-                    maxAttempts,
+                    maxAttempts
                 ),
-                false,
-            );
+            false
+        );
 
         const newAndRetryEntryToLock = await this.hasAnyReservableEntry(
             typeIds,
             NEW_AND_RETRY_STATUSES,
-            maxAttempts,
+            maxAttempts
         );
         const finalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkFinalization,
-            () => this.hasAnyRetryExhaustionFinalization(
-                typeIds,
-                maxAttempts,
-                finalizationStaleAfterMs,
-            ),
-            false,
+            () =>
+                this.hasAnyRetryExhaustionFinalization(
+                    typeIds,
+                    maxAttempts,
+                    finalizationStaleAfterMs
+                ),
+            false
         );
 
-        void this.cleanupAsync().catch(e => {
+        void this.cleanupAsync().catch((e) => {
             console.error('Failed to cleanup entries', e);
         });
 
@@ -777,12 +803,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     private async hasAnyRetryExhaustionFinalization(
         typeIds: Set<string>,
         processingAttempts: number,
-        staleAfterMs: number,
+        staleAfterMs: number
     ): Promise<boolean> {
-        if (!typeIds.has(EnqueuedType.APP_INBOX)) return false;
+        if (!typeIds.has(EnqueuedType.APP_INBOX)) {
+            return false;
+        }
         const now = Temporal.Now.instant();
         const staleBefore = now.subtract({ milliseconds: staleAfterMs });
-        return await this.findAnyStoredEntry(stored => {
+        return await this.findAnyStoredEntry((stored) => {
             const startTs = stored.dequeueAudit.startTs
                 ? Temporal.Instant.from(stored.dequeueAudit.startTs)
                 : undefined;
@@ -799,9 +827,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     private async hasAnyReservableEntry(
         typeIds: Set<string>,
         statusesToFind: ReadonlySet<EntityStatus>,
-        maxAttempts: number,
+        maxAttempts: number
     ): Promise<boolean> {
-        return await this.findAnyStoredEntry(stored => {
+        return await this.findAnyStoredEntry((stored) => {
             const now = Temporal.Now.instant();
             return this.isReservableEntry(stored, typeIds, statusesToFind, now, maxAttempts);
         });
@@ -810,9 +838,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     private async hasAnyTimedOutReservedEntry(
         typeIds: Set<string>,
         duration: Temporal.Duration,
-        maxAttempts: number,
+        maxAttempts: number
     ): Promise<boolean> {
-        return await this.findAnyStoredEntry(stored => {
+        return await this.findAnyStoredEntry((stored) => {
             const now = Temporal.Now.instant();
             return stored.dequeueAudit.attempts < maxAttempts &&
                 this.isTimedOutReservedEntry(stored, typeIds, duration, now);
@@ -855,7 +883,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>,
         now: Temporal.Instant,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
     ): boolean {
         if (this.isExpiredStoredEntry(stored, now)) {
             return false;
@@ -883,7 +911,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         stored: StoredResourceEntry,
         typeIds: ReadonlySet<string>,
         duration: Temporal.Duration,
-        now: Temporal.Instant,
+        now: Temporal.Instant
     ): boolean {
         if (this.isExpiredStoredEntry(stored, now)) {
             return false;
@@ -905,14 +933,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 startTs: now,
                 endTs: undefined,
                 nextTs: undefined,
-                attempts: entry.dequeueAudit.attempts + 1,
-            },
+                attempts: entry.dequeueAudit.attempts + 1
+            }
         };
     }
 
     private isExpiredStoredEntry(
         stored: StoredResourceEntry,
-        now: Temporal.Instant = Temporal.Now.instant(),
+        now: Temporal.Instant = Temporal.Now.instant()
     ): boolean {
         const expiryTs = stored.audit.expiryTs
             ? toInstant(stored.audit.expiryTs)
@@ -937,13 +965,13 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                             'typeId',
                             'status',
                             'fairnessDueEpochMs',
-                            'keyString',
+                            'keyString'
                         ],
-                        unique: false,
+                        unique: false
                     }],
-                    migrateOnUpgrade: store => this.migrateFairnessDueEpochMs(store),
-                },
-            ).then(db => {
+                    migrateOnUpgrade: (store) => this.migrateFairnessDueEpochMs(store)
+                }
+            ).then((db) => {
                 db.onversionchange = () => {
                     db.close();
                     this.dbPromise = undefined;
@@ -971,7 +999,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             if (stored.fairnessDueEpochMs !== fairnessDueEpochMs) {
                 cursor.update({
                     ...stored,
-                    fairnessDueEpochMs,
+                    fairnessDueEpochMs
                 });
             }
             cursor.continue();
@@ -991,17 +1019,17 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 date: toPlainTime(entry.audit.date).toString(),
                 createdBy: entry.audit.createdBy,
                 createdTs: toPlainDateTime(entry.audit.createdTs).toString(),
-                expiryTs: toInstant(entry.audit.expiryTs).toString(),
+                expiryTs: toInstant(entry.audit.expiryTs).toString()
             },
             status: entry.status,
             dequeueAudit: {
                 startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
                 endTs: toOptionalInstant(entry.dequeueAudit.endTs)?.toString(),
                 nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString({
-                    fractionalSecondDigits: 9,
+                    fractionalSecondDigits: 9
                 }),
-                attempts: entry.dequeueAudit.attempts,
-            },
+                attempts: entry.dequeueAudit.attempts
+            }
         };
     }
 
@@ -1016,18 +1044,18 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 createdTs: toPlainDateTime(stored.audit.createdTs),
                 expiryTs: stored.audit.expiryTs
                     ? toInstant(stored.audit.expiryTs)
-                    : NEVER_EXPIRE_TS,
+                    : NEVER_EXPIRE_TS
             },
             status: stored.status,
             dequeueAudit: {
                 startTs: toOptionalInstant(stored.dequeueAudit.startTs),
                 endTs: toOptionalInstant(stored.dequeueAudit.endTs),
                 nextTs: toOptionalInstant(stored.dequeueAudit.nextTs),
-                attempts: stored.dequeueAudit.attempts,
+                attempts: stored.dequeueAudit.attempts
             },
             db: {
-                id: stored.keyString,
-            },
+                id: stored.keyString
+            }
         };
     }
 
@@ -1060,12 +1088,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async setItem(
         key: Key,
         value: ResourceEntry,
-        _options: PersistenceSetItemOptions,
+        _options: PersistenceSetItemOptions
     ): Promise<void> {
         const db = await this.openDb();
         const entry: ResourceEntry = {
             ...value,
-            key,
+            key
         };
         return await new Promise<void>((resolve, reject) => {
             const tx = db.transaction(this.storeName, 'readwrite');
@@ -1145,7 +1173,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
                 deleted += 1;
                 const deleteRequest = cursor.delete();
-                deleteRequest.onerror = () => reject(deleteRequest.error ?? new Error('IndexedDB delete failed during deleteExpired'));
+                deleteRequest.onerror = () =>
+                    reject(deleteRequest.error ?? new Error('IndexedDB delete failed during deleteExpired'));
                 cursor.continue();
             };
         });

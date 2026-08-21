@@ -141,15 +141,15 @@ an entry exceeds its Brotli budget.
 
 Current browser simplification measurement and budgets:
 
-| Entry | Minified | Gzip | Brotli | Budget |
-|---|---:|---:|---:|---:|
-| `browser/rallar.ts` | 648.2 KiB | 165.5 KiB | 137.9 KiB | < 160.0 KiB |
-| `browser/rallar-core.ts` | 3.2 KiB | 1.0 KiB | 0.9 KiB | < 100.0 KiB |
-| `browser/rallar-realtime.ts` | 4.3 KiB | 1.2 KiB | 1.1 KiB | < 100.0 KiB |
-| `browser/rallar-data.ts` | 28.9 KiB | 6.8 KiB | 6.1 KiB | < 20.0 KiB |
-| `browser/rallar-crdt.ts` | 73.7 KiB | 17.4 KiB | 15.7 KiB | < 30.0 KiB |
-| `browser/rallar-media-calls.ts` | 0.5 KiB | 0.3 KiB | 0.2 KiB | < 10.0 KiB |
-| `shared-web/mod.ts` | 699.1 KiB | 177.5 KiB | 148.8 KiB | - |
+| Entry                           |  Minified |      Gzip |    Brotli |      Budget |
+| ------------------------------- | --------: | --------: | --------: | ----------: |
+| `browser/rallar.ts`             | 648.2 KiB | 165.5 KiB | 137.9 KiB | < 160.0 KiB |
+| `browser/rallar-core.ts`        |   3.2 KiB |   1.0 KiB |   0.9 KiB | < 100.0 KiB |
+| `browser/rallar-realtime.ts`    |   4.3 KiB |   1.2 KiB |   1.1 KiB | < 100.0 KiB |
+| `browser/rallar-data.ts`        |  28.9 KiB |   6.8 KiB |   6.1 KiB |  < 20.0 KiB |
+| `browser/rallar-crdt.ts`        |  73.7 KiB |  17.4 KiB |  15.7 KiB |  < 30.0 KiB |
+| `browser/rallar-media-calls.ts` |   0.5 KiB |   0.3 KiB |   0.2 KiB |  < 10.0 KiB |
+| `shared-web/mod.ts`             | 699.1 KiB | 177.5 KiB | 148.8 KiB |           - |
 
 ## Dependency Boundaries
 

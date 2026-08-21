@@ -16,11 +16,11 @@ export const TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY = {
     allowBootstrapAgentTicket: true,
     controlUrlFromLocation: false,
     apiBaseUrlFromLocation: false,
-    controlTokenFromLocation: false,
+    controlTokenFromLocation: false
 } as const satisfies RecipeConsoleControlCredentialPolicy;
 
 export function recipeConsoleControlCredentialPolicyFromSearch(
-    search: string,
+    search: string
 ): RecipeConsoleControlCredentialPolicy {
     const params = new URLSearchParams(search);
     const controlUrlFromLocation = hasNonemptyValue(params, 'controlUrl');
@@ -43,7 +43,7 @@ export function recipeConsoleControlCredentialPolicyFromSearch(
         controlUrlFromLocation,
         apiBaseUrlFromLocation,
         controlTokenFromLocation,
-        blockedMessage,
+        blockedMessage
     };
 }
 

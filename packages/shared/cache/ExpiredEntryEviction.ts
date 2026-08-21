@@ -8,7 +8,7 @@ export type ExpiredEntryEvictionHandle = Readonly<{
 
 export function startExpiredEntryEviction(
     options: ExpiredEntryEvictionOptions,
-    deleteExpired: () => number,
+    deleteExpired: () => number
 ): ExpiredEntryEvictionHandle | undefined {
     const intervalMs = options.deleteExpiredIntervalMs;
     if (intervalMs === undefined) {
@@ -22,11 +22,11 @@ export function startExpiredEntryEviction(
     const timer = setInterval(() => {
         deleteExpired();
     }, intervalMs);
-    (timer as ReturnType<typeof setInterval> & { unref?: () => void }).unref?.();
+    (timer as ReturnType<typeof setInterval> & { unref?: () => void; }).unref?.();
 
     return {
         dispose: () => {
             clearInterval(timer);
-        },
+        }
     };
 }

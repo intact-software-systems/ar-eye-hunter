@@ -1,7 +1,7 @@
-import { ALMessage, ALPayload } from '@shared/al-contracts/al-contract.ts';
 import { getMiddleware } from '@shared-web/browser/app-context.ts';
+import { ALMessage, ALPayload } from '@shared/al-contracts/al-contract.ts';
 
-export type RtcInboxCallback = (data: ALPayload) => Promise<void>
+export type RtcInboxCallback = (data: ALPayload) => Promise<void>;
 
 export function addRtcInboxCallback(typeId: string, handler: RtcInboxCallback) {
     getMiddleware().middleware

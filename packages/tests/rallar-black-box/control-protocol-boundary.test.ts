@@ -6,14 +6,14 @@ const FILES = [
     'apps/rallar-black-box-control-server/src/control-artifacts.ts',
     'apps/rallar-black-box-control-server/src/main.ts',
     'apps/rallar-black-box-control-server/test/control-service.test.ts',
-    'apps/rallar-black-box-control-server/test/control-artifacts.test.ts',
+    'apps/rallar-black-box-control-server/test/control-artifacts.test.ts'
 ];
 
 const FORBIDDEN_IMPORTS = [
     '../../rallar-black-box/src/control-protocol.ts',
     '../rallar-black-box/src/control-protocol.ts',
     '../../../apps/rallar-black-box/src/control-protocol.ts',
-    '../../../apps/rallar-black-box/src/distributed-run-artifact-analysis.ts',
+    '../../../apps/rallar-black-box/src/distributed-run-artifact-analysis.ts'
 ];
 
 describe('black-box control protocol package boundary', () => {

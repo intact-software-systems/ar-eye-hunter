@@ -1,7 +1,7 @@
 export function Metric({
     label,
     value,
-    tone = 'muted',
+    tone = 'muted'
 }: {
     label: string;
     value: string;

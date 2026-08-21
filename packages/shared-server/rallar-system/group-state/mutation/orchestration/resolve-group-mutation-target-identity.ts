@@ -1,17 +1,23 @@
 import type { GroupMutationCommand } from '../group-mutation-contracts.ts';
 
 export function resolveGroupMutationTargetPrincipalId(
-  command: GroupMutationCommand,
+    command: GroupMutationCommand
 ): string | null {
-  if ('targetPrincipalId' in command) return command.targetPrincipalId;
-  if (command.operation === 'connectPresence') return command.input.principalId;
-  if (command.operation === 'heartbeatPresence' || command.operation === 'disconnectPresence') {
-    return command.input.principalId ?? command.input.actorPrincipalId;
-  }
-  return command.input.actorPrincipalId;
+    if ('targetPrincipalId' in command) {
+        return command.targetPrincipalId;
+    }
+    if (command.operation === 'connectPresence') {
+        return command.input.principalId;
+    }
+    if (command.operation === 'heartbeatPresence' || command.operation === 'disconnectPresence') {
+        return command.input.principalId ?? command.input.actorPrincipalId;
+    }
+    return command.input.actorPrincipalId;
 }
 
 export function resolveGroupMutationTargetSessionId(command: GroupMutationCommand): string | null {
-  if ('sessionId' in command) return command.sessionId;
-  return command.operation === 'appointDirector' ? command.input.actorSessionId : null;
+    if ('sessionId' in command) {
+        return command.sessionId;
+    }
+    return command.operation === 'appointDirector' ? command.input.actorSessionId : null;
 }

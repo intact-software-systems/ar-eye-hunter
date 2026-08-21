@@ -2,7 +2,7 @@ import type { DistributedRunArtifactFiles } from '@shared-test/rallar-bb-test/di
 
 export const DISTRIBUTED_ARTIFACT_REQUIRED_FILES = [
     'distributed-run.json',
-    'control-run.json',
+    'control-run.json'
 ] as const;
 
 export type DistributedArtifactImportStatus = Readonly<{
@@ -16,14 +16,14 @@ export type DistributedArtifactImportStatus = Readonly<{
 
 export function distributedArtifactImportStatus(
     files: DistributedRunArtifactFiles,
-    warningCount: number,
+    warningCount: number
 ): DistributedArtifactImportStatus {
     return {
         selectedFileCount: Object.values(files).filter((value) => value !== undefined).length,
         warningCount,
         requiredFiles: DISTRIBUTED_ARTIFACT_REQUIRED_FILES.map((fileName) => ({
             fileName,
-            loaded: files[fileName] !== undefined,
-        })),
+            loaded: files[fileName] !== undefined
+        }))
     };
 }

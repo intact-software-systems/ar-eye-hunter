@@ -5,12 +5,18 @@ import { withBoundedArtifactReportResults } from '@shared-test/black-box-runner/
 describe('black-box artifact report result bounds', () => {
     it('preserves every failure and full report counts while omitting bulky successes', () => {
         const successes = Array.from({ length: 3 }, (_, index) => ({
-            resultKey: `success-${index}`, name: 'load', status: 'SUCCESS', actual: { bulky: 'x' },
+            resultKey: `success-${index}`,
+            name: 'load',
+            status: 'SUCCESS',
+            actual: { bulky: 'x' }
         }));
         const failure = { resultKey: 'failure-1', name: 'gate', status: 'FAILURE' };
         const report = {
             outputs: { stateWriteEvidence: { atomicCompletionFailures: 0 } },
-            results: {}, resultsByName: {}, resultsList: [...successes, failure], artifact: {},
+            results: {},
+            resultsByName: {},
+            resultsList: [...successes, failure],
+            artifact: {}
         };
 
         const bounded = withBoundedArtifactReportResults(report, 2);
@@ -20,8 +26,10 @@ describe('black-box artifact report result bounds', () => {
         expect(bounded.resultsByName).toEqual({ load: [successes[0]], gate: [failure] });
         expect(bounded.outputs).toBe(report.outputs);
         expect(bounded.artifact).toMatchObject({
-            reportResultsTotal: 4, reportResultsEmitted: 2,
-            reportResultsOmitted: 2, reportResultsTruncated: true,
+            reportResultsTotal: 4,
+            reportResultsEmitted: 2,
+            reportResultsOmitted: 2,
+            reportResultsTruncated: true
         });
     });
 

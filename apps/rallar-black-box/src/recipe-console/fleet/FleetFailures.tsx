@@ -1,15 +1,13 @@
-import type { FleetReportWindow } from
-    '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
-import type { ControlFleetFailureSignature } from
-    '@shared-test/rallar-bb-test/fleet-report.ts';
-import { FleetFailureRow } from './FleetFailureRow.tsx';
+import type { FleetReportWindow } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
+import type { ControlFleetFailureSignature } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import styles from './FleetEvidence.module.css';
+import { FleetFailureRow } from './FleetFailureRow.tsx';
 
 export function FleetFailures({
     failures,
     onOpenHistory,
     onOpenRun,
-    onSelectAgent,
+    onSelectAgent
 }: Readonly<{
     failures: FleetReportWindow<ControlFleetFailureSignature>;
     onOpenHistory(failure: ControlFleetFailureSignature, trigger: HTMLButtonElement): void;
@@ -25,20 +23,24 @@ export function FleetFailures({
                 </div>
                 <p>{failures.items.length} of {failures.total} groups</p>
             </header>
-            {failures.items.length === 0 ? <p className={styles.empty}>No repeated failures.</p> : (
-                <ol className={styles.failureList}>{failures.items.map(
-                    (failure, index) => (
-                        <FleetFailureRow
-                            failure={failure}
-                            index={index}
-                            key={failure.signatureId}
-                            onOpenHistory={onOpenHistory}
-                            onOpenRun={onOpenRun}
-                            onSelectAgent={onSelectAgent}
-                        />
-                    ),
-                )}</ol>
-            )}
+            {failures.items.length === 0
+                ? <p className={styles.empty}>No repeated failures.</p>
+                : (
+                    <ol className={styles.failureList}>
+                        {failures.items.map(
+                            (failure, index) => (
+                                <FleetFailureRow
+                                    failure={failure}
+                                    index={index}
+                                    key={failure.signatureId}
+                                    onOpenHistory={onOpenHistory}
+                                    onOpenRun={onOpenRun}
+                                    onSelectAgent={onSelectAgent}
+                                />
+                            )
+                        )}
+                    </ol>
+                )}
         </section>
     );
 }

@@ -114,11 +114,11 @@ A follow-up experiment delayed a queued local successor for 3 ms after each
 eligible successful write. It was intended to let an already-conflicted remote
 stack complete its retry. The governed PostgreSQL result rejected that design:
 
-| workload | FIFO lane only | 3 ms handoff | result |
-| --- | ---: | ---: | --- |
-| uncontended | 2100 accepted, 0 exhausted, 765.645/s | 2100 accepted, 0 exhausted, 768.911/s | noise |
-| shared | 2020 accepted, 80 exhausted, 453 conflicts, 581.865/s | 2061 accepted, 39 exhausted, 463 conflicts, 561.441/s | slower, still exhausts |
-| hot | 1849 accepted, 251 exhausted, 332 conflicts, 286.527/s | 1956 accepted, 144 exhausted, 576 conflicts, 193.148/s | 32.6% lower throughput |
+| workload    |                                         FIFO lane only |                                           3 ms handoff | result                 |
+| ----------- | -----------------------------------------------------: | -----------------------------------------------------: | ---------------------- |
+| uncontended |                  2100 accepted, 0 exhausted, 765.645/s |                  2100 accepted, 0 exhausted, 768.911/s | noise                  |
+| shared      |  2020 accepted, 80 exhausted, 453 conflicts, 581.865/s |  2061 accepted, 39 exhausted, 463 conflicts, 561.441/s | slower, still exhausts |
+| hot         | 1849 accepted, 251 exhausted, 332 conflicts, 286.527/s | 1956 accepted, 144 exhausted, 576 conflicts, 193.148/s | 32.6% lower throughput |
 
 Shared duration increased from `3471.595` to `3670.912` ms. Hot duration
 increased from `6453.138` to `10126.934` ms; hot SQL statements increased
@@ -138,11 +138,11 @@ authorization/compute, 0.1 ms validation, and 2 ms transaction. Every conflict
 reran read and validation, and no retry or handoff delay occurred in a
 transaction.
 
-| policy | accepted / exhausted | conflicts / reads | elapsed | handoffs | remote commit before successor CAS |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| none | 40 / 0 | 19 / 59 | 127 ms | 0 | n/a |
-| every write | 40 / 0 | 39 / 79 | 243 ms | 38 | 0 / 38 |
-| quota two | 40 / 0 | 19 / 59 | 154 ms | 18 | 9 / 18 |
+| policy      | accepted / exhausted | conflicts / reads | elapsed | handoffs | remote commit before successor CAS |
+| ----------- | -------------------: | ----------------: | ------: | -------: | ---------------------------------: |
+| none        |               40 / 0 |           19 / 59 |  127 ms |        0 |                                n/a |
+| every write |               40 / 0 |           39 / 79 |  243 ms |       38 |                             0 / 38 |
+| quota two   |               40 / 0 |           19 / 59 |  154 ms |       18 |                             9 / 18 |
 
 Quota two bounded each local commit streak at two and used nine handoffs per
 stack, but failed the required cross-stack ordering in half its handoff

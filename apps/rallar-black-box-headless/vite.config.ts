@@ -11,16 +11,16 @@ export default defineConfig({
             '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
             '@shared-server': path.resolve(__dirname, '../../packages/shared-server'),
             '@shared-graph': path.resolve(__dirname, '../../packages/shared-graph'),
-            '@shared': path.resolve(__dirname, '../../packages/shared'),
-        },
+            '@shared': path.resolve(__dirname, '../../packages/shared')
+        }
     },
     server: {
         port: 5179,
-        strictPort: true,
+        strictPort: true
     },
     build: {
         outDir: 'dist',
         emptyOutDir: true,
-        target: 'es2023',
-    },
+        target: 'es2023'
+    }
 });

@@ -13,15 +13,19 @@ type QueueBoxPubSubMessageBase = Readonly<{
     typeId: string;
 }>;
 
-export type QueueBoxPubSubEntryMessage = QueueBoxPubSubMessageBase & Readonly<{
-    delivery?: 'entry';
-    payload: string;
-}>;
+export type QueueBoxPubSubEntryMessage =
+    & QueueBoxPubSubMessageBase
+    & Readonly<{
+        delivery?: 'entry';
+        payload: string;
+    }>;
 
-export type QueueBoxPubSubKeyMessage = QueueBoxPubSubMessageBase & Readonly<{
-    delivery: 'key';
-    payload?: undefined;
-}>;
+export type QueueBoxPubSubKeyMessage =
+    & QueueBoxPubSubMessageBase
+    & Readonly<{
+        delivery: 'key';
+        payload?: undefined;
+    }>;
 
 export type QueueBoxPubSubMessage =
     | QueueBoxPubSubEntryMessage
@@ -31,13 +35,13 @@ export type QueueBoxPubSubBridge = Readonly<{
     publish(channel: string, message: QueueBoxPubSubMessage): Promise<void>;
     subscribe(
         channel: string,
-        onMessage: (message: QueueBoxPubSubMessage) => Promise<void> | void,
+        onMessage: (message: QueueBoxPubSubMessage) => Promise<void> | void
     ): Promise<void>;
 }>;
 
 export function isValidQueueBoxPubSubMessage(
     message: QueueBoxPubSubMessage,
-    expectedChannel: string,
+    expectedChannel: string
 ): boolean {
     if (!message || typeof message !== 'object') {
         return false;
@@ -61,7 +65,7 @@ export function isValidQueueBoxPubSubMessage(
 }
 
 function isValidQueueBoxPubSubMessageKey(
-    key: QueueBoxPubSubMessageKey | undefined,
+    key: QueueBoxPubSubMessageKey | undefined
 ): key is QueueBoxPubSubMessageKey {
     return !!key &&
         typeof key.topicId === 'string' &&

@@ -1,157 +1,157 @@
-import type { Hono } from 'hono';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import type { ApiV1Runtime } from '@api-v1/src/composition/api-v1-runtime.ts';
 import {
-  applyRelicCommand,
-  createRelicGame,
-  isRelicCommand,
-  RELIC_TOPICS,
-  RELIC_TYPES,
-  type RelicCommand,
-  type RelicGameState,
-  type RelicPublicSnapshot,
-  type RelicServerEvent,
-  toPublicRelicSnapshot,
+    applyRelicCommand,
+    createRelicGame,
+    isRelicCommand,
+    RELIC_TOPICS,
+    RELIC_TYPES,
+    toPublicRelicSnapshot,
+    type RelicCommand,
+    type RelicGameState,
+    type RelicPublicSnapshot,
+    type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import type { ApiV1Runtime } from '@api-v1/src/composition/api-v1-runtime.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import type { Hono } from 'hono';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
 
 type RelicRallarServer = RallarServerApplication<ApiV1Runtime, Hono>;
 
 export type RelicHunterGameServiceOptions = Readonly<{
-  createInitialState?: RelicInitialStateFactory;
+    createInitialState?: RelicInitialStateFactory;
 }>;
 
 export type RelicHunterGameService = Readonly<{
-  readSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined>;
-  ensureSnapshot(gameId: string): Promise<RelicPublicSnapshot>;
-  applyCommand(command: RelicCommand, senderId: string): Promise<RelicPublicSnapshot>;
-  reset(gameId: string): Promise<RelicPublicSnapshot>;
+    readSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined>;
+    ensureSnapshot(gameId: string): Promise<RelicPublicSnapshot>;
+    applyCommand(command: RelicCommand, senderId: string): Promise<RelicPublicSnapshot>;
+    reset(gameId: string): Promise<RelicPublicSnapshot>;
 }>;
 
 export async function installRelicHunterGame(
-  rallar: RelicRallarServer,
-  options: RelicHunterGameServiceOptions = {},
+    rallar: RelicRallarServer,
+    options: RelicHunterGameServiceOptions = {}
 ): Promise<RelicHunterGameService> {
-  const games = await rallar.data.open<RelicGameState>(
-    'relic-hunter-games',
-    {
-      namespace: 'relic-hunter-v1',
-      schemaVersion: 1,
-    },
-  );
-
-  // Serialize writes per game to prevent read-modify-write races when two
-  // players submit actions simultaneously.
-  const gameQueues = new Map<string, Promise<unknown>>();
-  function enqueueForGame<T>(gameId: string, work: () => Promise<T>): Promise<T> {
-    const prev = (gameQueues.get(gameId) ?? Promise.resolve()).catch(() => {});
-    const next: Promise<T> = prev.then(work);
-    gameQueues.set(gameId, next.catch(() => {}));
-    return next;
-  }
-
-  async function createInitialState(
-    gameId: string,
-    reason: RelicInitialStateReason,
-  ): Promise<RelicGameState> {
-    if (options.createInitialState) {
-      return await options.createInitialState(gameId, reason);
-    }
-    return createRelicGame(gameId, gameId);
-  }
-
-  async function publishSnapshot(state: RelicGameState): Promise<void> {
-    const snapshot = toPublicRelicSnapshot(state);
-    const event: RelicServerEvent = {
-      protocolVersion: snapshot.protocolVersion,
-      gameId: snapshot.gameId,
-      snapshot,
-    };
-
-    await rallar.ws.publish(
-      newALBroadcastMessage(
-        'relic-hunter-server',
-        newALRoute(
-          RELIC_TOPICS.snapshot,
-          state.roomId,
-          `${state.gameId}:${state.round}`,
-        ),
-        'room',
-        RELIC_TYPES.snapshot,
-        event,
+    const games = await rallar.data.open<RelicGameState>(
+        'relic-hunter-games',
         {
-          reliability: 'at-least-once',
-          ttlMs: 15_000,
-        },
-      ),
-      'live-only',
-    );
-  }
-
-  function applyCommand(
-    command: RelicCommand,
-    senderId: string,
-  ): Promise<RelicPublicSnapshot> {
-    return enqueueForGame(command.gameId, async () => {
-      const previous = await games.get(command.gameId) ??
-        await createInitialState(command.gameId, 'command');
-      const result = applyRelicCommand(previous, command, { senderId });
-      await games.set(command.gameId, result.state);
-      await publishSnapshot(result.state);
-      return toPublicRelicSnapshot(result.state);
-    });
-  }
-
-  // relic-hunters-v1 treats REST as the authoritative browser command path.
-  // Keep the WS command topic registered for server-level compatibility tests
-  // and future transport experiments; browser clients consume WS snapshots.
-  rallar.ws.defineTopic<RelicCommand>({
-    topicId: RELIC_TOPICS.command,
-    typeId: RELIC_TYPES.command,
-    scope: 'room',
-    fanout: 'none',
-    maxPayloadBytes: 16 * 1024,
-    validate: (value, context) =>
-      isRelicCommand(value) &&
-      context.roomId !== undefined &&
-      value.gameId === context.roomId,
-  });
-
-  rallar.ws.on<RelicCommand>(
-    {
-      topicId: RELIC_TOPICS.command,
-      typeId: RELIC_TYPES.command,
-    },
-    async (message, context) => {
-      await applyCommand(message.payload, context.senderId);
-    },
-  );
-
-  return {
-    readSnapshot: async (gameId) => {
-      const game = await games.get(gameId);
-      return game ? toPublicRelicSnapshot(game) : undefined;
-    },
-    ensureSnapshot: (gameId) => {
-      return enqueueForGame(gameId, async () => {
-        const existing = await games.get(gameId);
-        if (existing) {
-          return toPublicRelicSnapshot(existing);
+            namespace: 'relic-hunter-v1',
+            schemaVersion: 1
         }
-        const state = await createInitialState(gameId, 'ensure');
-        await games.set(gameId, state);
-        return toPublicRelicSnapshot(state);
-      });
-    },
-    applyCommand,
-    reset: (gameId) => {
-      return enqueueForGame(gameId, async () => {
-        const state = await createInitialState(gameId, 'reset');
-        await games.set(gameId, state);
-        await publishSnapshot(state);
-        return toPublicRelicSnapshot(state);
-      });
-    },
-  };
+    );
+
+    // Serialize writes per game to prevent read-modify-write races when two
+    // players submit actions simultaneously.
+    const gameQueues = new Map<string, Promise<unknown>>();
+    function enqueueForGame<T>(gameId: string, work: () => Promise<T>): Promise<T> {
+        const prev = (gameQueues.get(gameId) ?? Promise.resolve()).catch(() => {});
+        const next: Promise<T> = prev.then(work);
+        gameQueues.set(gameId, next.catch(() => {}));
+        return next;
+    }
+
+    async function createInitialState(
+        gameId: string,
+        reason: RelicInitialStateReason
+    ): Promise<RelicGameState> {
+        if (options.createInitialState) {
+            return await options.createInitialState(gameId, reason);
+        }
+        return createRelicGame(gameId, gameId);
+    }
+
+    async function publishSnapshot(state: RelicGameState): Promise<void> {
+        const snapshot = toPublicRelicSnapshot(state);
+        const event: RelicServerEvent = {
+            protocolVersion: snapshot.protocolVersion,
+            gameId: snapshot.gameId,
+            snapshot
+        };
+
+        await rallar.ws.publish(
+            newALBroadcastMessage(
+                'relic-hunter-server',
+                newALRoute(
+                    RELIC_TOPICS.snapshot,
+                    state.roomId,
+                    `${state.gameId}:${state.round}`
+                ),
+                'room',
+                RELIC_TYPES.snapshot,
+                event,
+                {
+                    reliability: 'at-least-once',
+                    ttlMs: 15_000
+                }
+            ),
+            'live-only'
+        );
+    }
+
+    function applyCommand(
+        command: RelicCommand,
+        senderId: string
+    ): Promise<RelicPublicSnapshot> {
+        return enqueueForGame(command.gameId, async () => {
+            const previous = await games.get(command.gameId) ??
+                await createInitialState(command.gameId, 'command');
+            const result = applyRelicCommand(previous, command, { senderId });
+            await games.set(command.gameId, result.state);
+            await publishSnapshot(result.state);
+            return toPublicRelicSnapshot(result.state);
+        });
+    }
+
+    // relic-hunters-v1 treats REST as the authoritative browser command path.
+    // Keep the WS command topic registered for server-level compatibility tests
+    // and future transport experiments; browser clients consume WS snapshots.
+    rallar.ws.defineTopic<RelicCommand>({
+        topicId: RELIC_TOPICS.command,
+        typeId: RELIC_TYPES.command,
+        scope: 'room',
+        fanout: 'none',
+        maxPayloadBytes: 16 * 1024,
+        validate: (value, context) =>
+            isRelicCommand(value) &&
+            context.roomId !== undefined &&
+            value.gameId === context.roomId
+    });
+
+    rallar.ws.on<RelicCommand>(
+        {
+            topicId: RELIC_TOPICS.command,
+            typeId: RELIC_TYPES.command
+        },
+        async (message, context) => {
+            await applyCommand(message.payload, context.senderId);
+        }
+    );
+
+    return {
+        readSnapshot: async (gameId) => {
+            const game = await games.get(gameId);
+            return game ? toPublicRelicSnapshot(game) : undefined;
+        },
+        ensureSnapshot: (gameId) => {
+            return enqueueForGame(gameId, async () => {
+                const existing = await games.get(gameId);
+                if (existing) {
+                    return toPublicRelicSnapshot(existing);
+                }
+                const state = await createInitialState(gameId, 'ensure');
+                await games.set(gameId, state);
+                return toPublicRelicSnapshot(state);
+            });
+        },
+        applyCommand,
+        reset: (gameId) => {
+            return enqueueForGame(gameId, async () => {
+                const state = await createInitialState(gameId, 'reset');
+                await games.set(gameId, state);
+                await publishSnapshot(state);
+                return toPublicRelicSnapshot(state);
+            });
+        }
+    };
 }

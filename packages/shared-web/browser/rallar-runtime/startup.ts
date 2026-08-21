@@ -4,16 +4,11 @@ import type {
     RallarRefreshOptions,
     RallarSetupInput,
     RallarStartOptions,
-    RallarStartResult,
+    RallarStartResult
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type {
-    RallarPeopleFacade,
-    RallarPeopleState,
-} from '@shared-web/browser/rallar-people-facade.ts';
-import type {
-    RallarRoomState,
-} from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RallarPeopleFacade, RallarPeopleState } from '@shared-web/browser/rallar-people-facade.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
 export type CreateRallarStartupControllerOptions = Readonly<{
@@ -23,7 +18,7 @@ export type CreateRallarStartupControllerOptions = Readonly<{
     people: RallarPeopleFacade;
     waitForAuthEnd(): Promise<void>;
     resolveOperationOptions<T extends RallarOperationOptions>(
-        options: T,
+        options: T
     ): T & RallarOperationOptions;
 }>;
 
@@ -33,10 +28,10 @@ export type RallarStartupController = Readonly<{
 }>;
 
 export function createRallarStartupController(
-    options: CreateRallarStartupControllerOptions,
+    options: CreateRallarStartupControllerOptions
 ): RallarStartupController {
     const start = async (
-        startOptions: RallarStartOptions = {},
+        startOptions: RallarStartOptions = {}
     ): Promise<RallarStartResult> => {
         await options.waitForAuthEnd();
         const operationOptions = options.resolveOperationOptions(startOptions);
@@ -55,14 +50,15 @@ export function createRallarStartupController(
         if (refreshRooms || refreshPeople) {
             const refreshOptions = toRefreshOptions(
                 startOptions,
-                operationOptions,
+                operationOptions
             );
             if (refreshRooms) {
                 roomState = await options.rooms.refresh(refreshOptions);
                 if (refreshPeople) {
                     peopleState = options.people.state();
                 }
-            } else {
+            }
+            else {
                 peopleState = await options.people.refresh(refreshOptions);
             }
         }
@@ -71,7 +67,7 @@ export function createRallarStartupController(
             connected: true,
             middleware,
             roomState,
-            peopleState,
+            peopleState
         };
     };
 
@@ -86,15 +82,15 @@ export function createRallarStartupController(
                 connect: true,
                 refreshRooms: true,
                 refreshPeople: false,
-                ...startDefaults,
+                ...startDefaults
             });
-        },
+        }
     };
 }
 
 function toRefreshOptions(
     options: RallarStartOptions,
-    operationOptions: RallarOperationOptions,
+    operationOptions: RallarOperationOptions
 ): RallarRefreshOptions {
     return {
         ...(options.scope ? { scope: options.scope } : {}),
@@ -116,9 +112,8 @@ function toRefreshOptions(
             : {}),
         ...(operationOptions.rttReportingDegreeLimit !== undefined
             ? {
-                rttReportingDegreeLimit:
-                    operationOptions.rttReportingDegreeLimit,
+                rttReportingDegreeLimit: operationOptions.rttReportingDegreeLimit
             }
-            : {}),
+            : {})
     };
 }

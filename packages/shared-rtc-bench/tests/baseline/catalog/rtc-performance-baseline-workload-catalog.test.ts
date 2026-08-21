@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 
 import { RTC_BASELINE_WORKLOAD_CATALOG } from '../../../baseline/catalog/rtc-baseline-workload-catalog.ts';
 import { createRtcBaselineWorkerCommand } from '../../../baseline/contracts/rtc-baseline-validation.ts';
 
 function rows(text: string) {
-  return text
-    .trim()
-    .split('\n')
-    .map((line) => line.split('\t'));
+    return text
+        .trim()
+        .split('\n')
+        .map((line) => line.split('\t'));
 }
 
 const syntheticFacts = rows(`
@@ -115,196 +115,198 @@ RTC-B06/retention-100/e4-pg-retention-100	1/3	npm:run,test:rallar:full-stack:pos
 `);
 
 describe('RTC baseline workload catalog', () => {
-  it('owns every B01-B06 identity, order, evidence, sample, runtime, source, config, descriptor, environment, and cohort fact', () => {
-    const synthetic = RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
-      workload.cases.map((entry) => [
-        `${workload.workloadId}/${entry.caseId}/${entry.inputKey}`,
-        `${entry.warmupOuterAttempts ?? workload.warmupOuterAttempts}/${entry.retainedOuterAttempts ?? workload.retainedOuterAttempts}`,
-        entry.runtime.prefixArguments.at(-1),
-        entry.configuration
-          .map((field) =>
-            [
-              field.field,
-              field.flag,
-              field.scalarKind,
-              String(field.defaultValue),
-              field.allowlistedEnvironmentVariable ?? '-',
-              field.environmentUnsetBehavior ?? '-',
-            ].join('|'),
-          )
-          .join(';'),
-      ]),
-    );
-    expect(synthetic).toEqual(syntheticFacts);
-    expect([
-      ...new Set(
-        RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
-          workload.cases.map(
-            (entry) =>
-              `${workload.evidenceClass}|${entry.runtime.executable}|${entry.runtime.prefixArguments.slice(0, -1).join(',')}|${entry.configPaths.join(',')}`,
-          ),
-        ),
-      ),
-    ]).toEqual([
-      'synthetic-path|deno|run,--config=packages/shared-rtc-bench/deno.json,--allow-read,--allow-write|packages/shared-rtc-bench/deno.json',
-    ]);
-    expect(
-      RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
-        workload.cases.map((entry) => [
-          `${workload.workloadId}/${entry.caseId}/${entry.inputKey}`,
-          entry.sourcePaths.join(','),
-        ]),
-      ),
-    ).toEqual(syntheticSourceFacts);
+    it('owns every B01-B06 identity, order, evidence, sample, runtime, source, config, descriptor, environment, and cohort fact', () => {
+        const synthetic = RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
+            workload.cases.map((entry) => [
+                `${workload.workloadId}/${entry.caseId}/${entry.inputKey}`,
+                `${entry.warmupOuterAttempts ?? workload.warmupOuterAttempts}/${entry.retainedOuterAttempts ?? workload.retainedOuterAttempts}`,
+                entry.runtime.prefixArguments.at(-1),
+                entry.configuration
+                    .map((field) =>
+                        [
+                            field.field,
+                            field.flag,
+                            field.scalarKind,
+                            String(field.defaultValue),
+                            field.allowlistedEnvironmentVariable ?? '-',
+                            field.environmentUnsetBehavior ?? '-'
+                        ].join('|')
+                    )
+                    .join(';')
+            ])
+        );
+        expect(synthetic).toEqual(syntheticFacts);
+        expect([
+            ...new Set(
+                RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
+                    workload.cases.map(
+                        (entry) =>
+                            `${workload.evidenceClass}|${entry.runtime.executable}|${entry.runtime.prefixArguments.slice(0, -1).join(',')}|${
+                                entry.configPaths.join(',')
+                            }`
+                    )
+                )
+            )
+        ]).toEqual([
+            'synthetic-path|deno|run,--config=packages/shared-rtc-bench/deno.json,--allow-read,--allow-write|packages/shared-rtc-bench/deno.json'
+        ]);
+        expect(
+            RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
+                workload.cases.map((entry) => [
+                    `${workload.workloadId}/${entry.caseId}/${entry.inputKey}`,
+                    entry.sourcePaths.join(',')
+                ])
+            )
+        ).toEqual(syntheticSourceFacts);
 
-    const b05 = RTC_BASELINE_WORKLOAD_CATALOG[4]!;
-    expect({
-      evidence: b05.evidenceClass,
-      attempts: `${b05.warmupOuterAttempts}/${b05.retainedOuterAttempts}`,
-      runtime: b05.cases[0]?.runtime,
-      source: b05.cases[0]?.sourcePaths,
-      config: b05.cases[0]?.configPaths,
-      descriptors: b05.cases[0]?.configuration,
-    }).toEqual({
-      evidence: 'native-browser',
-      attempts: '1/5',
-      runtime: {
-        executable: 'node',
-        prefixArguments: [
-          'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs',
-        ],
-      },
-      source: [
-        'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs',
-      ],
-      config: ['apps/rallar-black-box/playwright.config.ts'],
-      descriptors: [
-        {
-          caseKey: {
-            workloadId: 'RTC-B05',
-            caseId: 'browser-data-channel-lifecycle',
-            inputKey: 'iterations-25',
-          },
-          field: 'iterations',
-          flag: '--rtc-iterations',
-          scalarKind: 'nonnegative-integer',
-          defaultValue: 25,
-          allowlistedEnvironmentVariable: null,
-          environmentUnsetBehavior: null,
-        },
-      ],
+        const b05 = RTC_BASELINE_WORKLOAD_CATALOG[4]!;
+        expect({
+            evidence: b05.evidenceClass,
+            attempts: `${b05.warmupOuterAttempts}/${b05.retainedOuterAttempts}`,
+            runtime: b05.cases[0]?.runtime,
+            source: b05.cases[0]?.sourcePaths,
+            config: b05.cases[0]?.configPaths,
+            descriptors: b05.cases[0]?.configuration
+        }).toEqual({
+            evidence: 'native-browser',
+            attempts: '1/5',
+            runtime: {
+                executable: 'node',
+                prefixArguments: [
+                    'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs'
+                ]
+            },
+            source: [
+                'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs'
+            ],
+            config: ['apps/rallar-black-box/playwright.config.ts'],
+            descriptors: [
+                {
+                    caseKey: {
+                        workloadId: 'RTC-B05',
+                        caseId: 'browser-data-channel-lifecycle',
+                        inputKey: 'iterations-25'
+                    },
+                    field: 'iterations',
+                    flag: '--rtc-iterations',
+                    scalarKind: 'nonnegative-integer',
+                    defaultValue: 25,
+                    allowlistedEnvironmentVariable: null,
+                    environmentUnsetBehavior: null
+                }
+            ]
+        });
+
+        const fullStack = RTC_BASELINE_WORKLOAD_CATALOG[5]!;
+        expect(
+            fullStack.cases.map((entry) => [
+                `${fullStack.workloadId}/${entry.caseId}/${entry.inputKey}`,
+                `${entry.warmupOuterAttempts}/${entry.retainedOuterAttempts}`,
+                `${entry.runtime.executable}:${entry.runtime.prefixArguments.join(',')}`,
+                entry.configuration
+                    .map((field) =>
+                        [
+                            field.field,
+                            field.flag,
+                            field.scalarKind,
+                            String(field.defaultValue),
+                            field.allowlistedEnvironmentVariable ?? '-',
+                            field.environmentUnsetBehavior ?? '-'
+                        ].join('|')
+                    )
+                    .join(';'),
+                entry.cohortId ?? '-'
+            ])
+        ).toEqual(fullStackFacts);
+        expect(fullStack.evidenceClass).toBe('local-full-stack');
+        expect(fullStack.cases.map((entry) => entry.sourcePaths)).toEqual([
+            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
+            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
+            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
+            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
+            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
+            ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts']
+        ]);
+        expect(fullStack.cases.map((entry) => entry.configPaths)).toEqual([
+            ['apps/rallar-black-box/playwright.config.ts'],
+            ['apps/rallar-black-box/playwright.config.ts'],
+            ['apps/rallar-black-box/playwright.config.ts'],
+            ['apps/rallar-black-box/playwright.config.ts'],
+            ['apps/rallar-black-box/playwright.config.ts'],
+            ['apps/rallar-black-box/playwright.config.ts']
+        ]);
     });
 
-    const fullStack = RTC_BASELINE_WORKLOAD_CATALOG[5]!;
-    expect(
-      fullStack.cases.map((entry) => [
-        `${fullStack.workloadId}/${entry.caseId}/${entry.inputKey}`,
-        `${entry.warmupOuterAttempts}/${entry.retainedOuterAttempts}`,
-        `${entry.runtime.executable}:${entry.runtime.prefixArguments.join(',')}`,
-        entry.configuration
-          .map((field) =>
-            [
-              field.field,
-              field.flag,
-              field.scalarKind,
-              String(field.defaultValue),
-              field.allowlistedEnvironmentVariable ?? '-',
-              field.environmentUnsetBehavior ?? '-',
-            ].join('|'),
-          )
-          .join(';'),
-        entry.cohortId ?? '-',
-      ]),
-    ).toEqual(fullStackFacts);
-    expect(fullStack.evidenceClass).toBe('local-full-stack');
-    expect(fullStack.cases.map((entry) => entry.sourcePaths)).toEqual([
-      ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-      ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-      ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-      ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-      ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-      ['tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts'],
-    ]);
-    expect(fullStack.cases.map((entry) => entry.configPaths)).toEqual([
-      ['apps/rallar-black-box/playwright.config.ts'],
-      ['apps/rallar-black-box/playwright.config.ts'],
-      ['apps/rallar-black-box/playwright.config.ts'],
-      ['apps/rallar-black-box/playwright.config.ts'],
-      ['apps/rallar-black-box/playwright.config.ts'],
-      ['apps/rallar-black-box/playwright.config.ts'],
-    ]);
-  });
-
-  it('builds the exact executable B01 command from catalog and manifest facts', () => {
-    const entry = RTC_BASELINE_WORKLOAD_CATALOG[0].cases[0];
-    const command = createRtcBaselineWorkerCommand({
-      baselineId: '20260807-0123456789ab-e1-local',
-      caseEntry: entry,
-      outerAttempt: {
-        workloadId: 'RTC-B01',
-        caseId: 'peer-connection-diagnostics-burst',
-        inputKey: 'pairs-500',
-        environmentId: 'E1-local',
-        intendedPhase: 'retained',
-        outerOrdinal: 1,
-        sampleIds: ['sample-1', 'sample-2', 'sample-3', 'sample-4', 'sample-5'],
-      },
-      resolvedConfiguration: entry.configuration.map((field) => ({
-        caseKey: field.caseKey,
-        field: field.field,
-        value: field.defaultValue,
-        source: 'default',
-      })),
+    it('builds the exact executable B01 command from catalog and manifest facts', () => {
+        const entry = RTC_BASELINE_WORKLOAD_CATALOG[0].cases[0];
+        const command = createRtcBaselineWorkerCommand({
+            baselineId: '20260807-0123456789ab-e1-local',
+            caseEntry: entry,
+            outerAttempt: {
+                workloadId: 'RTC-B01',
+                caseId: 'peer-connection-diagnostics-burst',
+                inputKey: 'pairs-500',
+                environmentId: 'E1-local',
+                intendedPhase: 'retained',
+                outerOrdinal: 1,
+                sampleIds: ['sample-1', 'sample-2', 'sample-3', 'sample-4', 'sample-5']
+            },
+            resolvedConfiguration: entry.configuration.map((field) => ({
+                caseKey: field.caseKey,
+                field: field.field,
+                value: field.defaultValue,
+                source: 'default'
+            }))
+        });
+        expect(command).toEqual({
+            ok: true,
+            value: {
+                redactedArgv: {
+                    executable: 'deno',
+                    arguments: [
+                        'run',
+                        '--config=packages/shared-rtc-bench/deno.json',
+                        '--allow-read',
+                        '--allow-write',
+                        'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
+                        '--capture=worker',
+                        '--baseline-id=20260807-0123456789ab-e1-local',
+                        '--workload=RTC-B01',
+                        '--case-id=peer-connection-diagnostics-burst',
+                        '--input-key=pairs-500',
+                        '--intended-phase=retained',
+                        '--outer-ordinal=1',
+                        '--sample-ids=sample-1,sample-2,sample-3,sample-4,sample-5',
+                        '--rtc-ice-candidates-per-peer=5',
+                        '--rtc-inner-runs=5',
+                        '--rtc-offer-collisions-per-peer=3',
+                        '--rtc-peers=500'
+                    ]
+                },
+                projection: {
+                    fixedWorkerFlags: [
+                        '--capture=worker',
+                        '--baseline-id=20260807-0123456789ab-e1-local',
+                        '--workload=RTC-B01',
+                        '--case-id=peer-connection-diagnostics-burst',
+                        '--input-key=pairs-500',
+                        '--intended-phase=retained',
+                        '--outer-ordinal=1',
+                        '--sample-ids=sample-1,sample-2,sample-3,sample-4,sample-5'
+                    ],
+                    configurationFlags: [
+                        '--rtc-ice-candidates-per-peer=5',
+                        '--rtc-inner-runs=5',
+                        '--rtc-offer-collisions-per-peer=3',
+                        '--rtc-peers=500'
+                    ]
+                }
+            }
+        });
+        expect(
+            existsSync(
+                'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts'
+            )
+        ).toBe(true);
     });
-    expect(command).toEqual({
-      ok: true,
-      value: {
-        redactedArgv: {
-          executable: 'deno',
-          arguments: [
-            'run',
-            '--config=packages/shared-rtc-bench/deno.json',
-            '--allow-read',
-            '--allow-write',
-            'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
-            '--capture=worker',
-            '--baseline-id=20260807-0123456789ab-e1-local',
-            '--workload=RTC-B01',
-            '--case-id=peer-connection-diagnostics-burst',
-            '--input-key=pairs-500',
-            '--intended-phase=retained',
-            '--outer-ordinal=1',
-            '--sample-ids=sample-1,sample-2,sample-3,sample-4,sample-5',
-            '--rtc-ice-candidates-per-peer=5',
-            '--rtc-inner-runs=5',
-            '--rtc-offer-collisions-per-peer=3',
-            '--rtc-peers=500',
-          ],
-        },
-        projection: {
-          fixedWorkerFlags: [
-            '--capture=worker',
-            '--baseline-id=20260807-0123456789ab-e1-local',
-            '--workload=RTC-B01',
-            '--case-id=peer-connection-diagnostics-burst',
-            '--input-key=pairs-500',
-            '--intended-phase=retained',
-            '--outer-ordinal=1',
-            '--sample-ids=sample-1,sample-2,sample-3,sample-4,sample-5',
-          ],
-          configurationFlags: [
-            '--rtc-ice-candidates-per-peer=5',
-            '--rtc-inner-runs=5',
-            '--rtc-offer-collisions-per-peer=3',
-            '--rtc-peers=500',
-          ],
-        },
-      },
-    });
-    expect(
-      existsSync(
-        'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
-      ),
-    ).toBe(true);
-  });
 });

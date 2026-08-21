@@ -21,13 +21,17 @@ export function createAnalyzeExportBlobRetention(): AnalyzeExportBlobRetention {
             candidate = Object.freeze({ ...next });
         },
         commit(generation) {
-            if (candidate?.generation !== generation) return false;
+            if (candidate?.generation !== generation) {
+                return false;
+            }
             accepted = candidate;
             candidate = undefined;
             return true;
         },
         reject(generation) {
-            if (candidate?.generation === generation) candidate = undefined;
+            if (candidate?.generation === generation) {
+                candidate = undefined;
+            }
         },
         current() {
             return accepted;
@@ -35,6 +39,6 @@ export function createAnalyzeExportBlobRetention(): AnalyzeExportBlobRetention {
         clear() {
             candidate = undefined;
             accepted = undefined;
-        },
+        }
     };
 }

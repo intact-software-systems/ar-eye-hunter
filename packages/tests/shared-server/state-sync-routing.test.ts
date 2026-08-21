@@ -1,20 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { resolveStateSyncRecipients, sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type {
-    AuditStamp,
-    GroupEvent,
-    GroupMember,
-    GroupMemberStatus,
-    GroupPresenceSession,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupEvent, GroupMember, GroupMemberStatus, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import {
-    resolveStateSyncRecipients,
-    sendStateSyncMessage,
-} from '@shared-server/rallar-system/state-sync-routing.ts';
+import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 const NOW = 1_000;
@@ -25,18 +15,18 @@ describe('state-sync routing group visibility', () => {
             'alice-session',
             'bob-session',
             'carol-session',
-            'dave-session',
+            'dave-session'
         ]);
         const snapshot = createGroupSnapshot([
             { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
             { principalId: 'bob', sessionId: 'bob-session', status: 'invited' },
-            { principalId: 'carol', sessionId: 'carol-session', status: 'banned' },
+            { principalId: 'carol', sessionId: 'carol-session', status: 'banned' }
         ]);
         const clients = [
             createClientSnapshot('alice', 'alice-session'),
             createClientSnapshot('bob', 'bob-session'),
             createClientSnapshot('carol', 'carol-session'),
-            createClientSnapshot('dave', 'dave-session'),
+            createClientSnapshot('dave', 'dave-session')
         ];
 
         const snapshotRecipients = resolveStateSyncRecipients(
@@ -46,13 +36,13 @@ describe('state-sync routing group visibility', () => {
                 newALEventRoute(
                     AppTopics.groupStateSnapshot,
                     snapshot.group.groupId,
-                    snapshot.group.groupId,
+                    snapshot.group.groupId
                 ),
                 'all',
                 AppTopics.groupStateSnapshot,
-                snapshot,
+                snapshot
             ),
-            { readClientSnapshots: () => clients, now: () => NOW },
+            { readClientSnapshots: () => clients, now: () => NOW }
         );
         const eventRecipients = resolveStateSyncRecipients(
             server,
@@ -61,13 +51,13 @@ describe('state-sync routing group visibility', () => {
                 newALEventRoute(AppTopics.groupStateEvent, 'room-1', 'event-1'),
                 'all',
                 AppTopics.groupStateEvent,
-                createGroupEvent('event-1'),
+                createGroupEvent('event-1')
             ),
             {
                 findGroupSnapshotByRef: () => snapshot,
                 readClientSnapshots: () => clients,
-                now: () => NOW,
-            },
+                now: () => NOW
+            }
         );
 
         expect(connectionIds(snapshotRecipients)).toEqual(['alice-session']);
@@ -77,11 +67,11 @@ describe('state-sync routing group visibility', () => {
     it('does not route full directory snapshots to directory-only non-members', () => {
         const server = createWebSocketServer(['alice-session', 'bob-session']);
         const snapshot = createGroupSnapshot([
-            { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
+            { principalId: 'alice', sessionId: 'alice-session', status: 'active' }
         ]);
         const clients = [
             createClientSnapshot('alice', 'alice-session'),
-            createClientSnapshot('bob', 'bob-session'),
+            createClientSnapshot('bob', 'bob-session')
         ];
 
         const recipients = resolveStateSyncRecipients(
@@ -91,13 +81,13 @@ describe('state-sync routing group visibility', () => {
                 newALEventRoute(
                     AppTopics.groupDirectorySnapshot,
                     snapshot.group.groupId,
-                    snapshot.group.groupId,
+                    snapshot.group.groupId
                 ),
                 'all',
                 AppTopics.groupDirectorySnapshot,
-                snapshot,
+                snapshot
             ),
-            { readClientSnapshots: () => clients, now: () => NOW },
+            { readClientSnapshots: () => clients, now: () => NOW }
         );
 
         expect(connectionIds(recipients)).toEqual(['alice-session']);
@@ -107,33 +97,33 @@ describe('state-sync routing group visibility', () => {
         const server = createCountingWebSocketServer([
             'alice-session',
             'bob-session',
-            'carol-session',
+            'carol-session'
         ]);
         const snapshot = createGroupSnapshot([
             { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
             { principalId: 'bob', sessionId: 'bob-session', status: 'invited' },
-            { principalId: 'carol', sessionId: 'carol-session', status: 'banned' },
+            { principalId: 'carol', sessionId: 'carol-session', status: 'banned' }
         ]);
         const clients = [
             createClientSnapshot('alice', 'alice-session'),
             createClientSnapshot('bob', 'bob-session'),
-            createClientSnapshot('carol', 'carol-session'),
+            createClientSnapshot('carol', 'carol-session')
         ];
         const message = newALBroadcastMessage(
             'server-1',
             newALEventRoute(
                 AppTopics.groupStateSnapshot,
                 snapshot.group.groupId,
-                snapshot.group.groupId,
+                snapshot.group.groupId
             ),
             'all',
             AppTopics.groupStateSnapshot,
-            snapshot,
+            snapshot
         );
 
         const sent = sendStateSyncMessage(server, message, {
             readClientSnapshots: () => clients,
-            now: () => NOW,
+            now: () => NOW
         });
 
         expect(sent).toBe(1);
@@ -145,14 +135,14 @@ describe('state-sync routing group visibility', () => {
     it('fails closed when a persisted logical group audience differs from its payload', () => {
         const server = createWebSocketServer(['alice-session']);
         const snapshot = createGroupSnapshot([
-            { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
+            { principalId: 'alice', sessionId: 'alice-session', status: 'active' }
         ]);
         const message = newALBroadcastMessage(
             'server-1',
             newALEventRoute(
                 AppTopics.groupStateSnapshot,
                 snapshot.group.groupId,
-                snapshot.group.groupId,
+                snapshot.group.groupId
             ),
             'room',
             AppTopics.groupStateSnapshot,
@@ -161,23 +151,23 @@ describe('state-sync routing group visibility', () => {
                 groupRef: {
                     applicationId: snapshot.group.applicationId,
                     workspaceId: snapshot.group.workspaceId,
-                    groupId: 'different-room',
+                    groupId: 'different-room'
                 },
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         expect(resolveStateSyncRecipients(server, message, {
             readClientSnapshots: () => [
-                createClientSnapshot('alice', 'alice-session'),
+                createClientSnapshot('alice', 'alice-session')
             ],
-            now: () => NOW,
+            now: () => NOW
         })).toEqual([]);
     });
 });
 
 function connectionIds(
-    recipients: ReturnType<typeof resolveStateSyncRecipients>,
+    recipients: ReturnType<typeof resolveStateSyncRecipients>
 ): readonly string[] {
     return (recipients ?? [])
         .map((recipient) => recipient.connectionId)
@@ -189,32 +179,34 @@ function createWebSocketServer(sessionIds: readonly string[]): JsonWebSocketServ
         connections: new Map(
             sessionIds.map((sessionId) => [
                 sessionId,
-                { id: sessionId, isOpen: true },
-            ]),
-        ),
+                { id: sessionId, isOpen: true }
+            ])
+        )
     } as unknown as JsonWebSocketServer;
 }
 
-type CountingWebSocketServer = JsonWebSocketServer & Readonly<{
-    encodeCalls: number;
-    broadcastCalls: number;
-    sentConnectionIds: readonly string[];
-}>;
+type CountingWebSocketServer =
+    & JsonWebSocketServer
+    & Readonly<{
+        encodeCalls: number;
+        broadcastCalls: number;
+        sentConnectionIds: readonly string[];
+    }>;
 
 function createCountingWebSocketServer(
-    sessionIds: readonly string[],
+    sessionIds: readonly string[]
 ): CountingWebSocketServer {
     const sentConnectionIds: string[] = [];
     const counters = {
         encodeCalls: 0,
-        broadcastCalls: 0,
+        broadcastCalls: 0
     };
     return {
         connections: new Map(
             sessionIds.map((sessionId) => [
                 sessionId,
-                { id: sessionId, isOpen: true },
-            ]),
+                { id: sessionId, isOpen: true }
+            ])
         ),
         get encodeCalls() {
             return counters.encodeCalls;
@@ -233,13 +225,13 @@ function createCountingWebSocketServer(
         broadcast: () => {
             counters.broadcastCalls += 1;
             return 0;
-        },
+        }
     } as unknown as CountingWebSocketServer;
 }
 
 function createClientSnapshot(
     principalId: string,
-    sessionId: string,
+    sessionId: string
 ): ClientSnapshot {
     const audit = createAuditStamp();
     return {
@@ -263,7 +255,7 @@ function createClientSnapshot(
             snapshotVersion: 1,
             created: audit,
             updated: audit,
-            lastSeenAtEpochMs: NOW,
+            lastSeenAtEpochMs: NOW
         },
         instances: [],
         activeSessions: [
@@ -284,12 +276,12 @@ function createClientSnapshot(
                 authenticatedAtEpochMs: 1,
                 connectedAtEpochMs: 1,
                 lastHeartbeatAtEpochMs: NOW,
-                expiresAtEpochMs: NOW + 60_000,
-            },
+                expiresAtEpochMs: NOW + 60_000
+            }
         ],
         isOnline: true,
         activeSessionCount: 1,
-        lastSeenAtEpochMs: NOW,
+        lastSeenAtEpochMs: NOW
     };
 }
 
@@ -298,7 +290,7 @@ function createGroupSnapshot(
         principalId: string;
         sessionId: string;
         status: GroupMemberStatus;
-    }>[],
+    }>[]
 ): GroupSnapshot {
     const activeMembers = members.filter((member) => member.status === 'active');
     const audit = createAuditStamp();
@@ -317,12 +309,12 @@ function createGroupSnapshot(
             rosterVersion: 1,
             presenceVersion: members.length,
             created: audit,
-            updated: audit,
+            updated: audit
         }),
         members: members.map(toGroupMember),
         activeSessions: members.map(toGroupPresenceSession),
         memberCount: members.filter((member) => member.status === 'active').length,
-        onlineMemberCount: members.length,
+        onlineMemberCount: members.length
     };
 }
 
@@ -330,7 +322,7 @@ function toGroupMember(
     input: Readonly<{
         principalId: string;
         status: GroupMemberStatus;
-    }>,
+    }>
 ): GroupMember {
     const role: GroupMember['role'] = 'member';
     const common = {
@@ -342,7 +334,7 @@ function toGroupMember(
         joined: createAuditStamp(),
         updated: createAuditStamp(),
         invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
+        invitationExpiresAtEpochMs: null
     };
     if (input.status === 'left') {
         return { ...common, status: 'left', left: createAuditStamp(), removed: null, banned: null };
@@ -363,7 +355,7 @@ function toGroupPresenceSession(
     input: Readonly<{
         principalId: string;
         sessionId: string;
-    }>,
+    }>
 ): GroupPresenceSession {
     return {
         applicationId: 'app-1',
@@ -378,7 +370,7 @@ function toGroupPresenceSession(
         disconnectReason: null,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: NOW,
-        expiresAtEpochMs: NOW + 60_000,
+        expiresAtEpochMs: NOW + 60_000
     };
 }
 
@@ -396,7 +388,7 @@ function createGroupEvent(eventId: string): GroupEvent {
         reason: null,
         traceId: null,
         requestId: null,
-        payload: {},
+        payload: {}
     };
 }
 
@@ -406,6 +398,6 @@ function createAuditStamp(): AuditStamp {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

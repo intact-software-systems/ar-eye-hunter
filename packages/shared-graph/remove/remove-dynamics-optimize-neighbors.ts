@@ -20,7 +20,7 @@ export type OptimizedNeighborSets = {
  */
 export function getNeighborsOptimizeSP(
     groupGraph: TreeGraph,
-    src: VertexId,
+    src: VertexId
 ): OptimizedNeighborSets {
     const adjacentMembers = new Set<VertexId>();
     const adjacentSteiner = new Set<VertexId>();
@@ -43,7 +43,7 @@ export function getNeighborsOptimizeSP(
     return {
         adjacentMembers,
         adjacentSteiner,
-        removableEdgeKeys,
+        removableEdgeKeys
     };
 }
 
@@ -54,7 +54,7 @@ function walk(
     visited: Set<VertexId>,
     adjacentMembers: Set<VertexId>,
     adjacentSteiner: Set<VertexId>,
-    removableEdgeKeys: Set<string>,
+    removableEdgeKeys: Set<string>
 ): void {
     if (visited.has(current)) {
         return;
@@ -73,7 +73,9 @@ function walk(
         adjacentSteiner.add(current);
 
         for (const next of graph.neighbors(current) as VertexId[]) {
-            if (next === prev) continue;
+            if (next === prev) {
+                continue;
+            }
             walk(graph, current, next, visited, adjacentMembers, adjacentSteiner, removableEdgeKeys);
         }
 

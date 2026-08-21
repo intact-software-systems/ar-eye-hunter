@@ -1,9 +1,5 @@
 import { classifyRallarMotionDiscontinuity } from './discontinuity.ts';
-import {
-    deadReckonRallarMotion,
-    interpolateRallarMotion,
-    interpolateRallarMotionHermite,
-} from './interpolation.ts';
+import { deadReckonRallarMotion, interpolateRallarMotion, interpolateRallarMotionHermite } from './interpolation.ts';
 import { sanitizeRallarMotionNonNegative } from './math.ts';
 import type {
     RallarMotionBuffer,
@@ -14,7 +10,7 @@ import type {
     RallarMotionPushResult,
     RallarMotionPushStatus,
     RallarMotionSample,
-    RallarMotionSequenceGap,
+    RallarMotionSequenceGap
 } from './types.ts';
 
 type EntityMotionTrack<TMetadata> = {
@@ -47,11 +43,11 @@ export const DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS: Required<
     maxExtrapolationMs: 150,
     maxSamplesPerEntity: 8,
     maxSampleAgeMs: 10_000,
-    interpolationMode: 'linear',
+    interpolationMode: 'linear'
 };
 
 export function createRallarMotionBuffer<TMetadata = unknown>(
-    options: RallarMotionBufferOptions = {},
+    options: RallarMotionBufferOptions = {}
 ): RallarMotionBuffer<TMetadata> {
     const resolved = normalizeRallarMotionBufferOptions(options);
     const tracks = new Map<string, EntityMotionTrack<TMetadata>>();
@@ -60,7 +56,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
         push(sample): RallarMotionPushResult {
             const track = tracks.get(sample.entityId) ?? {
                 samples: [],
-                latestSeq: undefined,
+                latestSeq: undefined
             };
             const sequenceGap = sequenceGapFor(track.latestSeq, sample.seq);
 
@@ -70,7 +66,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
                         'duplicate-seq',
                         sample,
                         track.samples.length,
-                        0,
+                        0
                     );
                 }
                 if (sample.seq < track.latestSeq) {
@@ -78,7 +74,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
                         'stale-seq',
                         sample,
                         track.samples.length,
-                        0,
+                        0
                     );
                 }
             }
@@ -96,7 +92,8 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
 
             if (track.samples.length === 0) {
                 tracks.delete(sample.entityId);
-            } else {
+            }
+            else {
                 tracks.set(sample.entityId, track);
             }
 
@@ -105,7 +102,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
                 sample,
                 track.samples.length,
                 droppedSampleCount,
-                retained ? sequenceGap : undefined,
+                retained ? sequenceGap : undefined
             );
         },
         sample(entityId, nowEpochMs): RallarMotionEstimate<TMetadata> | undefined {
@@ -117,7 +114,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
             return estimateRallarMotionTrack(
                 track.samples,
                 nowEpochMs - readInterpolationDelayMs(resolved),
-                resolved,
+                resolved
             );
         },
         sampleAll(nowEpochMs): ReadonlyMap<string, RallarMotionEstimate<TMetadata>> {
@@ -135,9 +132,7 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
             let removed = 0;
             for (const [entityId, track] of tracks) {
                 const before = track.samples.length;
-                track.samples = track.samples.filter((sample) =>
-                    sample.observedAtEpochMs >= cutoff
-                );
+                track.samples = track.samples.filter((sample) => sample.observedAtEpochMs >= cutoff);
                 removed += before - track.samples.length;
                 if (track.samples.length === 0) {
                     tracks.delete(entityId);
@@ -150,14 +145,14 @@ export function createRallarMotionBuffer<TMetadata = unknown>(
         },
         entityIds(): readonly string[] {
             return [...tracks.keys()];
-        },
+        }
     };
 }
 
 function estimateRallarMotionTrack<TMetadata>(
     samples: readonly RallarMotionSample<TMetadata>[],
     sampledAtEpochMs: number,
-    options: NormalizedRallarMotionBufferOptions,
+    options: NormalizedRallarMotionBufferOptions
 ): RallarMotionEstimate<TMetadata> | undefined {
     if (samples.length === 0) {
         return undefined;
@@ -197,13 +192,13 @@ function estimateRallarMotionTrack<TMetadata>(
                     source,
                     target,
                     sampledAtEpochMs,
-                    interpolationOptions,
+                    interpolationOptions
                 )
                 : interpolateRallarMotion(
                     source,
                     target,
                     sampledAtEpochMs,
-                    interpolationOptions,
+                    interpolationOptions
                 );
         }
     }
@@ -211,14 +206,14 @@ function estimateRallarMotionTrack<TMetadata>(
     return deadReckonRallarMotion(
         latest,
         sampledAtEpochMs,
-        options.maxExtrapolationMs,
+        options.maxExtrapolationMs
     );
 }
 
 function holdRallarMotionSample<TMetadata>(
     sample: RallarMotionSample<TMetadata>,
     sampledAtEpochMs: number,
-    confidence: number,
+    confidence: number
 ): RallarMotionEstimate<TMetadata> {
     return {
         entityId: sample.entityId,
@@ -236,43 +231,43 @@ function holdRallarMotionSample<TMetadata>(
         targetObservedAtEpochMs: sample.observedAtEpochMs,
         ageMs: Math.max(0, sampledAtEpochMs - sample.observedAtEpochMs),
         extrapolationMs: 0,
-        confidence,
+        confidence
     };
 }
 
 function normalizeRallarMotionBufferOptions(
-    options: RallarMotionBufferOptions,
+    options: RallarMotionBufferOptions
 ): NormalizedRallarMotionBufferOptions {
     return {
         interpolationDelayMs: sanitizeRallarMotionNonNegative(
             options.interpolationDelayMs,
-            DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.interpolationDelayMs,
+            DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.interpolationDelayMs
         ),
         readInterpolationDelayMs: options.readInterpolationDelayMs,
         maxExtrapolationMs: sanitizeRallarMotionNonNegative(
             options.maxExtrapolationMs,
-            DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxExtrapolationMs,
+            DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxExtrapolationMs
         ),
         maxSamplesPerEntity: Math.max(
             1,
             Math.floor(
                 options.maxSamplesPerEntity ??
-                    DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSamplesPerEntity,
-            ),
+                    DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSamplesPerEntity
+            )
         ),
         maxSampleAgeMs: sanitizeRallarMotionNonNegative(
             options.maxSampleAgeMs,
-            DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSampleAgeMs,
+            DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.maxSampleAgeMs
         ),
         interpolationMode: options.interpolationMode ??
             DEFAULT_RALLAR_MOTION_BUFFER_OPTIONS.interpolationMode,
         rotationWrap: options.rotationWrap,
-        discontinuity: normalizeDiscontinuityOptions(options.discontinuity),
+        discontinuity: normalizeDiscontinuityOptions(options.discontinuity)
     };
 }
 
 function normalizeDiscontinuityOptions(
-    options: RallarMotionBufferOptions['discontinuity'],
+    options: RallarMotionBufferOptions['discontinuity']
 ): RallarMotionBufferDiscontinuityOptions | undefined {
     if (!options || options.enabled === false) {
         return undefined;
@@ -281,7 +276,7 @@ function normalizeDiscontinuityOptions(
 }
 
 function readInterpolationDelayMs(
-    options: NormalizedRallarMotionBufferOptions,
+    options: NormalizedRallarMotionBufferOptions
 ): number {
     if (!options.readInterpolationDelayMs) {
         return options.interpolationDelayMs;
@@ -289,14 +284,14 @@ function readInterpolationDelayMs(
 
     return sanitizeRallarMotionNonNegative(
         options.readInterpolationDelayMs(),
-        options.interpolationDelayMs,
+        options.interpolationDelayMs
     );
 }
 
 function isDiscontinuous<TMetadata>(
     source: RallarMotionSample<TMetadata>,
     target: RallarMotionSample<TMetadata>,
-    options: RallarMotionBufferDiscontinuityOptions | undefined,
+    options: RallarMotionBufferDiscontinuityOptions | undefined
 ): boolean {
     if (!options) {
         return false;
@@ -308,7 +303,7 @@ function isDiscontinuous<TMetadata>(
 
 function trimTrackToMaxSamples<TMetadata>(
     track: EntityMotionTrack<TMetadata>,
-    maxSamplesPerEntity: number,
+    maxSamplesPerEntity: number
 ): void {
     while (track.samples.length > maxSamplesPerEntity) {
         track.samples.shift();
@@ -317,7 +312,7 @@ function trimTrackToMaxSamples<TMetadata>(
 
 function compareRallarMotionSamples<TMetadata>(
     left: RallarMotionSample<TMetadata>,
-    right: RallarMotionSample<TMetadata>,
+    right: RallarMotionSample<TMetadata>
 ): number {
     return left.observedAtEpochMs - right.observedAtEpochMs ||
         (left.seq ?? Number.MAX_SAFE_INTEGER) -
@@ -326,7 +321,7 @@ function compareRallarMotionSamples<TMetadata>(
 
 function sequenceGapFor(
     previousSeq: number | undefined,
-    seq: number | undefined,
+    seq: number | undefined
 ): RallarMotionSequenceGap | undefined {
     if (previousSeq === undefined || seq === undefined || seq <= previousSeq + 1) {
         return undefined;
@@ -335,7 +330,7 @@ function sequenceGapFor(
     return {
         previousSeq,
         seq,
-        droppedSeqCount: seq - previousSeq - 1,
+        droppedSeqCount: seq - previousSeq - 1
     };
 }
 
@@ -344,7 +339,7 @@ function toPushResult<TMetadata>(
     sample: RallarMotionSample<TMetadata>,
     sampleCount: number,
     droppedSampleCount: number,
-    sequenceGap?: RallarMotionSequenceGap,
+    sequenceGap?: RallarMotionSequenceGap
 ): RallarMotionPushResult {
     return {
         status,
@@ -352,6 +347,6 @@ function toPushResult<TMetadata>(
         seq: sample.seq,
         sampleCount,
         droppedSampleCount,
-        sequenceGap,
+        sequenceGap
     };
 }

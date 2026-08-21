@@ -58,13 +58,11 @@ interface LegacyAppInboxRetryExhaustionWireFields {
     readonly dueAgeMs: number;
 }
 
-export interface LegacyAppInboxProcessingRetryExhaustionWire
-    extends LegacyAppInboxRetryExhaustionWireFields {
+export interface LegacyAppInboxProcessingRetryExhaustionWire extends LegacyAppInboxRetryExhaustionWireFields {
     readonly exhaustedAtEpochMs: number;
 }
 
-export interface LegacyAppInboxRecoveryRetryExhaustionWire
-    extends LegacyAppInboxRetryExhaustionWireFields {
+export interface LegacyAppInboxRecoveryRetryExhaustionWire extends LegacyAppInboxRetryExhaustionWireFields {
     readonly selectedDueAtEpochMs: number;
     readonly finalizedAtEpochMs: number;
 }
@@ -96,7 +94,7 @@ export { readAppInboxFailure, readPersistedAppInboxFailure } from './app-inbox-f
 
 export function toTerminalAppInboxFailure(
     error: unknown,
-    code: string,
+    code: string
 ): AppInboxFailure {
     const message = error instanceof Error ? error.message : String(error);
     const status = readErrorStatus(error, 400);
@@ -111,10 +109,10 @@ export function toTerminalAppInboxFailure(
             ? {
                 code,
                 message,
-                details: readErrorDetails(error),
+                details: readErrorDetails(error)
             }
             : null,
-        retry: null,
+        retry: null
     };
 }
 
@@ -123,7 +121,7 @@ export function toPolicyDeniedAppInboxFailure(
         code: string;
         message: string;
         details: Readonly<Record<string, unknown>> | undefined;
-    }>,
+    }>
 ): AppInboxFailure {
     return {
         type: 'app-inbox-failure',
@@ -135,9 +133,9 @@ export function toPolicyDeniedAppInboxFailure(
         denial: {
             code: input.code,
             message: input.message,
-            details: input.details ?? null,
+            details: input.details ?? null
         },
-        retry: null,
+        retry: null
     };
 }
 
@@ -155,8 +153,8 @@ export function toUnavailableAppInboxFailure(): AppInboxFailure {
             attempts: null,
             lane: null,
             queueAgeMs: null,
-            dueAgeMs: null,
-        },
+            dueAgeMs: null
+        }
     };
 }
 
@@ -181,7 +179,7 @@ function toFailureIssue(value: unknown): AppInboxFailureIssue {
             code: 'invalid-issue',
             path: null,
             message: 'Validation issue metadata is malformed',
-            details: null,
+            details: null
         };
     }
     return {
@@ -193,7 +191,7 @@ function toFailureIssue(value: unknown): AppInboxFailureIssue {
         message: typeof value.message === 'string'
             ? value.message
             : 'Validation issue metadata is malformed',
-        details: isRecord(value.details) ? value.details : null,
+        details: isRecord(value.details) ? value.details : null
     };
 }
 

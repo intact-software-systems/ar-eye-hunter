@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
     createRallarGroupDirectorAppointment,
     isRallarGroupDirectorForSession,
@@ -7,14 +6,10 @@ import {
     readRallarGroupDirectorAppointment,
     readRallarGroupDirectorFreshness,
     readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility,
+    resolveRallarGroupDirectorAppointmentEligibility
 } from '@shared/api/group-director.ts';
-import type {
-    AuditStamp,
-    GroupMember,
-    GroupPresenceSession,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
+import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('Rallar group director metadata', () => {
@@ -22,30 +17,30 @@ describe('Rallar group director metadata', () => {
         const first = createRallarGroupDirectorAppointment({
             session: { clientId: 'principal-1', sessionId: 'session-1' },
             now: 100,
-            heartbeatTtlMs: 5_000,
+            heartbeatTtlMs: 5_000
         });
         const second = createRallarGroupDirectorAppointment({
             session: { clientId: 'principal-2', sessionId: 'session-2' },
             previous: first,
-            now: 200,
+            now: 200
         });
 
         expect(first).toMatchObject({
             principalId: 'principal-1',
             sessionId: 'session-1',
             epoch: 1,
-            appointedAtEpochMs: 100,
+            appointedAtEpochMs: 100
         });
         expect(second).toMatchObject({
             principalId: 'principal-2',
             sessionId: 'session-2',
             epoch: 2,
-            heartbeatTtlMs: 5_000,
+            heartbeatTtlMs: 5_000
         });
         expect(mergeRallarGroupDirectorMetadata({ keep: true }, second))
             .toMatchObject({
                 keep: true,
-                rallarDirector: second,
+                rallarDirector: second
             });
     });
 
@@ -53,7 +48,7 @@ describe('Rallar group director metadata', () => {
         expect(() =>
             createRallarGroupDirectorAppointment({
                 session: { clientId: 'principal-1', sessionId: 'session-1' },
-                heartbeatTtlMs: Number.NaN,
+                heartbeatTtlMs: Number.NaN
             })
         ).toThrow(/Invalid director heartbeat TTL/);
 
@@ -65,8 +60,8 @@ describe('Rallar group director metadata', () => {
                 principalId: 'principal-1',
                 epoch: 1,
                 appointedAtEpochMs: 1_000,
-                heartbeatTtlMs: Number.POSITIVE_INFINITY,
-            },
+                heartbeatTtlMs: Number.POSITIVE_INFINITY
+            }
         })).toBeUndefined();
     });
 
@@ -74,14 +69,14 @@ describe('Rallar group director metadata', () => {
         const appointment = createRallarGroupDirectorAppointment({
             session: { clientId: 'principal-1', sessionId: 'session-1' },
             now: 1_000,
-            heartbeatTtlMs: 500,
+            heartbeatTtlMs: 500
         });
         const snapshot = createSnapshot(appointment);
 
         expect(readRallarGroupDirectorFromSnapshot(snapshot)).toEqual(appointment);
         expect(isRallarGroupDirectorForSession(appointment, {
             clientId: 'principal-1',
-            sessionId: 'session-1',
+            sessionId: 'session-1'
         })).toBe(true);
         expect(isRallarGroupDirectorSessionActive(snapshot, appointment)).toBe(true);
         expect(readRallarGroupDirectorFreshness(appointment, 1_200, 1_400))
@@ -94,33 +89,33 @@ describe('Rallar group director metadata', () => {
         const snapshot = createPolicySnapshot({
             members: [
                 { principalId: 'owner-1', role: 'owner', status: 'active' },
-                { principalId: 'admin-1', role: 'admin', status: 'active' },
+                { principalId: 'admin-1', role: 'admin', status: 'active' }
             ],
             activeSessions: [
                 { principalId: 'owner-1', sessionId: 'owner-session' },
-                { principalId: 'admin-1', sessionId: 'admin-session' },
-            ],
+                { principalId: 'admin-1', sessionId: 'admin-session' }
+            ]
         });
 
         expect(resolveRallarGroupDirectorAppointmentEligibility({
             snapshot,
             principalId: 'owner-1',
-            sessionId: 'owner-session',
+            sessionId: 'owner-session'
         })).toMatchObject({
             allowed: true,
             status: 'allowed',
             localRole: 'owner',
-            localMemberStatus: 'active',
+            localMemberStatus: 'active'
         });
         expect(resolveRallarGroupDirectorAppointmentEligibility({
             snapshot,
             principalId: 'admin-1',
-            sessionId: 'admin-session',
+            sessionId: 'admin-session'
         })).toMatchObject({
             allowed: true,
             status: 'allowed',
             localRole: 'admin',
-            localMemberStatus: 'active',
+            localMemberStatus: 'active'
         });
     });
 
@@ -128,22 +123,22 @@ describe('Rallar group director metadata', () => {
         const snapshot = createPolicySnapshot({
             members: [
                 { principalId: 'owner-1', role: 'owner', status: 'active' },
-                { principalId: 'member-1', role: 'member', status: 'active' },
+                { principalId: 'member-1', role: 'member', status: 'active' }
             ],
             activeSessions: [
-                { principalId: 'member-1', sessionId: 'member-session' },
-            ],
+                { principalId: 'member-1', sessionId: 'member-session' }
+            ]
         });
 
         expect(resolveRallarGroupDirectorAppointmentEligibility({
             snapshot,
             principalId: 'member-1',
-            sessionId: 'member-session',
+            sessionId: 'member-session'
         })).toMatchObject({
             allowed: true,
             status: 'allowed',
             localRole: 'member',
-            localMemberStatus: 'active',
+            localMemberStatus: 'active'
         });
     });
 
@@ -151,46 +146,46 @@ describe('Rallar group director metadata', () => {
         const ownerOnline = createPolicySnapshot({
             members: [
                 { principalId: 'owner-1', role: 'owner', status: 'active' },
-                { principalId: 'member-1', role: 'member', status: 'active' },
+                { principalId: 'member-1', role: 'member', status: 'active' }
             ],
             activeSessions: [
                 { principalId: 'owner-1', sessionId: 'owner-session' },
-                { principalId: 'member-1', sessionId: 'member-session' },
-            ],
+                { principalId: 'member-1', sessionId: 'member-session' }
+            ]
         });
         const activeDirector = createPolicySnapshot({
             appointment: {
                 principalId: 'director-1',
-                sessionId: 'director-session',
+                sessionId: 'director-session'
             },
             members: [
                 { principalId: 'owner-1', role: 'owner', status: 'active' },
                 { principalId: 'member-1', role: 'member', status: 'active' },
-                { principalId: 'director-1', role: 'member', status: 'active' },
+                { principalId: 'director-1', role: 'member', status: 'active' }
             ],
             activeSessions: [
                 { principalId: 'member-1', sessionId: 'member-session' },
-                { principalId: 'director-1', sessionId: 'director-session' },
-            ],
+                { principalId: 'director-1', sessionId: 'director-session' }
+            ]
         });
 
         expect(resolveRallarGroupDirectorAppointmentEligibility({
             snapshot: ownerOnline,
             principalId: 'member-1',
-            sessionId: 'member-session',
+            sessionId: 'member-session'
         })).toMatchObject({
             allowed: false,
             status: 'not-authorized',
-            reason: 'Only owners/admins can appoint while an owner/admin is online.',
+            reason: 'Only owners/admins can appoint while an owner/admin is online.'
         });
         expect(resolveRallarGroupDirectorAppointmentEligibility({
             snapshot: activeDirector,
             principalId: 'member-1',
-            sessionId: 'member-session',
+            sessionId: 'member-session'
         })).toMatchObject({
             allowed: false,
             status: 'not-authorized',
-            reason: 'Cannot appoint a fallback director while another director is active.',
+            reason: 'Cannot appoint a fallback director while another director is active.'
         });
     });
 
@@ -198,29 +193,29 @@ describe('Rallar group director metadata', () => {
         const snapshot = createPolicySnapshot({
             members: [
                 { principalId: 'owner-1', role: 'owner', status: 'active' },
-                { principalId: 'member-1', role: 'member', status: 'left' },
+                { principalId: 'member-1', role: 'member', status: 'left' }
             ],
             activeSessions: [
-                { principalId: 'member-1', sessionId: 'member-session' },
-            ],
+                { principalId: 'member-1', sessionId: 'member-session' }
+            ]
         });
 
         expect(resolveRallarGroupDirectorAppointmentEligibility({
             snapshot,
             principalId: 'member-1',
-            sessionId: 'member-session',
+            sessionId: 'member-session'
         })).toMatchObject({
             allowed: false,
             status: 'not-authorized',
             reason: 'Only active room members can appoint the browser director.',
             localRole: 'member',
-            localMemberStatus: 'left',
+            localMemberStatus: 'left'
         });
     });
 });
 
 function createSnapshot(
-    appointment: ReturnType<typeof createRallarGroupDirectorAppointment>,
+    appointment: ReturnType<typeof createRallarGroupDirectorAppointment>
 ): GroupSnapshot {
     return {
         stateRevision: 1,
@@ -239,7 +234,7 @@ function createSnapshot(
             rosterVersion: 1,
             presenceVersion: 1,
             created: createAuditStamp(1, 'principal-1'),
-            updated: createAuditStamp(1, 'principal-1'),
+            updated: createAuditStamp(1, 'principal-1')
         }),
         members: [{
             applicationId: 'app-1',
@@ -254,7 +249,7 @@ function createSnapshot(
             invitationExpiresAtEpochMs: null,
             left: null,
             removed: null,
-            banned: null,
+            banned: null
         }],
         activeSessions: [{
             applicationId: 'app-1',
@@ -269,16 +264,16 @@ function createSnapshot(
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         }],
         memberCount: 1,
-        onlineMemberCount: 1,
+        onlineMemberCount: 1
     };
 }
 
 function createPolicySnapshot(
     input: Readonly<{
-        appointment?: Readonly<{ principalId: string; sessionId: string }>;
+        appointment?: Readonly<{ principalId: string; sessionId: string; }>;
         members: readonly Readonly<{
             principalId: string;
             role: 'owner' | 'admin' | 'member';
@@ -288,26 +283,22 @@ function createPolicySnapshot(
             principalId: string;
             sessionId: string;
         }>[];
-    }>,
+    }>
 ): GroupSnapshot {
     const appointment = input.appointment
         ? createRallarGroupDirectorAppointment({
             session: {
                 clientId: input.appointment.principalId,
-                sessionId: input.appointment.sessionId,
+                sessionId: input.appointment.sessionId
             },
-            now: 1,
+            now: 1
         })
         : undefined;
-    const owner = input.members.find((member) =>
-        member.role === 'owner' && member.status === 'active'
-    );
+    const owner = input.members.find((member) => member.role === 'owner' && member.status === 'active');
     if (owner === undefined) {
         throw new Error('Policy fixture requires an active owner');
     }
-    const activeMemberCount = input.members.filter((member) =>
-        member.status === 'active'
-    ).length;
+    const activeMemberCount = input.members.filter((member) => member.status === 'active').length;
 
     return {
         stateRevision: 1,
@@ -326,7 +317,7 @@ function createPolicySnapshot(
             rosterVersion: 1,
             presenceVersion: 1,
             created: createAuditStamp(1, owner.principalId),
-            updated: createAuditStamp(1, owner.principalId),
+            updated: createAuditStamp(1, owner.principalId)
         }),
         members: input.members.map((member) => createMember(member, owner.principalId)),
         activeSessions: input.activeSessions.map((session): GroupPresenceSession => ({
@@ -342,10 +333,10 @@ function createPolicySnapshot(
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         })),
         memberCount: input.members.length,
-        onlineMemberCount: input.activeSessions.length,
+        onlineMemberCount: input.activeSessions.length
     };
 }
 
@@ -355,7 +346,7 @@ function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
         actor: { kind: 'principal', principalId },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }
 
@@ -365,7 +356,7 @@ function createMember(
         role: 'owner' | 'admin' | 'member';
         status: 'invited' | 'active' | 'left' | 'removed' | 'banned';
     }>,
-    actorPrincipalId: string,
+    actorPrincipalId: string
 ): GroupMember {
     const base = {
         applicationId: 'app-1',
@@ -376,7 +367,7 @@ function createMember(
         joined: createAuditStamp(1, actorPrincipalId),
         updated: createAuditStamp(1, actorPrincipalId),
         invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
+        invitationExpiresAtEpochMs: null
     };
     const terminal = createAuditStamp(1, actorPrincipalId);
     switch (member.status) {
@@ -387,7 +378,7 @@ function createMember(
                 joined: null,
                 left: null,
                 removed: null,
-                banned: null,
+                banned: null
             };
         case 'active':
             return { ...base, status: 'active', left: null, removed: null, banned: null };

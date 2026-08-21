@@ -1,12 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WriteThroughObservableLatestRepository, } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
+import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
 import {
     InMemoryPersistenceProvider,
     NEVER_EXPIRE_AT_TIMESTAMP,
     type PersistenceProvider,
-    type PersistenceSetItemOptions,
+    type PersistenceSetItemOptions
 } from '@shared/persistence/PersistenceProvider.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('WriteThroughObservableLatestRepository', () => {
     afterEach(() => {
@@ -19,7 +19,7 @@ describe('WriteThroughObservableLatestRepository', () => {
         const originalSetItem = persistence.setItem.bind(persistence);
         const setItem = vi.spyOn(persistence, 'setItem');
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
         const events: string[] = [];
         repository.onChangeDo((event) => {
@@ -70,10 +70,10 @@ describe('WriteThroughObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         } satisfies PersistenceProvider<string, number>;
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         const hydratePromise = repository.hydrate();
@@ -91,7 +91,7 @@ describe('WriteThroughObservableLatestRepository', () => {
     it('rolls forward: the resolved promise guarantees disk durability', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.accept('a', 42);
@@ -111,16 +111,16 @@ describe('WriteThroughObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await Promise.all([
             repository.set('a', 1),
             repository.set('a', 2),
-            repository.set('a', 3),
+            repository.set('a', 3)
         ]);
 
         expect(order).toEqual([1, 2, 3]);
@@ -140,10 +140,10 @@ describe('WriteThroughObservableLatestRepository', () => {
             setItem,
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.set('a', 1);
@@ -157,7 +157,7 @@ describe('WriteThroughObservableLatestRepository', () => {
     it('get returns RAM hit without touching disk', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
         await repository.set('a', 1);
 
@@ -168,10 +168,10 @@ describe('WriteThroughObservableLatestRepository', () => {
 
     it('get falls back to disk on cache miss and populates RAM', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>([
-            ['a', 7],
+            ['a', 7]
         ]);
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
         const events: ObservableValueEventType[] = [];
         repository.onChangeDo((event) => {
@@ -197,7 +197,7 @@ describe('WriteThroughObservableLatestRepository', () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteThroughObservableLatestRepository<string, number>({
             persistence,
-            ttlMs: 100,
+            ttlMs: 100
         });
 
         await repository.set('a', 1);
@@ -216,7 +216,7 @@ describe('WriteThroughObservableLatestRepository', () => {
     it('get returns undefined when neither RAM nor disk has the key', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         expect(await repository.get('missing')).toBeUndefined();
@@ -229,10 +229,10 @@ describe('WriteThroughObservableLatestRepository', () => {
         // - getItem returns OLD (or undefined) from a snapshot
         // - get must observe the just-written RAM value, not write OLD over it.
         const persistence = new InMemoryPersistenceProvider<string, number>([
-            ['a', 1],
+            ['a', 1]
         ]);
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         let resolveGet: ((value: number | undefined) => void) | undefined;
@@ -258,7 +258,7 @@ describe('WriteThroughObservableLatestRepository', () => {
     it('delete removes from disk and RAM', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
         await repository.set('a', 1);
         await repository.set('b', 2);
@@ -273,13 +273,13 @@ describe('WriteThroughObservableLatestRepository', () => {
     it('clearAll wipes disk and RAM and serializes after pending writes', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>();
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await Promise.all([
             repository.set('a', 1),
             repository.set('b', 2),
-            repository.clearAll(),
+            repository.clearAll()
         ]);
 
         expect(repository.size()).toBe(0);
@@ -289,10 +289,10 @@ describe('WriteThroughObservableLatestRepository', () => {
     it('hydrate eagerly warms RAM from disk and is idempotent', async () => {
         const persistence = new InMemoryPersistenceProvider<string, number>([
             ['a', 1],
-            ['b', 2],
+            ['b', 2]
         ]);
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         await repository.hydrate();
@@ -318,18 +318,18 @@ describe('WriteThroughObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
             persistence,
-            ttlMs: 5_000,
+            ttlMs: 5_000
         });
 
         await repository.set('a', 1);
 
         expect(captured).toHaveLength(1);
         expect(captured[0]?.expireAtTimestamp).toBe(
-            Date.parse('2026-01-01T00:00:05.000Z'),
+            Date.parse('2026-01-01T00:00:05.000Z')
         );
     });
 
@@ -346,10 +346,10 @@ describe('WriteThroughObservableLatestRepository', () => {
             },
             removeItem: async () => {
             },
-            deleteExpired: async () => 0,
+            deleteExpired: async () => 0
         };
         const repository = new WriteThroughObservableLatestRepository<string, number>({
-            persistence,
+            persistence
         });
 
         const observed: number[] = [];

@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const scriptPath = path.join(
     repoRoot,
-    'scripts/hetzner/controller/13-configure-metered-turn.sh',
+    'scripts/hetzner/controller/13-configure-metered-turn.sh'
 );
 
 describe('configure Metered TURN Hetzner script', () => {
@@ -22,7 +22,7 @@ describe('configure Metered TURN Hetzner script', () => {
         await mkdir(binDir, { recursive: true });
         await writeFile(
             fakeSystemctl,
-            '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SYSTEMCTL_LOG"\n',
+            '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$SYSTEMCTL_LOG"\n'
         );
         await chmod(fakeSystemctl, 0o755);
 
@@ -33,7 +33,7 @@ describe('configure Metered TURN Hetzner script', () => {
             RALLAR_SYSTEMCTL_BIN: fakeSystemctl,
             SYSTEMCTL_LOG: systemctlLog,
             METERED_APP_NAME: 'prod-metered-app',
-            METERED_API_KEY: 'super-secret-metered-key',
+            METERED_API_KEY: 'super-secret-metered-key'
         });
 
         expect(result.code).toBe(0);
@@ -46,8 +46,8 @@ describe('configure Metered TURN Hetzner script', () => {
                 'RALLAR_ICE_MODE=metered',
                 'METERED_APP_NAME=prod-metered-app',
                 'METERED_API_KEY=super-secret-metered-key',
-                '',
-            ].join('\n'),
+                ''
+            ].join('\n')
         );
 
         const secretMode = (await stat(secretFile)).mode & 0o777;
@@ -55,7 +55,7 @@ describe('configure Metered TURN Hetzner script', () => {
 
         const dropInFile = path.join(
             systemdDir,
-            'rallar-api-v1.service.d/10-metered-turn.conf',
+            'rallar-api-v1.service.d/10-metered-turn.conf'
         );
         const dropIn = await readFile(dropInFile, 'utf8');
         expect(dropIn).toContain(`[Service]\nEnvironmentFile=-${secretFile}\n`);
@@ -69,7 +69,7 @@ describe('configure Metered TURN Hetzner script', () => {
     it('keeps the optional Metered secret env file wired into future controller deployments', async () => {
         const deployScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
-            'utf8',
+            'utf8'
         );
 
         expect(deployScript).toContain('EnvironmentFile=-/etc/rallar/api-v1.secrets.env');
@@ -78,7 +78,7 @@ describe('configure Metered TURN Hetzner script', () => {
     it('syncs optional Metered GitHub secrets before Hetzner rollout without requiring them', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'),
-            'utf8',
+            'utf8'
         );
 
         expect(workflow).toContain('name: Sync optional Metered TURN secrets');
@@ -88,7 +88,7 @@ describe('configure Metered TURN Hetzner script', () => {
         expect(workflow).toContain('Set both METERED_APP_NAME and METERED_API_KEY, or leave both unset.');
         expect(workflow).toContain('./13-configure-metered-turn.sh --no-restart');
         expect(workflow.indexOf('name: Sync optional Metered TURN secrets')).toBeLessThan(
-            workflow.indexOf('name: Run controlled rollout'),
+            workflow.indexOf('name: Run controlled rollout')
         );
     });
 });
@@ -103,9 +103,9 @@ function runScript(env: Record<string, string>): Promise<{
             cwd: repoRoot,
             env: {
                 ...process.env,
-                ...env,
+                ...env
             },
-            stdio: ['ignore', 'pipe', 'pipe'],
+            stdio: ['ignore', 'pipe', 'pipe']
         });
 
         let stdout = '';

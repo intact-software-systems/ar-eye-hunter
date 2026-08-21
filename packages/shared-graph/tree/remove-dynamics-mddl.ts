@@ -1,6 +1,6 @@
+import { SelectSteinerCandidate } from '../algo-props.ts';
 import { TreeGraph, VertexId, VertexState, VertexType } from '../graph-props.ts';
 import { cloneTree, dijkstraOnTreeFromSource } from '../graph/graph-algs.ts';
-import { SelectSteinerCandidate } from '../algo-props.ts';
 
 /**
  * Port of REMOVE_TRY_REPLACE_MDDL_NAIVE (rvTRMDDLN).
@@ -9,7 +9,7 @@ export function removeTryReplaceMDDL(
     tree: TreeGraph,
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
-    selectSteinerCandidate?: SelectSteinerCandidate,
+    selectSteinerCandidate?: SelectSteinerCandidate
 ): TreeGraph {
     const actionDegree = tree.degree(actionVertexId);
 
@@ -32,8 +32,7 @@ export function removeTryReplaceMDDL(
 
     // 1) Try using one existing neighbor as intersection
     for (const candidate of adjacent) {
-        const projectedDegree =
-            (tree.degree(candidate) - 1) + (adjacentSize - 1);
+        const projectedDegree = (tree.degree(candidate) - 1) + (adjacentSize - 1);
 
         if (projectedDegree < getDegreeLimit(globalGraph, candidate)) {
             const candidateTree = simulateNeighborIntersection(
@@ -41,7 +40,7 @@ export function removeTryReplaceMDDL(
                 globalGraph,
                 actionVertexId,
                 candidate,
-                adjacent,
+                adjacent
             );
 
             const candidateDiameter = treeDiameter(candidateTree);
@@ -67,7 +66,7 @@ export function removeTryReplaceMDDL(
             globalGraph,
             actionVertexId,
             spVertexId,
-            adjacent,
+            adjacent
         );
         spDiameter = treeDiameter(spTree);
     }
@@ -90,7 +89,7 @@ export function removeTryReplaceMDDL(
             globalGraph,
             actionVertexId,
             mcpVertexId,
-            adjacent,
+            adjacent
         );
     }
 
@@ -104,7 +103,7 @@ export function removeTryReplaceMDDL(
             globalGraph,
             actionVertexId,
             spVertexId,
-            adjacent,
+            adjacent
         );
     }
 
@@ -116,7 +115,7 @@ function simulateNeighborIntersection(
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
     mcpVertexId: VertexId,
-    adjacent: ReadonlySet<VertexId>,
+    adjacent: ReadonlySet<VertexId>
 ): TreeGraph {
     const next = cloneTree(tree);
 
@@ -124,7 +123,9 @@ function simulateNeighborIntersection(
     next.dropNode(actionVertexId);
 
     for (const neighbor of adjacent) {
-        if (neighbor === mcpVertexId) continue;
+        if (neighbor === mcpVertexId) {
+            continue;
+        }
         upsertWeightedEdge(next, globalGraph, mcpVertexId, neighbor);
     }
 
@@ -136,7 +137,7 @@ function simulateSteinerIntersection(
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
     spVertexId: VertexId,
-    adjacent: ReadonlySet<VertexId>,
+    adjacent: ReadonlySet<VertexId>
 ): TreeGraph {
     const next = cloneTree(tree);
 
@@ -153,7 +154,7 @@ function simulateSteinerIntersection(
 function simulateKeepActionAsSteiner(
     tree: TreeGraph,
     globalGraph: TreeGraph,
-    actionVertexId: VertexId,
+    actionVertexId: VertexId
 ): TreeGraph {
     const next = cloneTree(tree);
 
@@ -162,7 +163,7 @@ function simulateKeepActionAsSteiner(
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner,
+        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner
     });
 
     return next;
@@ -170,7 +171,7 @@ function simulateKeepActionAsSteiner(
 
 function removeLeaf(
     tree: TreeGraph,
-    actionVertexId: VertexId,
+    actionVertexId: VertexId
 ): TreeGraph {
     const next = cloneTree(tree);
     next.dropNode(actionVertexId);
@@ -180,14 +181,14 @@ function removeLeaf(
 function removeOutDegreeTwo(
     tree: TreeGraph,
     globalGraph: TreeGraph,
-    actionVertexId: VertexId,
+    actionVertexId: VertexId
 ): TreeGraph {
     const next = cloneTree(tree);
     const neighbors = next.neighbors(actionVertexId) as VertexId[];
 
     if (neighbors.length !== 2) {
         throw new Error(
-            `removeOutDegreeTwo expected degree 2 for ${actionVertexId}, got ${neighbors.length}`,
+            `removeOutDegreeTwo expected degree 2 for ${actionVertexId}, got ${neighbors.length}`
         );
     }
 
@@ -201,16 +202,18 @@ function removeOutDegreeTwo(
 function addSteinerVertexFromGlobal(
     tree: TreeGraph,
     globalGraph: TreeGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (tree.hasNode(vertexId)) return;
+    if (tree.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     tree.addNode(vertexId, {
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner,
+        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner
     });
 }
 
@@ -218,21 +221,23 @@ function upsertWeightedEdge(
     tree: TreeGraph,
     globalGraph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): void {
-    if (tree.hasEdge(a, b)) return;
+    if (tree.hasEdge(a, b)) {
+        return;
+    }
 
     const weight = getEdgeWeight(globalGraph, a, b);
     tree.addEdge(a, b, {
         from: a,
         to: b,
-        weight,
+        weight
     });
 }
 
 function getDegreeLimit(
     graph: TreeGraph,
-    node: VertexId,
+    node: VertexId
 ): number {
     return graph.getNodeAttributes(node).degreeLimit;
 }
@@ -240,7 +245,7 @@ function getDegreeLimit(
 function getEdgeWeight(
     graph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): number {
     const edgeKey = graph.edge(a, b);
     if (edgeKey === undefined) {
@@ -264,4 +269,3 @@ function treeDiameter(tree: TreeGraph): number {
 
     return diameter;
 }
-

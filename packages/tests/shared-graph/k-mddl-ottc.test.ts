@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
 import { kMDDLOTTCTree } from '@shared-graph/mesh/k-mddl-ottc.ts';
+import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph k-mddl-ottc mesh extraction', () => {
@@ -8,9 +8,9 @@ describe('shared-graph k-mddl-ottc mesh extraction', () => {
         const mesh = createGraph(
             [
                 ['a', VertexState.MEMBER, 4],
-                ['b', VertexState.MEMBER, 4],
+                ['b', VertexState.MEMBER, 4]
             ],
-            [['a', 'b', 1]],
+            [['a', 'b', 1]]
         );
 
         const result = kMDDLOTTCTree(mesh, 0, 'a');
@@ -25,13 +25,13 @@ describe('shared-graph k-mddl-ottc mesh extraction', () => {
             [
                 ['a', VertexState.MEMBER, 4],
                 ['b', VertexState.MEMBER, 4],
-                ['c', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4]
             ],
             [
                 ['a', 'b', 1],
                 ['a', 'c', 1],
-                ['b', 'c', 2],
-            ],
+                ['b', 'c', 2]
+            ]
         );
 
         const result = kMDDLOTTCTree(mesh, 1, 'a');

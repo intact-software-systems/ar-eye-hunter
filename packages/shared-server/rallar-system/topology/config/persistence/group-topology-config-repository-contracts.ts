@@ -1,6 +1,6 @@
 import type {
-  StoredGroupTopologyConfig,
-  StoredGroupTopologyOverride,
+    StoredGroupTopologyConfig,
+    StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -8,48 +8,48 @@ import type { RuntimeStateEntry } from '../../../../runtime-state/RuntimeStateRe
 import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 
 export type GroupTopologyConfigCommitResult =
-  Readonly<{ status: 'accepted'; storageRevision: number }> | Readonly<{ status: 'conflict' }>;
+    | Readonly<{ status: 'accepted'; storageRevision: number; }>
+    | Readonly<{ status: 'conflict'; }>;
 
-export type GroupTopologyConfigDeleteResult =
-  Readonly<{ status: 'accepted' }> | Readonly<{ status: 'conflict' }>;
+export type GroupTopologyConfigDeleteResult = Readonly<{ status: 'accepted'; }> | Readonly<{ status: 'conflict'; }>;
 
 export interface GroupTopologyConfigGenerationSource {
-  readonly groupRef: GroupRef;
-  readonly target: GroupTopologyConfigGenerationTarget;
-  readonly version: number;
+    readonly groupRef: GroupRef;
+    readonly target: GroupTopologyConfigGenerationTarget;
+    readonly version: number;
 }
 
 export interface GroupTopologyConfigGenerationSourceEntry {
-  readonly entry: RuntimeStateEntry;
-  readonly source: GroupTopologyConfigGenerationSource;
-  readonly value: StoredGroupTopologyConfig | StoredGroupTopologyOverride;
+    readonly entry: RuntimeStateEntry;
+    readonly source: GroupTopologyConfigGenerationSource;
+    readonly value: StoredGroupTopologyConfig | StoredGroupTopologyOverride;
 }
 
 export interface GroupTopologyConfigLegacyKeyMigrationSource extends GroupTopologyConfigGenerationSourceEntry {
-  readonly canonicalKey: string;
+    readonly canonicalKey: string;
 }
 
 export interface GroupTopologyConfigLegacyKeyMigrationPage {
-  readonly sources: readonly GroupTopologyConfigLegacyKeyMigrationSource[];
-  readonly afterKey?: string;
-  readonly hasMore: boolean;
+    readonly sources: readonly GroupTopologyConfigLegacyKeyMigrationSource[];
+    readonly afterKey?: string;
+    readonly hasMore: boolean;
 }
 
 export class GroupTopologyConfigRepositoryInvariantCorruptionError extends Error {
-  readonly code = 'group-topology-config-repository-invariant-corruption';
+    readonly code = 'group-topology-config-repository-invariant-corruption';
 
-  readonly storageKey: string;
+    readonly storageKey: string;
 
-  constructor(storageKey: string, message: string) {
-    super(`${message}: ${storageKey}`);
-    this.storageKey = storageKey;
-    this.name = 'GroupTopologyConfigRepositoryInvariantCorruptionError';
-  }
+    constructor(storageKey: string, message: string) {
+        super(`${message}: ${storageKey}`);
+        this.storageKey = storageKey;
+        this.name = 'GroupTopologyConfigRepositoryInvariantCorruptionError';
+    }
 }
 
 export function toGroupTopologyConfigRepositoryCorruption(
-  storageKey: string,
-  message: string,
+    storageKey: string,
+    message: string
 ): GroupTopologyConfigRepositoryInvariantCorruptionError {
-  return new GroupTopologyConfigRepositoryInvariantCorruptionError(storageKey, message);
+    return new GroupTopologyConfigRepositoryInvariantCorruptionError(storageKey, message);
 }

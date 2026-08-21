@@ -8,7 +8,7 @@ export type RallarMessageSelector = Readonly<{
 export type RallarMessageSelectorInput = string | RallarMessageSelector;
 
 export function normalizeRallarMessageSelector(
-    selector: RallarMessageSelectorInput,
+    selector: RallarMessageSelectorInput
 ): RallarMessageSelector {
     if (typeof selector === 'string') {
         return { typeId: selector };
@@ -22,23 +22,23 @@ export function normalizeRallarMessageSelector(
 }
 
 export function toRallarMessageSelectorKey(
-    selector: RallarMessageSelector,
+    selector: RallarMessageSelector
 ): string {
     return `${selector.topicId ?? '*'}/${selector.typeId ?? '*'}`;
 }
 
 export function matchesRallarMessageSelector(
     selector: RallarMessageSelector,
-    message: ALMessage,
+    message: ALMessage
 ): boolean {
     return (selector.topicId === undefined ||
-            selector.topicId === message.route.topicId) &&
+        selector.topicId === message.route.topicId) &&
         (selector.typeId === undefined ||
             selector.typeId === message.payload.typeId);
 }
 
 export function readRallarMessageRoomId(
-    message: ALMessage,
+    message: ALMessage
 ): string | undefined {
     if (message.targets?.mode === 'multicast') {
         return message.targets.groupRef.groupId;

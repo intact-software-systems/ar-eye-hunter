@@ -23,9 +23,9 @@ export async function readStableStateSnapshot<Aggregate, ChildA, ChildB, Snapsho
         assemble(
             aggregate: RuntimeStateEntryValue<Aggregate>,
             childA: readonly ChildA[],
-            childB: ChildB,
+            childB: ChildB
         ): Snapshot;
-    }>,
+    }>
 ): Promise<Snapshot | undefined> {
     for (let attempt = 0; attempt < MAX_STATE_SNAPSHOT_READ_ATTEMPTS; attempt += 1) {
         const before = await options.readAggregate();

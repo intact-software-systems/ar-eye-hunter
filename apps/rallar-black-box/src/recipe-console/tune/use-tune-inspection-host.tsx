@@ -1,24 +1,13 @@
-import {
-    useCallback,
-    useEffect,
-    useLayoutEffect,
-    useMemo,
-    useState,
-    type ReactNode,
-} from 'react';
-import { TuneInspector } from './TuneInspector.tsx';
-import {
-    tuneInspectionAuthority,
-    tuneInspectionLabel,
-    type TuneInspection,
-} from './tune-inspection.ts';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
+import { tuneInspectionAuthority, tuneInspectionLabel, type TuneInspection } from './tune-inspection.ts';
 import type { TuneSourceModel } from './tune-source-model.ts';
+import { TuneInspector } from './TuneInspector.tsx';
 
 export function useTuneInspectionHost({
     source,
     onInspect,
     onInspectorChange,
-    onSelectionLabelChange,
+    onSelectionLabelChange
 }: Readonly<{
     source: TuneSourceModel;
     onInspect(trigger: HTMLButtonElement): void;
@@ -26,37 +15,42 @@ export function useTuneInspectionHost({
     onSelectionLabelChange(label: string | undefined): void;
 }>) {
     const inspectionAuthority = tuneInspectionAuthority(source);
-    const [scopedInspection, setScopedInspection] = useState<Readonly<{
-        authority: string;
-        selection: TuneInspection;
-    }>>();
+    const [scopedInspection, setScopedInspection] = useState<
+        Readonly<{
+            authority: string;
+            selection: TuneInspection;
+        }>
+    >();
     const inspection = scopedInspection?.authority === inspectionAuthority
         ? scopedInspection.selection
         : undefined;
-    const inspector = useMemo(() => inspection ? (
-        <TuneInspector selection={inspection} source={source} />
-    ) : undefined, [inspection, source]);
+    const inspector = useMemo(() => inspection ? <TuneInspector selection={inspection} source={source} /> : undefined, [
+        inspection,
+        source
+    ]);
     const inspect = useCallback((
         next: TuneInspection,
-        trigger: HTMLButtonElement,
+        trigger: HTMLButtonElement
     ) => {
         setScopedInspection({
             authority: inspectionAuthority,
-            selection: next,
+            selection: next
         });
         onInspect(trigger);
     }, [inspectionAuthority, onInspect]);
 
     useLayoutEffect(() => {
         onInspectorChange(inspector);
-        onSelectionLabelChange(inspection
-            ? tuneInspectionLabel(inspection)
-            : undefined);
+        onSelectionLabelChange(
+            inspection
+                ? tuneInspectionLabel(inspection)
+                : undefined
+        );
     }, [
         inspection,
         inspector,
         onInspectorChange,
-        onSelectionLabelChange,
+        onSelectionLabelChange
     ]);
     useEffect(() => {
         if (

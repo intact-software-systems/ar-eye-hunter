@@ -20,7 +20,15 @@ export type RoomIdentity = Readonly<{
     accentMaterial: CastleKitMaterialRole;
     dangerMaterial?: CastleKitMaterialRole;
     landmark: string;
-    floorMotif: 'threshold' | 'runner' | 'stacked-crates' | 'altar-ring' | 'warning-grid' | 'vault-ring' | 'broken-beams' | 'garden-path';
+    floorMotif:
+        | 'threshold'
+        | 'runner'
+        | 'stacked-crates'
+        | 'altar-ring'
+        | 'warning-grid'
+        | 'vault-ring'
+        | 'broken-beams'
+        | 'garden-path';
 }>;
 
 export const ROOM_KIND_ORDER: readonly RelicRoomKind[] = [
@@ -31,7 +39,7 @@ export const ROOM_KIND_ORDER: readonly RelicRoomKind[] = [
     'trap',
     'treasure',
     'monster',
-    'exit',
+    'exit'
 ];
 
 export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
@@ -43,7 +51,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         primaryMaterial: 'lacquer',
         accentMaterial: 'metal',
         landmark: 'large gate frame and portcullis',
-        floorMotif: 'threshold',
+        floorMotif: 'threshold'
     },
     hallway: {
         kind: 'hallway',
@@ -53,7 +61,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         primaryMaterial: 'wood',
         accentMaterial: 'accentBlue',
         landmark: 'long runner and repeated guide rails',
-        floorMotif: 'runner',
+        floorMotif: 'runner'
     },
     storage: {
         kind: 'storage',
@@ -63,7 +71,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         primaryMaterial: 'wood',
         accentMaterial: 'metal',
         landmark: 'crate stacks and weapon racks',
-        floorMotif: 'stacked-crates',
+        floorMotif: 'stacked-crates'
     },
     shrine: {
         kind: 'shrine',
@@ -73,7 +81,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         primaryMaterial: 'paper',
         accentMaterial: 'portal',
         landmark: 'raised altar and torii focus',
-        floorMotif: 'altar-ring',
+        floorMotif: 'altar-ring'
     },
     trap: {
         kind: 'trap',
@@ -84,7 +92,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         accentMaterial: 'accentCoral',
         dangerMaterial: 'crack',
         landmark: 'cell bars and warning plates',
-        floorMotif: 'warning-grid',
+        floorMotif: 'warning-grid'
     },
     treasure: {
         kind: 'treasure',
@@ -94,7 +102,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         primaryMaterial: 'gold',
         accentMaterial: 'wood',
         landmark: 'vault plinth and coin stacks',
-        floorMotif: 'vault-ring',
+        floorMotif: 'vault-ring'
     },
     monster: {
         kind: 'monster',
@@ -105,7 +113,7 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         accentMaterial: 'crack',
         dangerMaterial: 'accentCoral',
         landmark: 'broken beams and claw marks',
-        floorMotif: 'broken-beams',
+        floorMotif: 'broken-beams'
     },
     exit: {
         kind: 'exit',
@@ -115,8 +123,8 @@ export const ROOM_IDENTITIES: Readonly<Record<RelicRoomKind, RoomIdentity>> = {
         primaryMaterial: 'portal',
         accentMaterial: 'foliage',
         landmark: 'garden gate and escape beacon',
-        floorMotif: 'garden-path',
-    },
+        floorMotif: 'garden-path'
+    }
 };
 
 export function roomIdentityForKind(kind: RelicRoomKind): RoomIdentity {

@@ -9,6 +9,3 @@ fluctuations in the RTT
 which then gathers them and creates a complete graph.
 
 The node gathers the .
-
-
-

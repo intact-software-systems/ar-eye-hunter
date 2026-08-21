@@ -4,17 +4,17 @@ This example shows the intended shape for a game that treats AI output as a
 proposal before applying it to domain state.
 
 ```ts
-import {
-  createRallarAiAcceptedResultTracker,
-  createRallarAiMockProvider,
-  transitionRallarAiResultLifecycle,
-} from '@shared/rallar-ai/mod.ts';
-import { rallar } from '@shared-web/browser/rallar.ts';
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
+import {
+    createRallarAiAcceptedResultTracker,
+    createRallarAiMockProvider,
+    transitionRallarAiResultLifecycle
+} from '@shared/rallar-ai/mod.ts';
 
 type GameEvent = Readonly<{
-  kind: 'spawn' | 'reward';
-  amount: number;
+    kind: 'spawn' | 'reward';
+    amount: number;
 }>;
 
 const currentRevision: string = 'revision-1';
@@ -23,56 +23,56 @@ const turnId: string = 'turn-1';
 const appliedGameEvents: GameEvent[] = [];
 
 const applyGameEvent = (event: GameEvent): void => {
-  if (
-    (event.kind !== 'spawn' && event.kind !== 'reward') ||
-    !Number.isInteger(event.amount) ||
-    event.amount < 1
-  ) {
-    throw new Error('Game event failed domain validation');
-  }
-  appliedGameEvents.push(event);
+    if (
+        (event.kind !== 'spawn' && event.kind !== 'reward') ||
+        !Number.isInteger(event.amount) ||
+        event.amount < 1
+    ) {
+        throw new Error('Game event failed domain validation');
+    }
+    appliedGameEvents.push(event);
 };
 
 const gameEventSchema = {
-  type: 'object',
-  required: ['kind', 'amount'],
-  properties: {
-    kind: { type: 'string', enum: ['spawn', 'reward'] },
-    amount: { type: 'integer', minimum: 1 },
-  },
-  additionalProperties: false,
+    type: 'object',
+    required: ['kind', 'amount'],
+    properties: {
+        kind: { type: 'string', enum: ['spawn', 'reward'] },
+        amount: { type: 'integer', minimum: 1 }
+    },
+    additionalProperties: false
 } as const;
 
 const ai = createRallarBrowserAi({
-  rallar,
-  provider: createRallarAiMockProvider({
-    value: { kind: 'spawn', amount: 1 },
-  }),
-  policy: { mode: 'browser-only', staleResultMode: 'reject' },
+    rallar,
+    provider: createRallarAiMockProvider({
+        value: { kind: 'spawn', amount: 1 }
+    }),
+    policy: { mode: 'browser-only', staleResultMode: 'reject' }
 });
 
 const tracker = createRallarAiAcceptedResultTracker<GameEvent>();
 const draft = await ai.generateJson<GameEvent>({
-  schemaId: 'game-event',
-  schemaVersion: '1',
-  schema: gameEventSchema,
-  prompt: 'Generate the next room event.',
-  baseStateRevision: currentRevision,
-  dedupeKey: `room:${roomId}:turn:${turnId}`,
+    schemaId: 'game-event',
+    schemaVersion: '1',
+    schema: gameEventSchema,
+    prompt: 'Generate the next room event.',
+    baseStateRevision: currentRevision,
+    dedupeKey: `room:${roomId}:turn:${turnId}`
 });
 
 const proposed = transitionRallarAiResultLifecycle(draft, 'proposed');
 await ai.broadcastJson({
-  result: proposed,
-  transport: 'messages.rtc',
-  roomId,
-  topicId: 'room.ai.proposals',
-  typeId: 'rallar.ai.proposed',
+    result: proposed,
+    transport: 'messages.rtc',
+    roomId,
+    topicId: 'room.ai.proposals',
+    typeId: 'rallar.ai.proposed'
 });
 
 const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
 await tracker.acceptOnce(accepted, (result) => {
-  applyGameEvent(result.value);
+    applyGameEvent(result.value);
 });
 ```
 

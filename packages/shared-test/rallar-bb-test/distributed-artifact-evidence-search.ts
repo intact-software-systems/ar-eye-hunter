@@ -4,28 +4,24 @@ import {
     type DistributedArtifactEvidenceEntry,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactEvidenceSearchQuery,
-    type DistributedArtifactEvidenceSearchResult,
+    type DistributedArtifactEvidenceSearchResult
 } from './distributed-artifact-evidence-contracts.ts';
 import {
-    boundedEvidenceLimit,
-} from './distributed-artifact-evidence-utils.ts';
-import {
     compileDistributedArtifactEvidenceQuery,
-    distributedArtifactEvidenceEntryMatches,
+    distributedArtifactEvidenceEntryMatches
 } from './distributed-artifact-evidence-query.ts';
+import { boundedEvidenceLimit } from './distributed-artifact-evidence-utils.ts';
 
 export function searchDistributedArtifactEvidence(
     index: DistributedArtifactEvidenceIndex,
-    query: DistributedArtifactEvidenceSearchQuery = {},
+    query: DistributedArtifactEvidenceSearchQuery = {}
 ): DistributedArtifactEvidenceSearchResult {
     const compiled = compileDistributedArtifactEvidenceQuery(query);
-    const matches = index.entries.filter(entry =>
-        distributedArtifactEvidenceEntryMatches(entry, compiled)
-    );
+    const matches = index.entries.filter((entry) => distributedArtifactEvidenceEntryMatches(entry, compiled));
     const limit = boundedEvidenceLimit(
         query.limit,
         DEFAULT_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT,
-        MAX_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT,
+        MAX_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT
     );
     const entries = matches.slice(0, limit);
     return {
@@ -34,6 +30,6 @@ export function searchDistributedArtifactEvidence(
         omittedMatchCount: matches.length - entries.length,
         upstreamOmittedEntryCount: index.omittedEntryCount,
         totalMatchesIsComplete: index.omittedEntryCount === 0,
-        limit,
+        limit
     };
 }

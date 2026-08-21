@@ -2,19 +2,19 @@ import type {
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestCompositeChildResult,
     RallarBlackBoxTestLoopCommand,
-    RallarBlackBoxTestLoopThresholdFailure,
     RallarBlackBoxTestLoopResultValue,
+    RallarBlackBoxTestLoopThresholdFailure
 } from '../types.ts';
 
 export const RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED = 'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED';
 
 const DEFAULT_BACKOFF_MULTIPLIER = 1;
 
-type LoopCommandWithId = RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string }>;
+type LoopCommandWithId = RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string; }>;
 
 export type LoopIterationOutcome =
-    | Readonly<{ kind: 'completed'; failedChildResult?: RallarBlackBoxTestCompositeChildResult }>
-    | Readonly<{ kind: 'outcome'; outcome: RallarBlackBoxTestCommandOutcome }>;
+    | Readonly<{ kind: 'completed'; failedChildResult?: RallarBlackBoxTestCompositeChildResult; }>
+    | Readonly<{ kind: 'outcome'; outcome: RallarBlackBoxTestCommandOutcome; }>;
 
 export interface LoopUntilValidationIssue {
     readonly message: string;
@@ -22,20 +22,20 @@ export interface LoopUntilValidationIssue {
 }
 
 export function validateLoopUntilCommand(
-    command: LoopCommandWithId,
+    command: LoopCommandWithId
 ): readonly LoopUntilValidationIssue[] {
     const issues: LoopUntilValidationIssue[] = [];
     if (command.until !== undefined && command.until !== 'first-success') {
         issues.push({
-            message: "Loop until must be 'first-success' when present.",
-            details: { until: command.until },
+            message: 'Loop until must be \'first-success\' when present.',
+            details: { until: command.until }
         });
     }
     if (command.backoffMultiplier !== undefined) {
         if (command.until === undefined) {
             issues.push({
                 message: 'Loop backoffMultiplier requires until mode.',
-                details: { backoffMultiplier: command.backoffMultiplier },
+                details: { backoffMultiplier: command.backoffMultiplier }
             });
         }
         if (
@@ -45,14 +45,14 @@ export function validateLoopUntilCommand(
         ) {
             issues.push({
                 message: 'Loop backoffMultiplier must be a finite number of at least 1.',
-                details: { backoffMultiplier: command.backoffMultiplier },
+                details: { backoffMultiplier: command.backoffMultiplier }
             });
         }
     }
     if (command.until !== undefined && command.continueOnFailure === true) {
         issues.push({
             message: 'Loop continueOnFailure contradicts until mode and is rejected.',
-            details: { until: command.until, continueOnFailure: command.continueOnFailure },
+            details: { until: command.until, continueOnFailure: command.continueOnFailure }
         });
     }
     return issues;
@@ -70,11 +70,11 @@ export interface RunLoopUntilFirstSuccessInput {
     readonly cancelRequested: () => boolean;
     readonly runIteration: (
         iterationIndex: number,
-        scheduledAtEpochMs: number,
+        scheduledAtEpochMs: number
     ) => Promise<LoopIterationOutcome>;
     readonly toLoopValue: (
         cancelled: boolean,
-        thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[],
+        thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[]
     ) => RallarBlackBoxTestLoopResultValue;
     readonly toTimedOutOutcome: () => RallarBlackBoxTestCommandOutcome;
     readonly toSuccessOutcome: () => RallarBlackBoxTestCommandOutcome;
@@ -85,7 +85,7 @@ export interface RunLoopUntilFirstSuccessInput {
 // exhausting count/duration/deadline bounds fails with the last attempt's
 // failing child so convergence failures stay diagnosable.
 export async function runLoopUntilFirstSuccess(
-    input: RunLoopUntilFirstSuccessInput,
+    input: RunLoopUntilFirstSuccessInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const backoffMultiplier = input.command.backoffMultiplier ?? DEFAULT_BACKOFF_MULTIPLIER;
     let lastFailedChildResult: RallarBlackBoxTestCompositeChildResult | undefined;
@@ -123,7 +123,7 @@ export async function runLoopUntilFirstSuccess(
         }
 
         const backoffDelayMs = Math.round(
-            input.intervalMs * Math.pow(backoffMultiplier, iterationIndex),
+            input.intervalMs * Math.pow(backoffMultiplier, iterationIndex)
         );
         nextScheduledAtEpochMs = input.now() + backoffDelayMs;
         if (backoffDelayMs > 0) {
@@ -153,19 +153,19 @@ export async function runLoopUntilFirstSuccess(
                 durationMs: input.durationMs,
                 deadlineEpochMs: input.deadlineEpochMs,
                 backoffMultiplier,
-                lastFailedChildResult,
-            },
+                lastFailedChildResult
+            }
         },
-        nextStatus: 'failed',
+        nextStatus: 'failed'
     };
 }
 
 function cancelledOutcome(
-    input: RunLoopUntilFirstSuccessInput,
+    input: RunLoopUntilFirstSuccessInput
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'cancelled',
         value: input.toLoopValue(true),
-        nextStatus: 'cancelled',
+        nextStatus: 'cancelled'
     };
 }

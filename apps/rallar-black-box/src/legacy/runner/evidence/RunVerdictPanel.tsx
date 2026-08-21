@@ -2,7 +2,7 @@ import type { RunVerdictView } from '../../../distributed-recipes.ts';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
 
 export function RunVerdictPanel({
-    view,
+    view
 }: {
     view: RunVerdictView;
 }) {
@@ -58,9 +58,7 @@ export function RunVerdictPanel({
                         <div>
                             <strong>Why this passed</strong>
                             <ul>
-                                {view.successSignals.slice(0, 4).map((signal) => (
-                                    <li key={signal}>{signal}</li>
-                                ))}
+                                {view.successSignals.slice(0, 4).map((signal) => <li key={signal}>{signal}</li>)}
                             </ul>
                         </div>
                     )}
@@ -75,9 +73,7 @@ export function RunVerdictPanel({
                         <div>
                             <strong>Evidence warnings</strong>
                             <ul>
-                                {view.warningSignals.slice(0, 4).map((warning) => (
-                                    <li key={warning}>{warning}</li>
-                                ))}
+                                {view.warningSignals.slice(0, 4).map((warning) => <li key={warning}>{warning}</li>)}
                             </ul>
                         </div>
                     )}

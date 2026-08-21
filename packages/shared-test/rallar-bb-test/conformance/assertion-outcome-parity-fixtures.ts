@@ -7,7 +7,7 @@ import type { AssertionOutcomeVerdict } from './assertion-outcome-parity.ts';
 export interface ComparatorParityFixture {
     readonly fixtureId: string;
     readonly value: any;
-    readonly runnerComparator: Readonly<Record<string, any>> & Readonly<{ path: string }>;
+    readonly runnerComparator: Readonly<Record<string, any>> & Readonly<{ path: string; }>;
     readonly runtimeOperator: RallarBlackBoxTestAssertOperator;
     readonly runtimeExpected: any;
     readonly expectedVerdict: AssertionOutcomeVerdict;
@@ -20,7 +20,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'score', gt: 16 },
         runtimeOperator: 'gt',
         runtimeExpected: 16,
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'gt-equal-fails',
@@ -28,7 +28,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'score', gt: 17 },
         runtimeOperator: 'gt',
         runtimeExpected: 17,
-        expectedVerdict: 'fail',
+        expectedVerdict: 'fail'
     },
     {
         fixtureId: 'lt-passes',
@@ -36,7 +36,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'score', lt: 4 },
         runtimeOperator: 'lt',
         runtimeExpected: 4,
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'between-inclusive-bound-passes',
@@ -44,7 +44,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'score', between: [17, 20] },
         runtimeOperator: 'between',
         runtimeExpected: [17, 20],
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'between-outside-fails',
@@ -52,7 +52,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'score', between: [17, 20] },
         runtimeOperator: 'between',
         runtimeExpected: [17, 20],
-        expectedVerdict: 'fail',
+        expectedVerdict: 'fail'
     },
     {
         fixtureId: 'between-malformed-pair-fails',
@@ -60,7 +60,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'score', between: [17] },
         runtimeOperator: 'between',
         runtimeExpected: [17],
-        expectedVerdict: 'fail',
+        expectedVerdict: 'fail'
     },
     {
         fixtureId: 'length-array-passes',
@@ -68,7 +68,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'items', length: 3 },
         runtimeOperator: 'length',
         runtimeExpected: 3,
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'length-non-collection-fails',
@@ -76,7 +76,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'items', length: 2 },
         runtimeOperator: 'length',
         runtimeExpected: 2,
-        expectedVerdict: 'fail',
+        expectedVerdict: 'fail'
     },
     {
         fixtureId: 'matches-pattern-passes',
@@ -84,7 +84,7 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'marker', matches: '^assert-' },
         runtimeOperator: 'matches',
         runtimeExpected: '^assert-',
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'matches-non-string-fails',
@@ -92,8 +92,8 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
         runnerComparator: { path: 'marker', matches: '^assert-' },
         runtimeOperator: 'matches',
         runtimeExpected: '^assert-',
-        expectedVerdict: 'fail',
-    },
+        expectedVerdict: 'fail'
+    }
 ];
 
 export interface CompleteArrayParityFixture {
@@ -108,20 +108,20 @@ export const COMPLETE_ARRAY_FIXTURES: readonly CompleteArrayParityFixture[] = [
         fixtureId: 'complete-exact-array-passes',
         expected: { items: ['expected-item'] },
         actual: { items: ['expected-item'] },
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'complete-unexpected-element-fails',
         expected: { items: ['expected-item'] },
         actual: { items: ['expected-item', 'unexpected-item'] },
-        expectedVerdict: 'fail',
+        expectedVerdict: 'fail'
     },
     {
         fixtureId: 'complete-extra-object-key-passes',
         expected: { items: ['expected-item'] },
         actual: { items: ['expected-item'], extra: 'allowed' },
-        expectedVerdict: 'pass',
-    },
+        expectedVerdict: 'pass'
+    }
 ];
 
 export interface AbsenceParityFixture {
@@ -136,14 +136,14 @@ export const ABSENCE_FIXTURES: readonly AbsenceParityFixture[] = [
         fixtureId: 'absence-holds-on-clean-buffer',
         bufferedTopics: ['room.allowed.control'],
         forbiddenTopic: 'room.forbidden.leak',
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'absence-violated-by-buffered-event',
         bufferedTopics: ['room.allowed.control', 'room.forbidden.leak'],
         forbiddenTopic: 'room.forbidden.leak',
-        expectedVerdict: 'fail',
-    },
+        expectedVerdict: 'fail'
+    }
 ];
 
 export interface PollingParityFixture {
@@ -158,12 +158,12 @@ export const POLLING_FIXTURES: readonly PollingParityFixture[] = [
         fixtureId: 'polling-converges-before-bounds',
         succeedOnAttempt: 3,
         maxAttempts: 5,
-        expectedVerdict: 'pass',
+        expectedVerdict: 'pass'
     },
     {
         fixtureId: 'polling-exhausts-bounds',
         succeedOnAttempt: undefined,
         maxAttempts: 3,
-        expectedVerdict: 'fail',
-    },
+        expectedVerdict: 'fail'
+    }
 ];

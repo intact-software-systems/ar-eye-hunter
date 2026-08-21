@@ -6,17 +6,22 @@ import styles from './AnalyzeInspector.module.css';
 
 export function AnalyzeInspector({
     entry,
-    model,
+    model
 }: Readonly<{
     entry: DistributedArtifactEvidenceEntry;
     model: AnalyzeArtifactProjection;
 }>) {
     const exactSelectors: readonly (readonly [string, readonly string[]])[] = [
-        ['Agent', entry.agentIds?.length
-            ? entry.agentIds
-            : entry.agentId ? [entry.agentId] : []],
+        [
+            'Agent',
+            entry.agentIds?.length
+                ? entry.agentIds
+                : entry.agentId
+                ? [entry.agentId]
+                : []
+        ],
         ['Recipe', entry.recipeId ? [entry.recipeId] : []],
-        ['Command', entry.commandId ? [entry.commandId] : []],
+        ['Command', entry.commandId ? [entry.commandId] : []]
     ];
     const selectors: readonly (readonly [string, string | undefined])[] = [
         ['Source file', entry.sourceFile],
@@ -26,9 +31,12 @@ export function AnalyzeInspector({
         ['Transport', entry.transport],
         ['Status', entry.status],
         ['Category', entry.category],
-        ['Time', entry.atEpochMs === undefined
-            ? undefined
-            : new Date(entry.atEpochMs).toISOString()],
+        [
+            'Time',
+            entry.atEpochMs === undefined
+                ? undefined
+                : new Date(entry.atEpochMs).toISOString()
+        ]
     ];
     return (
         <section
@@ -41,44 +49,49 @@ export function AnalyzeInspector({
                 <h2>{entry.summary}</h2>
                 <ExactIdentifier value={entry.id} />
             </header>
-            {entry.kind === 'result' && entry.failureDetails ? (
-                <AnalyzeFailureDetails
-                    density="inspector"
-                    details={entry.failureDetails}
-                />
-            ) : null}
+            {entry.kind === 'result' && entry.failureDetails
+                ? (
+                    <AnalyzeFailureDetails
+                        density="inspector"
+                        details={entry.failureDetails}
+                    />
+                )
+                : null}
             <dl>
                 {exactSelectors.filter(([, values]) => values.length > 0)
                     .map(([label, values]) => (
                         <div key={label}>
                             <dt>{label}</dt>
                             <dd className={styles.exactIdentifiers}>
-                                {values.map(value => (
-                                    <ExactIdentifier key={value} value={value} />
-                                ))}
+                                {values.map((value) => <ExactIdentifier key={value} value={value} />)}
                             </dd>
                         </div>
                     ))}
-                {selectors.filter((row): row is readonly [string, string] =>
-                    row[1] !== undefined && row[1].length > 0
-                ).map(([label, value]) => (
-                    <div key={label}>
-                        <dt>{label}</dt>
-                        <dd>{value}</dd>
-                    </div>
-                ))}
+                {selectors.filter((row): row is readonly [string, string] => row[1] !== undefined && row[1].length > 0)
+                    .map(
+                        ([label, value]) => (
+                            <div key={label}>
+                                <dt>{label}</dt>
+                                <dd>{value}</dd>
+                            </div>
+                        )
+                    )}
             </dl>
-            {entry.payloadSummary && entry.kind === 'result' && entry.failureDetails ? (
-                <details className={styles.rawPayload}>
-                    <summary>Raw payload JSON</summary>
-                    <pre>{entry.payloadSummary}</pre>
-                </details>
-            ) : entry.payloadSummary ? (
-                <div className={styles.payload}>
-                    <h3>Payload summary</h3>
-                    <pre>{entry.payloadSummary}</pre>
-                </div>
-            ) : null}
+            {entry.payloadSummary && entry.kind === 'result' && entry.failureDetails
+                ? (
+                    <details className={styles.rawPayload}>
+                        <summary>Raw payload JSON</summary>
+                        <pre>{entry.payloadSummary}</pre>
+                    </details>
+                )
+                : entry.payloadSummary
+                ? (
+                    <div className={styles.payload}>
+                        <h3>Payload summary</h3>
+                        <pre>{entry.payloadSummary}</pre>
+                    </div>
+                )
+                : null}
             <footer>
                 <span>{model.workspace.source === 'bundle-envelope' ? 'Imported envelope' : 'Artifact files'}</span>
                 <span>{model.workspace.support}</span>

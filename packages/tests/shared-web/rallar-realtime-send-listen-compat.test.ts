@@ -1,30 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    createActiveGroupMemberFixture,
-    createActiveGroupPresenceSessionFixture,
-    createGroupSnapshotFixture,
-} from './authoritative-group-fixtures.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import type {
-    QRtcDataChannel,
-    RtcDataChannelHealth,
-    RtcDataChannelSendResult,
-    RtcRawMessageCallback,
-} from '@shared/webrtc/QRtcDataChannel.ts';
 import type * as ApiIntegrationModule from '@shared-web/browser/api-integration.ts';
-import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as ApiWorkflowsModule from '@shared-web/browser/api-workflows.ts';
 import type * as AppContextModule from '@shared-web/browser/app-context.ts';
-import type * as AuthModule from '@shared/api/auth.ts';
-import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as DataCachesModule from '@shared-web/browser/data-caches.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type * as AuthModule from '@shared/api/auth.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import type { QRtcDataChannel, RtcDataChannelHealth, RtcDataChannelSendResult, RtcRawMessageCallback } from '@shared/webrtc/QRtcDataChannel.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createActiveGroupMemberFixture, createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 const mocks = await vi.hoisted(async () => {
     // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
@@ -36,12 +27,12 @@ const mocks = await vi.hoisted(async () => {
     const session = ctx.session;
     const readMissingClientStateSnapshotRepository = (): never => {
         throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots',
+            'Repository not found: shared.repository.client-state-snapshots'
         );
     };
     const readMissingGroupStateSnapshotRepository = (): never => {
         throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots',
+            'Repository not found: shared.repository.group-state-snapshots'
         );
     };
 
@@ -51,80 +42,54 @@ const mocks = await vi.hoisted(async () => {
         readMissingGroupStateSnapshotRepository,
         clearMiddleware: vi.fn<typeof AppContextModule.clearMiddleware>(),
         clearSession: vi.fn<typeof AuthModule.clearSession>(),
-        createAndJoinStateGroup: vi.fn<
-            typeof ApiWorkflowsModule.createAndJoinStateGroup
-        >(() => Promise.reject(new Error('create not mocked'))),
-        findClientStateSnapshotByPrincipalId: vi.fn<
-            typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId
-        >(readMissingClientStateSnapshotRepository),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
-            typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn
-        >(readMissingGroupStateSnapshotRepository),
-        findGroupStateSnapshotByRef: vi.fn<
-            typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef
-        >(readMissingGroupStateSnapshotRepository),
-        getAllClientStateSnapshots: vi.fn<
-            typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots
-        >(readMissingClientStateSnapshotRepository),
-        getAllGroupStateSnapshots: vi.fn<
-            typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots
-        >(readMissingGroupStateSnapshotRepository),
+        createAndJoinStateGroup: vi.fn<typeof ApiWorkflowsModule.createAndJoinStateGroup>(() => Promise.reject(new Error('create not mocked'))),
+        findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(
+            readMissingClientStateSnapshotRepository
+        ),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(
+            readMissingGroupStateSnapshotRepository
+        ),
+        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(readMissingGroupStateSnapshotRepository),
+        getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(readMissingClientStateSnapshotRepository),
+        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(readMissingGroupStateSnapshotRepository),
         hydrateStateCaches: vi.fn<typeof DataCachesModule.hydrateStateCaches>(
-            () => Promise.resolve(),
+            () => Promise.resolve()
         ),
         initMiddleware: vi.fn<typeof AppContextModule.initMiddleware>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<typeof AppContextModule.isMiddlewareReady>(
-            () => false,
+            () => false
         ),
-        joinStateGroup: vi.fn<typeof ApiWorkflowsModule.joinStateGroup>(() =>
-            Promise.reject(new Error('join not mocked'))
-        ),
-        leaveStateGroup: vi.fn<typeof ApiWorkflowsModule.leaveStateGroup>(() =>
-            Promise.reject(new Error('leave not mocked'))
-        ),
-        listStateClientEventPage: vi.fn<
-            typeof ApiIntegrationModule.listStateClientEventPage
-        >(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateClientEvents: vi.fn<
-            typeof ApiIntegrationModule.listStateClientEvents
-        >(() => Promise.reject(new Error('client events not mocked'))),
-        listStateGroupEventPage: vi.fn<
-            typeof ApiIntegrationModule.listStateGroupEventPage
-        >(() => Promise.reject(new Error('group event page not mocked'))),
-        listStateGroupEvents: vi.fn<
-            typeof ApiIntegrationModule.listStateGroupEvents
-        >(() => Promise.reject(new Error('group events not mocked'))),
+        joinStateGroup: vi.fn<typeof ApiWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<typeof ApiWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
+        listStateClientEventPage: vi.fn<typeof ApiIntegrationModule.listStateClientEventPage>(() => Promise.reject(new Error('client event page not mocked'))),
+        listStateClientEvents: vi.fn<typeof ApiIntegrationModule.listStateClientEvents>(() => Promise.reject(new Error('client events not mocked'))),
+        listStateGroupEventPage: vi.fn<typeof ApiIntegrationModule.listStateGroupEventPage>(() => Promise.reject(new Error('group event page not mocked'))),
+        listStateGroupEvents: vi.fn<typeof ApiIntegrationModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
         loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
-        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() =>
-            Promise.resolve({ loggedOut: true })
-        ),
+        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() => Promise.resolve({ loggedOut: true })),
         onStateCacheChange: vi.fn<typeof DataCachesModule.onStateCacheChange>(
-            () => vi.fn(),
+            () => vi.fn()
         ),
         readSession: vi.fn<typeof AuthModule.readSession>(() => session),
-        refreshStateSnapshots: vi.fn<
-            typeof ApiWorkflowsModule.refreshStateSnapshots
-        >(() => Promise.resolve({ clients: [], groups: [] })),
+        refreshStateSnapshots: vi.fn<typeof ApiWorkflowsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
         registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
             () =>
                 Promise.resolve({
                     clientId: 'client-new',
                     username: 'new-user',
                     displayName: null,
-                    registeredAtEpochMs: 1_000,
-                }),
+                    registeredAtEpochMs: 1_000
+                })
         ),
-        updateStateGroupMetadata: vi.fn<
-            typeof ApiWorkflowsModule.updateStateGroupMetadata
-        >(() => Promise.reject(new Error('metadata update not mocked'))),
-        writeSession: vi.fn<typeof AuthModule.writeSession>(),
+        updateStateGroupMetadata: vi.fn<typeof ApiWorkflowsModule.updateStateGroupMetadata>(() => Promise.reject(new Error('metadata update not mocked'))),
+        writeSession: vi.fn<typeof AuthModule.writeSession>()
     };
 });
 
 const qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
 const rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
 const webRtcConnectionService = vi.mocked(
-    mocks.ctx.middleware.webRtcConnectionService,
+    mocks.ctx.middleware.webRtcConnectionService
 );
 const webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
 const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket);
@@ -137,11 +102,11 @@ vi.mock(
     (): Partial<typeof AppContextModule> => ({
         clearMiddleware: mocks.clearMiddleware,
         getMiddleware: vi.fn<typeof AppContextModule.getMiddleware>(
-            () => mocks.ctx,
+            () => mocks.ctx
         ),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
@@ -150,8 +115,8 @@ vi.mock(
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
-        listStateGroupEvents: mocks.listStateGroupEvents,
-    }),
+        listStateGroupEvents: mocks.listStateGroupEvents
+    })
 );
 
 vi.mock(
@@ -159,8 +124,8 @@ vi.mock(
     (): Partial<typeof AuthApiModule> => ({
         loginToApi: mocks.loginToApi,
         logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi,
-    }),
+        registerWithApi: mocks.registerWithApi
+    })
 );
 
 vi.mock(
@@ -170,16 +135,16 @@ vi.mock(
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup,
         refreshStateSnapshots: mocks.refreshStateSnapshots,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata,
-    }),
+        updateStateGroupMetadata: mocks.updateStateGroupMetadata
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<typeof DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(
@@ -188,26 +153,25 @@ vi.mock(
         clearSession: mocks.clearSession,
         isLoggedIn: vi.fn<typeof AuthModule.isLoggedIn>(() => true),
         readSession: mocks.readSession,
-        writeSession: mocks.writeSession,
-    }),
+        writeSession: mocks.writeSession
+    })
 );
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
-        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots,
-    }),
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
+    })
 );
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
     (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn:
-            mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots,
-    }),
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
+    })
 );
 
 describe('Rallar realtime send and listen compatibility', () => {
@@ -215,19 +179,19 @@ describe('Rallar realtime send and listen compatibility', () => {
         vi.clearAllMocks();
         vi.useRealTimers();
         mocks.findClientStateSnapshotByPrincipalId.mockImplementation(
-            mocks.readMissingClientStateSnapshotRepository,
+            mocks.readMissingClientStateSnapshotRepository
         );
         mocks.getAllClientStateSnapshots.mockImplementation(
-            mocks.readMissingClientStateSnapshotRepository,
+            mocks.readMissingClientStateSnapshotRepository
         );
         mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-            mocks.readMissingGroupStateSnapshotRepository,
+            mocks.readMissingGroupStateSnapshotRepository
         );
         mocks.findGroupStateSnapshotByRef.mockImplementation(
-            mocks.readMissingGroupStateSnapshotRepository,
+            mocks.readMissingGroupStateSnapshotRepository
         );
         mocks.getAllGroupStateSnapshots.mockImplementation(
-            mocks.readMissingGroupStateSnapshotRepository,
+            mocks.readMissingGroupStateSnapshotRepository
         );
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
@@ -239,7 +203,7 @@ describe('Rallar realtime send and listen compatibility', () => {
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
-            new Error('metadata update not mocked'),
+            new Error('metadata update not mocked')
         );
         webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue([]);
         webRtcConnectionService.knownPeerIds.mockReturnValue([]);
@@ -250,33 +214,31 @@ describe('Rallar realtime send and listen compatibility', () => {
                 Either.ofLeft({
                     kind: 'connect-failed',
                     peerId,
-                    error: new Error('connect not mocked'),
-                }),
+                    error: new Error('connect not mocked')
+                })
         );
         webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
                 status: 'connect-failed',
                 peerId,
                 laneId,
-                error: new Error('connect not mocked'),
-            }),
+                error: new Error('connect not mocked')
+            })
         );
-        webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() =>
-            webRtcConnectionService
-        );
+        webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => webRtcConnectionService);
         webRtcConnectionService.readPeer.mockReturnValue(undefined);
         webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
             status: 'enqueued',
             message,
-            entries: [],
+            entries: []
         }));
         rtcRxStreamer.onInboxMessageDo.mockReturnValue(rtcRxStreamer);
         rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
             status: 'enqueued',
             message,
-            entries: [],
+            entries: []
         }));
         webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(webSocketQueueBox);
         webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);
@@ -289,7 +251,7 @@ describe('Rallar realtime send and listen compatibility', () => {
             reconnectEnabled: false,
             reconnectAttempts: 0,
             maxReconnectAttempts: 12,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
         webSocketQueueBox.close.mockImplementation((code, reason) => {
             webSocketClient.close(code, reason);
@@ -300,19 +262,19 @@ describe('Rallar realtime send and listen compatibility', () => {
             clientId: 'client-new',
             username: 'new-user',
             displayName: null,
-            registeredAtEpochMs: 1_000,
+            registeredAtEpochMs: 1_000
         });
         mocks.listStateClientEvents.mockRejectedValue(
-            new Error('client events not mocked'),
+            new Error('client events not mocked')
         );
         mocks.listStateClientEventPage.mockRejectedValue(
-            new Error('client event page not mocked'),
+            new Error('client event page not mocked')
         );
         mocks.listStateGroupEvents.mockRejectedValue(
-            new Error('group events not mocked'),
+            new Error('group events not mocked')
         );
         mocks.listStateGroupEventPage.mockRejectedValue(
-            new Error('group event page not mocked'),
+            new Error('group event page not mocked')
         );
     });
 
@@ -322,29 +284,29 @@ describe('Rallar realtime send and listen compatibility', () => {
         );
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
-            bufferedAmount: 0,
+            bufferedAmount: 0
         };
         const realtimeChannel = createRtcDataChannelTestDouble({
-            sendJson: vi.fn(() => sendResult),
+            sendJson: vi.fn(() => sendResult)
         });
         const peer = createRtcPeerTestDouble({
             peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]]),
+            channels: new Map([['realtime', realtimeChannel]])
         });
         webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'open',
             peerId: 'peer-1',
             laneId: 'realtime',
             peer,
-            channel: realtimeChannel,
+            channel: realtimeChannel
         });
 
         const result = await createRallarFacade().realtime.sendJson({
             peerIds: ['peer-1'],
             data: {
-                x: 1,
+                x: 1
             },
-            key: 'player-1',
+            key: 'player-1'
         });
 
         expect(webRtcConnectionService.ensurePeerLaneOpen)
@@ -352,23 +314,23 @@ describe('Rallar realtime send and listen compatibility', () => {
                 'peer-1',
                 'realtime',
                 expect.objectContaining({
-                    timeoutMs: 5_000,
-                }),
+                    timeoutMs: 5_000
+                })
             );
         expect(realtimeChannel.sendJson).toHaveBeenCalledWith(
             {
-                x: 1,
+                x: 1
             },
             expect.objectContaining({
-                key: 'player-1',
-            }),
+                key: 'player-1'
+            })
         );
         expect(result).toEqual([
             {
                 peerId: 'peer-1',
                 laneId: 'realtime',
-                result: sendResult,
-            },
+                result: sendResult
+            }
         ]);
     });
 
@@ -377,24 +339,24 @@ describe('Rallar realtime send and listen compatibility', () => {
             '@shared-web/browser/rallar.ts'
         );
         const realtimeChannel = createRtcDataChannelTestDouble({
-            sendJson: vi.fn(),
+            sendJson: vi.fn()
         });
         webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'timeout',
             peerId: 'peer-1',
             laneId: 'realtime',
             channel: realtimeChannel,
-            error: new Error('lane did not open'),
+            error: new Error('lane did not open')
         });
 
         await expect(
             createRallarFacade().realtime.sendJson({
                 peerIds: ['peer-1'],
                 data: {
-                    x: 1,
+                    x: 1
                 },
-                openTimeoutMs: 25,
-            }),
+                openTimeoutMs: 25
+            })
         ).resolves.toEqual([
             {
                 peerId: 'peer-1',
@@ -402,9 +364,9 @@ describe('Rallar realtime send and listen compatibility', () => {
                 result: {
                     status: 'closed',
                     reason: 'Realtime lane not connected',
-                    bufferedAmount: 0,
-                },
-            },
+                    bufferedAmount: 0
+                }
+            }
         ]);
 
         expect(webRtcConnectionService.ensurePeerLaneOpen)
@@ -412,8 +374,8 @@ describe('Rallar realtime send and listen compatibility', () => {
                 'peer-1',
                 'realtime',
                 expect.objectContaining({
-                    timeoutMs: 25,
-                }),
+                    timeoutMs: 25
+                })
             );
         expect(realtimeChannel.sendJson).not.toHaveBeenCalled();
     });
@@ -425,22 +387,22 @@ describe('Rallar realtime send and listen compatibility', () => {
         const bytes = new Uint8Array([1, 2, 3]);
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
-            bufferedAmount: 0,
+            bufferedAmount: 0
         };
         const realtimeChannel = createRtcDataChannelTestDouble({
-            sendBinary: vi.fn(() => sendResult),
+            sendBinary: vi.fn(() => sendResult)
         });
         webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'open',
             peerId: 'peer-1',
             laneId: 'realtime',
-            channel: realtimeChannel,
+            channel: realtimeChannel
         });
 
         const result = await createRallarFacade().realtime.sendBinary({
             peerIds: ['peer-1'],
             data: bytes,
-            openTimeoutMs: 75,
+            openTimeoutMs: 75
         });
 
         expect(webRtcConnectionService.ensurePeerLaneOpen)
@@ -448,19 +410,19 @@ describe('Rallar realtime send and listen compatibility', () => {
                 'peer-1',
                 'realtime',
                 expect.objectContaining({
-                    timeoutMs: 75,
-                }),
+                    timeoutMs: 75
+                })
             );
         expect(realtimeChannel.sendBinary).toHaveBeenCalledWith(
             bytes,
-            expect.objectContaining({}),
+            expect.objectContaining({})
         );
         expect(result).toEqual([
             {
                 peerId: 'peer-1',
                 laneId: 'realtime',
-                result: sendResult,
-            },
+                result: sendResult
+            }
         ]);
     });
 
@@ -472,7 +434,7 @@ describe('Rallar realtime send and listen compatibility', () => {
             status: 'no-lane',
             peerId: 'peer-1',
             laneId: 'missing',
-            error: new Error('missing lane'),
+            error: new Error('missing lane')
         });
 
         await expect(
@@ -480,9 +442,9 @@ describe('Rallar realtime send and listen compatibility', () => {
                 peerIds: ['peer-1'],
                 laneId: 'missing',
                 data: {
-                    x: 1,
-                },
-            }),
+                    x: 1
+                }
+            })
         ).resolves.toEqual([
             {
                 peerId: 'peer-1',
@@ -490,17 +452,17 @@ describe('Rallar realtime send and listen compatibility', () => {
                 result: {
                     status: 'closed',
                     reason: 'Realtime lane not connected',
-                    bufferedAmount: 0,
-                },
-            },
+                    bufferedAmount: 0
+                }
+            }
         ]);
         expect(webRtcConnectionService.ensurePeerLaneOpen)
             .toHaveBeenCalledWith(
                 'peer-1',
                 'missing',
                 expect.objectContaining({
-                    timeoutMs: 5_000,
-                }),
+                    timeoutMs: 5_000
+                })
             );
     });
 
@@ -514,11 +476,11 @@ describe('Rallar realtime send and listen compatibility', () => {
                 rawCallbacks.set(id, callback);
                 return realtimeChannel;
             }),
-            removeOnRawMessageCallbackById: vi.fn(() => true),
+            removeOnRawMessageCallbackById: vi.fn(() => true)
         });
         const peer = createRtcPeerTestDouble({
             peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]]),
+            channels: new Map([['realtime', realtimeChannel]])
         });
         webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         webRtcConnectionService.readPeer.mockReturnValue(peer);
@@ -531,20 +493,20 @@ describe('Rallar realtime send and listen compatibility', () => {
         expect(realtimeChannel.onRawMessageDo).toHaveBeenCalledWith(
             'rallar:realtime:realtime',
             expect.objectContaining({
-                onMessage: expect.any(Function),
-            }),
+                onMessage: expect.any(Function)
+            })
         );
 
         const callback = rawCallbacks.get('rallar:realtime:realtime');
         await callback?.onMessage?.(
             JSON.stringify({
-                x: 1,
+                x: 1
             }),
             {
                 data: JSON.stringify({
-                    x: 1,
-                }),
-            } as MessageEvent,
+                    x: 1
+                })
+            } as MessageEvent
         );
 
         expect(handler).toHaveBeenCalledWith(
@@ -552,9 +514,9 @@ describe('Rallar realtime send and listen compatibility', () => {
                 peerId: 'peer-1',
                 laneId: 'realtime',
                 data: {
-                    x: 1,
-                },
-            }),
+                    x: 1
+                }
+            })
         );
     });
 
@@ -568,11 +530,11 @@ describe('Rallar realtime send and listen compatibility', () => {
                 rawCallbacks.set(id, callback);
                 return realtimeChannel;
             }),
-            removeOnRawMessageCallbackById: vi.fn(() => true),
+            removeOnRawMessageCallbackById: vi.fn(() => true)
         });
         const peer = createRtcPeerTestDouble({
             peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]]),
+            channels: new Map([['realtime', realtimeChannel]])
         });
         webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         webRtcConnectionService.readPeer.mockReturnValue(peer);
@@ -586,15 +548,15 @@ describe('Rallar realtime send and listen compatibility', () => {
         await callback?.onMessage?.(
             new Uint8Array([1, 2, 3]),
             {
-                data: new Uint8Array([1, 2, 3]),
-            } as MessageEvent,
+                data: new Uint8Array([1, 2, 3])
+            } as MessageEvent
         );
 
         expect(handler).toHaveBeenCalledOnce();
         const message = handler.mock.calls[0]?.[0];
         expect(message).toMatchObject({
             peerId: 'peer-1',
-            laneId: 'realtime',
+            laneId: 'realtime'
         });
         expect(Array.from(new Uint8Array(message.data))).toEqual([1, 2, 3]);
     });
@@ -620,7 +582,7 @@ describe('Rallar realtime send and listen compatibility', () => {
                 highWatermarkBytes: 64 * 1024,
                 lowWatermarkBytes: 16 * 1024,
                 overflow: 'drop-new',
-                maxQueueItems: 32,
+                maxQueueItems: 32
             },
             counters: {
                 sent: 2,
@@ -633,15 +595,15 @@ describe('Rallar realtime send and listen compatibility', () => {
                 droppedStale: 0,
                 receivedRaw: 0,
                 receivedString: 0,
-                receivedBinary: 0,
-            },
+                receivedBinary: 0
+            }
         };
         const realtimeChannel = createRtcDataChannelTestDouble({
-            readHealth: vi.fn(() => health),
+            readHealth: vi.fn(() => health)
         });
         const peer = createRtcPeerTestDouble({
             peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]]),
+            channels: new Map([['realtime', realtimeChannel]])
         });
         webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
         webRtcConnectionService.readPeer.mockReturnValue(peer);
@@ -653,8 +615,8 @@ describe('Rallar realtime send and listen compatibility', () => {
             {
                 peerId: 'peer-1',
                 laneId: 'realtime',
-                channel: health,
-            },
+                channel: health
+            }
         ]);
     });
 });
@@ -669,7 +631,7 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
 // cannot construct, so these builders assert the completeness of the double while leaving the shape
 // of every supplied member checked against the production signature.
 function createRtcDataChannelTestDouble(
-    members: Partial<QRtcDataChannel>,
+    members: Partial<QRtcDataChannel>
 ): QRtcDataChannel {
     return members as QRtcDataChannel;
 }
@@ -684,7 +646,7 @@ function createChannelHealth(
         label: string;
         state: string;
         readyState: RTCDataChannelState;
-    }>,
+    }>
 ) {
     return {
         peerId: input.peerId,
@@ -703,7 +665,7 @@ function createChannelHealth(
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
             overflow: 'drop-new' as const,
-            maxQueueItems: 32,
+            maxQueueItems: 32
         },
         counters: {
             sent: 0,
@@ -716,8 +678,8 @@ function createChannelHealth(
             droppedStale: 0,
             receivedRaw: 0,
             receivedString: 0,
-            receivedBinary: 0,
-        },
+            receivedBinary: 0
+        }
     };
 }
 
@@ -741,14 +703,14 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 
 function withSnapshotVersion(
     snapshot: GroupSnapshot,
-    snapshotVersion: number,
+    snapshotVersion: number
 ): GroupSnapshot {
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
-            snapshotVersion,
-        },
+            snapshotVersion
+        }
     };
 }
 
@@ -758,7 +720,7 @@ function createGroupSnapshot(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
@@ -766,7 +728,7 @@ function createGroupSnapshot(
         applicationId,
         workspaceId,
         groupId,
-        sessionIds,
+        sessionIds
     });
 }
 
@@ -777,18 +739,18 @@ function createDirectorGroupSnapshot(
         epoch: number;
         appointedAtEpochMs: number;
         heartbeatTtlMs: number;
-    }>,
+    }>
 ): GroupSnapshot {
     const snapshot = createGroupSnapshot('room-1', ['session-1']);
     const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
         ...snapshot.activeSessions[0],
         principalId: 'principal-1',
-        sessionId: 'session-1',
+        sessionId: 'session-1'
     }];
     const members: GroupSnapshot['members'][number][] = [{
         ...snapshot.members[0],
         principalId: 'principal-1',
-        role: 'owner',
+        role: 'owner'
     }];
 
     if (appointment) {
@@ -797,7 +759,7 @@ function createDirectorGroupSnapshot(
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
-            sessionId: appointment.sessionId,
+            sessionId: appointment.sessionId
         }));
         members.push(createActiveGroupMemberFixture({
             applicationId: 'app-1',
@@ -805,7 +767,7 @@ function createDirectorGroupSnapshot(
             groupId: 'room-1',
             principalId: appointment.principalId,
             role: 'member',
-            actorPrincipalId: 'principal-1',
+            actorPrincipalId: 'principal-1'
         }));
     }
 
@@ -815,22 +777,22 @@ function createDirectorGroupSnapshot(
             ...snapshot.group,
             created: {
                 ...snapshot.group.created,
-                actor: { kind: 'principal', principalId: 'principal-1' },
+                actor: { kind: 'principal', principalId: 'principal-1' }
             },
             metadata: appointment
                 ? {
                     rallarDirector: {
                         version: 1,
                         mode: 'appointed-spa',
-                        ...appointment,
-                    },
+                        ...appointment
+                    }
                 }
-                : {},
+                : {}
         },
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: activeSessions.length,
+        onlineMemberCount: activeSessions.length
     };
 }
 
@@ -851,7 +813,7 @@ function createDeferred<T>(): {
 
 function createMediaTrack(
     id: string,
-    kind: 'audio' | 'video',
+    kind: 'audio' | 'video'
 ): MediaStreamTrack {
     const listeners = new Set<EventListenerOrEventListenerObject>();
     const track = {
@@ -861,7 +823,7 @@ function createMediaTrack(
         readyState: 'live',
         addEventListener: vi.fn((
             type: string,
-            listener: EventListenerOrEventListenerObject,
+            listener: EventListenerOrEventListenerObject
         ) => {
             if (type === 'ended') {
                 listeners.add(listener);
@@ -869,7 +831,7 @@ function createMediaTrack(
         }),
         removeEventListener: vi.fn((
             type: string,
-            listener: EventListenerOrEventListenerObject,
+            listener: EventListenerOrEventListenerObject
         ) => {
             if (type === 'ended') {
                 listeners.delete(listener);
@@ -881,11 +843,12 @@ function createMediaTrack(
             for (const listener of listeners) {
                 if (typeof listener === 'function') {
                     listener(event);
-                } else {
+                }
+                else {
                     listener.handleEvent(event);
                 }
             }
-        }),
+        })
     };
 
     return track as unknown as MediaStreamTrack;
@@ -893,13 +856,13 @@ function createMediaTrack(
 
 function createMediaStream(
     id: string,
-    tracks: readonly MediaStreamTrack[],
+    tracks: readonly MediaStreamTrack[]
 ): MediaStream {
     return {
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
         getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
     } as unknown as MediaStream;
 }

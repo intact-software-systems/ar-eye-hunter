@@ -1,24 +1,20 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
-import {
-    toWsExpectedConnectionName,
-    toWsFailureStatus,
-    toWsSuccessStatus,
-} from './ws-interaction-statuses.ts';
+import { toWsExpectedConnectionName, toWsFailureStatus, toWsSuccessStatus } from './ws-interaction-statuses.ts';
 
 export {
     toWsConnectionName,
     toWsExpectedConnectionName,
     toWsFailureStatus,
-    toWsSuccessStatus,
+    toWsSuccessStatus
 } from './ws-interaction-statuses.ts';
 
 function toWsComparisonConfig(interaction: any): any {
     return toConfig(
         interaction.response?.comparison || COMPARISON.COMPATIBLE,
         interaction.response?.ignoreJsonKeys || [],
-        interaction.response?.ignoreJsonPaths || [],
+        interaction.response?.ignoreJsonPaths || []
     );
 }
 
@@ -26,7 +22,7 @@ function findWsMessageIndex(
     messages: any[],
     expectedMessage: any,
     interaction: any,
-    excludedIndexes: number[] = [],
+    excludedIndexes: number[] = []
 ): number {
     return messages.findIndex((message, index) => {
         if (excludedIndexes.includes(index)) {
@@ -36,7 +32,7 @@ function findWsMessageIndex(
         const result = compareJson(
             expectedMessage,
             message.data,
-            toWsComparisonConfig(interaction),
+            toWsComparisonConfig(interaction)
         );
 
         return result.isEqual;
@@ -48,7 +44,7 @@ function findWsMessageIndexFrom(
     expectedMessage: any,
     interaction: any,
     fromIndex = 0,
-    excludedIndexes: number[] = [],
+    excludedIndexes: number[] = []
 ): number {
     for (let index = fromIndex; index < messages.length; index++) {
         if (excludedIndexes.includes(index)) {
@@ -58,7 +54,7 @@ function findWsMessageIndexFrom(
         const result = compareJson(
             expectedMessage,
             messages[index].data,
-            toWsComparisonConfig(interaction),
+            toWsComparisonConfig(interaction)
         );
 
         if (result.isEqual) {
@@ -72,13 +68,13 @@ function findWsMessageIndexFrom(
 function findWsCloseEventIndex(
     closeEvents: any[],
     expectedCloseEvent: any,
-    interaction: any,
+    interaction: any
 ): number {
-    return closeEvents.findIndex(closeEvent => {
+    return closeEvents.findIndex((closeEvent) => {
         const result = compareJson(
             expectedCloseEvent,
             closeEvent,
-            toWsComparisonConfig(interaction),
+            toWsComparisonConfig(interaction)
         );
 
         return result.isEqual;
@@ -89,7 +85,7 @@ export function waitForWsMessage(
     interaction: any,
     config: any,
     context: any,
-    details: any = {},
+    details: any = {}
 ): Promise<any> {
     const request = interaction.request;
     const connectionName = toWsExpectedConnectionName(interaction);
@@ -98,7 +94,7 @@ export function waitForWsMessage(
     const startedAt = Date.now();
     const consume = interaction.response.consume === true;
 
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         const interval = setInterval(() => {
             const messages = context.wsMessages[connectionName] || [];
             const matchIndex = findWsMessageIndex(messages, expectedMessage, interaction);
@@ -116,19 +112,19 @@ export function waitForWsMessage(
                     connection: connectionName,
                     matchedMessage: match,
                     consumed: consume,
-                    waitedMs: Date.now() - startedAt,
+                    waitedMs: Date.now() - startedAt
                 }));
                 return;
             }
 
             if (Date.now() - startedAt >= timeoutMs) {
                 clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction,
-                    'Expected WebSocket message was not received', {
+                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
                     ...details,
                     connection: connectionName,
-                    expectedMessage, ...toBoundedWsWaitMessages(messages),
-                    waitedMs: Date.now() - startedAt,
+                    expectedMessage,
+                    ...toBoundedWsWaitMessages(messages),
+                    waitedMs: Date.now() - startedAt
                 }));
             }
         }, 25);
@@ -139,7 +135,7 @@ export function waitForWsMessages(
     interaction: any,
     config: any,
     context: any,
-    details: any = {},
+    details: any = {}
 ): Promise<any> {
     const request = interaction.request;
     const connectionName = toWsExpectedConnectionName(interaction);
@@ -150,15 +146,16 @@ export function waitForWsMessages(
     const ordered = interaction.response.ordered === true;
 
     if (!Array.isArray(expectedMessages) || expectedMessages.length <= 0) {
-        return Promise.resolve(toWsFailureStatus(config, interaction,
-            'Expected WebSocket messages must be a non-empty array', {
-            ...details,
-            connection: connectionName,
-            expectedMessages,
-        }));
+        return Promise.resolve(
+            toWsFailureStatus(config, interaction, 'Expected WebSocket messages must be a non-empty array', {
+                ...details,
+                connection: connectionName,
+                expectedMessages
+            })
+        );
     }
 
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         const interval = setInterval(() => {
             const messages = context.wsMessages[connectionName] || [];
             const matchedMessages: any[] = [];
@@ -173,7 +170,7 @@ export function waitForWsMessages(
                         expectedMessage,
                         interaction,
                         nextOrderedSearchIndex,
-                        matchedIndexes,
+                        matchedIndexes
                     )
                     : findWsMessageIndex(messages, expectedMessage, interaction, matchedIndexes);
 
@@ -181,13 +178,14 @@ export function waitForWsMessages(
                     matchedIndexes.push(matchIndex);
                     matchedMessages.push({
                         expectedMessage,
-                        matchedMessage: messages[matchIndex],
+                        matchedMessage: messages[matchIndex]
                     });
 
                     if (ordered) {
                         nextOrderedSearchIndex = matchIndex + 1;
                     }
-                } else if (ordered) {
+                }
+                else if (ordered) {
                     break;
                 }
             }
@@ -198,7 +196,7 @@ export function waitForWsMessages(
                 if (consume) {
                     matchedIndexes
                         .sort((a, b) => b - a)
-                        .forEach(index => messages.splice(index, 1));
+                        .forEach((index) => messages.splice(index, 1));
                 }
 
                 resolve(toWsSuccessStatus(config, interaction, {
@@ -207,27 +205,32 @@ export function waitForWsMessages(
                     matchedMessages,
                     consumed: consume,
                     ordered,
-                    waitedMs: Date.now() - startedAt,
+                    waitedMs: Date.now() - startedAt
                 }));
                 return;
             }
 
             if (Date.now() - startedAt >= timeoutMs) {
                 clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, ordered
-                    ? 'Expected WebSocket messages were not received in the expected order'
-                    : 'Expected WebSocket messages were not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedMessages,
-                    matchedMessages,
-                    missingMessages: expectedMessages.filter((expectedMessage: any) => {
-                        return matchedMessages.every(match =>
-                            match.expectedMessage !== expectedMessage);
-                    }),
-                    ordered, ...toBoundedWsWaitMessages(messages),
-                    waitedMs: Date.now() - startedAt,
-                }));
+                resolve(toWsFailureStatus(
+                    config,
+                    interaction,
+                    ordered
+                        ? 'Expected WebSocket messages were not received in the expected order'
+                        : 'Expected WebSocket messages were not received',
+                    {
+                        ...details,
+                        connection: connectionName,
+                        expectedMessages,
+                        matchedMessages,
+                        missingMessages: expectedMessages.filter((expectedMessage: any) => {
+                            return matchedMessages.every((match) => match.expectedMessage !== expectedMessage);
+                        }),
+                        ordered,
+                        ...toBoundedWsWaitMessages(messages),
+                        waitedMs: Date.now() - startedAt
+                    }
+                ));
             }
         }, 25);
     });
@@ -237,7 +240,7 @@ export function waitForWsClose(
     interaction: any,
     config: any,
     context: any,
-    details: any = {},
+    details: any = {}
 ): Promise<any> {
     const request = interaction.request;
     const connectionName = toWsExpectedConnectionName(interaction);
@@ -249,14 +252,15 @@ export function waitForWsClose(
     const consume = interaction.response.consume === true;
 
     if (expectedClose === undefined) {
-        return Promise.resolve(toWsFailureStatus(config, interaction,
-            'WebSocket close expectation is missing. Use expect.close.', {
-            ...details,
-            connection: connectionName,
-        }));
+        return Promise.resolve(
+            toWsFailureStatus(config, interaction, 'WebSocket close expectation is missing. Use expect.close.', {
+                ...details,
+                connection: connectionName
+            })
+        );
     }
 
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         const interval = setInterval(() => {
             const closeEvents = context.wsCloseEvents[connectionName] || [];
             const matchIndex = findWsCloseEventIndex(closeEvents, expectedClose, interaction);
@@ -274,20 +278,19 @@ export function waitForWsClose(
                     connection: connectionName,
                     matchedCloseEvent: match,
                     consumed: consume,
-                    waitedMs: Date.now() - startedAt,
+                    waitedMs: Date.now() - startedAt
                 }));
                 return;
             }
 
             if (Date.now() - startedAt >= timeoutMs) {
                 clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction,
-                    'Expected WebSocket close event was not received', {
+                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket close event was not received', {
                     ...details,
                     connection: connectionName,
                     expectedClose,
                     closeEvents,
-                    waitedMs: Date.now() - startedAt,
+                    waitedMs: Date.now() - startedAt
                 }));
             }
         }, 25);
@@ -307,7 +310,7 @@ export function waitForWsMessageAbsence(input: WaitForWsMessageAbsenceInput): Pr
     const connectionName = toWsExpectedConnectionName(interaction);
     const absentMessage = interaction.response.absent;
     const windowMs = Number.parseInt(
-        interaction.response.withinMs || interaction.request.timeoutMs || 5000,
+        interaction.response.withinMs || interaction.request.timeoutMs || 5000
     );
     const startedAt = Date.now();
 
@@ -318,14 +321,14 @@ export function waitForWsMessageAbsence(input: WaitForWsMessageAbsenceInput): Pr
             'WebSocket absence wait expects expect.absent to be a partial message matcher.',
             {
                 ...details,
-                connection: connectionName,
-            },
+                connection: connectionName
+            }
         ));
     }
 
     // The full window is always waited: an absence claim is only as strong as
     // the time the runner kept listening for the offending frame.
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         setTimeout(() => {
             const messages = context.wsMessages[connectionName] || [];
             const matchIndex = findWsMessageIndex(messages, absentMessage, interaction);
@@ -342,8 +345,8 @@ export function waitForWsMessageAbsence(input: WaitForWsMessageAbsenceInput): Pr
                         matchedMessage: messages[matchIndex],
                         matchedIndex: matchIndex,
                         observedMessageCount: messages.length,
-                        waitedMs: Date.now() - startedAt,
-                    },
+                        waitedMs: Date.now() - startedAt
+                    }
                 ));
                 return;
             }
@@ -354,7 +357,7 @@ export function waitForWsMessageAbsence(input: WaitForWsMessageAbsenceInput): Pr
                 absent: absentMessage,
                 matchedMessage: undefined,
                 observedMessageCount: messages.length,
-                waitedMs: Date.now() - startedAt,
+                waitedMs: Date.now() - startedAt
             }));
         }, windowMs);
     });

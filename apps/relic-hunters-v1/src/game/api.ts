@@ -1,6 +1,6 @@
-import { readSession } from '@shared/api/auth.ts';
-import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import type { RelicCommand, RelicPublicSnapshot } from '@relic-hunters/mod.ts';
+import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
+import { readSession } from '@shared/api/auth.ts';
 
 export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined> {
     const session = readSession();
@@ -11,8 +11,8 @@ export async function fetchRelicSnapshot(gameId: string): Promise<RelicPublicSna
     const response = await fetch(`${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}`, {
         headers: {
             authorization: `Bearer ${session.accessToken}`,
-            'x-client-id': session.clientId,
-        },
+            'x-client-id': session.clientId
+        }
     });
     if (response.status === 404) {
         return undefined;
@@ -34,8 +34,8 @@ export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapsho
         method: 'POST',
         headers: {
             authorization: `Bearer ${session.accessToken}`,
-            'x-client-id': session.clientId,
-        },
+            'x-client-id': session.clientId
+        }
     });
     if (!response.ok) {
         throw new Error(`Failed to reset expedition: ${response.status}`);
@@ -46,7 +46,7 @@ export async function resetRelicGame(gameId: string): Promise<RelicPublicSnapsho
 
 export async function sendRelicCommand(
     gameId: string,
-    command: RelicCommand,
+    command: RelicCommand
 ): Promise<RelicPublicSnapshot | undefined> {
     const session = readSession();
     if (!session) {
@@ -58,9 +58,9 @@ export async function sendRelicCommand(
         headers: {
             authorization: `Bearer ${session.accessToken}`,
             'content-type': 'application/json',
-            'x-client-id': session.clientId,
+            'x-client-id': session.clientId
         },
-        body: JSON.stringify(command),
+        body: JSON.stringify(command)
     });
     if (!response.ok) {
         const body = await response.text().catch(() => '');

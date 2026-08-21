@@ -1,35 +1,30 @@
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { readGroupVersion, } from '@shared/api/group-client-views.ts';
 
-import type {
-    GroupPreActivationAppData,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import {
-    RALLAR_CRDT_APP_TOPIC_ID,
-    RALLAR_CRDT_ROOM_TOPIC_ID,
-} from '@shared/crdt/crdt-types.ts';
+import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 import type {
     RallarServerWsRoomAuthorizationDecision,
-    RallarServerWsRoomAuthorizer,
+    RallarServerWsRoomAuthorizer
 } from '../../rallar-facade/ws-topic-router.ts';
-import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
-import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
 import { canSendRoomMessage } from '../group-policy.ts';
-import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
     findGroupSnapshotByRef?: (
         ref: GroupRef,
-        input: Parameters<RallarServerWsRoomAuthorizer>[0],
+        input: Parameters<RallarServerWsRoomAuthorizer>[0]
     ) => MaybePromise<GroupSnapshot | undefined>;
     findGroupSnapshotById?: (
-        groupId: string,
+        groupId: string
     ) => MaybePromise<GroupSnapshot | undefined>;
     resolveGroupRef?: (
-        input: Parameters<RallarServerWsRoomAuthorizer>[0],
+        input: Parameters<RallarServerWsRoomAuthorizer>[0]
     ) => MaybePromise<GroupRef | undefined>;
     /**
      * Resolves the group's data-policy value for the pre-activation gate
@@ -37,13 +32,13 @@ export type CreateGroupRoomWsAuthorizerOptions = Readonly<{
      * source, which leaves application data ungated -- today's behaviour.
      */
     readPreActivationAppData?: (
-        ref: GroupRef,
+        ref: GroupRef
     ) => MaybePromise<GroupPreActivationAppData>;
     now?: RallarSnapshotPresenceClock;
 }>;
 
 export function createGroupRoomWsAuthorizer(
-    options: CreateGroupRoomWsAuthorizerOptions,
+    options: CreateGroupRoomWsAuthorizerOptions
 ): RallarServerWsRoomAuthorizer {
     return async (input) => {
         const groupRef = input.roomRef ??
@@ -59,9 +54,8 @@ export function createGroupRoomWsAuthorizer(
             return {
                 authorized: false,
                 reason: 'unauthorized',
-                logMessage:
-                    `Rejected room message for ${input.roomId}: group scope mismatch.`,
-                serverSnapshotVersion: readGroupVersion(byIdSnapshot),
+                logMessage: `Rejected room message for ${input.roomId}: group scope mismatch.`,
+                serverSnapshotVersion: readGroupVersion(byIdSnapshot)
             };
         }
         const snapshot = scopedSnapshot ?? (
@@ -76,8 +70,7 @@ export function createGroupRoomWsAuthorizer(
                 return {
                     authorized: false,
                     reason: 'not-yet-in-sync',
-                    logMessage:
-                        `Room ${input.roomId} cache is missing; requires snapshot version ${minSnapshotVersion}`,
+                    logMessage: `Room ${input.roomId} cache is missing; requires snapshot version ${minSnapshotVersion}`
                 };
             }
 
@@ -94,7 +87,7 @@ export function createGroupRoomWsAuthorizer(
                 reason: 'not-yet-in-sync',
                 logMessage:
                     `Room ${input.roomId} cache version ${serverSnapshotVersion} is older than required version ${minSnapshotVersion}`,
-                serverSnapshotVersion,
+                serverSnapshotVersion
             };
         }
 
@@ -102,12 +95,12 @@ export function createGroupRoomWsAuthorizer(
         const policyResult = canSendRoomMessage({
             snapshot,
             actor: {
-                sessionId: input.senderId,
+                sessionId: input.senderId
             },
             senderSessionId: input.senderId,
             minSnapshotVersion,
             nowEpochMs: options.now?.() ?? Date.now(),
-            ...(preActivationAppData === undefined ? {} : { preActivationAppData }),
+            ...(preActivationAppData === undefined ? {} : { preActivationAppData })
         });
         if (!policyResult.allowed) {
             return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
@@ -128,7 +121,7 @@ export function createGroupRoomWsAuthorizer(
 async function resolvePreActivationAppData(
     options: CreateGroupRoomWsAuthorizerOptions,
     input: Parameters<RallarServerWsRoomAuthorizer>[0],
-    snapshot: GroupSnapshot,
+    snapshot: GroupSnapshot
 ): Promise<GroupPreActivationAppData | undefined> {
     if (
         input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
@@ -142,20 +135,19 @@ async function resolvePreActivationAppData(
     return await options.readPreActivationAppData({
         applicationId: snapshot.group.applicationId,
         workspaceId: snapshot.group.workspaceId,
-        groupId: snapshot.group.groupId,
+        groupId: snapshot.group.groupId
     });
 }
 
 function toPolicyDeniedDecision(
     roomId: string,
     denial: GroupPolicyDenied,
-    serverSnapshotVersion?: number,
+    serverSnapshotVersion?: number
 ): RallarServerWsRoomAuthorizationDecision {
     return {
         authorized: false,
         reason: 'unauthorized',
-        logMessage:
-            `Rejected room message for ${roomId}: ${denial.code}: ${denial.message}`,
-        serverSnapshotVersion,
+        logMessage: `Rejected room message for ${roomId}: ${denial.code}: ${denial.message}`,
+        serverSnapshotVersion
     };
 }

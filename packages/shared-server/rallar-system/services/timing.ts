@@ -26,10 +26,7 @@ export type RallarTimingEvent = Readonly<{
     }>;
 }>;
 
-export type RallarTimingEventInput = Omit<
-    RallarTimingEvent,
-    'type' | 'status' | 'durationMs' | 'atEpochMs' | 'error'
->;
+export type RallarTimingEventInput = Omit<RallarTimingEvent, 'type' | 'status' | 'durationMs' | 'atEpochMs' | 'error'>;
 
 export type RallarTimingSink = (event: RallarTimingEvent) => void;
 
@@ -38,7 +35,7 @@ export function recordRallarTiming(
     input: RallarTimingEventInput,
     status: RallarTimingStatus,
     durationMs: number,
-    error?: unknown,
+    error?: unknown
 ): void {
     if (!sink) {
         return;
@@ -51,9 +48,10 @@ export function recordRallarTiming(
             status,
             durationMs: toRoundedDurationMs(durationMs),
             atEpochMs: Date.now(),
-            ...(error === undefined ? {} : { error: toTimingError(error) }),
+            ...(error === undefined ? {} : { error: toTimingError(error) })
         });
-    } catch {
+    }
+    catch {
         // Timing must never affect request or state mutation behavior.
     }
 }
@@ -61,7 +59,7 @@ export function recordRallarTiming(
 export async function timeRallarAsync<T>(
     sink: RallarTimingSink | undefined,
     input: RallarTimingEventInput,
-    action: () => Promise<T>,
+    action: () => Promise<T>
 ): Promise<T> {
     if (!sink) {
         return await action();
@@ -72,7 +70,8 @@ export async function timeRallarAsync<T>(
         const value = await action();
         recordRallarTiming(sink, input, 'ok', nowMs() - startedAt);
         return value;
-    } catch (error) {
+    }
+    catch (error) {
         recordRallarTiming(sink, input, 'error', nowMs() - startedAt, error);
         throw error;
     }
@@ -82,7 +81,7 @@ export function createConsoleRallarTimingSink(
     options: Readonly<{
         enabled?: boolean;
         logger?: (message: string) => void;
-    }> = {},
+    }> = {}
 ): RallarTimingSink {
     const enabled = options.enabled ?? true;
     const logger = options.logger ?? console.info;
@@ -107,6 +106,6 @@ function toRoundedDurationMs(durationMs: number): number {
 function toTimingError(error: unknown): RallarTimingEvent['error'] {
     return {
         name: error instanceof Error ? error.name : undefined,
-        message: error instanceof Error ? error.message : String(error),
+        message: error instanceof Error ? error.message : String(error)
     };
 }

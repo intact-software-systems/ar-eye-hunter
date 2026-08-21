@@ -1,5 +1,5 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { stringValue } from '../../shared/string-value.ts';
@@ -9,12 +9,9 @@ import type { AuthCommandCenterTicket } from '../shared/auth-command-center-tick
 import type {
     WebSocketCommandCenterValues,
     WebSocketDiagnostic,
-    WebSocketRoutePreview,
+    WebSocketRoutePreview
 } from './websocket-contracts.ts';
-import {
-    DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,
-    webSocketPayloadPresetById,
-} from './websocket-presets.ts';
+import { DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID, webSocketPayloadPresetById } from './websocket-presets.ts';
 
 export function defaultWebSocketApiUrl(apiBaseUrl: string): string {
     try {
@@ -23,7 +20,8 @@ export function defaultWebSocketApiUrl(apiBaseUrl: string): string {
         url.pathname = '/api/ws/{auth.sessionId}';
         url.search = 'ticket={auth.wsTicket}';
         return url.toString();
-    } catch {
+    }
+    catch {
         return 'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}';
     }
 }
@@ -32,7 +30,7 @@ export function resolveWebSocketUrlTemplate(
     template: string,
     apiBaseUrl: string,
     authSession: AuthSession | undefined,
-    ticket: AuthCommandCenterTicket | undefined,
+    ticket: AuthCommandCenterTicket | undefined
 ): string {
     const wsBaseUrl = (() => {
         try {
@@ -42,7 +40,8 @@ export function resolveWebSocketUrlTemplate(
             url.search = '';
             url.hash = '';
             return url.toString().replace(/\/$/, '');
-        } catch {
+        }
+        catch {
             return 'ws://localhost:8080';
         }
     })();
@@ -50,8 +49,8 @@ export function resolveWebSocketUrlTemplate(
         .replaceAll(
             '{auth.sessionId}',
             encodeURIComponent(
-                authSession?.sessionId ?? ticket?.sessionId ?? '',
-            ),
+                authSession?.sessionId ?? ticket?.sessionId ?? ''
+            )
         )
         .replaceAll('{auth.wsTicket}', encodeURIComponent(ticket?.ticket ?? ''))
         .replaceAll('{config.wsBaseUrl}', wsBaseUrl);
@@ -81,36 +80,29 @@ export function defaultWebSocketScope(): WebSocketCommandCenterValues['wsScope']
 export function defaultWebSocketValuesFromContext(
     globalValues: CommandCenterGlobalValues | undefined,
     config: RallarBlackBoxTestConfig | undefined,
-    bootstrap: RallarBlackBoxBootstrapConfig,
-): Pick<
-    WebSocketCommandCenterValues,
-    'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId' | 'contextId'
-> {
-    const groupId =
-        stringValue(globalValues?.roomId) ??
+    bootstrap: RallarBlackBoxBootstrapConfig
+): Pick<WebSocketCommandCenterValues, 'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId' | 'contextId'> {
+    const groupId = stringValue(globalValues?.roomId) ??
         stringValue(config?.roomId) ??
         bootstrap.roomId;
     return {
-        apiBaseUrl:
-            globalValues?.apiBaseUrl ??
+        apiBaseUrl: globalValues?.apiBaseUrl ??
             config?.apiBaseUrl ??
             bootstrap.apiBaseUrl,
-        applicationId:
-            globalValues?.applicationId ??
+        applicationId: globalValues?.applicationId ??
             stringValue(config?.rallar?.applicationId) ??
             'rallar-black-box',
-        workspaceId:
-            globalValues?.workspaceId ??
+        workspaceId: globalValues?.workspaceId ??
             stringValue(config?.rallar?.workspaceId) ??
             'default',
         groupId,
-        contextId: groupId || 'all',
+        contextId: groupId || 'all'
     };
 }
 
 export function webSocketSendData(
     values: WebSocketCommandCenterValues,
-    payload: unknown,
+    payload: unknown
 ): unknown {
     const payloadRecord = optionalRecord(payload);
     const hasTypedFields = [
@@ -122,21 +114,17 @@ export function webSocketSendData(
         'groupId',
         'scope',
         'contextId',
-        'resourceId',
+        'resourceId'
     ].some((key) => key in payloadRecord);
     const base = hasTypedFields ? payloadRecord : { payload };
-    const wsScope =
-        base.scope === 'room' || base.scope === 'all' || base.scope === 'world'
-            ? base.scope
-            : values.wsScope;
-    const explicitGroupId =
-        stringValue(base.roomId) ?? stringValue(base.groupId);
-    const groupId =
-        explicitGroupId ?? (wsScope === 'room' ? values.groupId : '');
+    const wsScope = base.scope === 'room' || base.scope === 'all' || base.scope === 'world'
+        ? base.scope
+        : values.wsScope;
+    const explicitGroupId = stringValue(base.roomId) ?? stringValue(base.groupId);
+    const groupId = explicitGroupId ?? (wsScope === 'room' ? values.groupId : '');
     const typeId = stringValue(base.typeId) ?? values.typeId;
     const topicId = stringValue(base.topicId) ?? values.topicId ?? typeId;
-    const contextId =
-        stringValue(base.contextId) ?? values.contextId ?? groupId ?? wsScope;
+    const contextId = stringValue(base.contextId) ?? values.contextId ?? groupId ?? wsScope;
 
     return {
         ...base,
@@ -149,7 +137,7 @@ export function webSocketSendData(
         contextId,
         ...(values.resourceId && !('resourceId' in base)
             ? { resourceId: values.resourceId }
-            : {}),
+            : {})
     };
 }
 
@@ -159,37 +147,35 @@ export function webSocketRoutePreview(
         diagnostics: WebSocketDiagnostic;
         providerMode: string;
         browserStatus: RallarBrowserStatusSummary;
-    }>,
+    }>
 ): WebSocketRoutePreview {
     const { values, diagnostics, providerMode, browserStatus } = input;
     const groupId = values.groupId.trim();
     const typeId = values.typeId.trim() || '-';
     const topicId = values.topicId.trim() || '*';
     const contextId = values.contextId.trim() || values.wsScope;
-    const destination =
-        values.wsScope === 'room'
-            ? groupId
-                ? `Group ${groupId}`
-                : 'No group selected'
-            : values.wsScope === 'all'
-              ? 'All WS subscribers'
-              : 'World scope';
-    const destinationDetail =
-        values.wsScope === 'room'
-            ? groupId
-                ? `Application ${values.applicationId || '-'} / workspace ${values.workspaceId || '-'}`
-                : 'Room-scoped messages need a Group before send.'
-            : values.wsScope === 'all'
-              ? 'Group is ignored for this send.'
-              : 'Uses Rallar world scope; Group is ignored.';
+    const destination = values.wsScope === 'room'
+        ? groupId
+            ? `Group ${groupId}`
+            : 'No group selected'
+        : values.wsScope === 'all'
+        ? 'All WS subscribers'
+        : 'World scope';
+    const destinationDetail = values.wsScope === 'room'
+        ? groupId
+            ? `Application ${values.applicationId || '-'} / workspace ${values.workspaceId || '-'}`
+            : 'Room-scoped messages need a Group before send.'
+        : values.wsScope === 'all'
+        ? 'Group is ignored for this send.'
+        : 'Uses Rallar world scope; Group is ignored.';
     const usesRallarAppWebSocket = providerMode === 'browser-rallar';
     const transport = usesRallarAppWebSocket
         ? 'Rallar app WS'
         : diagnostics.status === 'open'
-          ? 'Raw WebSocket'
-          : providerMode === 'simulated'
-            ? 'Simulated WebSocket'
-            : 'No open WS';
+        ? 'Raw WebSocket'
+        : providerMode === 'simulated'
+        ? 'Simulated WebSocket'
+        : 'No open WS';
     const transportDetail = usesRallarAppWebSocket
         ? browserStatus.signalingLabel === 'open'
             ? `Uses open Rallar signaling for ${values.connection}`
@@ -203,13 +189,12 @@ export function webSocketRoutePreview(
         selectorDetail: `Context ${contextId}`,
         transport,
         transportDetail,
-        sendLabel:
-            values.wsScope === 'room'
-                ? groupId
-                    ? `Send JSON to group ${groupId}`
-                    : 'Send JSON to group'
-                : values.wsScope === 'all'
-                  ? 'Send JSON to all'
-                  : 'Send JSON to world',
+        sendLabel: values.wsScope === 'room'
+            ? groupId
+                ? `Send JSON to group ${groupId}`
+                : 'Send JSON to group'
+            : values.wsScope === 'all'
+            ? 'Send JSON to all'
+            : 'Send JSON to world'
     };
 }
