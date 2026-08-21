@@ -346,9 +346,14 @@ export class AppAuthInboxService extends AppInboxService {
     }>,
   ): Promise<Either<AppInboxFailure, LogoutResponse> | null> {
     const presentedDigest = await hashAuthSecret(input.accessToken);
+    const physicalRequestId = toAppInboxQueueKey({
+      topicId: AppInboxType.AUTH_SESSION_LOGOUT,
+      resourceId: input.requestId,
+      contextId: '',
+    }).resourceId;
     const entries = await this.authInboxRepository.findAllByTopicAndResourceId(
       AppInboxType.AUTH_SESSION_LOGOUT,
-      input.requestId,
+      physicalRequestId,
     );
     const matchingIntents: LogoutAuthSessionIntent[] = [];
     for (const entry of entries) {
@@ -502,9 +507,14 @@ export class AppAuthInboxService extends AppInboxService {
     input: AppAuthInboxService.RequestIdentity & Readonly<{ ticket: string }>,
   ): Promise<Either<AppInboxFailure, ConsumeAgentSessionTicketResponse>> {
     const ticketDigest = await hashAuthSecret(input.ticket);
+    const physicalRequestId = toAppInboxQueueKey({
+      topicId: AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
+      resourceId: input.requestId,
+      contextId: '',
+    }).resourceId;
     const entries = await this.authInboxRepository.findAllByTopicAndResourceId(
       AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
-      input.requestId,
+      physicalRequestId,
     );
     const matchingIntents: ConsumeAuthAgentTicketIntent[] = [];
     for (const entry of entries) {

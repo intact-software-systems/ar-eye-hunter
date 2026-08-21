@@ -149,6 +149,19 @@ describe('API-v1 state-write recipe evidence', () => {
         }
     });
 
+    it('isolates CRDT AppInbox evidence by recipe command prefixes', () => {
+        const recipe = JSON.parse(readFileSync(path.join(
+            recipeRoot,
+            'api-v1-crdt-app-inbox.json',
+        ), 'utf8')) as { steps: Array<Record<string, any>> };
+        const evidence = recipe.steps.find(step => step.name === 'exposeStateWriteEvidence');
+
+        expect(evidence?.request.stateWriteEvidence).toMatchObject({
+            match: 'crdt-update-{runId}',
+            commandIdPrefixes: ['crdt-delivery-', 'crdt-update-'],
+        });
+    });
+
     it('forbids literal SET values from claiming durable state-write evidence', () => {
         for (const name of taskRecipes) {
             const recipe = JSON.parse(

@@ -246,6 +246,42 @@ describe('API-v1 recipe mutation identity cutover', () => {
     }
   });
 
+  it('expects mutation results to echo the strict path request identity', () => {
+    const staleExpectations = readCoveredRecipeRequests().flatMap((request) => {
+      const pathRequestId = readPathRequestId(request.path);
+      const expectedRequestId = request.expectedBody?.requestId;
+      if (
+        !pathRequestId ||
+        typeof expectedRequestId !== 'string' ||
+        expectedRequestId === pathRequestId
+      ) {
+        return [];
+      }
+      return [`${request.file}:${request.name ?? '<unnamed>'}: ${expectedRequestId}`];
+    });
+
+    expect(staleExpectations).toEqual([]);
+  });
+
+  it('expects durable topology reads to retain the path-owned write identity', () => {
+    const recipe = readApiV1Recipe('api-v1-state-write-convergence.json');
+    const write = findNamedObject(recipe, 'putFinalTopologyConfig');
+    const writePath = optionalObject(write?.request)?.path;
+    const requestId = typeof writePath === 'string' ? readPathRequestId(writePath) : undefined;
+
+    expect(requestId).toBeDefined();
+    for (const readName of [
+      'readPrimaryDurableConfig',
+      'readSecondaryDurableConfig',
+      'readTertiaryDurableConfig',
+    ]) {
+      const read = findNamedObject(recipe, readName);
+      const durable = optionalObject(optionalObject(optionalObject(read?.expect)?.body)?.durable);
+
+      expect(durable?.requestId, readName).toBe(requestId);
+    }
+  });
+
   it('keeps strict mutation request identities private to one API-v1 recipe', () => {
     const requests = readCoveredRecipeRequests().filter((request) =>
       request.file.startsWith(`${apiV1RecipeDirectory}/`),
@@ -376,11 +412,39 @@ describe('API-v1 recipe mutation identity cutover', () => {
         'rejectClientSessionFutureHeartbeat',
         'client-mutation-rejected',
       ],
+      [
+        'api-v1-group-lifecycle-transitions.json',
+        'bobCannotStartEstablishment',
+        'member-not-active',
+      ],
+      [
+        'api-v1-idempotency-contract.json',
+        'rejectChangedGroupIntent',
+        'app-inbox-idempotency-conflict',
+      ],
     ] as const) {
       const step = findNamedObject(readApiV1Recipe(file), stepName);
       const expectedBody = optionalObject(optionalObject(step?.expect)?.body);
 
       expect(expectedBody?.code, `${file}:${stepName}`).toBe(code);
+    }
+  });
+
+  it('replays the exact canonical terminal failure exposed by the live route', () => {
+    const recipe = readApiV1Recipe('api-v1-idempotency-contract.json');
+    for (const stepName of ['replayTerminalFailureFirst', 'replayTerminalFailure']) {
+      const step = findNamedObject(recipe, stepName);
+      const expected = optionalObject(step?.expect);
+
+      expect(expected, stepName).toMatchObject({
+        status: 500,
+        body: {
+          type: 'api-mutation-failure',
+          version: 'canonical.v1',
+          code: 'api-mutation-unexpected',
+          status: 500,
+        },
+      });
     }
   });
 

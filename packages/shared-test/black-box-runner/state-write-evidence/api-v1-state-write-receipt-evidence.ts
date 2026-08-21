@@ -5,6 +5,7 @@ import type {
 import * as ClientState from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import * as GroupState from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
@@ -182,6 +183,10 @@ export async function readPersistedCommandEvidence(
         runtime,
         row,
         authority: identity.command.authority,
+        logicalResourceId: readString(
+          identity.command.resourceId,
+          'group AppInbox resourceId',
+        ),
         commandType,
         requireReceipt,
       });
@@ -356,12 +361,13 @@ interface ReadGroupReceiptInput {
   readonly runtime: RuntimeStateRepositoryLike;
   readonly row: InboxCommandRow;
   readonly authority: unknown;
+  readonly logicalResourceId: string;
   readonly commandType: AppInboxType;
   readonly requireReceipt: boolean;
 }
 
 async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<PersistedCommandEvidence> {
-  const { runtime, row, authority, commandType, requireReceipt } = input;
+  const { runtime, row, authority, logicalResourceId, commandType, requireReceipt } = input;
   const prepared = readExactRecord(
     authority,
     ['authorityProof', 'descriptor', 'command', 'facts', 'causalToken', 'queueResourceId'],
@@ -372,7 +378,12 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
   const requestId = readString(command.requestId, 'group requestId');
   const facts = readRecord(prepared.facts, 'group facts');
   const commandHash = readString(facts.commandHash, 'group commandHash');
-  if (prepared.queueResourceId !== row.ri_resource_id) {
+  const physicalResourceId = toAppQueueKey({
+    topicId: row.ri_topic_id,
+    resourceId: logicalResourceId,
+    contextId: '',
+  }).resourceId;
+  if (physicalResourceId !== row.ri_resource_id) {
     throw new TypeError('group queue resource differs from physical queue identity');
   }
   if (!requireReceipt) {

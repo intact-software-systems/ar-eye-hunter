@@ -7,6 +7,8 @@
     "rallarWsBaseUrl": { "env": "RALLAR_WS_BASE_URL", "default": "ws://127.0.0.1:18080" },
     "applicationId": { "env": "RALLAR_BB_APPLICATION_ID", "default": "idempotency-contract-{runId}" },
     "workspaceId": { "env": "RALLAR_BB_WORKSPACE_ID", "default": "primary-{runId}" },
+    "crdtApplicationId": "rallar-server",
+    "crdtWorkspaceId": "default",
     "groupId": { "env": "RALLAR_BB_GROUP_ID", "default": "contract-group-{runId}" }
   },
   "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
@@ -134,7 +136,7 @@
         "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" },
         "body": { "displayName": "Changed contract {runId}" }
       },
-      "expect": { "status": 409, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "group-mutation-idempotency-conflict", "status": 409 } }
+      "expect": { "status": 409, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "app-inbox-idempotency-conflict", "status": 409 } }
     },
     {
       "name": "rejectBodyRequestIdentity",
@@ -293,8 +295,16 @@
       "name": "seedActorIsolation",
       "type": "http",
       "connection": "apiPrimary",
-      "request": { "method": "POST", "path": "/api/auth/login/requests/idem-contract-actor-isolation-{runId}", "body": { "username": "admin", "password": "admin" } },
+      "request": { "method": "POST", "path": "/api/auth/login/requests/idem-contract-actor-isolation-{runId}", "body": { "username": "admin", "password": "admin" }, "outputs": { "crdtAdminSessionId": "body.sessionId", "crdtAdminAccessToken": { "path": "body.accessToken", "secret": true } } },
       "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveCrdtAdminAuthHeader",
+      "type": "set",
+      "output": "crdtAdminAuthHeader",
+      "secret": true,
+      "redactAs": "crdtAdminAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.crdtAdminAccessToken" }] }
     },
     {
       "name": "proveActorIsolation",
@@ -322,20 +332,20 @@
       "type": "http",
       "connection": "apiPrimary",
       "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/missing-{runId}/requests/idem-contract-terminal-failure-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "displayName": "Missing" }, "outputs": { "terminalFailureBody": "body" } },
-      "expect": { "status": 400, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "group-mutation-rejected", "status": 400 } }
+      "expect": { "status": 500, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "api-mutation-unexpected", "status": 500 } }
     },
     {
       "name": "replayTerminalFailure",
       "type": "http",
       "connection": "apiTertiary",
       "request": { "method": "PUT", "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/missing-{runId}/requests/idem-contract-terminal-failure-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "displayName": "Missing" }, "outputs": { "terminalFailureReplayBody": "body" } },
-      "expect": { "status": 400, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "group-mutation-rejected", "status": 400 } }
+      "expect": { "status": 500, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "api-mutation-unexpected", "status": 500 } }
     },
     {
       "name": "issueWebSocketTicket",
       "type": "http",
       "connection": "apiPrimary",
-      "request": { "method": "POST", "path": "/api/auth/ws-ticket/requests/idem-contract-ws-ticket-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "outputs": { "contractWsTicket": { "path": "body.ticket", "secret": true } } },
+      "request": { "method": "POST", "path": "/api/auth/ws-ticket/requests/idem-contract-ws-ticket-{runId}", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "outputs": { "contractWsTicket": { "path": "body.ticket", "secret": true } } },
       "expect": { "status": 200, "body": { "ticket": "string" } }
     },
     {
@@ -344,7 +354,7 @@
       "output": "contractWsUrl",
       "secret": true,
       "redactAs": "contractWsUrl",
-      "transform": { "concat": [{ "path": "variables.rallarWsBaseUrl" }, "/api/ws/{adminSessionId}?ticket=", { "urlEncode": { "path": "outputs.contractWsTicket" } }] }
+      "transform": { "concat": [{ "path": "variables.rallarWsBaseUrl" }, "/api/ws/{crdtAdminSessionId}?ticket=", { "urlEncode": { "path": "outputs.contractWsTicket" } }] }
     },
     { "name": "openContractWebSocket", "type": "ws.open", "connection": "wsPrimary", "request": { "url": "{contractWsUrl}" } },
     { "name": "waitForContractWebSocketAuthorization", "type": "ws.wait", "connection": "wsPrimary", "expect": { "connection": "wsPrimary", "withinMs": 15000, "consume": true, "messages": [{ "payload": { "typeId": "client-state.snapshot" } }] } },
@@ -353,63 +363,63 @@
       "name": "encodeContractCrdtUpdate",
       "type": "set",
       "output": "contractCrdtUpdate",
-      "transform": { "jsonStringify": { "protocolVersion": 1, "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" }, "updateId": "idem-contract-crdt-update-{runId}", "replicaId": "contract-replica-{runId}", "actorId": "{adminClientId}", "sessionId": "{adminSessionId}", "lamport": 1, "parents": [], "schemaVersion": 1, "operationVersion": 1, "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "payload": { "kind": "batch", "operations": [{ "kind": "register.set", "path": ["title"], "policy": "lww", "value": "contract" }] } } }
+      "transform": { "jsonStringify": { "protocolVersion": 1, "document": { "applicationId": "{crdtApplicationId}", "workspaceId": "{crdtWorkspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "contract-document-{runId}" }, "updateId": "idem-contract-crdt-update-{runId}", "replicaId": "contract-replica-{runId}", "actorId": "{adminClientId}", "sessionId": "{crdtAdminSessionId}", "lamport": 1, "parents": [], "schemaVersion": 1, "operationVersion": 1, "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "payload": { "kind": "batch", "operations": [{ "jsonParse": { "concat": ["{", "\"kind\":\"register.set\",\"path\":[\"title\"],\"policy\":\"lww\",\"value\":\"contract\"", "}"] } }] } } }
     },
     {
       "name": "appendCrdtUpdateThroughWebSocket",
       "type": "ws.send",
       "connection": "wsPrimary",
-      "request": { "send": { "id": { "v": 2, "msgId": "idem-contract-crdt-delivery-first-{runId}", "ts": 0, "senderId": "{adminSessionId}", "sessionId": "{adminSessionId}" }, "route": { "topicId": "app.crdt", "resourceId": "idem-contract-crdt-update-{runId}", "contextId": "{applicationId}" }, "targets": { "mode": "broadcast", "scope": "world" }, "delivery": { "reliability": "best-effort", "ack": "none" }, "payload": { "typeId": "rallar.crdt.update.v1", "contentType": "application/json", "resource": "{contractCrdtUpdate}" } } }
+      "request": { "send": { "id": { "v": 2, "msgId": "idem-contract-crdt-delivery-first-{runId}", "ts": 0, "senderId": "{crdtAdminSessionId}", "sessionId": "{crdtAdminSessionId}" }, "route": { "topicId": "app.crdt", "resourceId": "idem-contract-crdt-update-{runId}", "contextId": "{crdtApplicationId}" }, "targets": { "mode": "broadcast", "scope": "world" }, "delivery": { "reliability": "best-effort", "ack": "none" }, "payload": { "typeId": "rallar.crdt.update.v1", "contentType": "application/json", "resource": "{contractCrdtUpdate}" } } }
     },
     { "name": "observeFirstCrdtAppendReply", "type": "ws.wait", "connection": "wsPrimary", "expect": { "connection": "wsPrimary", "withinMs": 20000, "consume": true, "messages": [{ "payload": { "typeId": "rallar.crdt.append-response.v1" } }] } },
     {
       "name": "redeliverCrdtUpdateWithDistinctDeliveryId",
       "type": "ws.send",
       "connection": "wsPrimary",
-      "request": { "send": { "id": { "v": 2, "msgId": "idem-contract-crdt-delivery-retry-{runId}", "ts": 0, "senderId": "{adminSessionId}", "sessionId": "{adminSessionId}" }, "route": { "topicId": "app.crdt", "resourceId": "idem-contract-crdt-update-{runId}", "contextId": "{applicationId}" }, "targets": { "mode": "broadcast", "scope": "world" }, "delivery": { "reliability": "best-effort", "ack": "none" }, "payload": { "typeId": "rallar.crdt.update.v1", "contentType": "application/json", "resource": "{contractCrdtUpdate}" } } }
+      "request": { "send": { "id": { "v": 2, "msgId": "idem-contract-crdt-delivery-retry-{runId}", "ts": 0, "senderId": "{crdtAdminSessionId}", "sessionId": "{crdtAdminSessionId}" }, "route": { "topicId": "app.crdt", "resourceId": "idem-contract-crdt-update-{runId}", "contextId": "{crdtApplicationId}" }, "targets": { "mode": "broadcast", "scope": "world" }, "delivery": { "reliability": "best-effort", "ack": "none" }, "payload": { "typeId": "rallar.crdt.update.v1", "contentType": "application/json", "resource": "{contractCrdtUpdate}" } } }
     },
     { "name": "observeDuplicateCrdtAppendReply", "type": "ws.wait", "connection": "wsPrimary", "expect": { "connection": "wsPrimary", "withinMs": 20000, "consume": true, "messages": [{ "payload": { "typeId": "rallar.crdt.append-response.v1" } }] } },
     {
       "name": "readCrdtThroughTertiary",
       "type": "http",
       "connection": "apiTertiary",
-      "request": { "method": "POST", "path": "/api/crdt/catch-up", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "protocolVersion": 1, "requestId": "idem-contract-catch-up-{runId}", "replicaId": "contract-reader-{runId}", "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "includeSnapshot": true, "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" } } },
+      "request": { "method": "POST", "path": "/api/crdt/catch-up", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "protocolVersion": 1, "requestId": "idem-contract-catch-up-{runId}", "replicaId": "contract-reader-{runId}", "createdAtEpochMs": "{crdtCreatedAtEpochMs}", "includeSnapshot": true, "document": { "applicationId": "{crdtApplicationId}", "workspaceId": "{crdtWorkspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "contract-document-{runId}" } } },
       "expect": { "status": 200, "body": { "ok": true } }
     },
     {
       "name": "firstCrdtHttpMutation",
       "type": "http",
       "connection": "apiPrimary",
-      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" }, "reason": "idempotency-contract" } },
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{crdtApplicationId}", "workspaceId": "{crdtWorkspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "contract-document-{runId}" }, "reason": "idempotency-contract" } },
       "expect": { "status": 200 }
     },
     {
       "name": "replayCrdtHttpMutation",
       "type": "http",
       "connection": "apiSecondary",
-      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "reason": "idempotency-contract", "document": { "documentId": "contract-document-{runId}", "documentType": "contract-map", "scope": "app", "workspaceId": "{workspaceId}", "applicationId": "{applicationId}" } } },
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "reason": "idempotency-contract", "document": { "documentId": "contract-document-{runId}", "documentType": "black-box-map", "scope": "app", "workspaceId": "{crdtWorkspaceId}", "applicationId": "{crdtApplicationId}" } } },
       "expect": { "status": 200 }
     },
     {
       "name": "rejectChangedCrdtHttpIntent",
       "type": "http",
       "connection": "apiTertiary",
-      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "contract-document-{runId}" }, "reason": "changed" } },
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-crdt-http-{runId}", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{crdtApplicationId}", "workspaceId": "{crdtWorkspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "contract-document-{runId}" }, "reason": "changed" } },
       "expect": { "status": 409, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "app-inbox-idempotency-conflict", "status": 409 } }
     },
     {
       "name": "seedDocumentIsolation",
       "type": "http",
       "connection": "apiPrimary",
-      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-document-isolation-{runId}", "headers": { "Authorization": "{adminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "document-a-{runId}" }, "reason": "isolation" } },
-      "expect": { "status": 200 }
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-document-isolation-{runId}", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{crdtApplicationId}", "workspaceId": "{crdtWorkspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "document-a-{runId}" }, "reason": "isolation" } },
+      "expect": { "status": 404, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "crdt-admin-mutation-rejected", "status": 404 } }
     },
     {
       "name": "proveDocumentIsolation",
       "type": "http",
       "connection": "apiSecondary",
-      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-document-isolation-{runId}", "headers": { "Authorization": "{renewedAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{applicationId}", "workspaceId": "{workspaceId}", "scope": "app", "documentType": "contract-map", "documentId": "document-b-{runId}" }, "reason": "isolation" } },
-      "expect": { "status": 200 }
+      "request": { "method": "POST", "path": "/api/crdt/admin/documents/compact/requests/idem-contract-document-isolation-{runId}", "headers": { "Authorization": "{crdtAdminAuthHeader}", "x-client-id": "{adminClientId}" }, "body": { "document": { "applicationId": "{crdtApplicationId}", "workspaceId": "{crdtWorkspaceId}", "scope": "app", "documentType": "black-box-map", "documentId": "document-b-{runId}" }, "reason": "isolation" } },
+      "expect": { "status": 404, "body": { "type": "api-mutation-failure", "version": "canonical.v1", "code": "crdt-admin-mutation-rejected", "status": 404 } }
     },
     {
       "name": "firstNormalizedPruneCategories",
@@ -500,8 +510,8 @@
     {
       "name": "assertAtomicAppInboxCompletion",
       "type": "assert",
-      "actual": { "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}", "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}", "completedAppInboxCount": "{stateWriteEvidence.completedAppInboxCount}", "appInbox": "{stateWriteEvidence.appInbox}", "receiptOutboxIds": "{stateWriteEvidence.receiptOutboxIds}", "resourceOutbox": "{stateWriteEvidence.resourceOutbox}" },
-      "expect": { "body": { "atomicCompletionFailures": 0, "intermediateMutationIntentCount": 0, "completedAppInboxCount": "integer", "appInbox": "array", "receiptOutboxIds": "array", "resourceOutbox": "array" } }
+      "actual": { "matchedAppInboxCount": "{stateWriteEvidence.matchedAppInboxCount}", "completedAppInboxCount": "{stateWriteEvidence.completedAppInboxCount}", "failedAppInboxCount": "{stateWriteEvidence.failedAppInboxCount}", "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}", "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}", "receiptOutboxIdCount": "{stateWriteEvidence.receiptOutboxIdCount}", "resourceOutboxCount": "{stateWriteEvidence.resourceOutboxCount}", "appInbox": "{stateWriteEvidence.appInbox}", "receiptOutboxIds": "{stateWriteEvidence.receiptOutboxIds}", "resourceOutbox": "{stateWriteEvidence.resourceOutbox}" },
+      "expect": { "body": { "matchedAppInboxCount": 1, "completedAppInboxCount": 1, "failedAppInboxCount": 0, "atomicCompletionFailures": 0, "intermediateMutationIntentCount": 0, "receiptOutboxIdCount": 1, "resourceOutboxCount": 1 }, "comparators": [{ "path": "appInbox", "length": 1 }, { "path": "receiptOutboxIds", "length": 1 }, { "path": "resourceOutbox", "length": 1 }] }
     },
     {
       "name": "assertSecretsStayRedacted",

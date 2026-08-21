@@ -9162,7 +9162,7 @@
             "workspaceId": "{workspaceId}",
             "groupId": "{groupOneId}"
           },
-          "requestId": "final-reconfigure-{groupOneId}-{runId}",
+          "requestId": "final-reconfigure-scope-{runId}-a1",
           "outboxId": "string"
         }
       }
@@ -9222,7 +9222,7 @@
             "workspaceId": "{workspaceId}",
             "groupId": "{groupTwoId}"
           },
-          "requestId": "final-reconfigure-{groupTwoId}-{runId}",
+          "requestId": "final-reconfigure-scope-{runId}-a2",
           "outboxId": "string"
         }
       }
@@ -9282,7 +9282,7 @@
             "workspaceId": "{workspaceId}",
             "groupId": "{groupThreeId}"
           },
-          "requestId": "final-reconfigure-{groupThreeId}-{runId}",
+          "requestId": "final-reconfigure-scope-{runId}-a3",
           "outboxId": "string"
         }
       }
@@ -9342,7 +9342,7 @@
             "workspaceId": "{workspaceId}",
             "groupId": "{groupFourId}"
           },
-          "requestId": "final-reconfigure-{groupFourId}-{runId}",
+          "requestId": "final-reconfigure-scope-{runId}-a4",
           "outboxId": "string"
         }
       }
@@ -9402,7 +9402,7 @@
             "workspaceId": "{workspaceId}",
             "groupId": "{groupFiveId}"
           },
-          "requestId": "final-reconfigure-{groupFiveId}-{runId}",
+          "requestId": "final-reconfigure-scope-{runId}-a5",
           "outboxId": "string"
         }
       }

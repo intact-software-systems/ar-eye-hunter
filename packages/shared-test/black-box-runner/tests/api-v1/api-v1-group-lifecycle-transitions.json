@@ -455,7 +455,7 @@
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v1",
-          "code": "forbidden-role",
+          "code": "member-not-active",
           "status": 403
         }
       }
