@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GroupAdmissionPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -21,7 +22,7 @@ function createService(runtime: FakeRuntimeStateRepository, nowEpochMs: number) 
 async function seedManagedGroup(
   runtime: FakeRuntimeStateRepository,
   groupId: string,
-  admission: Readonly<Record<string, unknown>> = { mode: 'manager-approval' },
+  admission: Partial<GroupAdmissionPolicy> = { mode: 'manager-approval' },
 ): Promise<void> {
   await createService(runtime, 1_000).createGroup(SCOPE, {
     groupId,
