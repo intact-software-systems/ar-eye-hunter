@@ -132,6 +132,7 @@ function createInput(
     },
     groupStateService: {
       readSnapshot: () => Promise.resolve(undefined),
+      readCurrentSnapshot: () => Promise.resolve(undefined),
       listRecentEvents: () => Promise.resolve([]),
       listSnapshots: () => Promise.resolve([]),
       listSnapshotsPage: () =>
