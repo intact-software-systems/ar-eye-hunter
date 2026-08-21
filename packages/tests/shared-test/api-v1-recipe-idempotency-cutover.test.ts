@@ -24,6 +24,20 @@ interface MutationRoutePattern {
   readonly path: RegExp;
 }
 
+interface SameLogicalActionRequestIdentityReuse {
+  readonly actionNames: readonly string[];
+  readonly file: string;
+  readonly kind: 'concurrent-contenders' | 'sequential-replay';
+  readonly requestId: string;
+}
+
+interface RequestIdentityIsolationProbe {
+  readonly actionNames: readonly string[];
+  readonly dimension: 'actor' | 'document' | 'operation' | 'scope';
+  readonly file: string;
+  readonly requestId: string;
+}
+
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const recipeRoots = ['packages/shared-test/black-box-runner', 'apps/rallar-black-box'] as const;
 const segment = '[^/]+';
@@ -93,6 +107,123 @@ const identityRejectionSteps = new Set([
   'rejectTopologyConfigIdempotencyHeader',
   'rejectTopologyConfigMultipleRequestIdentitySources',
 ]);
+const apiV1RecipeDirectory = 'packages/shared-test/black-box-runner/tests/api-v1';
+const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestIdentityReuse[] = [
+  {
+    actionNames: [
+      'rejectConflictingAlicePrincipalReplay',
+      'replayEquivalentAlicePrincipal',
+      'upsertAlicePrincipal',
+    ],
+    file: `${apiV1RecipeDirectory}/api-v1-client-state.json`,
+    kind: 'sequential-replay',
+    requestId: 'upsert-principal-scope-{runId}',
+  },
+  {
+    actionNames: [
+      'firstCrdtHttpMutation',
+      'rejectChangedCrdtHttpIntent',
+      'replayCrdtHttpMutation',
+    ],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'sequential-replay',
+    requestId: 'idem-contract-crdt-http-{runId}',
+  },
+  {
+    actionNames: ['differentContenderPrimary', 'differentContenderSecondary'],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'concurrent-contenders',
+    requestId: 'idem-contract-different-contenders-{runId}',
+  },
+  {
+    actionNames: [
+      'exactGroupReplayAfterSessionRenewal',
+      'firstGroupMutation',
+      'normalizedGroupReplay',
+      'rejectChangedGroupIntent',
+    ],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'sequential-replay',
+    requestId: 'idem-contract-group-replay-{runId}',
+  },
+  {
+    actionNames: ['firstLogout', 'replayLogout'],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'sequential-replay',
+    requestId: 'idem-contract-logout-replay-{runId}',
+  },
+  {
+    actionNames: ['performNoOpMutation', 'replayNoOpMutation'],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'sequential-replay',
+    requestId: 'idem-contract-no-op-{runId}',
+  },
+  {
+    actionNames: ['replayTerminalFailure', 'replayTerminalFailureFirst'],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'sequential-replay',
+    requestId: 'idem-contract-terminal-failure-{runId}',
+  },
+  {
+    actionNames: ['firstTopologyRestartBoundary', 'replayTopologyAfterRestartBoundary'],
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    kind: 'sequential-replay',
+    requestId: 'idem-contract-topology-restart-{runId}',
+  },
+  {
+    actionNames: ['changedDuplicatePrimary', 'changedDuplicateSecondary'],
+    file: `${apiV1RecipeDirectory}/api-v1-state-medium-scale-churn.json`,
+    kind: 'concurrent-contenders',
+    requestId: 'medium-scale-changed-duplicate-wave-{runId}',
+  },
+  {
+    actionNames: ['equalDuplicatePrimary', 'equalDuplicateSecondary', 'equalDuplicateTertiary'],
+    file: `${apiV1RecipeDirectory}/api-v1-state-medium-scale-churn.json`,
+    kind: 'concurrent-contenders',
+    requestId: 'medium-scale-equal-duplicate-wave-{runId}',
+  },
+];
+const requestIdentityIsolationProbes: readonly RequestIdentityIsolationProbe[] = [
+  {
+    actionNames: ['proveActorIsolation', 'seedActorIsolation'],
+    dimension: 'actor',
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    requestId: 'idem-contract-actor-isolation-{runId}',
+  },
+  {
+    actionNames: ['proveDocumentIsolation', 'seedDocumentIsolation'],
+    dimension: 'document',
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    requestId: 'idem-contract-document-isolation-{runId}',
+  },
+  {
+    actionNames: [
+      'equalContenderPrimary',
+      'equalContenderSecondary',
+      'equalContenderTertiary',
+      'proveOperationIsolation',
+    ],
+    dimension: 'operation',
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    requestId: 'idem-contract-equal-contenders-{runId}',
+  },
+  {
+    actionNames: [
+      'firstNormalizedPruneCategories',
+      'proveAdminActorIsolation',
+      'replayNormalizedPruneCategories',
+    ],
+    dimension: 'actor',
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    requestId: 'idem-contract-prune-normalized-{runId}',
+  },
+  {
+    actionNames: ['proveScopeIsolation', 'seedScopeIsolation'],
+    dimension: 'scope',
+    file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+    requestId: 'idem-contract-scope-isolation-{runId}',
+  },
+];
 
 describe('API-v1 recipe mutation identity cutover', () => {
   it('uses strict path-only request identity in every covered JSON recipe request', () => {
@@ -117,7 +248,7 @@ describe('API-v1 recipe mutation identity cutover', () => {
 
   it('keeps strict mutation request identities private to one API-v1 recipe', () => {
     const requests = readCoveredRecipeRequests().filter((request) =>
-      request.file.startsWith('packages/shared-test/black-box-runner/tests/api-v1/'),
+      request.file.startsWith(`${apiV1RecipeDirectory}/`),
     );
     const filesByRequestId = new Map<string, Set<string>>();
     for (const request of requests) {
@@ -135,6 +266,42 @@ describe('API-v1 recipe mutation identity cutover', () => {
       .sort();
 
     expect(collisions).toEqual([]);
+  });
+
+  it('permits identity reuse only for named equivalence or isolation probes', () => {
+    const requests = readCoveredRecipeRequests().filter((request) =>
+      request.file.startsWith(`${apiV1RecipeDirectory}/`),
+    );
+    const actionsByRecipeRequestId = new Map<string, string[]>();
+    for (const request of requests) {
+      const requestId = readPathRequestId(request.path);
+      if (!requestId) {
+        continue;
+      }
+      const key = `${request.file}\n${requestId}`;
+      const actions = actionsByRecipeRequestId.get(key) ?? [];
+      actions.push(request.name ?? '<unnamed>');
+      actionsByRecipeRequestId.set(key, actions);
+    }
+    const reuse = [...actionsByRecipeRequestId]
+      .filter(([, actions]) => actions.length > 1)
+      .map(([key, actions]) => {
+        const [file, requestId] = key.split('\n');
+        return { actionNames: actions.sort(), file, requestId };
+      })
+      .sort((left, right) =>
+        `${left.file}\n${left.requestId}`.localeCompare(`${right.file}\n${right.requestId}`),
+      );
+    const expectedReuse = [
+      ...sameLogicalActionRequestIdentityReuse,
+      ...requestIdentityIsolationProbes,
+    ]
+      .map(({ actionNames, file, requestId }) => ({ actionNames, file, requestId }))
+      .sort((left, right) =>
+        `${left.file}\n${left.requestId}`.localeCompare(`${right.file}\n${right.requestId}`),
+      );
+
+    expect(reuse).toEqual(expectedReuse);
   });
 
   it('preserves legacy auth failures for reads and non-AppInbox routes', () => {
