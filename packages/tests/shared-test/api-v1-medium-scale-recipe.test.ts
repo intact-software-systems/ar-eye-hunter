@@ -350,7 +350,7 @@ describe('API-v1 medium-scale recipe', () => {
             workspaceId: '{workspaceId}',
             groupId: `{${groupId}}`,
           },
-          requestId: `final-reconfigure-{${groupId}}-{runId}`,
+          requestId: `final-reconfigure-scope-{runId}-a${groupIds.indexOf(groupId) + 1}`,
           outboxId: 'string',
         },
       });

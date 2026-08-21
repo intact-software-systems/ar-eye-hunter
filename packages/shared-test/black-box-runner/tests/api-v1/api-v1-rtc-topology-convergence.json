@@ -350,7 +350,7 @@
             "workspaceId": "{workspaceId}",
             "groupId": "{groupId}"
           },
-          "requestId": "baseline-topology-{groupId}-{runId}",
+          "requestId": "baseline-topology-scope-{runId}",
           "outboxId": "string"
         }
       }

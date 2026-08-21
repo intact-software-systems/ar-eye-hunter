@@ -152,7 +152,8 @@
     {
       "name": "exposeStateWriteEvidence", "type": "set.state-write-evidence", "output": "stateWriteEvidence",
       "request": { "stateWriteEvidence": {
-        "match": "crdt-update-{runId}", "commandTypes": ["CRDT_UPDATE_APPEND"], "minimumMatchedRows": 1,
+        "match": "crdt-update-{runId}", "commandTypes": ["CRDT_UPDATE_APPEND"],
+        "commandIdPrefixes": ["crdt-delivery-", "crdt-update-"], "minimumMatchedRows": 1,
         "expectedEffectsByCommandType": { "CRDT_UPDATE_APPEND": ["crdt-append-reply", "crdt-update-fanout"] }
       } }
     },

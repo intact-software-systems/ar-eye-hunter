@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 127 entries were reviewed by independently meaningful behavior,
+The current 128 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -53,7 +53,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | API-v1 recipe loading and routing                |       4 | Checked-in recipes and runner plans are executable public test interfaces.                                       |
 | State-read convergence recipes                   |       2 | Parsed fixtures carry run-scoped identity and tertiary causal evidence.                                          |
 | Black-box schema and recipe matrix               |      10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
-| State-write recipe evidence                      |       5 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
+| State-write recipe evidence                      |       6 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
 | Shared-web package boundaries                    |       9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
 | Shared RTC benchmark navigation                  |       9 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
 | Group topology canonical import direction        |       6 | Active composition and package exports bypass compatibility-only predecessor paths.                              |
@@ -740,6 +740,14 @@ moved or changed test.
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
     },
     {
+      "id": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
+      "domain": "State-write recipe evidence",
+      "owner": "Shared Test maintainers",
+      "summary": "CRDT AppInbox evidence selects only the commands owned by its recipe even when another recipe uses a containing update ID. Executable assertion: “isolates CRDT AppInbox evidence by recipe command prefixes”.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes",
+      "coverageRelation": "The named recipe test reads the executable CRDT fixture and verifies that its broad durable selector is narrowed by the two exact command-ID prefixes owned by that recipe."
+    },
+    {
       "id": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
@@ -967,9 +975,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
     },
     {
-      "id": "test-structure-coupling-f68c92200afa2946",
+      "id": "test-structure-coupling-467e3560795fd1dc",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 155,
+      "line": 168,
       "column": 17,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
@@ -1591,9 +1599,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
-      "id": "test-structure-coupling-992799e238b4dc23",
+      "id": "test-structure-coupling-9034a417a537f3df",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 170,
+      "line": 183,
       "column": 35,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
@@ -1602,6 +1610,19 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Reads the bounded-execution recipe and compares the command identity with the evidence query identity in the same parsed fixture.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
+    },
+    {
+      "id": "test-structure-coupling-dd0e093a41ea8d1d",
+      "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
+      "line": 153,
+      "column": 35,
+      "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "Reads the executable CRDT recipe and verifies that durable evidence is narrowed to the command prefixes owned by that recipe instead of a containing ID from another recipe.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes"
     },
     {
       "id": "test-structure-coupling-5940ed1d753085dd",

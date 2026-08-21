@@ -20,7 +20,7 @@ import {
   waitForAuthInboxEntry,
 } from './auth-app-inbox-test-runtime.ts';
 
-const SHARED_REQUEST_ID = 'SharedLogoutRequest_012345';
+const SHARED_REQUEST_ID = 'SharedLogoutRequest_0123456789abcdefghijklmnopqrstuv';
 
 describe('auth HTTP AppInbox idempotency security', () => {
   it('uses operation topics and collision-safe scoped contexts', async () => {
@@ -257,7 +257,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
       throw new Error('Expected an issued agent session ticket');
     }
     const consumeInput = {
-      requestId: 'AgentTicketConsumeRequest_01',
+      requestId: 'AgentTicketConsumeRequest_0123456789abcdefghijklmnop',
       ticket,
     };
     const consumed = await runAuthCommand({

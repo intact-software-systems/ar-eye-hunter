@@ -64,6 +64,7 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
       'assertOneDifferentIntentWinner',
       'proveOperationIsolation',
       'proveActorIsolation',
+      'deriveCrdtAdminAuthHeader',
       'proveScopeIsolation',
       'proveDocumentIsolation',
       'replayTerminalFailure',
@@ -110,6 +111,97 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
     );
   });
 
+  it('encodes the CRDT path-bearing operation as literal JSON', () => {
+    const encode = readSteps().find((step) => step.name === 'encodeContractCrdtUpdate');
+    const transform = optionalObject(encode?.transform);
+    const update = optionalObject(transform?.jsonStringify);
+    const payload = optionalObject(update?.payload);
+    const operations = payload?.operations;
+    const operation = Array.isArray(operations) ? optionalObject(operations[0]) : undefined;
+
+    expect(operation).toHaveProperty('jsonParse');
+    expect(operation).not.toHaveProperty('path');
+  });
+
+  it('uses the CRDT document type authorized by the managed cluster profile', () => {
+    const recipe = readRecipe();
+    const variables = optionalObject(recipe.variables);
+    const crdtSteps = readSteps().filter((step) =>
+      JSON.stringify(step).includes('"documentType":"black-box-map"'),
+    );
+
+    expect(variables?.crdtApplicationId).toBe('rallar-server');
+    expect(variables?.crdtWorkspaceId).toBe('default');
+    expect(crdtSteps).toHaveLength(7);
+    for (const step of crdtSteps) {
+      const serialized = JSON.stringify(step);
+      expect(serialized).toContain('"applicationId":"{crdtApplicationId}"');
+      expect(serialized).toContain('"workspaceId":"{crdtWorkspaceId}"');
+    }
+  });
+
+  it('carries the current admin session through every CRDT action', () => {
+    const byName = new Map(readSteps().map((step) => [step.name, step]));
+    const seedRequest = optionalObject(byName.get('seedActorIsolation')?.request);
+    const seedOutputs = optionalObject(seedRequest?.outputs);
+
+    expect(seedOutputs).toMatchObject({
+      crdtAdminSessionId: 'body.sessionId',
+      crdtAdminAccessToken: { path: 'body.accessToken', secret: true },
+    });
+    expect(byName.get('deriveCrdtAdminAuthHeader')).toMatchObject({
+      type: 'set',
+      output: 'crdtAdminAuthHeader',
+      secret: true,
+    });
+    for (const stepName of [
+      'issueWebSocketTicket',
+      'readCrdtThroughTertiary',
+      'firstCrdtHttpMutation',
+      'replayCrdtHttpMutation',
+      'rejectChangedCrdtHttpIntent',
+      'seedDocumentIsolation',
+      'proveDocumentIsolation',
+    ]) {
+      const request = optionalObject(byName.get(stepName)?.request);
+      const headers = optionalObject(request?.headers);
+      expect(headers?.Authorization, stepName).toBe('{crdtAdminAuthHeader}');
+    }
+    for (const stepName of [
+      'deriveContractWsUrl',
+      'encodeContractCrdtUpdate',
+      'appendCrdtUpdateThroughWebSocket',
+      'redeliverCrdtUpdateWithDistinctDeliveryId',
+    ]) {
+      expect(JSON.stringify(byName.get(stepName)), stepName).toContain('{crdtAdminSessionId}');
+    }
+  });
+
+  it('treats missing-document compaction as an isolated terminal failure per document', () => {
+    const byName = new Map(readSteps().map((step) => [step.name, step]));
+
+    for (const stepName of ['seedDocumentIsolation', 'proveDocumentIsolation']) {
+      expect(byName.get(stepName)?.expect, stepName).toEqual({
+        status: 404,
+        body: {
+          type: 'api-mutation-failure',
+          version: 'canonical.v1',
+          code: 'crdt-admin-mutation-rejected',
+          status: 404,
+        },
+      });
+    }
+  });
+
+  it('allows the same credential proof to replay a successful logout', () => {
+    const replay = readSteps().find((step) => step.name === 'replayLogout');
+
+    expect(replay?.expect).toEqual({
+      status: 200,
+      body: { loggedOut: true },
+    });
+  });
+
   it('collects exact durable completion without exposing secret selectors', () => {
     const recipe = readRecipe();
     const steps = readSteps();
@@ -134,14 +226,27 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
     });
     expect(assertion).toMatchObject({
       actual: {
+        matchedAppInboxCount: '{stateWriteEvidence.matchedAppInboxCount}',
         atomicCompletionFailures: '{stateWriteEvidence.atomicCompletionFailures}',
         intermediateMutationIntentCount: '{stateWriteEvidence.intermediateMutationIntentCount}',
+        receiptOutboxIdCount: '{stateWriteEvidence.receiptOutboxIdCount}',
+        resourceOutboxCount: '{stateWriteEvidence.resourceOutboxCount}',
       },
       expect: {
         body: {
+          matchedAppInboxCount: 1,
+          completedAppInboxCount: 1,
+          failedAppInboxCount: 0,
           atomicCompletionFailures: 0,
           intermediateMutationIntentCount: 0,
+          receiptOutboxIdCount: 1,
+          resourceOutboxCount: 1,
         },
+        comparators: [
+          { path: 'appInbox', length: 1 },
+          { path: 'receiptOutboxIds', length: 1 },
+          { path: 'resourceOutbox', length: 1 },
+        ],
       },
     });
     expect(serialized).not.toMatch(/requests\/[^"}]*\{(?:password|accessToken|authHeader|ticket)/i);

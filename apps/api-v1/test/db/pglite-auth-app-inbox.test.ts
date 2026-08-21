@@ -143,7 +143,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     );
 
     const logoutPending = appAuth.logoutSession({
-      requestId: 'pglite-logout-request',
+      requestId: 'pglite-logout-request-identity-0123456789abcdef',
       session,
     });
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
@@ -157,7 +157,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
       undefined,
     );
     const logoutReplay = await appAuth.replayLogoutSessionWithCredentialProof({
-      requestId: 'pglite-logout-request',
+      requestId: 'pglite-logout-request-identity-0123456789abcdef',
       clientId: session.clientId,
       accessToken: session.accessToken,
     });

@@ -194,7 +194,7 @@ describe('API-v1 state-write convergence recipe', () => {
             durable: {
               version:
                 '{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}',
-              requestId: 'put-final-config-{groupId}-{runId}',
+              requestId: 'put-final-config-scope-{runId}',
             },
           },
         },
