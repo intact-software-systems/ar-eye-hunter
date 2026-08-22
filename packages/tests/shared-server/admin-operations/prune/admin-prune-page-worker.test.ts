@@ -116,7 +116,7 @@ describe('AdminPrunePageWorker', () => {
         const command = decodeAdminPruneWork(entry);
         const read = await work.read(command);
 
-        expect(repository.lastExcludedResourceId).toBe(entry.key.resourceId);
+        expect(repository.lastExcludedResourceKey).toEqual(entry.key);
         expect(read.rowIds).toEqual(['10', '11', '12']);
     });
 
@@ -412,7 +412,7 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
     readonly writtenEntries: ResourceEntry[] = [];
     readonly finished: ResourceEntry['key'][] = [];
     readonly calls: string[] = [];
-    lastExcludedResourceId: string | null = null;
+    lastExcludedResourceKey: ResourceEntry['key'] | null = null;
     loseReservation = false;
     progressWrites = 0;
     readAggregateCalls = 0;
@@ -427,11 +427,10 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         this.rowIds = rowIds;
     }
 
-    readPage(input: { pageSize: number; excludedResourceId: string | null; }) {
+    readPage(input: { pageSize: number; excludedResourceKey: ResourceEntry['key'] | null; }) {
         this.readPageCalls += 1;
-        this.lastExcludedResourceId = input.excludedResourceId;
+        this.lastExcludedResourceKey = input.excludedResourceKey;
         const selected = this.rowIds
-            .filter((id) => id !== input.excludedResourceId)
             .slice(0, input.pageSize);
         return Promise.resolve({
             rowIds: selected,

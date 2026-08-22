@@ -34,7 +34,7 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
             afterCursor: null,
             expireAtEpochMs: now,
             appData: null,
-            excludedResourceId: null
+            excludedResourceKey: null
         });
         assert.equal(read.rowIds.length, 2);
         assert.equal(read.hasMore, true);
@@ -68,6 +68,11 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
         const inbox = new ResourceInboxRepository(sql);
         const expiryTs = Temporal.Instant.fromEpochMilliseconds(now - 1);
         await inbox.write(createResourceEntry('executing', { expiryTs }));
+        await inbox.write(createResourceEntry('executing', {
+            topicId: 'other-topic',
+            contextId: 'other-context',
+            expiryTs
+        }));
         await inbox.write(createResourceEntry('other', { expiryTs }));
         const repository = new PSqlAdminPruneRepository(sql);
         const read = await repository.readPage({
@@ -76,13 +81,35 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
             afterCursor: null,
             expireAtEpochMs: now,
             appData: null,
-            excludedResourceId: 'executing'
+            excludedResourceKey: {
+                resourceId: 'executing',
+                topicId: 'topic-smoke',
+                contextId: 'ctx-smoke'
+            }
         });
-        assert.equal(read.rowIds.length, 1);
-        const rows = await sql<{ ri_resource_id: string; }[]>`
-      select ri_resource_id from resource_inbox where ri_row_id = ${Number(read.rowIds[0])}
+        assert.equal(read.rowIds.length, 2);
+        const rows = await sql<{
+            ri_resource_id: string;
+            ri_topic_id: string;
+            fk_ext_bank_id: string;
+        }[]>`
+      select ri_resource_id, ri_topic_id, fk_ext_bank_id
+      from resource_inbox
+      where ri_row_id in ${sql(read.rowIds.map(Number))}
+      order by ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
-        assert.deepEqual(rows.map((row) => row.ri_resource_id), ['other']);
+        assert.deepEqual(rows, [
+            {
+                ri_resource_id: 'executing',
+                ri_topic_id: 'other-topic',
+                fk_ext_bank_id: 'other-context'
+            },
+            {
+                ri_resource_id: 'other',
+                ri_topic_id: 'topic-smoke',
+                fk_ext_bank_id: 'ctx-smoke'
+            }
+        ]);
     });
 });
 

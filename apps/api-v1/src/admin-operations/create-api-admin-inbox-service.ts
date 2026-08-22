@@ -24,30 +24,34 @@ AppInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 
+export interface ApiAdminPruneCurrentAuthority {
+    readSession(sessionId: string): Promise<
+        | Readonly<{
+            clientId: string;
+            sessionId: string;
+            expiresAtEpochMs: number;
+        }>
+        | null
+        | undefined
+    >;
+    adminClientIds: readonly string[];
+}
+
+export interface CreateApiAdminInboxServiceInput {
+    inboxQueueReader: InboxQueueReader;
+    outboxQueueReader: OutboxQueueReader;
+    wakeQueueEngine: () => void;
+    resourceInboxRepository: ResourceInboxRepository;
+    resourceInboxResultsRepository: ResourceInboxResultsRepository;
+    database: PSqlSql;
+    serviceId: string;
+    timing?: RallarTimingSink;
+    options?: AppInboxServiceOptions;
+    currentAuthority: ApiAdminPruneCurrentAuthority;
+}
+
 export function createApiAdminInboxService(
-    input: Readonly<{
-        inboxQueueReader: InboxQueueReader;
-        outboxQueueReader: OutboxQueueReader;
-        wakeQueueEngine: () => void;
-        resourceInboxRepository: ResourceInboxRepository;
-        resourceInboxResultsRepository: ResourceInboxResultsRepository;
-        database: PSqlSql;
-        serviceId: string;
-        timing?: RallarTimingSink;
-        options?: AppInboxServiceOptions;
-        currentAuthority?: Readonly<{
-            readSession(sessionId: string): Promise<
-                | Readonly<{
-                    clientId: string;
-                    sessionId: string;
-                    expiresAtEpochMs: number;
-                }>
-                | null
-                | undefined
-            >;
-            adminClientIds: readonly string[];
-        }>;
-    }>
+    input: Readonly<CreateApiAdminInboxServiceInput>
 ): AppAdminInboxService {
     const pageSize = 100;
     const readAuthority = async (
@@ -57,7 +61,7 @@ export function createApiAdminInboxService(
             nowEpochMs: number;
         }>
     ) => {
-        const session = await input.currentAuthority?.readSession(
+        const session = await input.currentAuthority.readSession(
             authority.requestedSessionId
         );
         const allowed = Boolean(
@@ -65,7 +69,7 @@ export function createApiAdminInboxService(
                 session.clientId === authority.requestedBy &&
                 session.sessionId === authority.requestedSessionId &&
                 session.expiresAtEpochMs > authority.nowEpochMs &&
-                input.currentAuthority?.adminClientIds.includes(session.clientId)
+                input.currentAuthority.adminClientIds.includes(session.clientId)
         );
         return {
             allowed,

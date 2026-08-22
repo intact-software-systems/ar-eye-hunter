@@ -124,12 +124,17 @@ async function readResourcePage(
     input: Parameters<AdminPrunePageRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
+    const excluded = input.excludedResourceKey;
     const rows = await sql<ResourceRow[]>`
         select ri_row_id
         from resource_inbox
         where expire_ts <= ${new Date(input.expireAtEpochMs)}
           and ri_row_id > ${after}
-          and (${input.excludedResourceId === null} or ri_resource_id <> ${input.excludedResourceId})
+          and (${excluded === null} or not (
+            ri_resource_id = ${excluded?.resourceId ?? ''}
+            and ri_topic_id = ${excluded?.topicId ?? ''}
+            and fk_ext_bank_id = ${excluded?.contextId ?? ''}
+          ))
         order by ri_row_id
         limit ${input.pageSize + 1}
     `;

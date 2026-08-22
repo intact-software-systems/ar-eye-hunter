@@ -301,14 +301,37 @@ function selectAppInboxEvidence({
     selectedTypes,
     selectedPrefixes
 }: SelectAppInboxEvidenceInput): readonly ParsedInboxRow[] {
+    const evidenceByPhysicalKey = new Map<string, PersistedCommandEvidence>();
+    for (const evidence of commandEvidence) {
+        const key = toPhysicalAppInboxKey(
+            evidence.appInboxResourceId,
+            evidence.appInboxTopicId,
+            evidence.appInboxContextId
+        );
+        if (evidenceByPhysicalKey.has(key)) {
+            throw new TypeError('Command evidence contains a duplicate physical AppInbox key');
+        }
+        evidenceByPhysicalKey.set(key, evidence);
+    }
     return rawRows
-        .map((row, index) => parseApiV1StateWriteEvidenceRow(row, commandEvidence[index]))
+        .map((row) =>
+            parseApiV1StateWriteEvidenceRow(
+                row,
+                evidenceByPhysicalKey.get(
+                    toPhysicalAppInboxKey(row.ri_resource_id, row.ri_topic_id, row.fk_ext_bank_id)
+                )
+            )
+        )
         .filter(
             (row) =>
                 (selectedTypes.size === 0 || selectedTypes.has(row.commandType)) &&
                 (selectedPrefixes.length === 0 ||
                     row.commandIds.some((id) => selectedPrefixes.some((prefix) => id.startsWith(prefix))))
         );
+}
+
+function toPhysicalAppInboxKey(resourceId: string, topicId: string, contextId: string): string {
+    return [resourceId, topicId, contextId].join('\0');
 }
 
 function linkOutboxEvidence(

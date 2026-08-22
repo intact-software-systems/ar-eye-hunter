@@ -8,6 +8,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
     validateClientMutationIdempotencyRecord,
     type ClientMutationIdempotencyRecord
@@ -24,11 +25,12 @@ import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';
 import { parsePersistedResult, readAppInboxCommandType } from './api-v1-state-write-attempt-evidence.ts';
 import {
     readScopedGroupCommandIdsByRequestId,
-    readValidatedGroupReceiptIdentity
+    readValidatedGroupReceiptIdentity,
+    type ScopedGroupCommandExpectation
 } from './api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
-    computeProductionOutboxLookupIds,
+    computeProductionOutboxExpectations,
     createProductionOutboxRepository,
     productionCommandIdsForRaw,
     readAllCommandIds,
@@ -103,15 +105,15 @@ export async function queryStateWriteDurableEvidence({
     const topology = new GroupTopologyConfigRepository(runtime);
     const outbox = createProductionOutboxRepository(sql);
     const acceptedCommands = commands.filter((command) => command.status === 'accepted');
-    const scopedGroupCommandIds = await readScopedGroupCommandIdsByRequestId({ sql, scope });
+    const scopedGroupCommandIds = await readScopedGroupCommandIdsByRequestId({
+        sql,
+        expectations: createScopedGroupCommandExpectations(acceptedCommands, scope, groupCount)
+    });
     const receiptResults = await mapWithConcurrency(
         acceptedCommands,
         25,
         async (command): Promise<ProductionReceiptEvidence | undefined> => {
-            const clientIndex = Number(command.commandId.slice(command.commandId.lastIndexOf(':') + 1));
-            if (!Number.isSafeInteger(clientIndex) || clientIndex < 0) {
-                throw new Error(`Benchmark command ID has no client index: ${command.commandId}`);
-            }
+            const clientIndex = readBenchmarkClientIndex(command.commandId);
             const productionCommandIds = productionCommandIdsForRaw(command);
 
             if (command.kind === 'profile-instance') {
@@ -160,17 +162,9 @@ export async function queryStateWriteDurableEvidence({
     const receipts = receiptResults.filter(
         (receipt): receipt is ProductionReceiptEvidence => receipt !== undefined
     );
-    const receiptsByCommand = new Map(receipts.map((receipt) => [receipt.commandId, receipt]));
     const productionRecords = await readReferencedProductionOutboxRecords(
         outbox,
-        commands.flatMap((command) =>
-            computeProductionOutboxLookupIds({
-                command,
-                scope,
-                groupCount,
-                receiptOutboxIds: receiptsByCommand.get(command.commandId)?.outboxIds ?? []
-            })
-        )
+        computeProductionOutboxExpectations(commands, receipts)
     );
     const appInbox = await readAppInboxEvidence({ sql, scope, commands, timingEvents });
     const resourceOutbox = computeProductionOutboxEvidence({
@@ -186,6 +180,48 @@ export async function queryStateWriteDurableEvidence({
         intermediateMutationIntents: [],
         atomicCompletionFailures: 0
     };
+}
+
+function createScopedGroupCommandExpectations(
+    commands: readonly StateWriteBenchmarkCommand[],
+    scope: StateScope,
+    groupCount: number
+): readonly ScopedGroupCommandExpectation[] {
+    const topicByKind: Readonly<Partial<Record<StateWriteBenchmarkCommand['kind'], AppInboxType>>> = {
+        membership: AppInboxType.GROUP_MEMBER_UPSERT,
+        'presence-connect': AppInboxType.GROUP_PRESENCE_CONNECT,
+        'presence-heartbeat': AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+        'presence-disconnect': AppInboxType.GROUP_PRESENCE_DISCONNECT,
+        config: AppInboxType.GROUP_UPDATE
+    };
+    return commands.flatMap((command) => {
+        const topicId = topicByKind[command.kind];
+        if (topicId === undefined) {
+            return [];
+        }
+        const clientIndex = readBenchmarkClientIndex(command.commandId);
+        const groupIndex = clientIndex % groupCount;
+        const groupId = `group-${groupIndex}`;
+        return [{
+            requestId: command.commandId,
+            topicId,
+            contextId: [scope.applicationId, scope.workspaceId, groupId]
+                .map(encodeURIComponent)
+                .join(':'),
+            groupRef: { ...scope, groupId },
+            actorPrincipalId: command.kind === 'config'
+                ? `owner-${groupIndex}`
+                : `client-${clientIndex}`
+        }];
+    });
+}
+
+function readBenchmarkClientIndex(commandId: string): number {
+    const clientIndex = Number(commandId.slice(commandId.lastIndexOf(':') + 1));
+    if (!Number.isSafeInteger(clientIndex) || clientIndex < 0) {
+        throw new Error(`Benchmark command ID has no client index: ${commandId}`);
+    }
+    return clientIndex;
 }
 
 interface ReadAppInboxEvidenceInput {

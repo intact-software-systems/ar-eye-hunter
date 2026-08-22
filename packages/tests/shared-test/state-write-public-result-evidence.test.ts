@@ -51,6 +51,8 @@ function createCanonicalNewerPresenceEvidence() {
     };
     const authoritative: readonly PersistedCommandEvidence[] = [{
         appInboxResourceId: resourceId,
+        appInboxTopicId: 'app-inbox',
+        appInboxContextId: 'scope',
         valid: true,
         commandType: 'GROUP_MEMBER_UPSERT',
         commandIds: [logicalId],
@@ -174,6 +176,8 @@ describe('durable AppInbox public result evidence', () => {
         };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: clientResourceId,
+            appInboxTopicId: 'app-inbox',
+            appInboxContextId: 'scope',
             valid: true,
             commandType: 'CLIENT_INSTANCE_UPSERT',
             commandIds: [clientCommandId],
@@ -242,6 +246,8 @@ describe('durable AppInbox public result evidence', () => {
             undefined,
             [{
                 appInboxResourceId: resourceId,
+                appInboxTopicId: 'app-inbox',
+                appInboxContextId: 'scope',
                 valid: true,
                 commandType: 'GROUP_UPDATE',
                 commandIds: [logicalId],
@@ -322,6 +328,8 @@ describe('durable AppInbox public result evidence', () => {
         };
         const authoritative = [{
             appInboxResourceId: resourceId,
+            appInboxTopicId: 'app-inbox',
+            appInboxContextId: 'scope',
             valid: true,
             commandType: 'GROUP_MEMBER_UPSERT',
             commandIds: [logicalId],
@@ -482,6 +490,8 @@ describe('durable AppInbox public result evidence', () => {
             undefined,
             [{
                 appInboxResourceId: resourceId,
+                appInboxTopicId: 'app-inbox',
+                appInboxContextId: 'scope',
                 valid: true,
                 commandType: 'GROUP_MEMBER_UPSERT',
                 commandIds: ['denied-group-command']

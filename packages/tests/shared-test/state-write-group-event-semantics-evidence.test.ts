@@ -103,6 +103,8 @@ function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
         };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: resourceId,
+            appInboxTopicId: 'app-inbox',
+            appInboxContextId: 'scope',
             valid: true,
             commandType,
             commandIds: [logicalId],

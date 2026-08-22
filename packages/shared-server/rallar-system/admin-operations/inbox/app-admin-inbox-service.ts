@@ -459,7 +459,7 @@ function createInitialAdminPrunePages(
                 pageSize: command.pageSize,
                 afterCursor: null,
                 pageIndex: 0,
-                appData: command.appData
+                appData: category === 'app-data' ? command.appData : null
             },
             serviceId
         )

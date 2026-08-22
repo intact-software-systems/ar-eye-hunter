@@ -1,5 +1,5 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
@@ -51,7 +51,7 @@ export type AdminPrunePageRepository = Readonly<{
             afterCursor: string | null;
             expireAtEpochMs: number;
             appData: AdminPruneAppData | null;
-            excludedResourceId: string | null;
+            excludedResourceKey: Key | null;
         }>
     ): Promise<AdminPruneCandidatePage>;
     readAggregate(jobId: string): Promise<
@@ -117,8 +117,8 @@ export class AdminPrunePageWorker {
                 afterCursor: command.afterCursor,
                 expireAtEpochMs: command.capturedAtEpochMs,
                 appData: command.appData,
-                excludedResourceId: command.category === 'resource-inbox'
-                    ? command.reservation.key.resourceId
+                excludedResourceKey: command.category === 'resource-inbox'
+                    ? command.reservation.key
                     : null
             }),
             this.options.repository.readAggregate(command.jobId),

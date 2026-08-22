@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
+import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 import { readScopedGroupCommandIdentity } from '../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
-    computeProductionOutboxLookupIds,
+    computeProductionOutboxExpectations,
+    createProductionOutboxRepository,
     readAllCommandIds,
     readCanonicalEffectCommandId,
     readResourceEffectKind
@@ -17,20 +20,149 @@ import { createStateWritePerformanceArtifact, refreshStateWritePerformanceWorklo
 import { binding, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
-    it('reads the scoped group command identity from the persisted AppInbox resource', () => {
+    it('reads a scoped group command only from its exact actor, workspace, group, topic, and context', async () => {
         const requestId = 'state-write:membership:7';
-        const commandId = `group-app-inbox:${'a'.repeat(64)}`;
+        const actorPrincipalId = 'client-7';
+        const groupRef = {
+            applicationId: 'state-write-app',
+            workspaceId: 'state-write-workspace',
+            groupId: 'group-2'
+        };
+        const topicId = 'GROUP_MEMBER_UPSERT';
+        const contextId = 'state-write-app:state-write-workspace:group-2';
+        const descriptor = mutationDescriptor(
+            'upsertMember',
+            {
+                applicationId: groupRef.applicationId,
+                workspaceId: groupRef.workspaceId
+            },
+            groupRef.groupId,
+            {
+                status: 'active',
+                actorPrincipalId,
+                requestId
+            },
+            actorPrincipalId
+        );
+        const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
+        const command = {
+            ...toDescriptorCommand(descriptor, () => requestId),
+            commandId
+        };
         const resource = JSON.stringify({
             payload: {
+                typeId: topicId,
                 resource: JSON.stringify({
+                    type: topicId,
+                    topicId,
                     resourceId: requestId,
-                    authority: { command: { commandId, requestId } }
+                    contextId,
+                    authority: {
+                        authorityProof: {
+                            version: 1,
+                            principalId: actorPrincipalId,
+                            sessionId: 'client-session-7',
+                            sessionIssuedAtEpochMs: 1,
+                            sessionExpiresAtEpochMs: 2,
+                            commandMac: 'mac'
+                        },
+                        descriptor,
+                        command,
+                        facts: {},
+                        causalToken: 'causal-token',
+                        queueResourceId: 'g-queue-resource'
+                    }
                 })
             }
         });
+        const row = {
+            ri_resource_id: requestId,
+            ri_topic_id: topicId,
+            fk_ext_bank_id: contextId,
+            ri_resource: resource
+        };
+        const expectation = {
+            requestId,
+            topicId,
+            contextId,
+            groupRef,
+            actorPrincipalId
+        };
 
-        expect(readScopedGroupCommandIdentity(resource)).toEqual({ requestId, commandId });
-        expect(readScopedGroupCommandIdentity('{}')).toBeUndefined();
+        await expect(readScopedGroupCommandIdentity(row, expectation)).resolves.toEqual({
+            requestId,
+            commandId
+        });
+        await expect(readScopedGroupCommandIdentity(row, {
+            ...expectation,
+            groupRef: { ...groupRef, workspaceId: 'wrong-workspace' }
+        })).resolves.toBeUndefined();
+        await expect(readScopedGroupCommandIdentity(row, {
+            ...expectation,
+            actorPrincipalId: 'wrong-actor'
+        })).resolves.toBeUndefined();
+    });
+
+    it('selects outbox evidence by the exact tuple and rejects an ambiguous duplicate', async () => {
+        const command = {
+            kind: 'topology-source',
+            commandId: 'topology-command',
+            stackIndex: 0,
+            latencyMs: 1,
+            status: 'accepted'
+        } as const;
+        const topologyBinding = binding(command, 'command');
+        const receipt = {
+            commandId: command.commandId,
+            receiptIds: [command.commandId],
+            outboxIds: topologyBinding.outboxIds,
+            identityKind: 'logical-msg-id' as const,
+            resultBindings: [topologyBinding]
+        };
+        const expectation = computeProductionOutboxExpectations([command], [receipt])[0]!;
+        const exactRow = {
+            ri_resource_id: expectation.resourceId,
+            ri_topic_id: expectation.topicId,
+            fk_ext_bank_id: expectation.contextId,
+            ri_type_id: expectation.typeId,
+            ri_resource: queueResource(
+                {
+                    type: expectation.payloadTypeId,
+                    topicId: expectation.topicId,
+                    resourceId: expectation.effectId,
+                    contextId: expectation.contextId,
+                    senderId: 'server-1',
+                    data: {}
+                },
+                expectation.effectId,
+                {
+                    resourceId: expectation.resourceId,
+                    topicId: expectation.topicId,
+                    contextId: expectation.contextId,
+                    payloadTypeId: expectation.payloadTypeId
+                }
+            )
+        };
+        const wrongTopicRow = {
+            ...exactRow,
+            ri_topic_id: 'wrong-topic'
+        };
+        const rows = [wrongTopicRow, exactRow];
+        const sql = vi.fn(async () => rows);
+        const repository = createProductionOutboxRepository(sql as never);
+
+        await expect(repository.find(expectation)).resolves.toMatchObject({
+            record: {
+                resourceId: expectation.resourceId,
+                outboxId: expectation.effectId,
+                topicId: expectation.topicId
+            }
+        });
+
+        rows.push({ ...exactRow });
+        await expect(repository.find(expectation)).rejects.toThrow(
+            'Receipt resolves to ambiguous exact ResourceInbox effects'
+        );
     });
 
     it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
@@ -408,18 +540,25 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             effectId: groupRecord.resourceId
         });
         expect(
-            computeProductionOutboxLookupIds({
-                command: {
-                    kind: 'topology-source',
-                    commandId: 'bench:topology-source:7'
-                },
-                scope: { applicationId: 'app', workspaceId: 'workspace' },
-                groupCount: 5,
-                receiptOutboxIds: [
-                    'bench:topology-source:7:rtc-topology-recompute:group-revision:group=1;presence=0'
-                ]
-            })[0]
-        ).toMatch(/^bench-topology-source--[a-z0-9]+$/);
+            computeProductionOutboxExpectations(
+                [topologyCommand],
+                [{
+                    commandId: topologyCommand.commandId,
+                    receiptIds: [topologyCommand.commandId],
+                    outboxIds: [topologyRecord.outboxId],
+                    identityKind: 'logical-msg-id',
+                    resultBindings: [binding(topologyCommand, 'command')]
+                }]
+            )[0]
+        ).toMatchObject({
+            effectId: topologyRecord.outboxId,
+            canonicalCommandId: topologyCommand.commandId,
+            effectKind: 'rtc-topology-recompute',
+            typeId: 'APP_OUTBOX',
+            topicId: 'app-outbox.rtc-topology',
+            contextId: 'app=app:ws=workspace:group=topology-command',
+            payloadTypeId: 'RTC_TOPOLOGY_RECOMPUTE'
+        });
         expect(
             parseBenchmarkOptions([
                 '--backend=postgres',
@@ -471,10 +610,31 @@ const malformedDurableResultCases: readonly [(artifact: any) => void, string][] 
     ]
 ];
 
-function queueResource(data: object, msgId?: string): string {
+function queueResource(
+    data: object,
+    msgId?: string,
+    identity?: Readonly<{
+        resourceId: string;
+        topicId: string;
+        contextId: string;
+        payloadTypeId: string;
+    }>
+): string {
     return JSON.stringify({
         ...(msgId === undefined ? {} : { id: { msgId } }),
-        payload: { resource: JSON.stringify({ data }) }
+        ...(identity === undefined
+            ? {}
+            : {
+                route: {
+                    resourceId: identity.resourceId,
+                    topicId: identity.topicId,
+                    contextId: identity.contextId
+                }
+            }),
+        payload: {
+            ...(identity === undefined ? {} : { typeId: identity.payloadTypeId }),
+            resource: JSON.stringify(identity === undefined ? { data } : data)
+        }
     });
 }
 

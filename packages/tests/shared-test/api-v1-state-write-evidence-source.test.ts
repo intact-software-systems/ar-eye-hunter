@@ -5,6 +5,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import {
+    ADMIN_APP_INBOX_TOPIC,
+    toAdminPruneContextId,
+    toAdminPruneJobId
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 
 import type { ApiV1StateWriteEvidenceSqlParameter } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
@@ -138,7 +143,13 @@ describe('API-v1 PGlite state-write evidence source', () => {
 
     it('links public admin request identity to its scoped page-work identity', async () => {
         const requestId = 'admin-evidence-request-0001';
-        const jobId = `admin-prune:${'a'.repeat(64)}`;
+        const appData = { namespace: 'evidence', storeName: null };
+        const contextId = toAdminPruneContextId('admin', appData);
+        const jobId = await toAdminPruneJobId({
+            resourceId: requestId,
+            topicId: ADMIN_APP_INBOX_TOPIC,
+            contextId
+        });
         const command = await createAdminPruneCommand({
             jobId,
             requestedBy: 'admin',
@@ -147,14 +158,14 @@ describe('API-v1 PGlite state-write evidence source', () => {
             expireAtEpochMs: 1_700_000_060_000,
             dryRun: false,
             categories: ['app-data'],
-            appData: { namespace: 'evidence', storeName: null },
+            appData,
             pageSize: 100
         });
         const inbox = {
             ri_row_id: 1,
             ri_resource_id: requestId,
-            ri_topic_id: 'ADMIN_PRUNE_EXPIRED',
-            fk_ext_bank_id: 'caller=admin:app-data-namespace=evidence:app-data-store=',
+            ri_topic_id: ADMIN_APP_INBOX_TOPIC,
+            fk_ext_bank_id: contextId,
             ri_resource: JSON.stringify({
                 payload: {
                     typeId: 'ADMIN_PRUNE_EXPIRED',
@@ -233,6 +244,52 @@ describe('API-v1 PGlite state-write evidence source', () => {
             atomicCompletionFailures: 0,
             resourceOutboxCount: 1,
             resourceOutbox: [{ commandId: jobId, effectKind: 'admin-prune-page' }]
+        });
+
+        inbox.fk_ext_bank_id = 'caller=another-admin:app-data-namespace=evidence:app-data-store=';
+        await expect(collectApiV1StateWriteEvidenceFromSql({
+            match: requestId,
+            commandTypes: ['ADMIN_PRUNE_EXPIRED']
+        }, sql as never)).resolves.toMatchObject({
+            atomicCompletionFailures: 1,
+            statusResultFailures: 1,
+            appInbox: [{ durableResultValid: false }]
+        });
+
+        const arbitraryJobId = `admin-prune:${'f'.repeat(64)}`;
+        const arbitraryJobCommand = await createAdminPruneCommand({
+            jobId: arbitraryJobId,
+            requestedBy: command.requestedBy,
+            requestedSessionId: command.requestedSessionId,
+            capturedAtEpochMs: command.capturedAtEpochMs,
+            expireAtEpochMs: command.expireAtEpochMs,
+            dryRun: command.dryRun,
+            categories: command.categories,
+            appData: command.appData,
+            pageSize: command.pageSize
+        });
+        inbox.fk_ext_bank_id = contextId;
+        inbox.ri_resource = JSON.stringify({
+            payload: {
+                typeId: 'ADMIN_PRUNE_EXPIRED',
+                resource: JSON.stringify({
+                    type: 'ADMIN_PRUNE_EXPIRED',
+                    resourceId: requestId,
+                    data: arbitraryJobCommand
+                })
+            }
+        });
+        inbox.result_resource = JSON.stringify({
+            ...JSON.parse(inbox.result_resource),
+            jobId: arbitraryJobId
+        });
+        await expect(collectApiV1StateWriteEvidenceFromSql({
+            match: requestId,
+            commandTypes: ['ADMIN_PRUNE_EXPIRED']
+        }, sql as never)).resolves.toMatchObject({
+            atomicCompletionFailures: 1,
+            statusResultFailures: 1,
+            appInbox: [{ durableResultValid: false }]
         });
     });
 

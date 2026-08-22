@@ -255,6 +255,8 @@ describe('durable AppInbox result evidence', () => {
         };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: commandId,
+            appInboxTopicId: command.ri_topic_id,
+            appInboxContextId: command.fk_ext_bank_id,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [commandId],
@@ -328,6 +330,8 @@ describe('durable AppInbox result evidence', () => {
         };
         const authoritative = [{
             appInboxResourceId: resourceId,
+            appInboxTopicId: topology.ri_topic_id,
+            appInboxContextId: topology.fk_ext_bank_id,
             valid: true,
             commandType: 'TOPOLOGY_RECONFIGURE',
             commandIds: [requestId],
@@ -381,6 +385,8 @@ describe('durable AppInbox result evidence', () => {
         };
         const cleanupEvidence = [{
             appInboxResourceId: resourceId,
+            appInboxTopicId: cleanup.ri_topic_id,
+            appInboxContextId: cleanup.fk_ext_bank_id,
             valid: true,
             commandType: 'GROUP_PRESENCE_SESSION_CLEANUP',
             commandIds: ['session-1', 'generation-1']
@@ -400,6 +406,8 @@ describe('durable AppInbox result evidence', () => {
         const physicalCommand = { ...command, ri_resource_id: physicalResourceId };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: physicalResourceId,
+            appInboxTopicId: physicalCommand.ri_topic_id,
+            appInboxContextId: physicalCommand.fk_ext_bank_id,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [commandId],
@@ -439,6 +447,8 @@ describe('durable AppInbox result evidence', () => {
     it('rejects a production command decoder failure before trusting its result', () => {
         expect(deriveApiV1StateWriteEvidence(spec, [command], [effect], [], undefined, [{
             appInboxResourceId: commandId,
+            appInboxTopicId: command.ri_topic_id,
+            appInboxContextId: command.fk_ext_bank_id,
             valid: false,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [],
@@ -471,8 +481,10 @@ describe('durable AppInbox result evidence', () => {
                 }]
             })
         });
-        const commandEvidence = (jobId: string): PersistedCommandEvidence => ({
+        const commandEvidence = (contextId: string, jobId: string): PersistedCommandEvidence => ({
             appInboxResourceId: sharedRequestId,
+            appInboxTopicId: 'ADMIN_PRUNE_EXPIRED',
+            appInboxContextId: contextId,
             valid: true,
             commandType: 'ADMIN_PRUNE_EXPIRED',
             commandIds: [jobId]
@@ -502,7 +514,7 @@ describe('durable AppInbox result evidence', () => {
             [page('admin-job-1'), page('admin-job-2')],
             [],
             undefined,
-            [commandEvidence('admin-job-1'), commandEvidence('admin-job-2')]
+            [commandEvidence('caller=admin', 'admin-job-1'), commandEvidence('caller=bob', 'admin-job-2')]
         )).toMatchObject({
             matchedAppInboxCount: 2,
             atomicCompletionFailures: 0,
