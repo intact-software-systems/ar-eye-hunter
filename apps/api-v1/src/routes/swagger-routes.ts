@@ -4,12 +4,16 @@ import { parse } from 'jsr:@std/yaml@1.0.12';
 
 export { resolvePublicServerUrl };
 
-async function loadOpenApiYaml(): Promise<unknown> {
-    return parse(
+async function loadOpenApiYaml(): Promise<object> {
+    const document = parse(
         await Deno.readTextFile(
             new URL('../../resources/api-v1-openapi.yaml', import.meta.url)
         )
     );
+    if (!document || typeof document !== 'object' || Array.isArray(document)) {
+        throw new TypeError('API-v1 OpenAPI resource must decode to an object.');
+    }
+    return document;
 }
 
 function swaggerHtml(c: Context): string {

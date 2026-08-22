@@ -29,18 +29,18 @@ export function createApiV1RtcTopologyClusterTransport(
                     await notification.listen(
                         channel,
                         async (payload: string) => {
-                            let notification: unknown;
+                            let parsedNotification: object | string | number | boolean | null;
                             try {
-                                notification = JSON.parse(payload);
+                                parsedNotification = JSON.parse(payload);
                             }
                             catch {
                                 return;
                             }
                             if (
-                                isRtcTopologyPublicationNotification(notification) &&
-                                notification.publisherId !== publisherId
+                                isRtcTopologyPublicationNotification(parsedNotification) &&
+                                parsedNotification.publisherId !== publisherId
                             ) {
-                                await listener(notification);
+                                await listener(parsedNotification);
                             }
                         }
                     );

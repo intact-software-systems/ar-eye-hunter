@@ -109,15 +109,15 @@ accepted. There are no aliases or transitional readers.
 
 ### Server
 
-| Variable                           | Required | Default          | Usage                                                                                    |
-| ---------------------------------- | -------- | ---------------- | ---------------------------------------------------------------------------------------- |
-| `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                     |
-| `RALLAR_PRODUCTION_HARDENING`      | No       | Profile-owned    | `1` or `true` strengthens a non-prod profile; `0` or `false` cannot weaken `prod`.       |
-| `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                               |
-| `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins. |
-| `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                           |
-| `RALLAR_WS_BASE_URL`               | No       | Profile/defaults | Canonical public WebSocket URL.                                                          |
-| `RALLAR_STATE_STRICT_READ_AUTH`    | No       | Profile/defaults | Applies full-state read authorization to client/group list, snapshot, and event reads.   |
+| Variable                           | Required | Default          | Usage                                                                                                                                                                        |
+| ---------------------------------- | -------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                                                                                                         |
+| `RALLAR_PRODUCTION_HARDENING`      | No       | Profile-owned    | `1` or `true` strengthens a non-prod profile; `0` or `false` cannot weaken `prod`.                                                                                           |
+| `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                                                                                                                   |
+| `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins.                                                                                     |
+| `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                                                                                                               |
+| `RALLAR_WS_BASE_URL`               | No       | Profile/defaults | Canonical public WebSocket URL.                                                                                                                                              |
+| `RALLAR_STATE_STRICT_READ_AUTH`    | No       | Profile/defaults | Applies full-state read authorization to client/group list, snapshot, and event reads. SPA statistics retain independent route-local authentication and group-policy checks. |
 
 ### Database
 

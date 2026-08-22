@@ -22,7 +22,7 @@ export interface ApiV1DatabaseLifecycle {
 }
 
 export interface ApiV1DatabaseNotificationPort {
-    notify(channel: string, message: unknown): Promise<void>;
+    notify(channel: string, message: object): Promise<void>;
     listen(
         channel: string,
         onMessage: (payload: string) => void | Promise<void>
@@ -30,16 +30,16 @@ export interface ApiV1DatabaseNotificationPort {
 }
 
 export interface ApiV1PGliteResource {
-    readonly waitReady: Promise<unknown>;
+    readonly waitReady: Promise<void>;
     close(): Promise<void>;
 }
 
 export interface ApiV1PostgresClient extends PSqlSql {
-    notify(channel: string, payload: string): Promise<unknown>;
+    notify(channel: string, payload: string): Promise<void | object>;
     listen(
         channel: string,
         onMessage: (payload: string) => void | Promise<void>
-    ): Promise<unknown>;
+    ): Promise<void | object>;
     end(): Promise<void>;
 }
 
@@ -192,13 +192,17 @@ async function closePostgresClients(
     listener: ApiV1PostgresClient,
     application: ApiV1PostgresClient
 ): Promise<void> {
-    const failures: unknown[] = [];
+    const failures: Error[] = [];
     for (const client of [listener, application]) {
         try {
             await client.end();
         }
         catch (error) {
-            failures.push(error);
+            failures.push(
+                error instanceof Error
+                    ? error
+                    : new Error('PostgreSQL client cleanup threw a non-Error value.', { cause: error })
+            );
         }
     }
     if (failures.length > 0) {
@@ -210,20 +214,28 @@ async function closePGliteResources(
     resource: ApiV1PGliteResource,
     evidence: Pick<PGliteBlackBoxSnapshotPublisher, 'stop'> | undefined
 ): Promise<void> {
-    const failures: unknown[] = [];
+    const failures: Error[] = [];
     if (evidence !== undefined) {
         try {
             await evidence.stop();
         }
         catch (error) {
-            failures.push(error);
+            failures.push(
+                error instanceof Error
+                    ? error
+                    : new Error('PGlite evidence cleanup threw a non-Error value.', { cause: error })
+            );
         }
     }
     try {
         await resource.close();
     }
     catch (error) {
-        failures.push(error);
+        failures.push(
+            error instanceof Error
+                ? error
+                : new Error('PGlite resource cleanup threw a non-Error value.', { cause: error })
+        );
     }
     if (failures.length > 0) {
         throw new AggregateError(failures, 'Failed to close API-v1 PGlite resources.');
@@ -232,10 +244,10 @@ async function closePGliteResources(
 
 const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
     createPostgresClient: (input) =>
-        postgres(input.connectionUrl, {
+        toApiV1PostgresClient(postgres(input.connectionUrl, {
             max: input.max,
             idle_timeout: input.idleTimeoutSeconds
-        }) as unknown as ApiV1PostgresClient,
+        })),
     readyPostgres: async (client) => {
         await client`select 1`;
     },
@@ -263,3 +275,22 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
             ready: Promise.resolve()
         })
 };
+
+function toApiV1PostgresClient<Client extends object>(
+    client: Client
+): Client & ApiV1PostgresClient {
+    if (
+        typeof client !== 'function' ||
+        !hasCallableProperty(client, 'begin') ||
+        !hasCallableProperty(client, 'notify') ||
+        !hasCallableProperty(client, 'listen') ||
+        !hasCallableProperty(client, 'end')
+    ) {
+        throw new TypeError('Postgres client does not expose the required API-v1 capabilities.');
+    }
+    return client as Client & ApiV1PostgresClient;
+}
+
+function hasCallableProperty(value: object, property: string): boolean {
+    return typeof Reflect.get(value, property) === 'function';
+}

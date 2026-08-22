@@ -62,9 +62,7 @@ function registerJoinGroupRoute(
                     )
                 });
 
-                return context.json(
-                    toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId)
-                );
+                return context.json(toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId));
             }
             catch (error) {
                 return toGroupMutationErrorResponse(context, error);
@@ -103,9 +101,7 @@ function registerAcceptGroupInviteRoute(
                     )
                 });
 
-                return context.json(
-                    toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId)
-                );
+                return context.json(toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId));
             }
             catch (error) {
                 return toGroupMutationErrorResponse(context, error);

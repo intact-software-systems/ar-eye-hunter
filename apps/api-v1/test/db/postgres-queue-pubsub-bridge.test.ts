@@ -1,7 +1,7 @@
 import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import assert from 'node:assert/strict';
 import { queuePubSubDeliveryForMode } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
-import { createPostgresQueuePubSubBridge } from '../../src/db/postgres-queue-pubsub-bridge.ts';
+import { createPostgresQueuePubSubBridge } from '../../src/db/create-postgres-queue-pub-sub-bridge.ts';
 
 Deno.test('api-v1 queue pub/sub config uses key delivery only for postgres', () => {
     assert.equal(queuePubSubDeliveryForMode('postgres'), 'key');
@@ -13,7 +13,7 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
     const notifications: Array<
         Readonly<{
             channel: string;
-            message: unknown;
+            message: object;
         }>
     > = [];
     const bridge = createPostgresQueuePubSubBridge('publisher-local', {

@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
 import type {
@@ -219,35 +219,42 @@ function registerUpsertSelfGroupMemberRoute(
         `${GROUP_MEMBER_PATH}/requests/:requestId`,
         async (context) => {
             try {
-                const authSession = await dependencies.requireApiAuthSession(context.req);
-                const scope = toGroupStateRouteScope(context);
-                const { groupId, principalId } = context.req.param();
-                dependencies.groupAdmissionQuota.require({
-                    family: 'join-admission',
-                    groupRef: { ...scope, groupId },
-                    principalId: authSession.clientId
-                });
-                authorization.assertSelfPrincipal(authSession.clientId, principalId);
-                const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
-                const command = toGroupStateCommand({
-                    operation: 'upsert-group-member',
-                    authSession,
-                    scope,
-                    groupId,
-                    principalId,
-                    request
-                });
-                authorization.assertSelfServiceMemberStatus(request.status);
-                const written = toGroupStateResponse({
-                    kind: 'mutation',
-                    written: await dependencies.processGroupAppInbox(authSession, command)
-                });
-                const body = toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId);
-                return context.json(body);
+                return await upsertSelfGroupMember(context, dependencies, authorization);
             }
             catch (error) {
                 return toGroupMutationErrorResponse(context, error);
             }
         }
     );
+}
+
+async function upsertSelfGroupMember(
+    context: Context,
+    dependencies: GroupStateRouteDependencies,
+    authorization: GroupStateRouteAuthorization
+): Promise<Response> {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const scope = toGroupStateRouteScope(context);
+    const { groupId, principalId } = context.req.param();
+    dependencies.groupAdmissionQuota.require({
+        family: 'join-admission',
+        groupRef: { ...scope, groupId },
+        principalId: authSession.clientId
+    });
+    authorization.assertSelfPrincipal(authSession.clientId, principalId);
+    const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
+    const command = toGroupStateCommand({
+        operation: 'upsert-group-member',
+        authSession,
+        scope,
+        groupId,
+        principalId,
+        request
+    });
+    authorization.assertSelfServiceMemberStatus(request.status);
+    const written = toGroupStateResponse({
+        kind: 'mutation',
+        written: await dependencies.processGroupAppInbox(authSession, command)
+    });
+    return context.json(toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId));
 }

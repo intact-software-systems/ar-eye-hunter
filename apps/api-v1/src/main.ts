@@ -105,26 +105,38 @@ const apiProcess = await startApiProcess({
         }
     },
     stopAfterStartupFailure: async (boundHttpServer) => {
-        const failures: unknown[] = [];
+        const failures: Error[] = [];
         try {
             rallar.runtime.qboxEngine.stop();
         }
         catch (error) {
-            failures.push(error);
+            failures.push(
+                error instanceof Error
+                    ? error
+                    : new Error('Queue worker cleanup threw a non-Error value.', { cause: error })
+            );
         }
         if (boundHttpServer !== undefined) {
             try {
                 await boundHttpServer.shutdown();
             }
             catch (error) {
-                failures.push(error);
+                failures.push(
+                    error instanceof Error
+                        ? error
+                        : new Error('HTTP server cleanup threw a non-Error value.', { cause: error })
+                );
             }
         }
         try {
             await rallar.runtime.backgroundTasks.stop();
         }
         catch (error) {
-            failures.push(error);
+            failures.push(
+                error instanceof Error
+                    ? error
+                    : new Error('Background task cleanup threw a non-Error value.', { cause: error })
+            );
         }
         if (failures.length > 0) {
             throw new AggregateError(failures, 'API-v1 startup cleanup failed');
