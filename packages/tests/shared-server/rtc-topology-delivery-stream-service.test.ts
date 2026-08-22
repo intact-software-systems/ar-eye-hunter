@@ -19,6 +19,13 @@ import {
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
 
 const STREAM_ID = '00000000-0000-4000-8000-000000000001';
+const DELIVERY_POLICY = {
+    heartbeatIntervalMs: RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS,
+    leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS,
+    compactionIntervalMs: RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS,
+    compactionPageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
+    consumerRetentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS
+} as const;
 
 describe('RTC topology delivery stream service', () => {
     it('registers before scheduling database-time heartbeat and bounded compaction', async () => {
@@ -33,6 +40,7 @@ describe('RTC topology delivery stream service', () => {
         const service = new RtcTopologyDeliveryStreamService({
             streamId: STREAM_ID,
             repository,
+            policy: DELIVERY_POLICY,
             scheduler,
             onHealthFailure: vi.fn()
         });
@@ -77,6 +85,7 @@ describe('RTC topology delivery stream service', () => {
         const service = new RtcTopologyDeliveryStreamService({
             streamId: STREAM_ID,
             repository,
+            policy: DELIVERY_POLICY,
             scheduler,
             onHealthFailure
         });
@@ -96,6 +105,7 @@ describe('RTC topology delivery stream service', () => {
         const service = new RtcTopologyDeliveryStreamService({
             streamId: STREAM_ID,
             repository,
+            policy: DELIVERY_POLICY,
             scheduler,
             onHealthFailure
         });
@@ -119,6 +129,7 @@ describe('RTC topology delivery stream service', () => {
         const service = new RtcTopologyDeliveryStreamService({
             streamId: STREAM_ID,
             repository,
+            policy: DELIVERY_POLICY,
             scheduler,
             onHealthFailure: vi.fn()
         });

@@ -7,12 +7,8 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeState
 
 import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RtcTopologyReplayDiagnosticsSink } from './rtc-topology-replay-diagnostics.ts';
-import {
-    RTC_TOPOLOGY_RECONNECT_BATCH_WINDOW_MS,
-    RTC_TOPOLOGY_REPLAY_RETENTION_MS
-} from './rtc-topology-replay-policy.ts';
+import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from './rtc-topology-replay-policy.ts';
 
-export const RTC_TOPOLOGY_HYDRATION_BATCH_DELAY_MS = RTC_TOPOLOGY_RECONNECT_BATCH_WINDOW_MS;
 export const RTC_TOPOLOGY_HYDRATION_PAGE_SIZE = 100;
 export const RTC_TOPOLOGY_HYDRATION_RETRY_DELAYS_MS = [100, 1_000, 5_000, 30_000] as const;
 
@@ -47,6 +43,7 @@ interface RtcTopologyReconnectHydratorOptions {
         connection: ConnectionContext
     ) => RtcTopologyHydrationIdentity | undefined;
     readonly nowEpochMs: () => number;
+    readonly batchWindowMs: number;
     readonly diagnostics?: RtcTopologyReplayDiagnosticsSink;
     readonly scheduler?: RtcTopologyHydrationScheduler;
 }
@@ -61,6 +58,7 @@ export class RtcTopologyReconnectHydrator {
     readonly #groups: RtcTopologyHydrationGroupReader;
     readonly #readIdentity: RtcTopologyReconnectHydratorOptions['readIdentity'];
     readonly #nowEpochMs: () => number;
+    readonly #batchWindowMs: number;
     readonly #diagnostics: RtcTopologyReplayDiagnosticsSink | undefined;
     readonly #scheduler: RtcTopologyHydrationScheduler;
     readonly #abort = new AbortController();
@@ -77,6 +75,7 @@ export class RtcTopologyReconnectHydrator {
         this.#groups = options.groups;
         this.#readIdentity = options.readIdentity;
         this.#nowEpochMs = options.nowEpochMs;
+        this.#batchWindowMs = options.batchWindowMs;
         this.#diagnostics = options.diagnostics;
         this.#scheduler = options.scheduler ?? defaultRtcTopologyHydrationScheduler;
     }
@@ -137,7 +136,7 @@ export class RtcTopologyReconnectHydrator {
             return;
         }
         this.#batchCancellation = this.#scheduler.schedule(
-            RTC_TOPOLOGY_HYDRATION_BATCH_DELAY_MS,
+            this.#batchWindowMs,
             () => {
                 this.#batchCancellation = undefined;
                 this.#flushPending();

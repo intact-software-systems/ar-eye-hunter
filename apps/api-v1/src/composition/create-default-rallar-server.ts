@@ -87,7 +87,8 @@ function constructDefaultRallarServer(
             outboxQueueReader,
             recomputeDebounceMs: configuration.topology.recompute.formationDebounceMs
         }),
-        rtcTopologyReplayMode: configuration.topology.replay.mode,
+        topologyReplay: configuration.topology.replay,
+        topologyDelivery: configuration.topology.delivery,
         adminClientIds: configuration.authentication.adminClientIds,
         crdtPolicies: configuration.crdt.documentTypePolicies,
         resilience: {

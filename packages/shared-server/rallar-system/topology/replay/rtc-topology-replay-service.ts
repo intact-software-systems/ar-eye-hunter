@@ -14,12 +14,6 @@ import type {
     RtcTopologyReplayWakeSource
 } from './rtc-topology-replay-diagnostics.ts';
 import {
-    RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
-    RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
-    RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
-    RTC_TOPOLOGY_REPLAY_PAGE_SIZE
-} from './rtc-topology-replay-policy.ts';
-import {
     defaultRtcTopologyReplayScheduler,
     rotateRtcTopologyReplayPublishers,
     type RtcTopologyReplayServiceScheduler
@@ -55,11 +49,19 @@ export interface RtcTopologyReplayPort {
     ): Promise<RtcTopologyReplayCursorCasResult>;
 }
 
+export interface RtcTopologyReplayServicePolicy {
+    readonly antiEntropyIntervalMs: number;
+    readonly pageSize: number;
+    readonly maxPagesPerTurn: number;
+    readonly maxEntriesPerTurn: number;
+}
+
 interface RtcTopologyReplayServiceOptions {
     readonly consumerStreamId: string;
     readonly repository: RtcTopologyReplayPort;
     readonly entryHandler: RtcTopologyReplayEntryHandler;
     readonly hydrateGap: (signal: AbortSignal) => Promise<void>;
+    readonly policy: RtcTopologyReplayServicePolicy;
     readonly scheduler?: RtcTopologyReplayServiceScheduler;
     readonly onHealthFailure: (error: Error) => void;
     readonly diagnostics?: RtcTopologyReplayDiagnosticsSink;
@@ -79,6 +81,7 @@ export class RtcTopologyReplayService {
     readonly #repository: RtcTopologyReplayPort;
     readonly #entryHandler: RtcTopologyReplayEntryHandler;
     readonly #hydrateGap: (signal: AbortSignal) => Promise<void>;
+    readonly #policy: RtcTopologyReplayServicePolicy;
     readonly #scheduler: RtcTopologyReplayServiceScheduler;
     readonly #onHealthFailure: (error: Error) => void;
     readonly #diagnostics: RtcTopologyReplayDiagnosticsSink | undefined;
@@ -96,6 +99,7 @@ export class RtcTopologyReplayService {
         this.#repository = options.repository;
         this.#entryHandler = options.entryHandler;
         this.#hydrateGap = options.hydrateGap;
+        this.#policy = options.policy;
         this.#scheduler = options.scheduler ?? defaultRtcTopologyReplayScheduler;
         this.#onHealthFailure = options.onHealthFailure;
         this.#diagnostics = options.diagnostics;
@@ -146,7 +150,7 @@ export class RtcTopologyReplayService {
         }
         this.#cancelPoll = this.#scheduler.repeat(
             () => this.wake('poll'),
-            RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS
+            this.#policy.antiEntropyIntervalMs
         );
         const outcome = await this.#runDrainTurn();
         this.#initialized = true;
@@ -236,8 +240,8 @@ export class RtcTopologyReplayService {
             const nextRound: string[] = [];
             for (let index = 0; index < candidates.length; index += 1) {
                 if (
-                    pageCount >= RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN ||
-                    entryCount >= RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN
+                    pageCount >= this.#policy.maxPagesPerTurn ||
+                    entryCount >= this.#policy.maxEntriesPerTurn
                 ) {
                     nextRound.push(...candidates.slice(index));
                     break;
@@ -245,7 +249,7 @@ export class RtcTopologyReplayService {
                 const result = await this.#repository.capturePage({
                     consumerStreamId: this.#consumerStreamId,
                     publisherStreamId: candidates[index]!,
-                    pageSize: RTC_TOPOLOGY_REPLAY_PAGE_SIZE
+                    pageSize: this.#policy.pageSize
                 });
                 if (result.status === 'caught-up') {
                     continue;
@@ -266,8 +270,8 @@ export class RtcTopologyReplayService {
             }
             candidates = nextRound;
             if (
-                pageCount >= RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN ||
-                entryCount >= RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN
+                pageCount >= this.#policy.maxPagesPerTurn ||
+                entryCount >= this.#policy.maxEntriesPerTurn
             ) {
                 break;
             }

@@ -9,6 +9,7 @@ import type {
     RtcTopologyReplayPageResult
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
 import {
+    RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
     RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
     RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
     RTC_TOPOLOGY_REPLAY_PAGE_SIZE
@@ -82,6 +83,12 @@ async function runWorkload(input: WorkloadInput): Promise<RtcTopologyReplayDrain
         },
         hydrateGap: async () => {
             operations.hydrationRuns += 1;
+        },
+        policy: {
+            antiEntropyIntervalMs: RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+            pageSize: RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY.pageSize,
+            maxPagesPerTurn: RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY.maxPagesPerTurn,
+            maxEntriesPerTurn: RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY.maxEntriesPerTurn
         },
         onHealthFailure: (error) => {
             throw error;

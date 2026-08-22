@@ -14,6 +14,12 @@ import type {
     RtcTopologyReplayDiagnosticsSink
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts';
 import {
+    RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+    RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
+    RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
+    RTC_TOPOLOGY_REPLAY_PAGE_SIZE
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
+import {
     RtcTopologyReplayService,
     type RtcTopologyReplayEntryHandler,
     type RtcTopologyReplayPort,
@@ -23,6 +29,12 @@ import {
 const CONSUMER = '00000000-0000-4000-8000-000000000001';
 const PUBLISHER_A = '00000000-0000-4000-8000-000000000002';
 const PUBLISHER_B = '00000000-0000-4000-8000-000000000003';
+const REPLAY_POLICY = {
+    antiEntropyIntervalMs: RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+    pageSize: RTC_TOPOLOGY_REPLAY_PAGE_SIZE,
+    maxPagesPerTurn: RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
+    maxEntriesPerTurn: RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN
+} as const;
 
 describe('RtcTopologyReplayService', () => {
     it('keeps duplicate notification and local-commit wakes single-flight', async () => {
@@ -309,6 +321,7 @@ function replayService(
         repository,
         entryHandler: options.handler ?? { handle: async () => ({ status: 'delivered' }) },
         hydrateGap: options.hydrateGap ?? (async () => undefined),
+        policy: REPLAY_POLICY,
         scheduler: options.scheduler,
         onHealthFailure: options.onHealthFailure ?? (() => undefined),
         diagnostics: options.diagnostics

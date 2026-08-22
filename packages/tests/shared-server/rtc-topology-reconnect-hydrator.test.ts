@@ -305,6 +305,7 @@ function createHarness(overrides: HarnessOverrides = {}) {
     let topologyPageFailures = overrides.topologyPageFailures ?? 0;
     const hydrator = new RtcTopologyReconnectHydrator({
         socket,
+        batchWindowMs: 25,
         topologies: {
             listSnapshotEntriesPage: async ({ afterKey, limit }) => {
                 pageLimits.push(limit);

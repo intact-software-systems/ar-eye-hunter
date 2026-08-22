@@ -36,6 +36,7 @@ import type {
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
 import type {
     ApiV1DatabaseConfiguration,
+    ApiV1TopologyDeliveryConfiguration,
     ApiV1TopologyReplayConfiguration
 } from '../configuration/api-v1-configuration.ts';
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
@@ -83,7 +84,8 @@ export interface CreateApiV1RuntimeInput {
     readonly createGroupFormationTopologyIntent: CreateApiV1MutationRuntimeInput['createGroupFormationTopologyIntent'];
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
-    readonly rtcTopologyReplayMode: ApiV1TopologyReplayConfiguration['mode'];
+    readonly topologyReplay: ApiV1TopologyReplayConfiguration;
+    readonly topologyDelivery: ApiV1TopologyDeliveryConfiguration;
     readonly adminClientIds: readonly string[];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: CreateApiV1MutationRuntimeInput['resilience'];
@@ -161,7 +163,8 @@ export function constructApiV1Runtime(
         onCompactionFailure: (error) => {
             console.error('RTC topology delivery compaction failed:', error);
         },
-        replayMode: input.rtcTopologyReplayMode,
+        replay: input.topologyReplay,
+        delivery: input.topologyDelivery,
         readHydrationIdentity: readAuthorisedWsConnectionIdentity
     });
     input.backgroundTasks.register(rtcTopology.stop);

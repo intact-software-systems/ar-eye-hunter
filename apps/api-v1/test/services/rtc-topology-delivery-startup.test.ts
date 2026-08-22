@@ -14,6 +14,7 @@ Deno.test('API topology delivery startup rejects stream identity collision befor
     const lifecycle = startApiRtcTopologyDelivery({
         streamId: STREAM_ID,
         repository: repository({ register: 'conflict' }),
+        configuration: DELIVERY_CONFIGURATION,
         scheduler: scheduler(scheduled)
     });
 
@@ -27,6 +28,7 @@ Deno.test('API topology delivery startup exposes typed post-readiness lease loss
     const lifecycle = startApiRtcTopologyDelivery({
         streamId: STREAM_ID,
         repository: repository({ renewal: 'lease-lost' }),
+        configuration: DELIVERY_CONFIGURATION,
         scheduler: {
             repeat: (task, intervalMs) => {
                 tasks.set(intervalMs, task);
@@ -38,12 +40,26 @@ Deno.test('API topology delivery startup exposes typed post-readiness lease loss
     });
     await lifecycle.readiness;
 
-    await tasks.get(10_000)?.();
+    await tasks.get(DELIVERY_CONFIGURATION.heartbeatIntervalMs)?.();
 
     await assert.rejects(lifecycle.healthFailure, RtcTopologyDeliveryLeaseLostError);
     assert.equal(tasks.size, 0);
     lifecycle.stop();
 });
+
+const DELIVERY_CONFIGURATION = {
+    publicationRetentionMs: 86_400_000,
+    heartbeatIntervalMs: 10_000,
+    leaseDurationMs: 30_000,
+    antiEntropyIntervalMs: 1_000,
+    pageSize: 100,
+    maxPagesPerTurn: 10,
+    maxEntriesPerTurn: 1_000,
+    compactionIntervalMs: 60_000,
+    compactionPageSize: 1_000,
+    reconnectBatchWindowMs: 25,
+    consumerRetentionMs: 86_400_000
+} as const;
 
 function repository(
     options: Readonly<{

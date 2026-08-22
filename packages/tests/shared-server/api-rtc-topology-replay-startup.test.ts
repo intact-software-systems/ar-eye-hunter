@@ -17,6 +17,7 @@ describe('API RTC topology replay startup', () => {
         const repository = replayRepository();
         const lifecycle = startApiRtcTopologyReplay({
             mode: 'disabled',
+            configuration: DELIVERY_CONFIGURATION,
             consumerStreamId: STREAM_ID,
             repository
         });
@@ -33,6 +34,7 @@ describe('API RTC topology replay startup', () => {
         const diagnostics = vi.fn();
         const lifecycle = startApiRtcTopologyReplay({
             mode: 'enabled',
+            configuration: DELIVERY_CONFIGURATION,
             consumerStreamId: STREAM_ID,
             repository,
             diagnostics
@@ -58,6 +60,7 @@ describe('API RTC topology replay startup', () => {
         const publisherRegistration = deferred<void>();
         const lifecycle = startApiRtcTopologyReplay({
             mode: 'enabled',
+            configuration: DELIVERY_CONFIGURATION,
             consumerStreamId: STREAM_ID,
             repository,
             startupBarrier: publisherRegistration.promise
@@ -77,6 +80,7 @@ describe('API RTC topology replay startup', () => {
         const publisherRegistration = deferred<void>();
         const lifecycle = startApiRtcTopologyReplay({
             mode: 'enabled',
+            configuration: DELIVERY_CONFIGURATION,
             consumerStreamId: STREAM_ID,
             repository,
             startupBarrier: publisherRegistration.promise
@@ -90,6 +94,20 @@ describe('API RTC topology replay startup', () => {
         expect(repository.initializeConsumer).not.toHaveBeenCalled();
     });
 });
+
+const DELIVERY_CONFIGURATION = {
+    publicationRetentionMs: 86_400_000,
+    heartbeatIntervalMs: 10_000,
+    leaseDurationMs: 30_000,
+    antiEntropyIntervalMs: 1_000,
+    pageSize: 100,
+    maxPagesPerTurn: 10,
+    maxEntriesPerTurn: 1_000,
+    compactionIntervalMs: 60_000,
+    compactionPageSize: 1_000,
+    reconnectBatchWindowMs: 25,
+    consumerRetentionMs: 86_400_000
+} as const;
 
 function replayRepository(): RtcTopologyReplayPort & {
     initializeConsumer: ReturnType<typeof vi.fn>;
