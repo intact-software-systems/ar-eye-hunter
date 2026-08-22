@@ -17,25 +17,32 @@ browser to immediately close every inactive peer. RTT reporting uses
 than it actively measures.
 
 The default RTT reporting degree is `5`, matching the default RTC topology
-`degreeLimit`. The server normalizes invalid, zero, negative, or fractional
-values back to that default. When the server option is omitted, it falls back
-to the effective topology `degreeLimit`.
+`degreeLimit`. API-v1 ignores an invalid, zero, negative, or fractional
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` as if it were unset, so the effective
+topology `degreeLimit` governs instead; the shared
+`normalizeRttReportingDegreeLimit` falls back to `5` only when the number it is
+actually handed is not a positive integer. When the server option is omitted,
+it falls back to the effective topology `degreeLimit`.
 
-On the server that fallback is resolved per group, not once per process. Both
-acceptance paths — the durable AppInbox RTT mutation composed in
-`apps/api-v1/src/composition/create-api-v1-topology-services.ts` and the
-in-memory topic path through the `readGroupRttReportingDegreeLimit` hook in
-`packages/shared-server/rallar-system/ws-system-topics.ts` — and the read-side
-planning filter all call `readRttReportingDegreeLimit` with the group's
-effective topology configuration (server defaults, durable per-group config,
-temporary override) under the server reporting option. An explicitly
-configured `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore still wins;
-otherwise a group's effective `degreeLimit` is its reporting limit, and raising
-it through the group's topology config also raises the evidence the server
-will store for that group. A report whose endpoints share several active
-groups is accepted under the largest of those groups' limits. Acceptance and
-planning agreeing per group is what lets formation readiness cover a plan
-whose degree exceeds the server default; see
+On the server that fallback is resolved per group, not once per process. The
+durable AppInbox RTT mutation composed in
+`apps/api-v1/src/composition/create-api-v1-topology-services.ts` — the only
+acceptance path API-v1 uses, on every database backend, because its
+system-topic installer always declares the durable topology repositories — and
+the read-side planning filter both call `readRttReportingDegreeLimit` with the
+group's effective topology configuration (server defaults, durable per-group
+config, temporary override) under the server reporting option. The in-memory
+topic branch in `init-rtc-rtt-topic.ts` resolves the limit the same way through
+the `readGroupRttReportingDegreeLimit` hook in
+`packages/shared-server/rallar-system/ws-system-topics.ts`, for compositions
+without durable topology repositories. An explicitly configured
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore still wins; otherwise a
+group's effective `degreeLimit` is its reporting limit, and raising it through
+the group's topology config also raises the evidence the server will store for
+that group. A report whose endpoints both hold live sessions in several groups
+is accepted under the largest of those groups' limits. Acceptance and planning
+agreeing per group is what lets formation readiness cover a plan whose degree
+exceeds the server default; see
 `docs/rallar-group-formation-architecture.md`.
 
 API-v1 reads the server runtime option from:
@@ -53,9 +60,11 @@ rallar.setDefaults({
 ```
 
 or pass the same option through operation RTC options. If the browser has no
-explicit RTT reporting degree, it uses the published overlay `degreeLimit` once
-an overlay snapshot is available. Before that, bootstrap selection falls back
-to the shared default.
+explicit RTT reporting degree, it uses the smallest `degreeLimit` among the
+overlays it holds for the groups it is in — server-published or locally
+bootstrapped — once at least one overlay snapshot is available
+(`computeOverlayRttReportingDegreeLimit`). Before that, bootstrap selection
+falls back to the shared default.
 
 ## Browser Reporting Path
 
