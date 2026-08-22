@@ -10,7 +10,7 @@
 
 <!-- List observable conditions that prove the outcome. -->
 
-## Test design
+**Test design evidence**
 
 - Behavior protected and observation boundary:
 - Retained interaction assertions (registry reference and rationale): None
