@@ -193,6 +193,29 @@ export function validDecodeApiV1ConfigurationInput(): MutableDecodeApiV1Configur
         staticClientsSource: validConfigurationStaticClientsSource()
     };
 }
+
+export function validConfigurationEnvironment(
+    profile: 'dev' | 'prod' | 'prod-in-memory' = 'dev'
+): Record<string, string> {
+    const environment: Record<string, string> = {
+        RALLAR_API_CONFIGURATION_PROFILE: profile,
+        RALLAR_AUTH_CREDENTIAL_SECRET: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
+    };
+    if (profile === 'prod') {
+        return {
+            ...environment,
+            AUTH_ADMIN_CLIENT_IDS: 'production-operator',
+            DATABASE_URL: CONFIGURATION_SECRET_SENTINELS.databaseUrl,
+            METERED_API_KEY: CONFIGURATION_SECRET_SENTINELS.meteredApiKey,
+            METERED_APP_NAME: 'rallar-production',
+            METERED_REGION: 'eu',
+            RALLAR_AUTH_CREDENTIAL_SECRET: 'production-auth-credential-secret-at-least-32-characters',
+            RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS: 'production-operator',
+            RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: CONFIGURATION_SECRET_SENTINELS.blackBoxOperatorTokenSecret
+        };
+    }
+    return environment;
+}
 import type {
     ApiV1ConfigurationSourceValue,
     DecodeApiV1ConfigurationInput
