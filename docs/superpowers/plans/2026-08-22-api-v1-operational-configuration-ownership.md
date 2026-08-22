@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- After this design/plan PR merges, create a fresh worktree from current `main` on `codex/api-v1-operational-configuration-ownership`. Never edit, commit, or push the default branch.
+- Implement this plan in the existing isolated worktree on `codex/api-v1-operational-configuration-ownership-plan` and keep pull request #317 current. Never edit, commit, or push the default branch.
 - Follow `.agents/skills/rallar-code-writing/references/repo-code-style.md`, `.agents/skills/rallar-code-writing/references/typescript-type-organization.md`, and `.agents/skills/rallar-code-writing/references/convergent-service-writing.md` for every TypeScript file.
 - Follow touched-file standards closure. Review every changed human-authored file in full; recursively include support files changed to repair violations.
 - Do not introduce aliases, deprecated exports, forwarders, overloads, duplicate resources, fallback readers, compatibility JSON, dual reads, or legacy registries. Delete superseded code in the same task that migrates its final consumer.
@@ -26,7 +26,7 @@
 - Never print supplied configuration values in decoding errors. Never print secret values, lengths, fingerprints, credential-bearing URLs, source objects, or environment dumps.
 - Every retained test must name an independent production break, exercise the lowest stable owned boundary, and derive expectations independently of production decoders/builders. Assert interaction counts or order only for required lifecycle, idempotency, cache, retry, or exactly-once effects.
 - Use direct imports. Never use backslash line continuations in import specifiers; allow an import line to remain long when required.
-- Open one draft implementation PR after the first coherent implementation commit. After each task, run its focused checks, review `git diff --check`, commit one reviewable slice, and push so that implementation PR remains current.
+- Keep pull request #317 in draft while implementation is in progress. After each task, run its focused checks, review `git diff --check`, commit one reviewable slice, and push so the pull request remains current.
 - Slices 1 and 2 are the only concrete current implementation horizon. Slices 3-5 record required outcome owners and acceptance evidence; after the first two slices, select and refine only the next one or two useful slices from current source evidence without weakening the approved outcomes.
 - The delayed formation-timer queue wake race is independent. Do not change configuration defaults, add sleeps, or weaken black-box assertions to hide it. Classify a matching failure with the existing issue evidence.
 
@@ -59,21 +59,21 @@ Before implementation edits, restate that one resolved configuration snapshot re
 
 The implementation must encode every row as a required typed section and reconcile it against the previous reader before deleting that reader.
 
-| Section | Required policy |
-|---|---|
-| `profile` | exact `dev | prod | prod-in-memory`, effective production hardening, sorted applied override names |
-| `http` | port, CORS origins, preflight max age, process/listener resilience policy |
-| `publicApi` | normalized HTTP(S) API base URL and WS(S) base URL; endpoint paths remain code-owned |
-| `database` | discriminated PostgreSQL, PGlite file, or PGlite memory mode; schema bootstrap; pub/sub; application/listener pool policy |
+| Section          | Required policy                                                                                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile`        | exact `dev                                                                                                                                                     |
+| `http`           | port, CORS origins, preflight max age, process/listener resilience policy                                                                                      |
+| `publicApi`      | normalized HTTP(S) API base URL and WS(S) base URL; endpoint paths remain code-owned                                                                           |
+| `database`       | discriminated PostgreSQL, PGlite file, or PGlite memory mode; schema bootstrap; pub/sub; application/listener pool policy                                      |
 | `authentication` | registration mode, static-client mode and loaded records, admin client IDs, credential secret, session/ticket lifetimes, login/registration/ticket rate limits |
-| `stateApi` | strict read authorization, request/event-list rate limits, circuit-breaker threshold and durations |
-| `group` | default member cap and join/presence admission windows and limits |
-| `topology` | planning limits, RTT reporting/refinement, debounce policies, global recompute limits, replay mode, queue-worker mode, QueueBox resilience, delivery policy |
-| `appInbox` | phase timing and completion wait policy; reservation doctrine remains code-owned |
-| `ice` | discriminated local or Metered provider, cache lifetime, request rate limit; Metered credentials only in Metered mode |
-| `crdt` | canonical document-type rollout policies |
-| `blackBox` | explicit operator-token issuer policy and PGlite evidence publication policy |
-| `observability` | timing-log policy and safe startup-summary policy |
+| `stateApi`       | strict read authorization, request/event-list rate limits, circuit-breaker threshold and durations                                                             |
+| `group`          | default member cap and join/presence admission windows and limits                                                                                              |
+| `topology`       | planning limits, RTT reporting/refinement, debounce policies, global recompute limits, replay mode, queue-worker mode, QueueBox resilience, delivery policy    |
+| `appInbox`       | phase timing and completion wait policy; reservation doctrine remains code-owned                                                                               |
+| `ice`            | discriminated local or Metered provider, cache lifetime, request rate limit; Metered credentials only in Metered mode                                          |
+| `crdt`           | canonical document-type rollout policies                                                                                                                       |
+| `blackBox`       | explicit operator-token issuer policy and PGlite evidence publication policy                                                                                   |
+| `observability`  | timing-log policy and safe startup-summary policy                                                                                                              |
 
 Carry forward these current defaults in `defaults-config.json` unless source inspection proves that current `main` intentionally changed them before implementation:
 
@@ -137,7 +137,7 @@ The central allowlist contains exactly the environment names in the approved spe
 - [ ] Encode hardening invariants against the effective snapshot: PostgreSQL, PostgreSQL pub/sub, HTTPS/WSS, exact secure origins, strict reads, admin-only registration, non-demo admins, disabled static clients, stable auth secret, Metered ICE, and explicit operator-token issuer.
 - [ ] Populate the four JSON resources from the ledger and current source constants. `dev` selects PGlite memory/local delivery/local ICE/public registration/demo clients; `prod` selects PostgreSQL/PostgreSQL delivery/Metered/admin-only/strict reads; `prod-in-memory` uses hosted production-facing URLs with PGlite memory/local delivery.
 - [ ] Document ownership, precedence, direct-import rule, restart-only updates, secret rules, and the complete allowlist in `configuration/README.md`.
-- [ ] Run the focused test until GREEN, then run `cd apps/api-v1 && deno fmt --check src/configuration test/configuration resources/configuration && deno lint src/configuration test/configuration`.
+- [ ] Run the focused test until GREEN, then run `npm run format:check -- apps/api-v1/src/configuration apps/api-v1/test/configuration apps/api-v1/resources/configuration` and `cd apps/api-v1 && deno lint src/configuration test/configuration`.
 - [ ] Review every new file against the type-organization and touched-file standards. Run `git diff --check`.
 - [ ] Commit with `git add apps/api-v1/src/configuration apps/api-v1/resources/configuration apps/api-v1/test/configuration && git commit -m "feat(api-v1): define operational configuration contract"`, then `git push`.
 
@@ -584,25 +584,25 @@ node scripts/perf/compare-api-v1-state-write-results.mjs tmp/perf/api-v1-state-w
 - [ ] Trigger and pass Branch Release Gate. Record the run URL in the PR without adding governance metadata files.
 - [ ] Review every touched file in full for cognitive indirection, ownership, direct imports, type names, test semantics, and complete legacy closure. Run `git diff --check` and `git status --short`.
 - [ ] Commit any factual closure repairs in one named commit, push, and wait for PR checks. Do not create an empty closure commit.
-- [ ] Update the implementation PR with completed behavior, exact validation results, known independently tracked formation-race classification if encountered, and rollback risk. Keep it draft until implementation and required checks are complete.
+- [ ] Update pull request #317 with completed behavior, exact validation results, known independently tracked formation-race classification if encountered, and rollback risk. Keep it draft until implementation and required checks are complete.
 - [ ] Run `npm run pr:delivery -- ready` exactly once at handoff. When GitHub reports the PR merged, stop.
 
 ## Spec Coverage and Risk Guardrails
 
-| Approved design area | Implemented by |
-|---|---|
-| Purpose, scope, target ownership, and required configuration contract | Global constraints, contract ledger, tasks 1-2 |
-| Source precedence, exact profiles, environment allowlist, hardening, and immutable resolution | Source/profile rules, tasks 1-2 |
-| Aggregate deterministic failures, secret redaction, startup summary, and public projection | Tasks 1-2 and task 5 |
-| Side-effect-free resolution, construction dataflow, and shutdown ordering | Tasks 3-4 |
-| Database, LISTEN, NOTIFY, PGlite bootstrap/evidence, and close ownership | Task 3 |
-| Route/service auth, state, group, ICE, timing, AppInbox, token, and public policy | Task 5 |
-| Topology, replay, workers, CRDT, admin, queue resilience, and evidence policy | Task 6 |
-| Direct deletion of formation/dissemination selectors and alternate runtime behavior | Task 7 |
-| Relic embedding and Relic-only configuration ownership | Task 8 |
-| Black-box managed process/profile migration | Task 9 |
-| GitHub, Hetzner, Deno Deploy/task, hardening, and documentation migration | Task 10 |
-| Semantic tests, full application/black-box validation, performance proof, touched-file closure, and PR delivery | Every task's RED/GREEN checks and task 11 |
+| Approved design area                                                                                            | Implemented by                                 |
+| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Purpose, scope, target ownership, and required configuration contract                                           | Global constraints, contract ledger, tasks 1-2 |
+| Source precedence, exact profiles, environment allowlist, hardening, and immutable resolution                   | Source/profile rules, tasks 1-2                |
+| Aggregate deterministic failures, secret redaction, startup summary, and public projection                      | Tasks 1-2 and task 5                           |
+| Side-effect-free resolution, construction dataflow, and shutdown ordering                                       | Tasks 3-4                                      |
+| Database, LISTEN, NOTIFY, PGlite bootstrap/evidence, and close ownership                                        | Task 3                                         |
+| Route/service auth, state, group, ICE, timing, AppInbox, token, and public policy                               | Task 5                                         |
+| Topology, replay, workers, CRDT, admin, queue resilience, and evidence policy                                   | Task 6                                         |
+| Direct deletion of formation/dissemination selectors and alternate runtime behavior                             | Task 7                                         |
+| Relic embedding and Relic-only configuration ownership                                                          | Task 8                                         |
+| Black-box managed process/profile migration                                                                     | Task 9                                         |
+| GitHub, Hetzner, Deno Deploy/task, hardening, and documentation migration                                       | Task 10                                        |
+| Semantic tests, full application/black-box validation, performance proof, touched-file closure, and PR delivery | Every task's RED/GREEN checks and task 11      |
 
 - The primary regression risk is a missed hidden reader producing different effective policy. The no-environment-permission construction test plus final source inventory makes this observable.
 - The lifecycle risk is resource leakage or changed database ordering. Task 3 tests construction failure and close-once behavior; task 4 tests readiness and shutdown order; task 11 runs PostgreSQL concurrency and performance evidence.
@@ -624,7 +624,7 @@ The work is complete only when all of the following are true:
 - Persisted formation facts retain their required shape and use only the canonical `'damped'` literal.
 - Deployment, Hetzner, Deno, black-box, tests, and active docs select canonical profiles and use only allowlisted overrides.
 - Focused tests, full API-v1/Relic/shared-server suites, repository checks, black-box matrix, performance comparison, and Branch Release Gate pass, with the independent formation-timer race handled only by classification.
-- The implementation PR contains the current commits, validation evidence, risk/rollback summary, and no unpushed work.
+- Pull request #317 contains the current commits, validation evidence, risk/rollback summary, and no unpushed work.
 - Every changed human-authored file has been reviewed and remediated in full.
 - Every support file modified by that remediation has entered closure recursively until closure.
 - Independent untouched code remains outside closure.

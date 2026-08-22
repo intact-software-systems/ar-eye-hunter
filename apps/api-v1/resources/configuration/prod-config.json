@@ -1,0 +1,36 @@
+{
+  "profile": {
+    "productionHardening": true
+  },
+  "http": {
+    "corsOrigins": [
+      "https://ar-eye-hunter.pages.dev",
+      "https://blackbox.rallar.intactss.com",
+      "https://relic-hunters-v1.intact-software-systems.workers.dev"
+    ]
+  },
+  "publicApi": {
+    "apiBaseUrl": "https://api.rallar.intactss.com",
+    "wsBaseUrl": "wss://api.rallar.intactss.com"
+  },
+  "database": {
+    "mode": "postgres",
+    "schemaInitialization": "disabled",
+    "pubSub": "postgres"
+  },
+  "authentication": {
+    "registrationMode": "admin",
+    "staticClientsMode": "disabled"
+  },
+  "stateApi": {
+    "strictReadAuthorization": true
+  },
+  "ice": {
+    "mode": "metered"
+  },
+  "blackBox": {
+    "operatorToken": {
+      "mode": "enabled"
+    }
+  }
+}
