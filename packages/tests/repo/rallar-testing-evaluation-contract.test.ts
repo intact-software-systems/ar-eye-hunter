@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const repoRoot = process.cwd();
 const evaluationRoot = path.join(import.meta.dirname, 'rallar-testing', 'evaluations', 'v1');
 
 describe('rallar-testing fresh-agent evaluation contracts', () => {
@@ -62,21 +61,8 @@ describe('rallar-testing fresh-agent evaluation contracts', () => {
         const validator = await import('./general-agent-guidance/evaluation-evidence.mjs');
 
         expect(typeof validator.validateEvidenceLedger).toBe('function');
-        expect(existsRepo('packages/tests/repo/general-agent-guidance/evaluation-evidence.mjs')).toBe(
-            true
-        );
     });
 });
-
-function existsRepo(repositoryPath: string): boolean {
-    try {
-        readFileSync(path.join(repoRoot, repositoryPath));
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
 
 interface EvaluationContract {
     readonly schemaVersion: string;
