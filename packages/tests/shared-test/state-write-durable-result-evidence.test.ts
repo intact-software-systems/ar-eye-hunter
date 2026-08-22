@@ -445,4 +445,73 @@ describe('durable AppInbox result evidence', () => {
             failure: 'topology command scope differs from queue identity'
         }])).toMatchObject({ statusResultFailures: 1 });
     });
+
+    it('pairs command evidence by physical row when scoped commands share a request id', () => {
+        const sharedRequestId = 'shared-admin-request-id';
+        const adminRow = (rowId: number, contextId: string, jobId: string) => ({
+            ...command,
+            ri_row_id: rowId,
+            ri_resource_id: sharedRequestId,
+            ri_topic_id: 'ADMIN_PRUNE_EXPIRED',
+            fk_ext_bank_id: contextId,
+            ri_resource: JSON.stringify({ payload: { typeId: 'ADMIN_PRUNE_EXPIRED' } }),
+            result_resource: JSON.stringify({
+                generatedAtEpochMs: rowId,
+                serverId: `server-${rowId}`,
+                warnings: [],
+                operation: 'maintenance.prune-expired',
+                status: 'queued',
+                changed: false,
+                jobId,
+                results: [{
+                    category: 'runtime-state',
+                    expiredRows: 0,
+                    deletedRows: 0,
+                    dryRun: false
+                }]
+            })
+        });
+        const commandEvidence = (jobId: string): PersistedCommandEvidence => ({
+            appInboxResourceId: sharedRequestId,
+            valid: true,
+            commandType: 'ADMIN_PRUNE_EXPIRED',
+            commandIds: [jobId]
+        });
+        const page = (jobId: string) => ({
+            ri_resource_id: `${jobId}:runtime-state:0`,
+            ri_topic_id: 'rallar.admin.prune-expired',
+            ri_type_id: 'APP_OUTBOX',
+            ri_status: 'COMPLETED',
+            ri_resource: JSON.stringify({
+                id: { msgId: `${jobId}:runtime-state:0` },
+                route: { contextId: jobId },
+                payload: {
+                    typeId: 'ADMIN_PRUNE_EXPIRED',
+                    resource: JSON.stringify({ kind: 'page', jobId, category: 'runtime-state' })
+                }
+            })
+        });
+
+        expect(deriveApiV1StateWriteEvidence(
+            {
+                match: sharedRequestId,
+                commandTypes: ['ADMIN_PRUNE_EXPIRED'],
+                expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
+            },
+            [adminRow(1, 'caller=admin', 'admin-job-1'), adminRow(2, 'caller=bob', 'admin-job-2')],
+            [page('admin-job-1'), page('admin-job-2')],
+            [],
+            undefined,
+            [commandEvidence('admin-job-1'), commandEvidence('admin-job-2')]
+        )).toMatchObject({
+            matchedAppInboxCount: 2,
+            atomicCompletionFailures: 0,
+            statusResultFailures: 0,
+            resourceOutboxCount: 2,
+            appInbox: [
+                { contextId: 'caller=admin', commandIds: ['admin-job-1'], durableResultValid: true },
+                { contextId: 'caller=bob', commandIds: ['admin-job-2'], durableResultValid: true }
+            ]
+        });
+    });
 });

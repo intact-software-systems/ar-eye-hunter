@@ -144,7 +144,7 @@ describe('admin prune page persistence invariants', () => {
             aggregateSuccessor: successorEntry,
             finishedAtEpochMs: NOW
         };
-        const boundValues: Parameters<PSqlSql>[0] = [];
+        const boundValues: Array<Parameters<PSqlSql>[0][number]> = [];
         const transaction = ((parts: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => {
             boundValues.push(...values);
             return Promise.resolve([{ ris_row_id: 1 }]);

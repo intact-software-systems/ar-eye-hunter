@@ -146,12 +146,16 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
         }
         expect(byName.get('loginSecondAdmin')).toMatchObject({
             request: {
-                body: { username: 'idempotency-admin-two-{runId}' },
+                body: {
+                    username: '{secondAdminUsername}',
+                    password: '{secondAdminPassword}'
+                },
                 outputs: {
                     secondAdminClientId: 'body.clientId',
                     secondAdminAccessToken: { path: 'body.accessToken', secret: true }
                 }
-            }
+            },
+            expect: { status: 200, body: { clientId: 'bob' } }
         });
         expect(byName.get('exposeAdminActorIsolationEvidence')).toMatchObject({
             request: {

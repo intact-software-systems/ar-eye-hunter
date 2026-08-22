@@ -18,7 +18,13 @@
     "workspaceId": { "env": "RALLAR_BB_WORKSPACE_ID", "default": "primary-{runId}" },
     "crdtApplicationId": "rallar-server",
     "crdtWorkspaceId": "default",
-    "groupId": { "env": "RALLAR_BB_GROUP_ID", "default": "contract-group-{runId}" }
+    "groupId": { "env": "RALLAR_BB_GROUP_ID", "default": "contract-group-{runId}" },
+    "secondAdminUsername": { "env": "RALLAR_BOB_USERNAME", "default": "bob" },
+    "secondAdminPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
   },
   "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
   "connections": {
@@ -1146,21 +1152,6 @@
       }
     },
     {
-      "name": "registerSecondAdmin",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/register/requests/idem-contract-register-admin-two-{runId}",
-        "body": {
-          "username": "idempotency-admin-two-{runId}",
-          "password": "second-admin-password-{runId}",
-          "displayName": "Second idempotency admin"
-        }
-      },
-      "expect": { "status": 201 }
-    },
-    {
       "name": "loginSecondAdmin",
       "type": "http",
       "connection": "apiSecondary",
@@ -1168,15 +1159,15 @@
         "method": "POST",
         "path": "/api/auth/login/requests/idem-contract-login-admin-two-{runId}",
         "body": {
-          "username": "idempotency-admin-two-{runId}",
-          "password": "second-admin-password-{runId}"
+          "username": "{secondAdminUsername}",
+          "password": "{secondAdminPassword}"
         },
         "outputs": {
           "secondAdminClientId": "body.clientId",
           "secondAdminAccessToken": { "path": "body.accessToken", "secret": true }
         }
       },
-      "expect": { "status": 200, "body": { "clientId": "idempotency-admin-two-{runId}" } }
+      "expect": { "status": 200, "body": { "clientId": "bob" } }
     },
     {
       "name": "deriveSecondAdminAuthHeader",

@@ -529,7 +529,7 @@ focused integration tests for reservation recovery and retry exhaustion.
 
 ```sh
 npx vitest run packages/tests/shared-server/admin-operations
-npx vitest run packages/tests/shared-server/integration/postgres/admin-prune-page-delete.test.ts
+npx vitest run packages/tests/shared-server/admin-operations/prune/admin-prune-page-postgres.test.ts
 npx vitest run \
   packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts \
   packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts \
@@ -537,7 +537,7 @@ npx vitest run \
 
 cd apps/api-v1
 deno test -A test/admin-operations
-deno test -A test/routes/api-mutation-openapi-contract.test.ts
+deno test -A test/admin-operations/routes/api-mutation-openapi-contract.test.ts
 ```
 
 **Types, formatting, and application checks:**

@@ -138,7 +138,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
 
     it('links public admin request identity to its scoped page-work identity', async () => {
         const requestId = 'admin-evidence-request-0001';
-        const jobId = 'admin-prune:scoped-job-0001';
+        const jobId = `admin-prune:${'a'.repeat(64)}`;
         const command = await createAdminPruneCommand({
             jobId,
             requestedBy: 'admin',

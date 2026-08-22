@@ -1,3 +1,4 @@
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     type ApiV1StateWriteEvidence,
     type ApiV1StateWriteEvidenceSpec,
@@ -117,7 +118,11 @@ function canonicalEffect(row: OutboxRow):
         admin?.kind === 'page' &&
         typeof admin.jobId === 'string' &&
         typeof admin.category === 'string' &&
-        envelope.route?.contextId === admin.jobId
+        envelope.route?.contextId === toAppQueueKey({
+                topicId: row.ri_topic_id,
+                resourceId: msgId,
+                contextId: admin.jobId
+            }).contextId
     ) {
         return { commandId: admin.jobId, effectKind: 'admin-prune-page', outboxId: msgId };
     }
@@ -152,6 +157,8 @@ type LinkedOutboxEvidence = Readonly<{
     status: string;
     commandId: string;
     appInboxResourceId: string;
+    appInboxTopicId: string;
+    appInboxContextId: string;
     effectKind: string;
     stage: 'direct' | 'downstream';
 }>;
@@ -200,7 +207,11 @@ export function deriveApiV1StateWriteEvidence(
         if (!expected || row.status !== 'COMPLETED') {
             return false;
         }
-        const effects = resourceOutbox.filter((effect) => effect.appInboxResourceId === row.resourceId);
+        const effects = resourceOutbox.filter((effect) =>
+            effect.appInboxResourceId === row.resourceId &&
+            effect.appInboxTopicId === row.topicId &&
+            effect.appInboxContextId === row.contextId
+        );
         const actual = effects.map((effect) => effect.effectKind);
         const receiptIds = row.receipt?.outboxIds;
         return (
@@ -290,11 +301,8 @@ function selectAppInboxEvidence({
     selectedTypes,
     selectedPrefixes
 }: SelectAppInboxEvidenceInput): readonly ParsedInboxRow[] {
-    const commandEvidenceByResourceId = new Map(
-        commandEvidence.map((entry) => [entry.appInboxResourceId, entry] as const)
-    );
     return rawRows
-        .map((row) => parseApiV1StateWriteEvidenceRow(row, commandEvidenceByResourceId.get(row.ri_resource_id)))
+        .map((row, index) => parseApiV1StateWriteEvidenceRow(row, commandEvidence[index]))
         .filter(
             (row) =>
                 (selectedTypes.size === 0 || selectedTypes.has(row.commandType)) &&
@@ -328,6 +336,8 @@ function linkOutboxEvidence(
                 status: row.ri_status,
                 commandId: canonical.commandId,
                 appInboxResourceId: command.resourceId,
+                appInboxTopicId: command.topicId,
+                appInboxContextId: command.contextId,
                 effectKind: canonical.effectKind,
                 stage: canonical.effectKind === 'rtc-topology-recompute' &&
                         command.commandType.startsWith('GROUP_')
