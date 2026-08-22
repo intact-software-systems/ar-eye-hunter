@@ -61,8 +61,8 @@ describe('topology and RTC RTT AppInbox ownership', () => {
         expect(packageEntry).toContain(
             'export * from \'./rallar-system/topology/group-topology-management-service.ts\';'
         );
-        expect(apiComposition).toMatch(
-            /from '@shared-server\/rallar-system\/topology\/\\\s*group-topology-management-service\.ts';/
+        expect(apiComposition).toContain(
+            'from \'@shared-server/rallar-system/topology/group-topology-management-service.ts\';'
         );
         expect(replayOwner).toContain(
             'from \'../planning/materialize-rtc-overlay-topology-broadcast-message.ts\';'
