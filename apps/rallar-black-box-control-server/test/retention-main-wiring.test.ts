@@ -8,9 +8,11 @@ Deno.test('manual retention route cannot close sockets delete artifacts or read 
     const source = await Deno.readTextFile(new URL('../src/main.ts', import.meta.url));
     const startMarker = 'if (request.method === \'POST\' && url.pathname === \'/retention/cleanup\') {';
     const start = source.indexOf(startMarker);
-    const end = source.indexOf('\n  const runMatch =', start);
-    assert(start >= 0 && end > start, 'Retention route block should remain structurally bounded.');
-    const route = source.slice(start, end);
+    assert(start >= 0, 'Retention route block should keep its opening guard.');
+    const fromRouteStart = source.slice(start);
+    const end = fromRouteStart.search(/\n\s*const runMatch =/);
+    assert(end > 0, 'Retention route block should remain structurally bounded.');
+    const route = fromRouteStart.slice(0, end);
 
     assert(route.includes('handleRetentionCleanup({'));
     assert(route.includes('persist: persistControlSnapshot'));
