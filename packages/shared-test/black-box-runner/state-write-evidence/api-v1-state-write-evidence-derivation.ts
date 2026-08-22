@@ -1,6 +1,7 @@
 import {
     ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-    decodeAdminPruneOutboxMessage
+    decodeAdminPruneOutboxMessage,
+    type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import {
     type ApiV1StateWriteEvidence,
@@ -72,6 +73,7 @@ function canonicalEffect(row: OutboxRow):
         commandId: string;
         effectKind: string;
         outboxId: string;
+        adminPrunePage?: AdminPrunePageWork;
     }>
     | undefined {
     const envelope = parseEvidenceJson(row.ri_resource) as
@@ -126,7 +128,8 @@ function canonicalEffect(row: OutboxRow):
             return {
                 commandId: work.jobId,
                 effectKind: 'admin-prune-page',
-                outboxId: row.ri_resource_id
+                outboxId: row.ri_resource_id,
+                adminPrunePage: work
             };
         }
         catch {
@@ -167,6 +170,8 @@ type LinkedOutboxEvidence = Readonly<{
     appInboxTopicId: string;
     appInboxContextId: string;
     effectKind: string;
+    adminPrunePageCategory?: string;
+    adminPrunePageMatchesCommand?: boolean;
     stage: 'direct' | 'downstream';
 }>;
 
@@ -206,7 +211,7 @@ export function deriveApiV1StateWriteEvidence(
             !['COMPLETED', 'FAILED'].includes(row.status) ||
             !row.durableResultValid
     ).length;
-    const linkedOutbox = linkOutboxEvidence(appInbox, rawOutboxRows);
+    const linkedOutbox = linkOutboxEvidence(appInbox, rawOutboxRows, commandEvidence);
     const resourceOutbox = linkedOutbox.filter((effect) => effect.stage === 'direct');
     const downstreamOutbox = linkedOutbox.filter((effect) => effect.stage === 'downstream');
     const effectFailures = appInbox.filter((row) => {
@@ -221,8 +226,19 @@ export function deriveApiV1StateWriteEvidence(
         );
         const actual = effects.map((effect) => effect.effectKind);
         const receiptIds = row.receipt?.outboxIds;
+        const adminPruneCommand = findPersistedCommandEvidence(commandEvidence, row)?.adminPruneCommand;
+        const adminPageCategories = effects.flatMap((effect) =>
+            effect.adminPrunePageCategory === undefined ? [] : [effect.adminPrunePageCategory]
+        );
+        const adminPageFailure = row.commandType === 'ADMIN_PRUNE_EXPIRED' &&
+            (
+                adminPruneCommand === undefined ||
+                effects.some((effect) => effect.adminPrunePageMatchesCommand !== true) ||
+                !sameMultiset(adminPruneCommand.categories, adminPageCategories)
+            );
         return (
             !sameMultiset(expected, actual) ||
+            adminPageFailure ||
             (receiptIds !== undefined &&
                 !sameMultiset(
                     receiptIds,
@@ -341,9 +357,21 @@ function toPhysicalAppInboxKey(resourceId: string, topicId: string, contextId: s
     return [resourceId, topicId, contextId].join('\0');
 }
 
+function findPersistedCommandEvidence(
+    commandEvidence: readonly PersistedCommandEvidence[],
+    row: Pick<ParsedInboxRow, 'resourceId' | 'topicId' | 'contextId'>
+): PersistedCommandEvidence | undefined {
+    return commandEvidence.find((evidence) =>
+        evidence.appInboxResourceId === row.resourceId &&
+        evidence.appInboxTopicId === row.topicId &&
+        evidence.appInboxContextId === row.contextId
+    );
+}
+
 function linkOutboxEvidence(
     appInbox: readonly ParsedInboxRow[],
-    rawOutboxRows: readonly OutboxRow[]
+    rawOutboxRows: readonly OutboxRow[],
+    commandEvidence: readonly PersistedCommandEvidence[]
 ): readonly LinkedOutboxEvidence[] {
     const inboxByCommandId = new Map(
         appInbox.flatMap((row) => row.commandIds.map((commandId) => [commandId, row] as const))
@@ -357,6 +385,10 @@ function linkOutboxEvidence(
         if (!command) {
             return [];
         }
+        const adminPruneCommand = findPersistedCommandEvidence(commandEvidence, command)?.adminPruneCommand;
+        const pageMatchesCommand = canonical.adminPrunePage !== undefined &&
+            adminPruneCommand !== undefined &&
+            adminPrunePageMatchesCommand(canonical.adminPrunePage, adminPruneCommand);
         return [
             {
                 resourceId: row.ri_resource_id,
@@ -369,6 +401,12 @@ function linkOutboxEvidence(
                 appInboxTopicId: command.topicId,
                 appInboxContextId: command.contextId,
                 effectKind: canonical.effectKind,
+                ...(canonical.adminPrunePage === undefined
+                    ? {}
+                    : {
+                        adminPrunePageCategory: canonical.adminPrunePage.category,
+                        adminPrunePageMatchesCommand: pageMatchesCommand
+                    }),
                 stage: canonical.effectKind === 'rtc-topology-recompute' &&
                         command.commandType.startsWith('GROUP_')
                     ? 'downstream'
@@ -376,4 +414,22 @@ function linkOutboxEvidence(
             }
         ];
     });
+}
+
+function adminPrunePageMatchesCommand(
+    page: AdminPrunePageWork,
+    command: NonNullable<PersistedCommandEvidence['adminPruneCommand']>
+): boolean {
+    const expectedAppData = page.category === 'app-data' ? command.appData : null;
+    return page.jobId === command.jobId &&
+        command.categories.includes(page.category) &&
+        page.requestedBy === command.requestedBy &&
+        page.requestedSessionId === command.requestedSessionId &&
+        page.capturedAtEpochMs === command.capturedAtEpochMs &&
+        page.expireAtEpochMs >= command.expireAtEpochMs &&
+        page.pageSize === command.pageSize &&
+        page.afterCursor === null &&
+        page.pageIndex === 0 &&
+        page.appData?.namespace === expectedAppData?.namespace &&
+        page.appData?.storeName === expectedAppData?.storeName;
 }

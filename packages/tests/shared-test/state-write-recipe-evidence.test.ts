@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
-import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
 import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
@@ -530,7 +530,10 @@ describe('API-v1 state-write recipe evidence', () => {
                 }
             })
         }];
-        const page = (category: AdminPruneCommand['categories'][number]) => {
+        const page = (
+            category: AdminPruneCommand['categories'][number],
+            overrides: Partial<AdminPrunePageWork> = {}
+        ) => {
             const entry = toAdminPruneOutbox({
                 kind: 'page',
                 jobId: adminCommand.jobId,
@@ -542,7 +545,8 @@ describe('API-v1 state-write recipe evidence', () => {
                 pageSize: adminCommand.pageSize,
                 afterCursor: null,
                 pageIndex: 0,
-                appData: adminCommand.appData
+                appData: category === 'app-data' ? adminCommand.appData : null,
+                ...overrides
             }, 'server-1');
             return {
                 ri_resource_id: entry.key.resourceId,
@@ -621,6 +625,25 @@ describe('API-v1 state-write recipe evidence', () => {
                 spec,
                 inbox,
                 [runtimeStatePage, malformedPage],
+                [],
+                undefined,
+                [commandEvidence]
+            )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+        }
+
+        const canonicalPagesFromAnotherCommand = [
+            page('resource-inbox-results'),
+            page('resource-inbox', { requestedBy: 'another-admin' }),
+            page('resource-inbox', { requestedSessionId: 'another-session' }),
+            page('resource-inbox', { capturedAtEpochMs: adminCommand.capturedAtEpochMs + 1 }),
+            page('resource-inbox', { pageSize: adminCommand.pageSize + 1 }),
+            page('app-data', { appData: { namespace: 'another-namespace', storeName: null } })
+        ];
+        for (const canonicalPage of canonicalPagesFromAnotherCommand) {
+            expect(deriveApiV1StateWriteEvidence(
+                spec,
+                inbox,
+                [runtimeStatePage, canonicalPage],
                 [],
                 undefined,
                 [commandEvidence]
