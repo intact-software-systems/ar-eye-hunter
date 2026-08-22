@@ -214,6 +214,12 @@ export function validConfigurationEnvironment(
             RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: CONFIGURATION_SECRET_SENTINELS.blackBoxOperatorTokenSecret
         };
     }
+    if (profile === 'prod-in-memory') {
+        return {
+            ...environment,
+            RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: CONFIGURATION_SECRET_SENTINELS.blackBoxOperatorTokenSecret
+        };
+    }
     return environment;
 }
 import type {

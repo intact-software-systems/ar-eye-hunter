@@ -4,11 +4,14 @@ import { parseApiV1BlackBoxArgs, toApiV1ServerCommand } from '@shared-test/black
 import { stopManagedApiServer } from '@shared-test/black-box-runner/managed-api/api-v1-managed-process-lifecycle.mts';
 
 describe('managed API-v1 process lifecycle', () => {
-    it('grants managed PGlite servers write permission for their private temporary roots', () => {
-        const options = parseApiV1BlackBoxArgs(['--backend=pglite-memory']);
+    it.each(['pglite-memory', 'pglite-file'] as const)(
+        'grants managed %s servers write permission for their private temporary roots',
+        (backend) => {
+            const options = parseApiV1BlackBoxArgs([`--backend=${backend}`]);
 
-        expect(toApiV1ServerCommand(options)).toContain('--allow-write');
-    });
+            expect(toApiV1ServerCommand(options)).toContain('--allow-write');
+        }
+    );
 
     it('uses SIGTERM before SIGKILL when the injected child does not stop', async () => {
         vi.useFakeTimers();

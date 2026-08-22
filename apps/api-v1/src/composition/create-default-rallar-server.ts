@@ -79,14 +79,10 @@ function constructDefaultRallarServer(
         nowEpochMs,
         timing,
         appInboxOptions: toApiAppInboxServiceOptions(configuration.appInbox),
-        clientFormationDamping: 'damped',
-        groupCapacity: configuration.group,
-        groupStateDissemination: 'delta-primary',
-        createGroupFormationTopologyIntent: (outboxQueueReader) => ({
-            damping: 'damped',
-            outboxQueueReader,
-            recomputeDebounceMs: configuration.topology.recompute.formationDebounceMs
-        }),
+        groupCapacity: {
+            defaultMaxMembers: configuration.group.defaultMaxMembers
+        },
+        groupFormationRecomputeDebounceMs: configuration.topology.recompute.formationDebounceMs,
         topologyReplay: configuration.topology.replay,
         topologyDelivery: configuration.topology.delivery,
         adminClientIds: configuration.authentication.adminClientIds,

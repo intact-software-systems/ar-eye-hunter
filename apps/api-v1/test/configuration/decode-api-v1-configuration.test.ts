@@ -83,7 +83,8 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
             profileName: 'prod-in-memory',
             environmentSource: {},
             secretsSource: {
-                authenticationCredentialSecret: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
+                authenticationCredentialSecret: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret,
+                blackBoxOperatorTokenSecret: CONFIGURATION_SECRET_SENTINELS.blackBoxOperatorTokenSecret
             },
             expected: ['pglite-memory', 'local', 'local', false]
         }

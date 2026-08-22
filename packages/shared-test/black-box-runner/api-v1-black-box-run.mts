@@ -19,7 +19,6 @@ import {
     removeApiV1FairnessProofArtifact,
     verifyApiV1FairnessProof
 } from './state-write-evidence/api-v1-fairness-proof.ts';
-// The formatter would collapse this import beyond the repository's 100-column review limit.
 import { runApiV1RtcTopologyReplayProof } from './topology-replay/api-v1-rtc-topology-replay-proof.mts';
 
 export {
@@ -46,6 +45,16 @@ const API_CONFIG_PATH = 'apps/api-v1/deno.json';
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts';
 export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence';
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
+const MANAGED_API_CONFIGURATION_PROFILE = 'prod-in-memory';
+const MANAGED_API_PASSTHROUGH_NAMES = [
+    'RALLAR_AUTH_CREDENTIAL_SECRET',
+    'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET',
+    'RALLAR_LOGIN_IP_RATE_LIMIT',
+    'RALLAR_LOGIN_USER_RATE_LIMIT',
+    'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
+    'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR',
+    'TZ'
+] as const;
 
 export function createApiV1BlackBoxExecutionToken(): string {
     return crypto.randomUUID().replaceAll('-', '').slice(0, 24).toLowerCase();
@@ -80,30 +89,28 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_BB_RUN_ID = options.runId;
     env.RALLAR_BB_EXECUTION_TOKEN = createApiV1BlackBoxExecutionToken();
     env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT;
-    env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local';
+    env.RALLAR_API_CONFIGURATION_PROFILE = MANAGED_API_CONFIGURATION_PROFILE;
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET ??
         'local-api-v1-black-box-operator-secret';
     env.RALLAR_AUTH_CREDENTIAL_SECRET = env.RALLAR_AUTH_CREDENTIAL_SECRET ??
         'local-api-v1-black-box-auth-credential-secret-v1';
     env.RALLAR_LOGIN_IP_RATE_LIMIT = env.RALLAR_LOGIN_IP_RATE_LIMIT ?? '100';
     env.RALLAR_LOGIN_USER_RATE_LIMIT = env.RALLAR_LOGIN_USER_RATE_LIMIT ?? '100';
-    env.RALLAR_STATE_STRICT_READ_AUTH = env.RALLAR_STATE_STRICT_READ_AUTH ?? '1';
-    env.AUTH_STATIC_CLIENTS_MODE = env.AUTH_STATIC_CLIENTS_MODE ?? 'demo';
-    env.AUTH_REGISTRATION_MODE = env.AUTH_REGISTRATION_MODE ?? 'public';
-    env.AUTH_ADMIN_CLIENT_IDS = env.AUTH_ADMIN_CLIENT_IDS ?? 'admin,bob';
     env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON = env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON ??
         '[{"documentType":"black-box-map","rollout":"production"}]';
 
     if (options.backend === 'postgres') {
         env.RALLAR_SQL_BACKEND = 'postgres';
+        env.RALLAR_PGLITE_SCHEMA_INIT = 'disabled';
+        env.RALLAR_DB_PUBSUB = 'postgres';
         env.DATABASE_URL = env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
     }
     else {
-        env.RALLAR_SQL_BACKEND = 'pglite-memory';
         env.TZ = 'UTC';
-        env.RALLAR_PGLITE_DATA_DIR = 'memory://';
-        env.RALLAR_PGLITE_SCHEMA_INIT = 'auto';
-        env.RALLAR_DB_PUBSUB = 'local';
+        env.RALLAR_SQL_BACKEND = options.backend;
+        delete env.RALLAR_PGLITE_DATA_DIR;
+        delete env.RALLAR_PGLITE_SCHEMA_INIT;
+        delete env.RALLAR_DB_PUBSUB;
         delete env.DATABASE_URL;
     }
 
@@ -121,7 +128,7 @@ export function toManagedApiServerPlans(
             port: options.port,
             baseUrl: `http://127.0.0.1:${options.port}`,
             logPath: `${root}/api-v1-server.log`,
-            env: toManagedApiServerEnvironment(env, options.port)
+            env: toManagedApiServerEnvironment(options, env, options.port)
         },
         ...(options.secondaryPort === undefined
             ? []
@@ -130,7 +137,7 @@ export function toManagedApiServerPlans(
                     port: options.secondaryPort,
                     baseUrl: `http://127.0.0.1:${options.secondaryPort}`,
                     logPath: `${root}/api-v1-server-secondary.log`,
-                    env: toManagedApiServerEnvironment(env, options.secondaryPort)
+                    env: toManagedApiServerEnvironment(options, env, options.secondaryPort)
                 }
             ]),
         ...(options.tertiaryPort === undefined
@@ -151,7 +158,7 @@ function toTertiaryManagedApiServerEnvironment(
     env: Record<string, string>,
     port: number
 ): Record<string, string> {
-    const tertiary = toManagedApiServerEnvironment(env, port);
+    const tertiary = toManagedApiServerEnvironment(options, env, port);
     if (
         options.profile !== 'api-v1-black-box-topology-replay' &&
         options.clusterProfile !== 'api-v1-black-box-topology-replay'
@@ -167,15 +174,47 @@ function toTertiaryManagedApiServerEnvironment(
 }
 
 function toManagedApiServerEnvironment(
+    options: ApiV1BlackBoxOptions,
     env: Record<string, string>,
     port: number
 ): Record<string, string> {
-    return {
-        ...env,
+    const childEnvironment: Record<string, string> = {
+        RALLAR_API_CONFIGURATION_PROFILE: MANAGED_API_CONFIGURATION_PROFILE,
         PORT: String(port),
         RALLAR_API_BASE_URL: `http://127.0.0.1:${port}`,
         RALLAR_WS_BASE_URL: `ws://127.0.0.1:${port}`
     };
+    for (const name of MANAGED_API_PASSTHROUGH_NAMES) {
+        const value = env[name];
+        if (value !== undefined) {
+            childEnvironment[name] = value;
+        }
+    }
+    if (options.backend === 'postgres') {
+        childEnvironment.RALLAR_SQL_BACKEND = 'postgres';
+        childEnvironment.RALLAR_PGLITE_SCHEMA_INIT = 'disabled';
+        childEnvironment.RALLAR_DB_PUBSUB = 'postgres';
+        childEnvironment.DATABASE_URL = requireManagedApiEnvironmentValue(env, 'DATABASE_URL');
+    }
+    else if (options.backend === 'pglite-file') {
+        childEnvironment.RALLAR_SQL_BACKEND = 'pglite-file';
+        childEnvironment.RALLAR_PGLITE_DATA_DIR = requireManagedApiEnvironmentValue(
+            env,
+            'RALLAR_PGLITE_DATA_DIR'
+        );
+    }
+    return childEnvironment;
+}
+
+function requireManagedApiEnvironmentValue(
+    environment: Readonly<Record<string, string>>,
+    name: string
+): string {
+    const value = environment[name];
+    if (value === undefined) {
+        throw new Error(`Managed API-v1 ${name} is required.`);
+    }
+    return value;
 }
 
 export function toApiV1ServerCommand(options: ApiV1BlackBoxOptions): readonly string[] {
@@ -187,7 +226,7 @@ export function toApiV1ServerCommand(options: ApiV1BlackBoxOptions): readonly st
         '--allow-net',
         '--allow-env',
         '--allow-read',
-        ...(options.backend === 'pglite-memory' ? ['--allow-write'] : []),
+        ...(options.backend === 'postgres' ? [] : ['--allow-write']),
         API_ENTRYPOINT
     ];
 }
@@ -325,13 +364,12 @@ async function main(): Promise<void> {
     const runWithStorage = async (
         pgliteStorage: ManagedPGliteRunStorage | undefined
     ): Promise<void> => {
-        if (pgliteStorage) {
-            env.RALLAR_PGLITE_DATA_DIR = pgliteStorage.dataDir;
-            env.RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR = pgliteStorage.snapshotDir;
-        }
-        const serverPlans = toManagedApiServerPlans(options, env, artifactDir);
+        const runEnvironment = pgliteStorage
+            ? toManagedPGliteRunEnvironment(options, env, pgliteStorage)
+            : env;
+        const serverPlans = toManagedApiServerPlans(options, runEnvironment, artifactDir);
         if (options.runMigrations) {
-            await runCommand(['npm', 'run', 'db:migrate'], env);
+            await runCommand(['npm', 'run', 'db:migrate'], runEnvironment);
         }
         await withManagedApiServerPlans(
             {
@@ -348,7 +386,7 @@ async function main(): Promise<void> {
                 runRecipes: async (controls) =>
                     await runManagedProofOrRecipeMatrix({
                         options,
-                        env,
+                        env: runEnvironment,
                         artifactDir,
                         serverPlans,
                         controls
@@ -368,7 +406,7 @@ async function runManagedBlackBoxBackend(
     env: Record<string, string>,
     runWithStorage: (storage: ManagedPGliteRunStorage | undefined) => Promise<void>
 ): Promise<void> {
-    if (options.backend === 'pglite-memory' && !options.recipesOnly) {
+    if (options.backend !== 'postgres' && !options.recipesOnly) {
         await withManagedPGliteRunStorage(runWithStorage);
     }
     else if (requiresManagedPostgresRunDatabase(options)) {
@@ -383,6 +421,27 @@ async function runManagedBlackBoxBackend(
     else {
         await runWithStorage(undefined);
     }
+}
+
+export function toManagedPGliteRunEnvironment(
+    options: ApiV1BlackBoxOptions,
+    environment: Readonly<Record<string, string>>,
+    storage: Pick<ManagedPGliteRunStorage, 'dataDir' | 'snapshotDir'>
+): Record<string, string> {
+    if (options.backend === 'postgres') {
+        throw new Error('Managed PGlite storage requires a PGlite backend.');
+    }
+    const runEnvironment: Record<string, string> = {
+        ...environment,
+        RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR: storage.snapshotDir
+    };
+    if (options.backend === 'pglite-file') {
+        runEnvironment.RALLAR_PGLITE_DATA_DIR = storage.dataDir;
+    }
+    else {
+        delete runEnvironment.RALLAR_PGLITE_DATA_DIR;
+    }
+    return runEnvironment;
 }
 
 const importMeta = import.meta as ImportMeta & { main?: boolean; };

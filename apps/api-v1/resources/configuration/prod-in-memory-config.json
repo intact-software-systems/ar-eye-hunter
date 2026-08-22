@@ -15,18 +15,30 @@
   },
   "database": {
     "mode": "pglite-memory",
-    "dataDirectory": "memory://",
     "schemaInitialization": "auto",
     "pubSub": "local"
   },
   "authentication": {
-    "registrationMode": "admin",
-    "staticClientsMode": "disabled"
+    "registrationMode": "public",
+    "staticClientsMode": "demo",
+    "adminClientIds": [
+      "admin",
+      "bob"
+    ]
   },
   "stateApi": {
     "strictReadAuthorization": true
   },
   "ice": {
     "mode": "local"
+  },
+  "blackBox": {
+    "operatorToken": {
+      "mode": "enabled",
+      "allowedClientIds": [
+        "admin",
+        "bob"
+      ]
+    }
   }
 }
