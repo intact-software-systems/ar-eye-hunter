@@ -11,7 +11,7 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs } from '../../db/pglite-auth-test-harness.ts';
 
 type ApiAdminInboxService = ReturnType<typeof createApiAdminInboxService>;

@@ -1,22 +1,20 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import type { ApiV1QueueResilienceConfiguration } from './configuration/api-v1-configuration.ts';
 
-const duration = Temporal.Duration.from({ seconds: 10 });
-const MAX_FAIRNESS_SELECTIONS_PER_WINDOW = 10;
-
-export function toResilienceDto() {
+export function toResilienceDto(configuration: ApiV1QueueResilienceConfiguration) {
     return ResilienceDto.toResilienceDto(
         new CircuitBreakerPolicy(
-            10,
-            duration,
-            duration,
-            duration
+            configuration.failureThreshold,
+            Temporal.Duration.from({ milliseconds: configuration.openDurationMs }),
+            Temporal.Duration.from({ milliseconds: configuration.resetDurationMs }),
+            Temporal.Duration.from({ milliseconds: configuration.samplingDurationMs })
         ),
-        1,
-        10,
-        1,
-        1,
-        MAX_FAIRNESS_SELECTIONS_PER_WINDOW
+        configuration.initialRate,
+        configuration.maxRate,
+        configuration.increaseRate,
+        configuration.decreaseRate,
+        configuration.maxFairnessSelectionsPerWindow
     );
 }

@@ -32,8 +32,8 @@ import type {
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
+import type { ApiV1TopologyReplayConfiguration } from '../../configuration/api-v1-configuration.ts';
 import { startApiRtcTopologyDelivery } from './rtc-topology-delivery-startup.ts';
-import type { RtcTopologyReplayMode } from './rtc-topology-replay-config.ts';
 import { startApiRtcTopologyReplay } from './rtc-topology-replay-startup.ts';
 
 export interface CreateApiRtcTopologyRuntimeInput {
@@ -44,7 +44,7 @@ export interface CreateApiRtcTopologyRuntimeInput {
     readonly publisherStreamId: string;
     readonly nowEpochMs: () => number;
     readonly onCompactionFailure: (error: Error) => void;
-    readonly replayMode: RtcTopologyReplayMode;
+    readonly replayMode: ApiV1TopologyReplayConfiguration['mode'];
     readonly readHydrationIdentity: (
         connection: ConnectionContext
     ) => RtcTopologyHydrationIdentity | undefined;

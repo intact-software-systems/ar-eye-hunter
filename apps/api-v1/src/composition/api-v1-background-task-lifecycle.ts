@@ -44,7 +44,7 @@ async function stopApiV1BackgroundTasks(
     runtimeStateExpiry: RuntimeStateExpiryLifecycle,
     registeredStops: Set<ApiV1BackgroundTaskStop>
 ): Promise<void> {
-    const stops = [...registeredStops];
+    const stops = [...registeredStops].reverse();
     registeredStops.clear();
     const failures: Error[] = [];
 
@@ -55,14 +55,12 @@ async function stopApiV1BackgroundTasks(
         failures.push(error instanceof Error ? error : new Error(String(error)));
     }
 
-    const results = await Promise.allSettled(
-        stops.map(async (stop) => await stop())
-    );
-    for (const result of results) {
-        if (result.status === 'rejected') {
-            failures.push(
-                result.reason instanceof Error ? result.reason : new Error(String(result.reason))
-            );
+    for (const stop of stops) {
+        try {
+            await stop();
+        }
+        catch (error) {
+            failures.push(error instanceof Error ? error : new Error(String(error)));
         }
     }
 

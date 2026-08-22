@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { requireGroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
+import { createGroupAdmissionQuota, type GroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
 import {
     captureGroupStateRouteWrite,
     createGroupStateRouteSnapshot,
@@ -12,8 +12,10 @@ import {
 
 Deno.test('join route answers 429 with Retry-After once the join-admission window is spent', async () => {
     const groupRef = uniqueGroupRef('route-join');
-    exhaustQuota('join-admission', groupRef, 'alice', 60);
+    const groupAdmissionQuota = createDefaultQuota();
+    exhaustQuota(groupAdmissionQuota, 'join-admission', groupRef, 'alice', 60);
     const runtime = createGroupStateRouteTestRuntime({
+        groupAdmissionQuota,
         processGroupAppInbox: captureGroupStateRouteWrite([], createGroupStateRouteSnapshot('room-1'))
     });
 
@@ -46,8 +48,10 @@ Deno.test('join route answers 429 with Retry-After once the join-admission windo
 
 Deno.test('upsert-self member route shares the join-admission window', async () => {
     const groupRef = uniqueGroupRef('route-upsert-self');
-    exhaustQuota('join-admission', groupRef, 'alice', 60);
+    const groupAdmissionQuota = createDefaultQuota();
+    exhaustQuota(groupAdmissionQuota, 'join-admission', groupRef, 'alice', 60);
     const runtime = createGroupStateRouteTestRuntime({
+        groupAdmissionQuota,
         processGroupAppInbox: captureGroupStateRouteWrite([], createGroupStateRouteSnapshot('room-1'))
     });
 
@@ -63,8 +67,9 @@ Deno.test('upsert-self member route shares the join-admission window', async () 
 
 Deno.test('presence connect route answers 429 from the presence-connect window', async () => {
     const groupRef = uniqueGroupRef('route-presence');
-    exhaustQuota('presence-connect', groupRef, 'alice', 120);
-    const runtime = createGroupStateRouteTestRuntime({});
+    const groupAdmissionQuota = createDefaultQuota();
+    exhaustQuota(groupAdmissionQuota, 'presence-connect', groupRef, 'alice', 120);
+    const runtime = createGroupStateRouteTestRuntime({ groupAdmissionQuota });
 
     const response = await putGroupStateMutation(
         runtime.app,
@@ -111,14 +116,25 @@ Deno.test('a group whose window is untouched still admits joins through the guar
 });
 
 function exhaustQuota(
+    quota: GroupAdmissionQuota,
     family: 'join-admission' | 'presence-connect',
     groupRef: GroupRef,
     principalId: string,
     windowSize: number
 ): void {
     for (let attempt = 1; attempt <= windowSize; attempt++) {
-        requireGroupAdmissionQuota(family, groupRef, principalId);
+        quota.require({ family, groupRef, principalId });
     }
+}
+
+function createDefaultQuota(): GroupAdmissionQuota {
+    return createGroupAdmissionQuota({
+        windowMs: 60_000,
+        joinPrincipal: 60,
+        joinGroup: 600,
+        presencePrincipal: 120,
+        presenceGroup: 1_200
+    });
 }
 
 function toGroupPath(groupRef: GroupRef, suffix: string): string {

@@ -5,7 +5,6 @@ import type {
     DisconnectGroupPresenceSessionRequest,
     HeartbeatGroupPresenceSessionRequest
 } from '@shared/api/state-types.ts';
-import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -69,11 +68,11 @@ async function handleConnectGroupPresenceRoute(
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const sessionId = context.req.param('sessionId');
-        requireGroupAdmissionQuota(
-            'presence-connect',
-            { ...scope, groupId },
-            authSession.clientId
-        );
+        dependencies.groupAdmissionQuota.require({
+            family: 'presence-connect',
+            groupRef: { ...scope, groupId },
+            principalId: authSession.clientId
+        });
         authorization.assertSelfSession(authSession, sessionId);
         const receipt = await dependencies.processGroupAppInbox(
             authSession,

@@ -1,42 +1,44 @@
 # API-v1 Composition
 
-This directory is the production construction map for the API-v1 server. It separates operational
-defaults from required assembly and keeps each runtime, topology, admin, installer, and lifecycle
-owner directly reachable from the entry point.
+This directory is the production construction map for the API-v1 server. Operational policy is
+resolved once by `configuration/`; composition receives that immutable snapshot plus the explicit
+database lifecycle and keeps each runtime, topology, admin, installer, and lifecycle owner directly
+reachable from the entry point.
 
 ## Construction and registration
 
-Start at [`main.ts`](../main.ts), which calls
-[`createDefaultRallarServer`](./create-default-rallar-server.ts). The default factory performs these
-phases in order:
+Start at [`main.ts`](../main.ts). It resolves and validates one configuration snapshot, logs its safe
+summary, constructs [`ApiV1DatabaseLifecycle`](../db/api-v1-database-lifecycle.ts), and passes both
+owners to [`createDefaultRallarServer`](./create-default-rallar-server.ts). Construction then proceeds
+in this order:
 
-1. Read database, pub/sub, auth, CRDT, topology, formation, capacity, replay, timing, and resilience
-   configuration.
-2. Resolve the raw SQL client in [`db.ts`](../db/db.ts) and translate it once through
-   [`toPSqlSql`](../db/to-p-sql-sql.ts) for shared-server repositories.
-3. Create one [`ApiV1BackgroundTaskLifecycle`](./api-v1-background-task-lifecycle.ts), then build
+1. Register the database lifecycle's close operation with one
+   [`ApiV1BackgroundTaskLifecycle`](./api-v1-background-task-lifecycle.ts), so SQL closes after the
+   runtime resources that depend on it.
+2. Build
    the complete [`ApiV1Runtime`](./api-v1-runtime.ts) through
    [`createApiV1Runtime`](./create-api-v1-runtime.ts).
-4. `createApiV1Runtime` creates the mutation boundary through
+3. `createApiV1Runtime` creates the mutation boundary through
    [`createApiV1MutationRuntime`](./create-api-v1-mutation-runtime.ts), creates the RTC runtime,
    assembles shared middleware, attaches replay, and registers owned background work.
-5. [`createApiV1TopologyServices`](./create-api-v1-topology-services.ts) constructs topology and RTT
+4. [`createApiV1TopologyServices`](./create-api-v1-topology-services.ts) constructs topology and RTT
    repositories, planning, refinement, management, AppInbox dependencies, and admin metrics.
-6. [`createApiV1AdminServices`](./create-api-v1-admin-services.ts) constructs operations, support,
+5. [`createApiV1AdminServices`](./create-api-v1-admin-services.ts) constructs operations, support,
    and statistics services from the completed runtime and topology capabilities.
-7. [`createApiV1SystemInstallers`](./create-api-v1-system-installers.ts) owns system-topic and
+6. [`createApiV1SystemInstallers`](./create-api-v1-system-installers.ts) owns system-topic and
    WebSocket-lifecycle installation.
    [`createApiV1RouteInstallers`](./create-api-v1-route-installers.ts) owns the ordered WebSocket
    and REST route registrations.
-8. The required-input [`createRallarServer`](./create-rallar-server.ts) performs the single final
+7. The required-input [`createRallarServer`](./create-rallar-server.ts) performs the single final
    `createRallarServerApplication` call. It reads no environment, chooses no defaults, and creates
    no services.
-9. `main.ts` invokes the system installers, mounts WebSocket and REST routes, binds the HTTP server,
-   waits for runtime readiness, and starts queue workers under the replay policy.
+8. `main.ts` invokes the system installers and mounts the routes. It waits for database and runtime
+   readiness before binding the HTTP server, then starts queue workers under the resolved replay
+   policy.
 
-The Relic server starts at
-[`apps/relic-hunter-server-v1/src/main.ts`](../../../relic-hunter-server-v1/src/main.ts) and uses
-the same default factory with only its intentional WebSocket options.
+The Relic server starts at [`apps/relic-hunter-server-v1/src/main.ts`](../../../relic-hunter-server-v1/src/main.ts)
+and supplies the same required API-v1 configuration and database-lifecycle owners with its
+intentional WebSocket options.
 
 ## Runtime invocation and shutdown
 
@@ -48,11 +50,14 @@ the same default factory with only its intentional WebSocket options.
   and wake behavior. Route installers do not provide a direct-write fallback.
 - System WebSocket topics use the same completed runtime and topology services. WebSocket close
   handling translates close facts into client-disconnect and group-session-cleanup AppInbox work.
-- Runtime readiness combines the required startup owners. API-v1 starts queue workers only after
+- Database construction establishes SQL readiness before composition returns. Runtime readiness
+  then combines the remaining startup owners. API-v1 binds HTTP and starts queue workers only after
   that readiness succeeds and the replay configuration permits them.
 - Process unload and RTC delivery health failure both call `rallar.runtime.backgroundTasks.stop()`.
-  The lifecycle snapshots and clears registered stops, stops runtime-state expiry, attempts every
-  captured stop, and exposes any failure to its caller.
+  Startup failure invokes the same owner. The lifecycle snapshots and clears registered stops,
+  stops runtime-state expiry, runs captured stops sequentially in reverse registration order, and
+  exposes any failure to its caller. This keeps SQL available until dependent workers, publishers,
+  and listeners stop.
 
-There is no module-global API runtime, service locator, optional server factory, or alternate SQL
-translation path in this composition graph.
+There is no module-global API runtime, SQL client, configuration reader, service locator, optional
+server factory, or alternate SQL translation path in this composition graph.

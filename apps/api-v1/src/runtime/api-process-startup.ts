@@ -2,18 +2,35 @@ interface ApiProcessStartupOptions<THttpServer> {
     readonly runtimeReadiness: Promise<void>;
     readonly listen: () => THttpServer;
     readonly startQueueWorkers: () => void;
+    readonly stopAfterStartupFailure: (httpServer: THttpServer | undefined) => Promise<void>;
 }
 
 export interface ApiProcessStartup<THttpServer> {
     readonly httpServer: THttpServer;
-    readonly readiness: Promise<void>;
 }
 
-export function startApiProcess<THttpServer>(
+export async function startApiProcess<THttpServer>(
     options: ApiProcessStartupOptions<THttpServer>
-): ApiProcessStartup<THttpServer> {
-    const httpServer = options.listen();
-    const readiness = options.runtimeReadiness.then(() => options.startQueueWorkers());
+): Promise<ApiProcessStartup<THttpServer>> {
+    let httpServer: THttpServer | undefined;
+    try {
+        await options.runtimeReadiness;
+        httpServer = options.listen();
+        options.startQueueWorkers();
 
-    return { httpServer, readiness };
+        return { httpServer };
+    }
+    catch (startupError) {
+        try {
+            await options.stopAfterStartupFailure(httpServer);
+        }
+        catch (shutdownError) {
+            throw new AggregateError(
+                [startupError, shutdownError],
+                'API-v1 process startup and cleanup failed'
+            );
+        }
+
+        throw startupError;
+    }
 }

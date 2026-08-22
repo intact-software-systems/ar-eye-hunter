@@ -23,8 +23,8 @@ import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
@@ -109,6 +109,7 @@ Deno.test(
             const createRouteApp = (service: TopologyInboxService) => {
                 const app = new Hono();
                 graphTopologyRoutes.registerGraphTopologyRoutes(app, {
+                    strictReadAuthorization: false,
                     groupStateService: {
                         readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref)
                     },

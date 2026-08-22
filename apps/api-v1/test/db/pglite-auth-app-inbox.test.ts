@@ -9,7 +9,7 @@ import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import assert from 'node:assert/strict';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';

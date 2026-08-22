@@ -4,6 +4,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
+import { createConfigRouteTestDependencies } from './config-route-test-runtime.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const DEFAULT_TTL_MS = 86_400_000;
@@ -11,7 +12,12 @@ const DEFAULT_TTL_MS = 86_400_000;
 Deno.test('black-box control token route rejects unauthenticated requests', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.reject(authenticationRequired('Unauthorized: Missing bearer token')),
-        readEnv: (name) => name === 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET' ? 'operator-secret' : undefined
+        operatorToken: {
+            mode: 'enabled',
+            secret: 'operator-secret',
+            allowedClientIds: [],
+            ttlMs: DEFAULT_TTL_MS
+        }
     });
 
     const response = await app.request('/api/black-box/control-token', {
@@ -27,7 +33,12 @@ Deno.test('black-box control token route rejects unauthenticated requests', asyn
 Deno.test('black-box control token route issues a 24h operator token by default', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
-        readEnv: (name) => name === 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET' ? 'operator-secret' : undefined
+        operatorToken: {
+            mode: 'enabled',
+            secret: 'operator-secret',
+            allowedClientIds: [],
+            ttlMs: DEFAULT_TTL_MS
+        }
     });
 
     const response = await app.request('/api/black-box/control-token', {
@@ -66,15 +77,11 @@ Deno.test('black-box control token route issues a 24h operator token by default'
 Deno.test('black-box control token route rejects clients outside the allowlist', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
-        readEnv: (name) => {
-            switch (name) {
-                case 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET':
-                    return 'operator-secret';
-                case 'RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS':
-                    return 'bob-client';
-                default:
-                    return undefined;
-            }
+        operatorToken: {
+            mode: 'enabled',
+            secret: 'operator-secret',
+            allowedClientIds: ['bob-client'],
+            ttlMs: DEFAULT_TTL_MS
         }
     });
 
@@ -115,18 +122,17 @@ function createApp(
     dependencies: Partial<configRoutes.ConfigRouteDependencies>
 ): Hono {
     const app = new Hono();
-    configRoutes.registerConfigRoutes(app, {
-        requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
-        readEnv: () => undefined,
-        now: () => NOW_EPOCH_MS,
-        createTokenId: () => 'token-id-1',
-        appAuthInbox: {} as never,
-        authUserRepository: {} as never,
-        staticClients: [],
-        registrationMode: 'public',
-        adminClientIds: new Set(),
-        ...dependencies
-    });
+    configRoutes.registerConfigRoutes(
+        app,
+        createConfigRouteTestDependencies({
+            requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
+            now: () => NOW_EPOCH_MS,
+            createTokenId: () => 'token-id-1',
+            appAuthInbox: {} as never,
+            authUserRepository: {} as never,
+            ...dependencies
+        })
+    );
     return app;
 }
 

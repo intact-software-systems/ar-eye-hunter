@@ -5,6 +5,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
+import { createConfigRouteTestDependencies } from './config-route-test-runtime.ts';
 
 const NOW_EPOCH_MS = Date.now();
 const ISSUE_REQUEST_ID = 'AgentIssueRequest_01234567';
@@ -162,18 +163,17 @@ function createApp(
     dependencies: Partial<configRoutes.ConfigRouteDependencies>
 ): Hono {
     const app = new Hono();
-    configRoutes.registerConfigRoutes(app, {
-        requireApiAuthSession: () => Promise.resolve(createAuthSession()),
-        readEnv: () => undefined,
-        now: () => NOW_EPOCH_MS,
-        createTokenId: () => crypto.randomUUID(),
-        appAuthInbox: {} as never,
-        authUserRepository: {} as never,
-        staticClients: [],
-        registrationMode: 'public',
-        adminClientIds: new Set(),
-        ...dependencies
-    });
+    configRoutes.registerConfigRoutes(
+        app,
+        createConfigRouteTestDependencies({
+            requireApiAuthSession: () => Promise.resolve(createAuthSession()),
+            now: () => NOW_EPOCH_MS,
+            createTokenId: () => crypto.randomUUID(),
+            appAuthInbox: {} as never,
+            authUserRepository: {} as never,
+            ...dependencies
+        })
+    );
     return app;
 }
 

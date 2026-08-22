@@ -2,48 +2,42 @@ import type {
     QueueBoxPubSubBridge,
     QueueBoxPubSubMessage,
     QueueBoxPubSubMessageKey
-} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import * as dbListen from './db-listen.ts';
-import * as dbNotify from './db-notify.ts';
-
-export type PostgresQueuePubSubBridgeDependencies = Readonly<{
-    notify(
-        channel: string,
-        message: QueueBoxPubSubMessage
-    ): Promise<void>;
-    startListening(
-        channel: string,
-        options: Readonly<{
-            publisherId: string;
-            onMessage: (payload: QueueBoxPubSubMessage) => void | Promise<void>;
-        }>
-    ): Promise<void>;
-}>;
+} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 
 export function createPostgresQueuePubSubBridge(
     publisherId: string,
-    dependencies: PostgresQueuePubSubBridgeDependencies = {
-        notify: dbNotify.notify,
-        startListening: dbListen.startListening
-    }
+    notification: ApiV1DatabaseNotificationPort
 ): QueueBoxPubSubBridge {
     return {
         publish: async (channel, message) => {
-            await dependencies.notify(channel, toKeyOnlyMessage(channel, message));
+            await notification.notify(channel, toKeyOnlyMessage(channel, message));
         },
         subscribe: async (channel, onMessage) => {
-            await dependencies.startListening(channel, {
-                publisherId,
-                onMessage: async (message: QueueBoxPubSubMessage) => {
-                    if (!isValidPostgresPubSubMessage(message, channel)) {
+            await notification.listen(
+                channel,
+                async (payload) => {
+                    const message = parsePostgresPubSubMessage(payload);
+                    if (
+                        !isValidPostgresPubSubMessage(message, channel) ||
+                        message.publisherId === publisherId
+                    ) {
                         return;
                     }
-
                     await onMessage(message);
                 }
-            });
+            );
         }
     };
+}
+
+function parsePostgresPubSubMessage(payload: string): QueueBoxPubSubMessage | undefined {
+    try {
+        return JSON.parse(payload) as QueueBoxPubSubMessage;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 function toKeyOnlyMessage(
@@ -60,21 +54,21 @@ function toKeyOnlyMessage(
 }
 
 function isValidPostgresPubSubMessage(
-    message: QueueBoxPubSubMessage,
+    value: QueueBoxPubSubMessage | undefined,
     channel: string
-): boolean {
-    if (!message || typeof message !== 'object') {
+): value is QueueBoxPubSubMessage {
+    if (!value || typeof value !== 'object') {
         return false;
     }
 
-    return message.channel === channel &&
-        typeof message.publisherId === 'string' &&
-        typeof message.typeId === 'string' &&
-        isValidMessageKey(message.key) &&
+    return value.channel === channel &&
+        typeof value.publisherId === 'string' &&
+        typeof value.typeId === 'string' &&
+        isValidMessageKey(value.key) &&
         (
-            message.delivery === 'key'
-                ? message.payload === undefined
-                : typeof message.payload === 'string'
+            value.delivery === 'key'
+                ? value.payload === undefined
+                : typeof value.payload === 'string'
         );
 }
 

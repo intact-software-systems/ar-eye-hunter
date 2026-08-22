@@ -28,14 +28,13 @@ import {
     type ApiAdminPruneMutationPort,
     type ApiTopologyRecomputeMutationPort
 } from '../admin-operations/create-api-admin-mutation-gateway.ts';
+import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
-import type { ApiV1DatabaseBackendConfig } from '../db/database-config.ts';
-import type { ApiV1DatabasePubSubConfig } from '../db/database-pubsub-config.ts';
 
 export interface CreateApiV1AdminServicesInput {
     readonly database: PSqlSql;
-    readonly databaseConfig: ApiV1DatabaseBackendConfig;
-    readonly databasePubSub: ApiV1DatabasePubSubConfig;
+    readonly databaseMode: ApiV1DatabaseConfiguration['mode'];
+    readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly nowEpochMs: () => number;
     readonly serviceId: string;
     readonly timing: RallarTimingSink;
@@ -78,8 +77,8 @@ export function createApiV1AdminServices(
             statsReader: new PSqlAdminOperationsStatsReader(input.database, {
                 now: input.nowEpochMs,
                 serverId: input.serviceId,
-                sqlBackend: input.databaseConfig.sqlBackend,
-                dbPubSub: input.databasePubSub.mode
+                sqlBackend: input.databaseMode,
+                dbPubSub: input.databasePubSubMode
             }),
             wsStatus: readWebSocketStatus,
             readRtcTopologyMetrics: input.readRtcTopologyMetrics,

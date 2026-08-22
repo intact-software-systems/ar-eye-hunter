@@ -43,8 +43,7 @@ Deno.test('configuration reader selects only absent or exact canonical profiles'
         { RALLAR_API_CONFIGURATION_PROFILE: 'production' },
         { RALLAR_API_CONFIGURATION_PROFILE: 'Prod' },
         { RALLAR_API_CONFIGURATION_PROFILE: '' },
-        { RALLAR_API_CONFIGURATION_PROFILE: ' dev ' },
-        { ENVIRONMENT: 'dev' }
+        { RALLAR_API_CONFIGURATION_PROFILE: ' dev ' }
     ];
     for (const values of rejected) {
         const error = await captureConfigurationError(
@@ -150,21 +149,6 @@ Deno.test('configuration reader preserves ordered arrays and isolates the frozen
         ['admin', 'alice']
     );
     assertRecursivelyFrozen(configuration);
-});
-
-Deno.test('configuration reader rejects removed settings instead of accepting aliases', async () => {
-    for (
-        const name of [
-            'API_BASE_URL',
-            'RALLAR_GROUP_FORMATION_DAMPING',
-            'RALLAR_GROUP_STATE_DISSEMINATION'
-        ]
-    ) {
-        const error = await captureConfigurationError(
-            readerInput({ ...validConfigurationEnvironment(), [name]: 'enabled' })
-        );
-        assert.equal(error.issues.some((issue) => issue.environmentName === name), true);
-    }
 });
 
 Deno.test('configuration startup summary is useful and contains no secret-derived data', async () => {

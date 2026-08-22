@@ -166,14 +166,7 @@ async function readStrictAuthSession(
     request: GroupStateRouteRequest,
     dependencies: GroupStateRouteDependencies
 ): Promise<GroupStateRouteAuthSession | undefined> {
-    return isStrictReadAuthEnabled() ? await dependencies.requireApiAuthSession(request) : undefined;
-}
-
-function isStrictReadAuthEnabled(): boolean {
-    const value = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    if (value === undefined || value.trim() === '') {
-        return false;
-    }
-
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+    return dependencies.strictReadAuthorization
+        ? await dependencies.requireApiAuthSession(request)
+        : undefined;
 }

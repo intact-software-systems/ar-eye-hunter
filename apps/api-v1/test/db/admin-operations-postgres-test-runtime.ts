@@ -11,8 +11,8 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
-import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 type PSqlValues = Parameters<PSqlSql>[0];
 
@@ -462,11 +462,11 @@ export function createAdminSession() {
 export async function withPGliteSql(
     fn: (sql: PGliteSql) => Promise<void>
 ): Promise<void> {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     try {
-        await fn(sql);
+        await fn(lifecycle.database);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 }

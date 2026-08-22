@@ -241,6 +241,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
     let cachedSnapshot = baseSnapshot;
     const app = new Hono();
     clientStateRoutes.registerClientStateRoutes(app, {
+        strictReadAuthorization: false,
         clientStateService: {
             listSnapshots: () => Promise.resolve([]),
             readSnapshot: () => Promise.resolve(cachedSnapshot),

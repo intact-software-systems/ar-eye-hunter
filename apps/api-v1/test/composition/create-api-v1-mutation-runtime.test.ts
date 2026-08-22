@@ -6,7 +6,7 @@ import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
     const databaseProbe = createDatabaseProbe();
@@ -28,7 +28,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
             };
         },
         adminClientIds: ['admin-1'],
-        crdtPolicies: undefined,
+        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {
             inbox: toResilienceDto(),
             outbox: toResilienceDto(),

@@ -274,6 +274,7 @@ export class ApiV1ConfigurationValueDecoder implements ApiV1ConfigurationInvaria
         code: string,
         message: string
     ): void {
+        this.#invalidPaths.add(SECRET_PATH_BY_KEY[key]);
         this.#issues.push({
             source: 'secret',
             path: SECRET_PATH_BY_KEY[key],

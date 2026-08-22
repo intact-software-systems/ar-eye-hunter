@@ -4,52 +4,43 @@ import assert from 'node:assert/strict';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toGroupStateErrorResponse } from '../../src/group-state/group-state-route-errors.ts';
 import {
-    GROUP_ADMISSION_RATE_LIMIT_WINDOW_MS,
+    createGroupAdmissionQuota,
     GroupAdmissionRateLimitedError,
-    readGroupAdmissionRateLimitConfig,
     readGroupAdmissionRateLimitDecision,
-    requireGroupAdmissionQuota,
+    toGroupAdmissionRateLimitConfig,
     type GroupAdmissionRateLimitConfig
 } from '../../src/services/group-admission-rate-limit.ts';
 
-Deno.test('group admission rate limit config defaults far above the validated burst envelope', () => {
-    const config = readGroupAdmissionRateLimitConfig(fakeReadEnv({}));
+Deno.test('group admission rate limit config maps every resolved policy field', () => {
+    const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     assert.equal(config.joinAdmission.principal.maxNumberToAllow, 60);
     assert.equal(config.joinAdmission.group.maxNumberToAllow, 600);
     assert.equal(config.presenceConnect.principal.maxNumberToAllow, 120);
     assert.equal(config.presenceConnect.group.maxNumberToAllow, 1200);
     for (const policy of allPolicies(config)) {
-        assert.equal(policy.timebasedFilterMs, GROUP_ADMISSION_RATE_LIMIT_WINDOW_MS);
+        assert.equal(policy.timebasedFilterMs, 60_000);
     }
 });
 
-Deno.test('group admission rate limit config accepts env overrides for all four limits', () => {
-    const config = readGroupAdmissionRateLimitConfig(fakeReadEnv({
-        RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT: '7',
-        RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT: '70',
-        RALLAR_GROUP_PRESENCE_CONNECT_PRINCIPAL_RATE_LIMIT: '9',
-        RALLAR_GROUP_PRESENCE_CONNECT_GROUP_RATE_LIMIT: '90'
-    }));
+Deno.test('group admission rate limit config preserves non-default resolved limits', () => {
+    const config = toGroupAdmissionRateLimitConfig({
+        windowMs: 12_500,
+        joinPrincipal: 7,
+        joinGroup: 70,
+        presencePrincipal: 9,
+        presenceGroup: 90
+    });
     assert.equal(config.joinAdmission.principal.maxNumberToAllow, 7);
     assert.equal(config.joinAdmission.group.maxNumberToAllow, 70);
     assert.equal(config.presenceConnect.principal.maxNumberToAllow, 9);
     assert.equal(config.presenceConnect.group.maxNumberToAllow, 90);
-});
-
-Deno.test('group admission rate limit config rejects non-positive-integer overrides', () => {
-    for (const invalid of ['0', '-5', '1.5', 'sixty']) {
-        assert.throws(
-            () =>
-                readGroupAdmissionRateLimitConfig(fakeReadEnv({
-                    RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT: invalid
-                })),
-            /RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT must be a positive integer/
-        );
+    for (const policy of allPolicies(config)) {
+        assert.equal(policy.timebasedFilterMs, 12_500);
     }
 });
 
 Deno.test('join-admission per-principal window exhausts exactly at the 61st request', () => {
-    const config = readGroupAdmissionRateLimitConfig(fakeReadEnv({}));
+    const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     const groupRef = uniqueGroupRef('principal-exhaustion');
     for (let attempt = 1; attempt <= 60; attempt++) {
         assert.equal(
@@ -75,7 +66,7 @@ Deno.test('join-admission per-principal window exhausts exactly at the 61st requ
 });
 
 Deno.test('per-principal windows are independent per group and per principal', () => {
-    const config = readGroupAdmissionRateLimitConfig(fakeReadEnv({}));
+    const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     const stormedGroup = uniqueGroupRef('independence-stormed');
     for (let attempt = 1; attempt <= 60; attempt++) {
         readGroupAdmissionRateLimitDecision({
@@ -156,10 +147,18 @@ Deno.test('over-limit requests do not consume the remaining group budget', () =>
 
 Deno.test('the route guard answers over-limit with 429, Retry-After: 60, and a coded body', async () => {
     const groupRef = uniqueGroupRef('route-shape');
+    const quota = createGroupAdmissionQuota({
+        ...defaultConfiguration(),
+        joinPrincipal: 2
+    });
     const app = new Hono();
     app.post('/api/state/join-guarded', (context) => {
         try {
-            requireGroupAdmissionQuota('join-admission', groupRef, 'route-probe');
+            quota.require({
+                family: 'join-admission',
+                groupRef,
+                principalId: 'route-probe'
+            });
             return context.json({ ok: true });
         }
         catch (error) {
@@ -168,9 +167,9 @@ Deno.test('the route guard answers over-limit with 429, Retry-After: 60, and a c
     });
 
     let overLimit: Response | undefined;
-    for (let attempt = 1; attempt <= 61; attempt++) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
         const response = await app.request('/api/state/join-guarded', { method: 'POST' });
-        if (attempt <= 60) {
+        if (attempt <= 2) {
             assert.equal(response.status, 200, `attempt ${attempt}`);
             continue;
         }
@@ -186,10 +185,10 @@ Deno.test('the route guard answers over-limit with 429, Retry-After: 60, and a c
 });
 
 Deno.test('the typed rate-limited error carries the 429 contract values', () => {
-    const error = new GroupAdmissionRateLimitedError('presence-connect');
+    const error = new GroupAdmissionRateLimitedError('presence-connect', 13);
     assert.equal(error.status, 429);
     assert.equal(error.code, 'group-admission-rate-limited');
-    assert.equal(error.retryAfterSeconds, 60);
+    assert.equal(error.retryAfterSeconds, 13);
     assert.equal(error.message, 'Too many group presence-connect requests');
 });
 
@@ -209,10 +208,11 @@ function decideJoin(
 function toTinyConfig(
     limits: Readonly<{ joinPrincipal: number; joinGroup: number; }>
 ): GroupAdmissionRateLimitConfig {
-    return readGroupAdmissionRateLimitConfig(fakeReadEnv({
-        RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT: String(limits.joinPrincipal),
-        RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT: String(limits.joinGroup)
-    }));
+    return toGroupAdmissionRateLimitConfig({
+        ...defaultConfiguration(),
+        joinPrincipal: limits.joinPrincipal,
+        joinGroup: limits.joinGroup
+    });
 }
 
 function uniqueGroupRef(label: string): GroupRef {
@@ -232,6 +232,12 @@ function allPolicies(config: GroupAdmissionRateLimitConfig) {
     ];
 }
 
-function fakeReadEnv(values: Readonly<Record<string, string | undefined>>) {
-    return (name: string): string | undefined => values[name];
+function defaultConfiguration() {
+    return {
+        windowMs: 60_000,
+        joinPrincipal: 60,
+        joinGroup: 600,
+        presencePrincipal: 120,
+        presenceGroup: 1_200
+    } as const;
 }

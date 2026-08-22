@@ -1,8 +1,6 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
+import type { ApiV1StateApiConfiguration } from '../../src/configuration/api-v1-configuration.ts';
 import { createStateApiResilienceMiddleware } from '../../src/services/state-api-resilience-middleware.ts';
 
 Deno.test('state API event-list middleware rate limits by authenticated client id', async () => {
@@ -11,8 +9,7 @@ Deno.test('state API event-list middleware rate limits by authenticated client i
         '/api/state/*',
         createStateApiResilienceMiddleware({
             namespace: `test-${crypto.randomUUID()}`,
-            eventListRateLimitPolicy: new RateLimiterPolicy(60_000, 1),
-            stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100)
+            configuration: createStateApiConfiguration({ request: 100, eventList: 1 })
         })
     );
     app.get(
@@ -42,8 +39,7 @@ Deno.test('state API event page middleware uses event-list rate limits', async (
         '/api/state/*',
         createStateApiResilienceMiddleware({
             namespace: `test-${crypto.randomUUID()}`,
-            eventListRateLimitPolicy: new RateLimiterPolicy(60_000, 1),
-            stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100)
+            configuration: createStateApiConfiguration({ request: 100, eventList: 1 })
         })
     );
     app.get(
@@ -69,15 +65,15 @@ Deno.test('state API event page middleware uses event-list rate limits', async (
 
 Deno.test('state API circuit breaker opens after repeated server failures', async () => {
     const app = new Hono();
-    const duration = Temporal.Duration.from({ seconds: 60 });
     app.use(
         '/api/state/*',
         createStateApiResilienceMiddleware({
             namespace: `test-${crypto.randomUUID()}`,
-            stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100),
-            circuitBreaker: CircuitBreaker.create(
-                new CircuitBreakerPolicy(0, duration, duration, duration)
-            )
+            configuration: createStateApiConfiguration({
+                request: 100,
+                failureThreshold: 0,
+                circuitDurationMs: 60_000
+            })
         })
     );
     app.get('/api/state/failing', (c) => c.json({ error: 'failed' }, 500));
@@ -98,15 +94,15 @@ Deno.test('state API circuit breaker opens after repeated server failures', asyn
 
 Deno.test('state API circuit breaker ignores repeated revision-floor conflicts', async () => {
     const app = new Hono();
-    const duration = Temporal.Duration.from({ seconds: 60 });
     app.use(
         '/api/state/*',
         createStateApiResilienceMiddleware({
             namespace: `test-${crypto.randomUUID()}`,
-            stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100),
-            circuitBreaker: CircuitBreaker.create(
-                new CircuitBreakerPolicy(0, duration, duration, duration)
-            )
+            configuration: createStateApiConfiguration({
+                request: 100,
+                failureThreshold: 0,
+                circuitDurationMs: 60_000
+            })
         })
     );
     app.get(
@@ -131,7 +127,7 @@ Deno.test('state API rate limiting uses the canonical client mutation failure', 
         '/api/state/*',
         createStateApiResilienceMiddleware({
             namespace: `test-${crypto.randomUUID()}`,
-            stateRateLimitPolicy: new RateLimiterPolicy(12_500, 1)
+            configuration: createStateApiConfiguration({ windowMs: 12_500, request: 1 })
         })
     );
     const path = '/api/state/apps/app/workspaces/workspace/clients/alice/principal/' +
@@ -166,15 +162,15 @@ Deno.test('state API rate limiting uses the canonical client mutation failure', 
 
 Deno.test('state API circuit breaking uses the canonical client mutation failure', async () => {
     const app = new Hono();
-    const duration = Temporal.Duration.from({ seconds: 60 });
     app.use(
         '/api/state/*',
         createStateApiResilienceMiddleware({
             namespace: `test-${crypto.randomUUID()}`,
-            stateRateLimitPolicy: new RateLimiterPolicy(60_000, 100),
-            circuitBreaker: CircuitBreaker.create(
-                new CircuitBreakerPolicy(0, duration, duration, duration)
-            )
+            configuration: createStateApiConfiguration({
+                request: 100,
+                failureThreshold: 0,
+                circuitDurationMs: 60_000
+            })
         })
     );
     const path = '/api/state/apps/app/workspaces/workspace/clients/alice/principal/' +
@@ -204,16 +200,28 @@ Deno.test('state API circuit breaking uses the canonical client mutation failure
     });
 });
 
-Deno.test('removed client mutation paths bypass resilience and remain 404', async () => {
-    const app = new Hono();
-    app.use(
-        '/api/state/*',
-        createStateApiResilienceMiddleware({
-            namespace: `test-${crypto.randomUUID()}`,
-            stateRateLimitPolicy: new RateLimiterPolicy(60_000, 0)
-        })
-    );
-    const path = '/api/state/apps/app/workspaces/workspace/clients/alice/principal';
-
-    assert.equal((await app.request(path, { method: 'PUT' })).status, 404);
-});
+function createStateApiConfiguration(
+    input: Readonly<{
+        windowMs?: number;
+        request: number;
+        eventList?: number;
+        failureThreshold?: number;
+        circuitDurationMs?: number;
+    }>
+): ApiV1StateApiConfiguration {
+    const circuitDurationMs = input.circuitDurationMs ?? 10_000;
+    return {
+        strictReadAuthorization: false,
+        rateLimits: {
+            windowMs: input.windowMs ?? 60_000,
+            request: input.request,
+            eventList: input.eventList ?? 60
+        },
+        circuitBreaker: {
+            failureThreshold: input.failureThreshold ?? 10,
+            openDurationMs: circuitDurationMs,
+            resetDurationMs: circuitDurationMs,
+            samplingDurationMs: circuitDurationMs
+        }
+    };
+}

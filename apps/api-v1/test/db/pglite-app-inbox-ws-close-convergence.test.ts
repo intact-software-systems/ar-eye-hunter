@@ -14,7 +14,7 @@ import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC
 
 import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import {
     assertPGliteQueuedTypes as assertQueuedTypes,
     assertPGliteQueueRetriedAndCompleted as assertQueueRetriedAndCompleted,

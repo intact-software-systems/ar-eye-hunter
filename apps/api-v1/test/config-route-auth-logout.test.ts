@@ -2,6 +2,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../src/routes/config-route.ts';
+import { createConfigRouteTestDependencies } from './routes/config-route-test-runtime.ts';
 
 const SESSION = {
     clientId: 'client-a',
@@ -16,22 +17,21 @@ const REQUEST_ID = 'LogoutMutationRequest_012345';
 Deno.test('logout routes the session mutation through AppAuthInbox', async () => {
     const calls: unknown[] = [];
     const app = new Hono();
-    configRoutes.registerConfigRoutes(app, {
-        requireApiAuthSession: () => Promise.resolve(SESSION),
-        now: () => 2_000,
-        createTokenId: () => 'logout-request-1',
-        readEnv: () => undefined,
-        appAuthInbox: ({
-            logoutSession: (input: unknown) => {
-                calls.push(input);
-                return Promise.resolve(Either.ofRight({ loggedOut: true }));
-            }
-        }) as never,
-        authUserRepository: {} as never,
-        staticClients: [],
-        registrationMode: 'public',
-        adminClientIds: new Set()
-    });
+    configRoutes.registerConfigRoutes(
+        app,
+        createConfigRouteTestDependencies({
+            requireApiAuthSession: () => Promise.resolve(SESSION),
+            now: () => 2_000,
+            createTokenId: () => 'logout-request-1',
+            appAuthInbox: ({
+                logoutSession: (input: unknown) => {
+                    calls.push(input);
+                    return Promise.resolve(Either.ofRight({ loggedOut: true }));
+                }
+            }) as never,
+            authUserRepository: {} as never
+        })
+    );
 
     const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
         method: 'POST',
@@ -47,33 +47,32 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
 
 Deno.test('logout returns the durable AppInbox failure status', async () => {
     const app = new Hono();
-    configRoutes.registerConfigRoutes(app, {
-        requireApiAuthSession: () => Promise.resolve(SESSION),
-        readEnv: () => undefined,
-        now: () => 2_000,
-        createTokenId: () => 'unused',
-        appAuthInbox: ({
-            logoutSession: () =>
-                Promise.resolve(Either.ofLeft({
-                    type: 'app-inbox-failure',
-                    version: 'canonical.v2',
-                    code: 'auth-logout-authority-differs',
-                    message: 'Auth logout authority differs',
-                    status: 403,
-                    issues: null,
-                    denial: {
+    configRoutes.registerConfigRoutes(
+        app,
+        createConfigRouteTestDependencies({
+            requireApiAuthSession: () => Promise.resolve(SESSION),
+            now: () => 2_000,
+            createTokenId: () => 'unused',
+            appAuthInbox: ({
+                logoutSession: () =>
+                    Promise.resolve(Either.ofLeft({
+                        type: 'app-inbox-failure',
+                        version: 'canonical.v2',
                         code: 'auth-logout-authority-differs',
                         message: 'Auth logout authority differs',
-                        details: null
-                    },
-                    retry: null
-                }))
-        }) as never,
-        authUserRepository: {} as never,
-        staticClients: [],
-        registrationMode: 'public',
-        adminClientIds: new Set()
-    });
+                        status: 403,
+                        issues: null,
+                        denial: {
+                            code: 'auth-logout-authority-differs',
+                            message: 'Auth logout authority differs',
+                            details: null
+                        },
+                        retry: null
+                    }))
+            }) as never,
+            authUserRepository: {} as never
+        })
+    );
 
     const response = await app.request(`/api/auth/logout/requests/${REQUEST_ID}`, {
         method: 'POST',

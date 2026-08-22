@@ -2,14 +2,13 @@ import assert from 'node:assert/strict';
 
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
-import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
 import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { constructApiV1Runtime, type ApiV1RuntimeConstructionOperations, type CreateApiV1RuntimeInput } from '../../src/composition/create-api-v1-runtime.ts';
-import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
     const events: string[] = [];
@@ -23,13 +22,14 @@ Deno.test('runtime construction preserves the owned startup sequence', () => {
         'begin-expiry-generation',
         'mutation',
         'rtc',
-        'topology',
         'register:rtc-stop',
         'configure-ws',
         'resource-expiry',
         'runtime-state-expiry',
         'middleware',
         'attach-replay',
+        'scalar-worker',
+        'register:scalar-stop',
         'presence-reconciliation',
         'selectors',
         'require-runtime'
@@ -51,7 +51,6 @@ Deno.test('runtime construction stops at a synchronous ownership failure', () =>
         'begin-expiry-generation',
         'mutation',
         'rtc',
-        'topology',
         'register:rtc-stop',
         'configure-ws',
         'resource-expiry',
@@ -60,16 +59,13 @@ Deno.test('runtime construction stops at a synchronous ownership failure', () =>
     ]);
 });
 
-const MUTATION_RUNTIME = {
-    groupFormationMetrics: { rttMutation: {} }
-} as ApiV1MutationRuntime;
+const MUTATION_RUNTIME = {} as ApiV1MutationRuntime;
 const SHARED_RUNTIME = {
     qboxEngine: { wake: () => {} },
     appClientInboxService: {},
-    topologyInboxService: {}
+    appGroupInboxService: {}
 } as RallarMiddlewareRuntime;
 const COMPLETE_RUNTIME = {} as ApiV1Runtime;
-const TOPOLOGY_SERVICES = {} as ApiV1TopologyServices;
 
 function createInput(events: string[]): CreateApiV1RuntimeInput {
     return {
@@ -85,21 +81,19 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         nowEpochMs: () => 1_000,
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
+        clientFormationDamping: 'damped',
         groupCapacity: { defaultMaxMembers: 10 },
         groupStateDissemination: 'delta-primary',
         createGroupFormationTopologyIntent: (outboxQueueReader) => ({
+            damping: 'damped',
             outboxQueueReader,
-            recomputeDebounceMs: 0
+            recomputeDebounceMs: 250
         }),
-        databasePubSub: { mode: 'disabled' },
+        databasePubSubMode: 'disabled',
+        databaseNotification: null,
         rtcTopologyReplayMode: 'disabled',
         adminClientIds: ['admin'],
-        rtcTopologyOptions: {},
-        rttRefinementGateConfig: {
-            minIntervalMs: 0,
-            vivaldiDeltaThresholdMs: 0
-        },
-        crdtPolicies: undefined,
+        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {
             inbox: toResilienceDto(),
             outbox: toResilienceDto(),
@@ -114,8 +108,8 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
                     startRuntimeStateExpiryEviction: () => Promise.resolve(0)
                 };
             },
-            register: () => {
-                events.push('register:rtc-stop');
+            register: (stop) => {
+                events.push(stop === RTC_STOP ? 'register:rtc-stop' : 'register:scalar-stop');
                 return () => {};
             },
             stop: () => Promise.resolve()
@@ -124,6 +118,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
 }
 
 const RTC_STOP = () => Promise.resolve();
+const SCALAR_STOP = () => {};
 
 function createOperations(
     events: string[],
@@ -157,16 +152,16 @@ function createOperations(
                 stop: RTC_STOP
             };
         },
-        createTopologyServices: () => {
-            record('topology');
-            return TOPOLOGY_SERVICES;
-        },
         configureWsRuntimeStores: () => record('configure-ws'),
         startResourceInboxExpiry: () => record('resource-expiry'),
         startRuntimeStateExpiry: () => record('runtime-state-expiry'),
         createMiddleware: () => {
             record('middleware');
             return SHARED_RUNTIME;
+        },
+        createScalarRecomputeWorker: () => {
+            record('scalar-worker');
+            return { stop: SCALAR_STOP, firstRun: Promise.resolve(0) };
         },
         startPresenceReconciliation: () => {
             record('presence-reconciliation');

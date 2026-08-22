@@ -60,7 +60,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
             profileName: 'dev',
             environmentSource: {},
             secretsSource: {
-                authenticationCredentialSecret: 'development-auth-secret'
+                authenticationCredentialSecret: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
             },
             expected: ['pglite-memory', 'local', 'local', false]
         },
@@ -83,7 +83,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
             profileName: 'prod-in-memory',
             environmentSource: {},
             secretsSource: {
-                authenticationCredentialSecret: 'hosted-memory-auth-secret'
+                authenticationCredentialSecret: CONFIGURATION_SECRET_SENTINELS.authenticationCredentialSecret
             },
             expected: ['pglite-memory', 'local', 'local', false]
         }
@@ -465,6 +465,22 @@ Deno.test('configuration decoder aggregates deterministic issues from every sour
             ['invariant', 'topology.queueResilience.initialRate']
         ]
     );
+});
+
+Deno.test('configuration decoder rejects weak authentication credentials in every profile', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.secretsSource = {
+        ...CONFIGURATION_SECRET_SENTINELS,
+        authenticationCredentialSecret: 'too-short'
+    };
+
+    const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+    assert.equal(
+        error.issues.some((issue) => issue.path === 'authentication.credentialSecret' && issue.code === 'auth-secret-strength'),
+        true
+    );
+    assert.equal(error.toSafeString().includes('too-short'), false);
 });
 
 Deno.test('configuration decoder never retains or renders secret values in failures', () => {

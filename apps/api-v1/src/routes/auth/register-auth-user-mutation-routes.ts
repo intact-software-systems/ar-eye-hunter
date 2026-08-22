@@ -10,17 +10,17 @@ import { toApiMutationFailureResponse, toApiMutationRateLimitResponse } from '..
 import type { ConfigRouteDependencies } from '../config-route.ts';
 import { readAuthMutationRequest, requireAuthMutationResult, toJsonResponse } from './auth-mutation-route-support.ts';
 
-const AUTH_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const LOGIN_IP_RATE_LIMIT = new RateLimiterPolicy(
-    60_000,
-    readPositiveIntegerEnv('RALLAR_LOGIN_IP_RATE_LIMIT', 30)
-);
-const LOGIN_USER_RATE_LIMIT = new RateLimiterPolicy(
-    60_000,
-    readPositiveIntegerEnv('RALLAR_LOGIN_USER_RATE_LIMIT', 5)
-);
-const REGISTER_IP_RATE_LIMIT = new RateLimiterPolicy(60_000, 20);
-const REGISTER_USER_RATE_LIMIT = new RateLimiterPolicy(60_000, 5);
+interface AuthUserRouteRateLimitPolicies {
+    readonly loginIp: RateLimiterPolicy;
+    readonly loginUsername: RateLimiterPolicy;
+    readonly registrationIp: RateLimiterPolicy;
+    readonly registrationUsername: RateLimiterPolicy;
+}
+
+interface AuthUserRouteRuntime {
+    readonly dependencies: ConfigRouteDependencies;
+    readonly rateLimits: AuthUserRouteRateLimitPolicies;
+}
 
 interface RegisterUserThroughAppInboxInput {
     readonly context: Context;
@@ -33,24 +33,28 @@ export function registerAuthUserMutationRoutes(
     app: Hono,
     dependencies: ConfigRouteDependencies
 ): void {
+    const runtime = {
+        dependencies,
+        rateLimits: toAuthUserRouteRateLimitPolicies(dependencies.authentication.rateLimits)
+    };
     app.post(
         '/api/auth/login/requests/:requestId',
-        (context) => issueLoginResponse(context, dependencies)
+        (context) => issueLoginResponse(context, runtime)
     );
     app.post(
         '/api/auth/register/requests/:requestId',
-        (context) => registerUserResponse(context, dependencies)
+        (context) => registerUserResponse(context, runtime)
     );
 }
 
 async function issueLoginResponse(
     context: Context,
-    dependencies: ConfigRouteDependencies
+    runtime: AuthUserRouteRuntime
 ): Promise<Response> {
     try {
         const clientKey = readRequestClientKey(context.req);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
-            readRateLimiter('auth-login-ip', clientKey, LOGIN_IP_RATE_LIMIT),
+            readRateLimiter('auth-login-ip', clientKey, runtime.rateLimits.loginIp),
             async () => {
                 const { requestId, body } = await readAuthMutationRequest(context);
                 const loginRequest = body as LoginRequest;
@@ -58,17 +62,21 @@ async function issueLoginResponse(
                     readRateLimiter(
                         'auth-login-user',
                         `${clientKey}:${loginRequest.username ?? ''}`,
-                        LOGIN_USER_RATE_LIMIT
+                        runtime.rateLimits.loginUsername
                     ),
-                    () => issueLoginSession(requestId, loginRequest, dependencies),
+                    () => issueLoginSession(requestId, loginRequest, runtime.dependencies),
                     toApiMutationRateLimitResponse(
                         context,
                         'Too many login attempts for this user',
-                        60_000
+                        runtime.dependencies.authentication.rateLimits.windowMs
                     )
                 );
             },
-            toApiMutationRateLimitResponse(context, 'Too many login attempts', 60_000)
+            toApiMutationRateLimitResponse(
+                context,
+                'Too many login attempts',
+                runtime.dependencies.authentication.rateLimits.windowMs
+            )
         );
     }
     catch (error) {
@@ -87,7 +95,7 @@ async function issueLoginSession(
     const loginResponse = await apiLoginService.login({
         request,
         userRepository: dependencies.authUserRepository,
-        staticClients: dependencies.staticClients
+        staticClients: dependencies.authentication.staticClients
     });
     if (!loginResponse) {
         return toApiMutationFailureResponse(
@@ -102,19 +110,19 @@ async function issueLoginSession(
             clientId: loginResponse.clientId,
             username: loginResponse.username,
             authority: loginResponse.authority,
-            ttlMs: AUTH_SESSION_TTL_MS
+            ttlMs: dependencies.authentication.sessionTtlMs
         })
     ));
 }
 
 async function registerUserResponse(
     context: Context,
-    dependencies: ConfigRouteDependencies
+    runtime: AuthUserRouteRuntime
 ): Promise<Response> {
     try {
         const clientKey = readRequestClientKey(context.req);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
-            readRateLimiter('auth-register-ip', clientKey, REGISTER_IP_RATE_LIMIT),
+            readRateLimiter('auth-register-ip', clientKey, runtime.rateLimits.registrationIp),
             async () => {
                 const { requestId, body } = await readAuthMutationRequest(context);
                 const request = body as RegisterRequest;
@@ -122,23 +130,27 @@ async function registerUserResponse(
                     readRateLimiter(
                         'auth-register-user',
                         `${clientKey}:${request.username ?? ''}`,
-                        REGISTER_USER_RATE_LIMIT
+                        runtime.rateLimits.registrationUsername
                     ),
                     () =>
                         registerUserThroughAppInbox({
                             context,
                             requestId,
                             request,
-                            dependencies
+                            dependencies: runtime.dependencies
                         }),
                     toApiMutationRateLimitResponse(
                         context,
                         'Too many registration attempts for this user',
-                        60_000
+                        runtime.dependencies.authentication.rateLimits.windowMs
                     )
                 );
             },
-            toApiMutationRateLimitResponse(context, 'Too many registration attempts', 60_000)
+            toApiMutationRateLimitResponse(
+                context,
+                'Too many registration attempts',
+                runtime.dependencies.authentication.rateLimits.windowMs
+            )
         );
     }
     catch (error) {
@@ -158,7 +170,7 @@ async function registerUserThroughAppInbox(
             await input.dependencies.appAuthInbox.registerUser({
                 requestId: input.requestId,
                 request: input.request,
-                staticClients: input.dependencies.staticClients
+                staticClients: input.dependencies.authentication.staticClients
             })
         ),
         201
@@ -169,31 +181,31 @@ async function requireRegistrationAdminIfNeeded(
     req: { header(name: string): string | undefined; },
     dependencies: ConfigRouteDependencies
 ): Promise<void> {
-    if (dependencies.registrationMode !== 'admin') {
+    if (dependencies.authentication.registrationMode !== 'admin') {
         return;
     }
     const authSession = await dependencies.requireApiAuthSession(req);
-    if (!dependencies.adminClientIds.has(authSession.clientId)) {
+    if (!dependencies.authentication.adminClientIds.includes(authSession.clientId)) {
         throw authorizationDenied('Forbidden: admin auth session required to register users');
     }
 }
 
-function readPositiveIntegerEnv(name: string, fallback: number): number {
-    try {
-        const raw = Deno.env.get(name)?.trim();
-        if (!raw) {
-            return fallback;
-        }
-        const value = Number(raw);
-        if (!Number.isInteger(value) || value < 1) {
-            throw new Error(`${name} must be a positive integer`);
-        }
-        return value;
-    }
-    catch (error) {
-        if (error instanceof Deno.errors.PermissionDenied) {
-            return fallback;
-        }
-        throw error;
-    }
+function toAuthUserRouteRateLimitPolicies(
+    configuration: ConfigRouteDependencies['authentication']['rateLimits']
+): AuthUserRouteRateLimitPolicies {
+    return {
+        loginIp: new RateLimiterPolicy(configuration.windowMs, configuration.loginIp),
+        loginUsername: new RateLimiterPolicy(
+            configuration.windowMs,
+            configuration.loginUsername
+        ),
+        registrationIp: new RateLimiterPolicy(
+            configuration.windowMs,
+            configuration.registrationIp
+        ),
+        registrationUsername: new RateLimiterPolicy(
+            configuration.windowMs,
+            configuration.registrationUsername
+        )
+    };
 }

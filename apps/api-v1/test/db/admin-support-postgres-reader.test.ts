@@ -1,7 +1,7 @@
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import assert from 'node:assert/strict';
-import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 Deno.test('PSqlAdminSupportReader reads active queue and result rows by explicit QueueBox key', async () => {
     await withPGliteSql(async (sql) => {
@@ -122,11 +122,11 @@ async function seedQueueRows(sql: PGliteSql): Promise<void> {
 async function withPGliteSql(
     fn: (sql: PGliteSql) => Promise<void>
 ): Promise<void> {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     try {
-        await fn(sql);
+        await fn(lifecycle.database);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 }

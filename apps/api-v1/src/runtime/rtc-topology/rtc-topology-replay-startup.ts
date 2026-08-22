@@ -8,10 +8,10 @@ import {
     type RtcTopologyReplayPort
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
 
-import type { RtcTopologyReplayMode } from './rtc-topology-replay-config.ts';
+import type { ApiV1TopologyReplayConfiguration } from '../../configuration/api-v1-configuration.ts';
 
 interface ApiRtcTopologyReplayStartupOptions {
-    readonly mode: RtcTopologyReplayMode;
+    readonly mode: ApiV1TopologyReplayConfiguration['mode'];
     readonly consumerStreamId: string;
     readonly repository: RtcTopologyReplayPort;
     readonly diagnostics?: RtcTopologyReplayDiagnosticsSink;

@@ -4,15 +4,17 @@ import {
     isRtcTopologyPublicationOutboxEntry
 } from '@shared-server/rallar-system/topology/replay/is-rtc-topology-publication-outbox-entry.ts';
 
+import type { ApiV1DatabaseConfiguration } from '../../configuration/api-v1-configuration.ts';
+import type { ApiV1DatabaseNotificationPort } from '../../db/api-v1-database-lifecycle.ts';
 import {
     createApiV1QueuePubSubBridge,
-    queuePubSubDeliveryForConfig,
+    queuePubSubDeliveryForMode,
     shouldInstallQueuePubSubBridge
 } from '../../db/api-v1-queue-pubsub-bridge.ts';
-import type { ApiV1DatabasePubSubConfig } from '../../db/database-pubsub-config.ts';
 
 interface CreateApiRtcTopologyQueuePubSubBridgeInput {
-    readonly config: ApiV1DatabasePubSubConfig;
+    readonly mode: ApiV1DatabaseConfiguration['pubSub'];
+    readonly notification: ApiV1DatabaseNotificationPort | null;
     readonly channel: string;
     readonly publisherId: string;
     readonly timing: RallarTimingSink;
@@ -24,14 +26,18 @@ type ApiRtcTopologyQueuePubSubBridgeOptions = Omit<InstallQueueBoxPubSubBridgeOp
 export function createApiRtcTopologyQueuePubSubBridge(
     input: CreateApiRtcTopologyQueuePubSubBridgeInput
 ): ApiRtcTopologyQueuePubSubBridgeOptions | undefined {
-    if (!shouldInstallQueuePubSubBridge(input.config)) {
+    if (!shouldInstallQueuePubSubBridge(input.mode)) {
         return undefined;
     }
     return {
-        bridge: createApiV1QueuePubSubBridge(input.config, input.publisherId),
+        bridge: createApiV1QueuePubSubBridge(
+            input.mode,
+            input.publisherId,
+            input.notification
+        ),
         channel: input.channel,
         publisherId: input.publisherId,
-        delivery: queuePubSubDeliveryForConfig(input.config),
+        delivery: queuePubSubDeliveryForMode(input.mode),
         timing: input.timing,
         onValidatedOutboxKeyReceived: (entry) => {
             if (isRtcTopologyPublicationOutboxEntry(entry)) {

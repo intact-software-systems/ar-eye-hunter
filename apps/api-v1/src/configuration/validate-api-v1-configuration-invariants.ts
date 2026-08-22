@@ -128,6 +128,16 @@ export function validateApiV1ConfigurationInvariants(
             'PGlite evidence publication requires a PGlite database mode.'
         );
     }
+    if (
+        collector.isValid('authentication.credentialSecret') &&
+        configuration.authentication.credentialSecret.length < 32
+    ) {
+        collector.invariant(
+            'authentication.credentialSecret',
+            'auth-secret-strength',
+            'Authentication credential secret does not meet the required strength policy.'
+        );
+    }
     if (configuration.productionHardening) {
         validateProductionHardening(collector, configuration);
     }
@@ -204,13 +214,6 @@ function validateProductionHardening(
             'authentication.adminClientIds',
             'hardening-non-demo-admins',
             'Production hardening requires at least one non-demo administrator identity.'
-        );
-    }
-    if (configuration.authentication.credentialSecret.length < 32) {
-        collector.invariant(
-            'authentication.credentialSecret',
-            'hardening-stable-auth-secret',
-            'Production hardening requires a stable credential secret of at least 32 characters.'
         );
     }
     if (configuration.ice.mode !== 'metered') {

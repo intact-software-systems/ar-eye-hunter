@@ -35,6 +35,7 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
+import type { GroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 
 export type GroupStateRouteService = Pick<
     CachedGroupStateService,
@@ -275,6 +276,8 @@ export interface GroupStateRouteDependencies {
         request: GroupStateRouteRequest
     ) => Promise<GroupStateRouteAuthSession>;
     readonly processGroupAppInbox: ProcessGroupAppInbox;
+    readonly groupAdmissionQuota: GroupAdmissionQuota;
+    readonly strictReadAuthorization: boolean;
     readonly hydrateStateSyncSnapshotCaches: (
         input: StateSyncCacheHydrationInput
     ) => Promise<StateSyncCacheHydrationResult>;

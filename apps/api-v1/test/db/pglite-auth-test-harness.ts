@@ -4,8 +4,8 @@ import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/per
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import assert from 'node:assert/strict';
-import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 export const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
@@ -14,12 +14,12 @@ const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
 export async function withPGliteSql(
     fn: (sql: PGliteSql) => Promise<void>
 ): Promise<void> {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     try {
-        await fn(sql);
+        await fn(lifecycle.database);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 }
 

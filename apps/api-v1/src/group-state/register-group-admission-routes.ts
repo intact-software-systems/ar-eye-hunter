@@ -9,7 +9,6 @@ import type {
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest
 } from '@shared/api/state-types.ts';
-import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
 import { readGroupStateRouteRequest } from './read-group-state-route-request.ts';
@@ -44,7 +43,11 @@ function registerJoinGroupRoute(
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
-                requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
+                dependencies.groupAdmissionQuota.require({
+                    family: 'join-admission',
+                    groupRef: { ...scope, groupId },
+                    principalId: authSession.clientId
+                });
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(
@@ -81,7 +84,11 @@ function registerAcceptGroupInviteRoute(
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const groupId = context.req.param('groupId');
-                requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
+                dependencies.groupAdmissionQuota.require({
+                    family: 'join-admission',
+                    groupRef: { ...scope, groupId },
+                    principalId: authSession.clientId
+                });
                 const written = toGroupStateResponse({
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(

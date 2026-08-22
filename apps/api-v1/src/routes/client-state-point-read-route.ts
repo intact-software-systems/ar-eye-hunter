@@ -19,6 +19,7 @@ interface ClientStatePointRouteDependencies {
     readonly requireAuthSession: (
         request: { header(name: string): string | undefined; }
     ) => Promise<Readonly<{ clientId: string; }>>;
+    readonly strictReadAuthorization: boolean;
     readonly hydrate: (snapshots: readonly ClientSnapshot[]) => void;
     readonly toErrorResponse: (context: Context, error: Error) => Response;
 }
@@ -107,10 +108,10 @@ export function readCurrentClientSnapshot(
 
 async function assertSelfWhenStrict(
     context: Context,
-    dependencies: Pick<ClientStatePointRouteDependencies, 'requireAuthSession'>,
+    dependencies: Pick<ClientStatePointRouteDependencies, 'requireAuthSession' | 'strictReadAuthorization'>,
     principalId: string
 ): Promise<boolean> {
-    if (!isStrictReadAuthEnabled()) {
+    if (!dependencies.strictReadAuthorization) {
         return false;
     }
     const authSession = await dependencies.requireAuthSession(context.req);
@@ -120,12 +121,4 @@ async function assertSelfWhenStrict(
         );
     }
     return true;
-}
-
-function isStrictReadAuthEnabled(): boolean {
-    const value = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    if (value === undefined || value.trim() === '') {
-        return false;
-    }
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }

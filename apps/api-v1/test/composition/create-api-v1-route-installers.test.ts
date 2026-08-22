@@ -143,9 +143,41 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used'))
         },
         authUserRepository: new AuthUserRepository(new UnusedRuntimeStateRepository()),
-        staticClients: [],
-        authRegistrationMode: 'public',
-        readEnv: () => undefined,
+        authentication: {
+            adminClientIds: ['admin'],
+            agentSessionTicketTtlMs: 60_000,
+            rateLimits: {
+                windowMs: 60_000,
+                loginIp: 30,
+                loginUsername: 5,
+                registrationIp: 20,
+                registrationUsername: 5,
+                webSocketTicket: 30
+            },
+            registrationMode: 'public',
+            sessionTtlMs: 2_592_000_000,
+            staticClients: [],
+            webSocketTicketTtlMs: 30_000
+        },
+        operatorToken: { mode: 'disabled', allowedClientIds: [], ttlMs: 86_400_000 },
+        publicConfiguration: {
+            apiBaseUrl: 'http://localhost:8080',
+            wsBaseUrl: 'ws://localhost:8080',
+            endpoints: { createWs: '/api/ws/:id' }
+        },
+        ice: {
+            mode: 'local',
+            cacheTtlMs: 300_000,
+            rateLimit: { windowMs: 60_000, requests: 20 }
+        },
+        groupAdmission: {
+            windowMs: 60_000,
+            joinPrincipal: 60,
+            joinGroup: 600,
+            presencePrincipal: 120,
+            presenceGroup: 1_200
+        },
+        strictReadAuthorization: false,
         nowEpochMs: () => 1_000,
         createTokenId: () => 'token-id',
         createWsAuthRequestFacts: () => ({

@@ -3,6 +3,8 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
+import { readApiV1Configuration } from '@api-v1/src/configuration/read-api-v1-configuration.ts';
+import { createApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
 import { assertRelicProductionEnv } from '@shared-server/http/production-env-hardening.ts';
@@ -27,11 +29,33 @@ assertRelicProductionEnv(Deno.env);
 const app: Hono = new Hono();
 const port = Number(Deno.env.get('PORT') ?? '8090');
 const relicRestAuthMode = readRelicRestAuthMode(Deno.env);
-const rallar = createDefaultRallarServer({
+const apiConfiguration = await readApiV1Configuration({
+    environment: Deno.env,
+    readTextFile: Deno.readTextFile,
+    defaultsUrl: new URL('../../api-v1/resources/configuration/defaults-config.json', import.meta.url),
+    profileUrls: {
+        dev: new URL('../../api-v1/resources/configuration/dev-config.json', import.meta.url),
+        prod: new URL('../../api-v1/resources/configuration/prod-config.json', import.meta.url),
+        'prod-in-memory': new URL('../../api-v1/resources/configuration/prod-in-memory-config.json', import.meta.url)
+    },
+    staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url)
+});
+const databaseLifecycle = await createApiV1DatabaseLifecycle({
+    database: apiConfiguration.database,
+    pgliteEvidence: apiConfiguration.blackBox.pgliteEvidence
+});
+const rallar = await createDefaultRallarServer({
+    configuration: apiConfiguration,
+    databaseLifecycle,
     ws: {
         allowImplicitUserTopics: false,
         defaultFanout: 'live-only'
     }
+});
+addEventListener('unload', () => {
+    void rallar.runtime.backgroundTasks.stop().catch((error) => {
+        console.error('Failed to stop embedded API-v1 resources:', error);
+    });
 });
 const relicAiExpeditionEnv = readRelicAiExpeditionEnv(Deno.env);
 const relicGame = await installRelicHunterGame(rallar, {

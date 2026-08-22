@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 
+import { Either } from '@shared/resilience/Either.ts';
+
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
@@ -14,14 +16,13 @@ import {
     createGroupStateRouteEvent,
     createGroupStateRouteSnapshot,
     createGroupStateRouteTestRuntime,
-    createLiveGroupStateRouteAuthSession,
-    createOwnerGroupStateRouteSnapshot,
-    createRejectingGroupStateRouteTestRuntime,
+    createPredecessorGroupStateRouteAuthSession,
+    createPredecessorGroupStateRouteSnapshot,
+    createPredecessorGroupStateRouteTestRuntime,
     postGroupStateMutation,
     postGroupStateMutationWithHeaders,
     TEST_GROUP_SCOPE,
-    toGroupStateWritten,
-    withStrictGroupStateRouteReadAuth
+    toGroupStateWritten
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
@@ -229,12 +230,12 @@ Deno.test('group join-code response omits its event while preserving response fi
         kind: 'join-code',
         written: {
             status: 'ok',
-            result: {
+            result: Either.ofRight({
                 joinCode: 'next-code',
                 expiresAtEpochMs: 2000,
                 snapshot,
                 event: createGroupStateRouteEvent('join-code-event')
-            }
+            })
         }
     });
     assert.strictEqual(response.snapshot, snapshot);
@@ -298,106 +299,102 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
     assert.deepEqual(enqueued, EXPECTED_ADMISSION_COMMANDS);
 });
 Deno.test('group join route enqueues explicit join intent with authenticated actor', async () => {
-    await withStrictGroupStateRouteReadAuth(false, async () => {
-        const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
-        const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
-        const { app } = createRejectingGroupStateRouteTestRuntime({
-            session: createLiveGroupStateRouteAuthSession('alice'),
-            groupService: {},
-            processGroupAppInbox: captureGroupWrite(enqueued, toGroupStateWritten(snapshot))
-        });
-        const response = await postGroupStateMutationWithHeaders(app, `${API_BASE}/join`, {
-            headers: AUTHENTICATED_HEADERS,
-            body: {
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+        session: createPredecessorGroupStateRouteAuthSession('alice'),
+        groupService: {},
+        processGroupAppInbox: capturePredecessorGroupWrite(enqueued, toGroupStateWritten(snapshot))
+    });
+    const response = await postGroupStateMutationWithHeaders(app, `${API_BASE}/join`, {
+        headers: AUTHENTICATED_HEADERS,
+        body: {
+            inviteToken: 'invite-1',
+            joinCode: 'code-1',
+            requestId: 'group-route-join-request-1'
+        }
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), snapshot);
+    assert.equal(enqueued.length, 1);
+    assert.deepEqual(enqueued[0], {
+        type: AppInboxType.GROUP_JOIN,
+        topicId: AppInboxType.GROUP_JOIN,
+        resourceId: 'group-route-join-request-1',
+        contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
+        senderId: 'alice',
+        data: {
+            scope: TEST_GROUP_SCOPE,
+            groupId: 'room-1',
+            request: {
                 inviteToken: 'invite-1',
                 joinCode: 'code-1',
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
                 requestId: 'group-route-join-request-1'
             }
-        });
-        assert.equal(response.status, 200);
-        assert.deepEqual(await response.json(), snapshot);
-        assert.equal(enqueued.length, 1);
-        assert.deepEqual(enqueued[0], {
-            type: AppInboxType.GROUP_JOIN,
-            topicId: AppInboxType.GROUP_JOIN,
-            resourceId: 'group-route-join-request-1',
+        }
+    });
+});
+Deno.test(
+    'group invite routes enqueue safe invite workflows with authenticated actors',
+    verifyGroupInviteRoutes
+);
+Deno.test('group join-code route enqueues rotation workflow with authenticated actor', async () => {
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+    const responseBody = { joinCode: 'code-1', expiresAtEpochMs: 2_000, snapshot };
+    const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+        session: createPredecessorGroupStateRouteAuthSession('alice'),
+        groupService: {},
+        processGroupAppInbox: capturePredecessorGroupWrite(enqueued, {
+            status: 'ok',
+            result: Either.ofRight({ ...responseBody, event: null })
+        })
+    });
+    const response = await postGroupStateMutationWithHeaders(
+        app,
+        `${API_BASE}/join-code/rotate`,
+        {
+            headers: AUTHENTICATED_HEADERS,
+            body: {
+                joinCode: 'code-1',
+                expiresAtEpochMs: 2_000,
+                requestId: 'group-route-rotate-code-1'
+            }
+        }
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), responseBody);
+    assert.deepEqual(enqueued, [
+        {
+            type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            resourceId: 'group-route-rotate-code-1',
             contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
             senderId: 'alice',
             data: {
                 scope: TEST_GROUP_SCOPE,
                 groupId: 'room-1',
                 request: {
-                    inviteToken: 'invite-1',
-                    joinCode: 'code-1',
-                    actorPrincipalId: 'alice',
-                    actorSessionId: 'alice-session',
-                    requestId: 'group-route-join-request-1'
-                }
-            }
-        });
-    });
-});
-Deno.test(
-    'group invite routes enqueue safe invite workflows with authenticated actors',
-    () => withStrictGroupStateRouteReadAuth(false, verifyGroupInviteRoutes)
-);
-Deno.test('group join-code route enqueues rotation workflow with authenticated actor', async () => {
-    await withStrictGroupStateRouteReadAuth(false, async () => {
-        const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
-        const responseBody = { joinCode: 'code-1', expiresAtEpochMs: 2_000, snapshot };
-        const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
-        const { app } = createRejectingGroupStateRouteTestRuntime({
-            session: createLiveGroupStateRouteAuthSession('alice'),
-            groupService: {},
-            processGroupAppInbox: captureGroupWrite(enqueued, {
-                status: 'ok',
-                result: { ...responseBody, event: null }
-            })
-        });
-        const response = await postGroupStateMutationWithHeaders(
-            app,
-            `${API_BASE}/join-code/rotate`,
-            {
-                headers: AUTHENTICATED_HEADERS,
-                body: {
                     joinCode: 'code-1',
                     expiresAtEpochMs: 2_000,
+                    actorPrincipalId: 'alice',
+                    actorSessionId: 'alice-session',
                     requestId: 'group-route-rotate-code-1'
                 }
             }
-        );
-        assert.equal(response.status, 200);
-        assert.deepEqual(await response.json(), responseBody);
-        assert.deepEqual(enqueued, [
-            {
-                type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
-                topicId: AppInboxType.GROUP_JOIN_CODE_ROTATE,
-                resourceId: 'group-route-rotate-code-1',
-                contextId: 'application=app-1:workspace=workspace-1:group=room-1:caller=alice',
-                senderId: 'alice',
-                data: {
-                    scope: TEST_GROUP_SCOPE,
-                    groupId: 'room-1',
-                    request: {
-                        joinCode: 'code-1',
-                        expiresAtEpochMs: 2_000,
-                        actorPrincipalId: 'alice',
-                        actorSessionId: 'alice-session',
-                        requestId: 'group-route-rotate-code-1'
-                    }
-                }
-            }
-        ]);
-    });
+        }
+    ]);
 });
 
 async function verifyGroupInviteRoutes(): Promise<void> {
-    const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
-    const { app } = createRejectingGroupStateRouteTestRuntime({
-        session: createLiveGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+        session: createPredecessorGroupStateRouteAuthSession('alice'),
         groupService: {},
-        processGroupAppInbox: captureGroupWrite(enqueued, toGroupStateWritten(snapshot))
+        processGroupAppInbox: capturePredecessorGroupWrite(enqueued, toGroupStateWritten(snapshot))
     });
     const createResponse = await postGroupStateMutationWithHeaders(app, `${API_BASE}/invites/bob`, {
         headers: AUTHENTICATED_HEADERS,
@@ -476,7 +473,7 @@ function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[
     ]);
 }
 
-function captureGroupWrite(
+function capturePredecessorGroupWrite(
     enqueued: AuthenticatedGroupMutationEnqueue[],
     durableResult: GroupStateInboxDurableResult
 ): ProcessGroupAppInbox {

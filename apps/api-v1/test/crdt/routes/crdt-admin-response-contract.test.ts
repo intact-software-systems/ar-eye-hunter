@@ -30,7 +30,7 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
-import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {

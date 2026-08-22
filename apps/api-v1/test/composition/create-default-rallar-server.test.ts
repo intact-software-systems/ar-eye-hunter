@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 
 import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
-import { getSql } from '../../src/db/db.ts';
+import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
+import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from '../db/api-v1-test-pglite-database.ts';
 
 Deno.test({
-    name: 'default server constructs the complete PGlite runtime from operational configuration',
+    name: 'default server constructs the complete runtime from explicit operational configuration',
     sanitizeOps: false,
     sanitizeResources: false,
     fn: async () => {
-        await withDefaultServerEnvironment(async () => {
-            const server = createDefaultRallarServer({
+        const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+        try {
+            const server = await createDefaultRallarServer({
+                configuration: decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()),
+                databaseLifecycle,
                 ws: {
                     allowImplicitUserTopics: false,
                     defaultFanout: 'live-only'
@@ -19,46 +24,11 @@ Deno.test({
             assert.ok(server.runtime.authSessionRepository);
             assert.ok(server.runtime.groupStateService);
             assert.ok(server.runtime.backgroundTasks);
-            try {
-                await server.runtime.readiness;
-            }
-            finally {
-                await server.runtime.backgroundTasks.stop();
-                const database = getSql();
-                if ('close' in database && typeof database.close === 'function') {
-                    await database.close();
-                }
-            }
-        });
+            await server.runtime.readiness;
+            await server.runtime.backgroundTasks.stop();
+        }
+        finally {
+            await databaseLifecycle.close();
+        }
     }
 });
-
-async function withDefaultServerEnvironment(run: () => Promise<void>): Promise<void> {
-    const values = {
-        RALLAR_SQL_BACKEND: 'pglite-memory',
-        RALLAR_PGLITE_DATA_DIR: 'memory://',
-        RALLAR_PGLITE_SCHEMA_INIT: 'auto',
-        RALLAR_DB_PUBSUB: 'local',
-        RALLAR_AUTH_CREDENTIAL_SECRET: 'default-server-test-credential-secret',
-        RALLAR_TIMING_LOGS: 'false'
-    } as const;
-    const previous = new Map(
-        Object.keys(values).map((name) => [name, Deno.env.get(name)])
-    );
-    try {
-        for (const [name, value] of Object.entries(values)) {
-            Deno.env.set(name, value);
-        }
-        await run();
-    }
-    finally {
-        for (const [name, value] of previous) {
-            if (value === undefined) {
-                Deno.env.delete(name);
-            }
-            else {
-                Deno.env.set(name, value);
-            }
-        }
-    }
-}

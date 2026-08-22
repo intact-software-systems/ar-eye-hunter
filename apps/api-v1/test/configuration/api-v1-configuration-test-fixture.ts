@@ -1,5 +1,5 @@
 export const CONFIGURATION_SECRET_SENTINELS = {
-    authenticationCredentialSecret: 'auth-secret-sentinel-8de3f40c',
+    authenticationCredentialSecret: 'auth-secret-sentinel-8de3f40c-at-least-32',
     blackBoxOperatorTokenSecret: 'operator-secret-sentinel-325c7e21',
     databaseUrl: 'postgres://configuration-user:database-secret-sentinel@database.test/rallar',
     meteredApiKey: 'metered-secret-sentinel-2c51c947'

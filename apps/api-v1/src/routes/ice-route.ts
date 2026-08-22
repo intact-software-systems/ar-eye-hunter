@@ -4,14 +4,9 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { ApiV1IceConfiguration, ApiV1MeteredIceConfiguration } from '../configuration/api-v1-configuration.ts';
 import * as metered from '../integration/metered-api.ts';
 import { toAuthErrorResponse } from '../services/request-auth-service.ts';
-
-const ICE_RATE_LIMIT = new RateLimiterPolicy(60_000, 20);
-const CACHE_MS = 300_000;
-const ICE_MODES = ['metered', 'local'] as const;
-
-export type IceMode = typeof ICE_MODES[number];
 
 class MeteredIceFetchError extends Error {
     public readonly status: number;
@@ -37,21 +32,34 @@ function toJsonResponse<T>(data: T, status = 200): Response {
     );
 }
 
-const iceConfigCache = new LoanedValue<IceConfig>(
-    readFreshIceConfig,
-    {
-        ttlMs: CACHE_MS,
-        isValid: (value) => value.expiresAtEpochMs > Date.now()
-    }
-);
-
 export interface RegisterIceRoutesInput {
     readonly requireApiAuthSession: (
         request: Readonly<{ header(name: string): string | undefined; }>
     ) => Promise<AuthSession>;
+    readonly configuration: ApiV1IceConfiguration;
+    readonly nowEpochMs: () => number;
+    readonly readMeteredIceCandidates?: (
+        configuration: ApiV1MeteredIceConfiguration
+    ) => Promise<Response>;
 }
 
 export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): void {
+    const rateLimit = new RateLimiterPolicy(
+        input.configuration.rateLimit.windowMs,
+        input.configuration.rateLimit.requests
+    );
+    const cache = new LoanedValue<IceConfig>(
+        () =>
+            readFreshIceConfig(
+                input.configuration,
+                input.nowEpochMs,
+                input.readMeteredIceCandidates ?? metered.getIceCandidates
+            ),
+        {
+            ttlMs: input.configuration.cacheTtlMs,
+            isValid: (value) => value.expiresAtEpochMs > input.nowEpochMs()
+        }
+    );
     app.get(
         '/api/webrtc/ice',
         async (c) => {
@@ -59,8 +67,8 @@ export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): voi
                 const authSession = await input.requireApiAuthSession(c.req);
 
                 return await RateLimiter.tryToExecuteOrDefault<Response>(
-                    readRateLimiter('webrtc-ice', authSession.clientId, ICE_RATE_LIMIT),
-                    async () => await readIceConfig(),
+                    readRateLimiter('webrtc-ice', authSession.clientId, rateLimit),
+                    async () => await readIceConfig(cache),
                     c.json({ error: 'Too many ICE configuration requests' }, 429)
                 );
             }
@@ -71,9 +79,9 @@ export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): voi
     );
 }
 
-async function readIceConfig(): Promise<Response> {
+async function readIceConfig(cache: LoanedValue<IceConfig>): Promise<Response> {
     try {
-        return toJsonResponse<IceConfig>(await iceConfigCache.get());
+        return toJsonResponse<IceConfig>(await cache.get());
     }
     catch (error) {
         if (error instanceof MeteredIceFetchError) {
@@ -84,14 +92,18 @@ async function readIceConfig(): Promise<Response> {
     }
 }
 
-async function readFreshIceConfig(): Promise<IceConfig> {
-    if (readIceMode() === 'local') {
-        return createLocalIceConfig();
+async function readFreshIceConfig(
+    configuration: ApiV1IceConfiguration,
+    nowEpochMs: () => number,
+    readMeteredIceCandidates: (configuration: ApiV1MeteredIceConfiguration) => Promise<Response>
+): Promise<IceConfig> {
+    if (configuration.mode === 'local') {
+        return createLocalIceConfig(configuration.cacheTtlMs, nowEpochMs());
     }
 
     let res: Response;
     try {
-        res = await metered.getIceCandidates();
+        res = await readMeteredIceCandidates(configuration);
     }
     catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -104,37 +116,19 @@ async function readFreshIceConfig(): Promise<IceConfig> {
     }
 
     const iceServers = (await res.json()) as readonly RTCIceServer[];
-    const expiresAtEpochMs = Date.now() + CACHE_MS;
+    const expiresAtEpochMs = nowEpochMs() + configuration.cacheTtlMs;
 
     return { iceServers, expiresAtEpochMs };
 }
 
-export function readIceMode(
-    env: Readonly<{ get(name: string): string | undefined; }> = Deno.env
-): IceMode {
-    const raw = env.get('RALLAR_ICE_MODE')?.trim().toLowerCase();
-    if (!raw) {
-        return 'metered';
-    }
-
-    if (isIceMode(raw)) {
-        return raw;
-    }
-
-    throw new Error(`RALLAR_ICE_MODE must be one of ${ICE_MODES.join(', ')}`);
-}
-
 export function createLocalIceConfig(
+    cacheTtlMs: number,
     nowEpochMs = Date.now()
 ): IceConfig {
     return {
         iceServers: [],
-        expiresAtEpochMs: nowEpochMs + CACHE_MS
+        expiresAtEpochMs: nowEpochMs + cacheTtlMs
     };
-}
-
-function isIceMode(value: string): value is IceMode {
-    return ICE_MODES.includes(value as IceMode);
 }
 
 function toIceRouteErrorResponse(

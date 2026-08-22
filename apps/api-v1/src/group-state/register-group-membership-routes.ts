@@ -9,7 +9,6 @@ import type {
     UnbanGroupMemberRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
-import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -223,7 +222,11 @@ function registerUpsertSelfGroupMemberRoute(
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const { groupId, principalId } = context.req.param();
-                requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
+                dependencies.groupAdmissionQuota.require({
+                    family: 'join-admission',
+                    groupRef: { ...scope, groupId },
+                    principalId: authSession.clientId
+                });
                 authorization.assertSelfPrincipal(authSession.clientId, principalId);
                 const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
                 const command = toGroupStateCommand({

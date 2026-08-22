@@ -1,4 +1,4 @@
-import { ApiV1ConfigurationError, type ApiV1ConfigurationIssue } from './api-v1-configuration-error.ts';
+import { ApiV1ConfigurationError } from './api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationProfile } from './api-v1-configuration.ts';
 import type {
     ApiV1ConfigurationSourceObject,
@@ -53,13 +53,6 @@ interface EnvironmentSetting {
     ) => void;
 }
 
-const REMOVED_ENVIRONMENT_SETTINGS: Readonly<Record<string, string>> = {
-    ENVIRONMENT: 'profile.name',
-    API_BASE_URL: 'publicApi.apiBaseUrl',
-    RALLAR_GROUP_FORMATION_DAMPING: 'topology.recompute.formationDebounceMs',
-    RALLAR_GROUP_STATE_DISSEMINATION: 'topology.delivery'
-};
-
 const SECRET_SETTING_KEYS = [
     ['DATABASE_URL', 'databaseUrl'],
     ['RALLAR_AUTH_CREDENTIAL_SECRET', 'authenticationCredentialSecret'],
@@ -70,7 +63,6 @@ const SECRET_SETTING_KEYS = [
 export function readApiV1ConfigurationEnvironment(
     environment: ApiV1ConfigurationEnvironment
 ): ApiV1ConfigurationEnvironmentResolution {
-    rejectRemovedEnvironmentSettings(environment);
     const profileName = readProfileName(environment);
     const environmentSource = createEnvironmentOverlay();
     const appliedEnvironmentOverrideNames: string[] = [];
@@ -114,28 +106,6 @@ function readProfileName(
         code: 'invalid-profile-selector',
         message: 'Profile selector must be exactly dev, prod, or prod-in-memory.'
     }]);
-}
-
-function rejectRemovedEnvironmentSettings(
-    environment: ApiV1ConfigurationEnvironment
-): void {
-    const issues: ApiV1ConfigurationIssue[] = [];
-    for (const [name, path] of Object.entries(REMOVED_ENVIRONMENT_SETTINGS)) {
-        if (environment.get(name) !== undefined) {
-            issues.push({
-                source: 'environment',
-                path,
-                environmentName: name,
-                code: name === 'ENVIRONMENT'
-                    ? 'invalid-profile-selector'
-                    : 'removed-environment-setting',
-                message: 'Removed environment setting is not accepted.'
-            });
-        }
-    }
-    if (issues.length > 0) {
-        throw new ApiV1ConfigurationError(issues);
-    }
 }
 
 function createEnvironmentOverlay(): ApiV1ConfigurationEnvironmentOverlay {

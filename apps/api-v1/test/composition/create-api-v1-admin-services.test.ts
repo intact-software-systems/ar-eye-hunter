@@ -102,8 +102,8 @@ function createInput(
 ): CreateApiV1AdminServicesInput {
     return {
         database: createDatabase(),
-        databaseConfig: { sqlBackend: 'pglite-memory' },
-        databasePubSub: { mode: 'local' },
+        databaseMode: 'pglite-memory',
+        databasePubSubMode: 'local',
         nowEpochMs: () => NOW_EPOCH_MS,
         serviceId: 'api-test',
         timing: () => {},

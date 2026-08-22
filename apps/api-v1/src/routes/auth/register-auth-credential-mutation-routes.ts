@@ -17,16 +17,19 @@ import { toApiMutationFailureResponse, toApiMutationRateLimitResponse } from '..
 import type { ConfigRouteDependencies } from '../config-route.ts';
 import { readAuthMutationRequest, requireAuthMutationResult, toJsonResponse } from './auth-mutation-route-support.ts';
 
-const WS_AUTH_TICKET_TTL_MS = 30_000;
-const AGENT_SESSION_TICKET_TTL_MS = 60_000;
-const WS_TICKET_RATE_LIMIT = new RateLimiterPolicy(60_000, 30);
-
 export function registerAuthCredentialMutationRoutes(
     app: Hono,
     dependencies: ConfigRouteDependencies
 ): void {
     registerLogoutRoute(app, dependencies);
-    registerWebSocketTicketRoute(app, dependencies);
+    registerWebSocketTicketRoute(
+        app,
+        dependencies,
+        new RateLimiterPolicy(
+            dependencies.authentication.rateLimits.windowMs,
+            dependencies.authentication.rateLimits.webSocketTicket
+        )
+    );
     registerAgentTicketIssueRoute(app, dependencies);
     registerAgentTicketConsumeRoute(app, dependencies);
 }
@@ -82,30 +85,32 @@ async function logoutResponse(
 
 function registerWebSocketTicketRoute(
     app: Hono,
-    dependencies: ConfigRouteDependencies
+    dependencies: ConfigRouteDependencies,
+    rateLimit: RateLimiterPolicy
 ): void {
     app.post(
         '/api/auth/ws-ticket/requests/:requestId',
-        (context) => webSocketTicketResponse(context, dependencies)
+        (context) => webSocketTicketResponse(context, dependencies, rateLimit)
     );
 }
 
 async function webSocketTicketResponse(
     context: Context,
-    dependencies: ConfigRouteDependencies
+    dependencies: ConfigRouteDependencies,
+    rateLimit: RateLimiterPolicy
 ): Promise<Response> {
     try {
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const { requestId } = await readAuthMutationRequest(context);
         return await RateLimiter.tryToExecuteOrDefault<Response>(
-            readRateLimiter('auth-ws-ticket', authSession.sessionId, WS_TICKET_RATE_LIMIT),
+            readRateLimiter('auth-ws-ticket', authSession.sessionId, rateLimit),
             async () => {
                 return toJsonResponse<WebSocketTicketResponse>(
                     requireAuthMutationResult(
                         await dependencies.appAuthInbox.issueWebSocketTicket({
                             requestId,
                             session: authSession,
-                            ttlMs: WS_AUTH_TICKET_TTL_MS
+                            ttlMs: dependencies.authentication.webSocketTicketTtlMs
                         })
                     )
                 );
@@ -113,7 +118,7 @@ async function webSocketTicketResponse(
             toApiMutationRateLimitResponse(
                 context,
                 'Too many websocket ticket requests',
-                60_000
+                dependencies.authentication.rateLimits.windowMs
             )
         );
     }
@@ -140,7 +145,7 @@ function registerAgentTicketIssueRoute(
                     await dependencies.appAuthInbox.issueAgentSessionTickets({
                         requestId,
                         session: authSession,
-                        ticketTtlMs: AGENT_SESSION_TICKET_TTL_MS,
+                        ticketTtlMs: dependencies.authentication.agentSessionTicketTtlMs,
                         agents: agentIds.map((agentId) => ({ agentId }))
                     })
                 )
