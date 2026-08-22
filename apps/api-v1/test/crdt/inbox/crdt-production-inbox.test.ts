@@ -4,20 +4,15 @@ import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/Postgr
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
-crdt-mutation-command-codec.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
-import { CrdtMutationConflictError } from '@shared-server/rallar-system/crdt/mutation/\
-crdt-mutation-contracts.ts';
+import { CrdtMutationConflictError } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
-decode-crdt-mutation-result.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';

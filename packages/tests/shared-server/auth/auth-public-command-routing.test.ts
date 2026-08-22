@@ -2,24 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
-auth-mutation-service.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
-auth-credential-issuer.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
-app-auth-inbox-service.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 
-import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/\
-auth-mutation-contracts.ts';
+import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 
-import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/\
-capture-auth-mutation-facts.ts';
+import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
-auth-session-repository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';

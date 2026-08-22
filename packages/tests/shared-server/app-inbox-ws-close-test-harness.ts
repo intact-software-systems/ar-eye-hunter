@@ -1,23 +1,17 @@
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
-AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/\
-AuthSessionRepository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
-ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 
-import { AppClientInboxService } from '@shared-server/rallar-system/services/\
-AppClientInboxService.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/\
-AppGroupInboxService.ts';
+import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createClientStateService, type ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService, type GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';

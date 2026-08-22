@@ -1,19 +1,15 @@
 import assert from 'node:assert/strict';
 
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/\
-createStateRepositories.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/\
-group-event-workspace-key.ts';
+import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
+import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import {
     ClientStateEventCollisionError,
     PSqlClientStateEventRepository,
     PSqlGroupStateEventRepository
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
-PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { createGroupStateService, mutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
 

@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 
 import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
-PSqlRuntimeStateRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
-ClientStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { type TopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {
     createClientStateService,

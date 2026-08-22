@@ -1,11 +1,9 @@
-import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/\
-app-admin-inbox-service.ts';
+import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import type {
     CrdtAdminCompactResult,
     CrdtAdminEraseResult
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import type { TopologyReconfigureInboxResult } from '@shared-server/rallar-system/topology/inbox/\
-topology-app-inbox-handler.ts';
+import type { TopologyReconfigureInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import {
     ADMIN_PRUNE_EXPIRED_CATEGORIES,
     type AdminPruneExpiredCategory,

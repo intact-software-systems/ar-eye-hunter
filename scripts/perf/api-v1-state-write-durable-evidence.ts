@@ -13,12 +13,10 @@ import {
     validateClientMutationIdempotencyRecord,
     type ClientMutationIdempotencyRecord
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/\
-group-topology-config-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import { readTopologyConfigMutationRecordBoundary } from '@shared-server/rallar-system/topology/config/mutation/\
-topology-config-mutation-boundary.ts';
+import { readTopologyConfigMutationRecordBoundary } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import type { Sql } from 'postgres';
 
 import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';

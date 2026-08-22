@@ -13,8 +13,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/\
-app-client-inbox-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { AppInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 

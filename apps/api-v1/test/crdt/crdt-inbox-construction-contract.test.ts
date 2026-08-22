@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 
-import type { CreateApiCrdtInboxServiceInput } from '../../src/crdt/\
-create-api-crdt-inbox-service.ts';
+import type { CreateApiCrdtInboxServiceInput } from '../../src/crdt/create-api-crdt-inbox-service.ts';
 
-import type { createApiCrdtInboxFactory } from '../../src/crdt/\
-create-api-crdt-inbox-factory.ts';
+import type { createApiCrdtInboxFactory } from '../../src/crdt/create-api-crdt-inbox-factory.ts';
 
 type IsRequired<T, TKey extends keyof T> = Record<never, never> extends Pick<T, TKey> ? false :
     true;

@@ -1,5 +1,7 @@
-import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/services/\
-mutation-command-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireValue
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type {
     AdminMetricsResetCategory,
     AdminMetricsResetRequest,

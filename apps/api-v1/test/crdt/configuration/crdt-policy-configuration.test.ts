@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 
 import { evaluateRallarCrdtFeaturePolicy, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-log-repository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
 import { readConfiguredCrdtPolicies } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';

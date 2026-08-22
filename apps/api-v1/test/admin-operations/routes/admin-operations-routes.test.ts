@@ -2,10 +2,8 @@ import assert from 'node:assert/strict';
 
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
-auth-session-types.ts';
-import { toUnavailableAppInboxFailure, type AppInboxFailure } from '@shared-server/rallar-system/services/\
-app-inbox-failure.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { toUnavailableAppInboxFailure, type AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';

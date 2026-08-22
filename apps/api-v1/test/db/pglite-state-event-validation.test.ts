@@ -2,8 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/\
-group-event-workspace-key.ts';
+import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';

@@ -3,15 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
-AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/\
-StateEventStore.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
-ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { AppClientInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {
     createClientStateService,

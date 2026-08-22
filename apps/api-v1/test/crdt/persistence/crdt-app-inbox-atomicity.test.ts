@@ -9,23 +9,19 @@ import {
 } from '@shared/crdt/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-mutation-repository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
-create-crdt-mutation-service.ts';
 import {
     CrdtMutationConflictError,
     type CrdtMutationCommand,
     type CrdtMutationComputedWrite,
     type CrdtMutationRepository
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
-crdt-mutation-command-codec.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';

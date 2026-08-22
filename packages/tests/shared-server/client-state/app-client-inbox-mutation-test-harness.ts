@@ -12,8 +12,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/\
-StateEventStore.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { AppClientInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {

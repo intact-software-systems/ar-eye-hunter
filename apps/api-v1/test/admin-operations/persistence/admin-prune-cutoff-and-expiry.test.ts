@@ -1,14 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/\
-p-sql-admin-operations-pruner.ts';
+import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 
-import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/\
-p-sql-admin-prune-repository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 
 import { queueNow } from '../../crdt/crdt-api-test-fixtures.ts';

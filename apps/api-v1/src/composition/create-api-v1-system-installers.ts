@@ -16,8 +16,7 @@ import {
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
-import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/\
-create-crdt-ws-mutation-ingress.ts';
+import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 
 import * as wsRoutes from '../routes/ws-routes.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';

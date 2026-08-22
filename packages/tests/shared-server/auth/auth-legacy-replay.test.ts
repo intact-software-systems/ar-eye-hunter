@@ -4,25 +4,20 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
-auth-mutation-service.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer, type AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 
 import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
-app-auth-inbox-service.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 
-import type { AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/\
-auth-mutation-contracts.ts';
-import { decodeAuthMutationResult } from '@shared-server/rallar-system/auth/mutation/\
-decode-auth-mutation-result.ts';
+import type { AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { decodeAuthMutationResult } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-result.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/\
-auth-session-repository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {

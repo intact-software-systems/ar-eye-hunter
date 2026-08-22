@@ -26,10 +26,8 @@ import {
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { setRtcTopologyOutboxWriteSink } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import { type RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
-import * as generationBackfill from '@shared-server/rallar-system/topology/config/maintenance/\
-backfill-group-topology-config-generations.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/\
-group-topology-config-repository.ts';
+import * as generationBackfill from '@shared-server/rallar-system/topology/config/maintenance/backfill-group-topology-config-generations.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
 import type {

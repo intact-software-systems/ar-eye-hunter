@@ -8,17 +8,13 @@ import {
 } from '@shared/crdt/mod.ts';
 
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-mutation-repository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/\
-create-crdt-mutation-service.ts';
+import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/\
-crdt-mutation-command-codec.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
-import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/\
-crdt-mutation-contracts.ts';
+import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { readPGliteDatabaseEpochMs } from '../db/pglite-auth-test-harness.ts';
