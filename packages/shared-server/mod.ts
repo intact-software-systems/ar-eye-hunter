@@ -4,6 +4,7 @@ export * from './game/mod.ts';
 export * from './http/production-env-hardening.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
+export * from './postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 export * from './postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 export * from './postgres/admin-support/PSqlAdminSupportReader.ts';
 export * from './postgres/al-runtime/createPSqlALRuntimeStores.ts';

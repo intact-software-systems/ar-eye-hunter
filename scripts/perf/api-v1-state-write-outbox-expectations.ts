@@ -4,6 +4,7 @@ import {
     GROUP_PRESENCE_SUMMARY_OUTBOX_TYPE,
     GROUP_PRESENCE_SUMMARY_TOPIC
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -14,12 +15,11 @@ import type { ProductionReceiptEvidence } from './api-v1-state-write-receipt-evi
 
 export interface ProductionOutboxExpectation {
     readonly effectId: string;
-    readonly resourceId: string;
+    readonly physicalKey: Key;
+    readonly logicalContextId: string;
     readonly canonicalCommandId: string;
     readonly effectKind: string;
     readonly typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
-    readonly topicId: string;
-    readonly contextId: string;
     readonly payloadTypeId: string;
     readonly identityKind: ProductionReceiptEvidence['identityKind'];
 }
@@ -27,7 +27,7 @@ export interface ProductionOutboxExpectation {
 interface ExpectedOutboxIdentity {
     readonly typeId: 'APP_OUTBOX' | 'WS_OUTBOX';
     readonly topicId: string;
-    readonly contextId: string;
+    readonly logicalContextId: string;
     readonly payloadTypeId: string;
 }
 
@@ -49,20 +49,18 @@ export function computeProductionOutboxExpectations(
                 return [];
             }
             const identity = toExpectedOutboxIdentity(effectKind, binding.aggregateRef);
+            const physicalKey = toAppQueueKey({
+                topicId: identity.topicId,
+                resourceId: effectId,
+                contextId: identity.logicalContextId
+            });
             return [{
                 effectId,
-                resourceId: receipt.identityKind === 'physical-resource-id'
-                    ? effectId
-                    : toAppQueueKey({
-                        topicId: identity.topicId,
-                        resourceId: effectId,
-                        contextId: identity.contextId
-                    }).resourceId,
+                physicalKey,
+                logicalContextId: identity.logicalContextId,
                 canonicalCommandId: binding.receiptId,
                 effectKind,
                 typeId: identity.typeId,
-                topicId: identity.topicId,
-                contextId: identity.contextId,
                 payloadTypeId: identity.payloadTypeId,
                 identityKind: receipt.identityKind
             }];
@@ -104,7 +102,7 @@ function toExpectedOutboxIdentity(
         return {
             typeId: 'WS_OUTBOX',
             topicId,
-            contextId: JSON.stringify([
+            logicalContextId: JSON.stringify([
                 'principal',
                 aggregateRef.applicationId,
                 aggregateRef.workspaceId,
@@ -120,7 +118,7 @@ function toExpectedOutboxIdentity(
         return {
             typeId: 'APP_OUTBOX',
             topicId: GROUP_PRESENCE_SUMMARY_TOPIC,
-            contextId: JSON.stringify([
+            logicalContextId: JSON.stringify([
                 aggregateRef.applicationId,
                 aggregateRef.workspaceId,
                 aggregateRef.groupId
@@ -132,7 +130,7 @@ function toExpectedOutboxIdentity(
         return {
             typeId: 'APP_OUTBOX',
             topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-            contextId: groupStateGroupStorageKey({
+            logicalContextId: groupStateGroupStorageKey({
                 applicationId: aggregateRef.applicationId,
                 workspaceId: aggregateRef.workspaceId,
                 groupId: aggregateRef.groupId

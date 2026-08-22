@@ -50,9 +50,9 @@ function isExpectedProductionOutboxRow(
     expectation: ProductionOutboxExpectation
 ): boolean {
     if (
-        row.ri_resource_id !== expectation.resourceId ||
-        row.ri_topic_id !== expectation.topicId ||
-        row.fk_ext_bank_id !== expectation.contextId ||
+        row.ri_resource_id !== expectation.physicalKey.resourceId ||
+        row.ri_topic_id !== expectation.physicalKey.topicId ||
+        row.fk_ext_bank_id !== expectation.physicalKey.contextId ||
         row.ri_type_id !== expectation.typeId ||
         readResourceEffectKind(row) !== expectation.effectKind
     ) {
@@ -63,17 +63,20 @@ function isExpectedProductionOutboxRow(
     const route = requireJsonWireObject(message.route);
     const payload = requireJsonWireObject(message.payload);
     const messageId = requireNonEmptyString(id.msgId);
+    const messagePhysicalKey = toAppQueueKey({
+        resourceId: messageId,
+        topicId: expectation.physicalKey.topicId,
+        contextId: expectation.logicalContextId
+    });
     if (
         route.resourceId !== row.ri_resource_id ||
         route.topicId !== row.ri_topic_id ||
         route.contextId !== row.fk_ext_bank_id ||
         payload.typeId !== expectation.payloadTypeId ||
         readCanonicalEffectCommandId(row.ri_resource) !== expectation.canonicalCommandId ||
-        toAppQueueKey({
-                resourceId: messageId,
-                topicId: row.ri_topic_id,
-                contextId: row.fk_ext_bank_id
-            }).resourceId !== row.ri_resource_id ||
+        messagePhysicalKey.resourceId !== expectation.physicalKey.resourceId ||
+        messagePhysicalKey.topicId !== expectation.physicalKey.topicId ||
+        messagePhysicalKey.contextId !== expectation.physicalKey.contextId ||
         (expectation.identityKind === 'logical-msg-id' && messageId !== expectation.effectId)
     ) {
         return false;
@@ -85,9 +88,9 @@ function isExpectedProductionOutboxRow(
         ? requireJsonWireObject(JSON.parse(payload.resource))
         : undefined;
     return envelope?.type === expectation.payloadTypeId &&
-        envelope.topicId === expectation.topicId &&
+        envelope.topicId === expectation.physicalKey.topicId &&
         envelope.resourceId === messageId &&
-        envelope.contextId === expectation.contextId;
+        envelope.contextId === expectation.logicalContextId;
 }
 
 function readOutboxMessageId(resource: string): string {

@@ -29,9 +29,9 @@ export async function readReferencedProductionOutboxRecords(
     for (const expectation of expectations) {
         const key = [
             expectation.typeId,
-            expectation.topicId,
-            expectation.contextId,
-            expectation.resourceId
+            expectation.physicalKey.topicId,
+            expectation.physicalKey.contextId,
+            expectation.physicalKey.resourceId
         ].join('\0');
         if (uniqueExpectations.has(key)) {
             throw new Error(`Receipt repeats an exact ResourceInbox effect: ${expectation.effectId}`);
@@ -52,9 +52,9 @@ export function createProductionOutboxRepository(sql: Sql): ProductionOutboxRepo
             const rows = await sql<readonly ProductionOutboxRow[]>`
         select ri_resource_id, ri_topic_id, fk_ext_bank_id, ri_type_id, ri_resource
         from resource_inbox
-        where ri_resource_id = ${expectation.resourceId}
-          and ri_topic_id = ${expectation.topicId}
-          and fk_ext_bank_id = ${expectation.contextId}
+        where ri_resource_id = ${expectation.physicalKey.resourceId}
+          and ri_topic_id = ${expectation.physicalKey.topicId}
+          and fk_ext_bank_id = ${expectation.physicalKey.contextId}
           and ri_type_id = ${expectation.typeId}
       `;
             const matching = rows.flatMap((row) => {

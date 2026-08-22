@@ -692,6 +692,45 @@ describe('AppAdminInboxService initial prune command', () => {
             expectedMessage: 'Admin prune result dry-run status is invalid'
         },
         {
+            name: 'dry-run deletions',
+            createResult: (result) => ({
+                ...result,
+                changed: true,
+                results: [{ ...result.results[0], expiredRows: 1, deletedRows: 1 }]
+            }),
+            expectedMessage: 'Admin prune dry-run result has deleted rows'
+        },
+        {
+            name: 'another command job identity',
+            createResult: (result) => ({ ...result, jobId: 'another-admin-prune-job' }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'another command generation time',
+            createResult: (result) => ({
+                ...result,
+                generatedAtEpochMs: result.generatedAtEpochMs + 1
+            }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'another command category',
+            createResult: (result) => ({
+                ...result,
+                results: [{ ...result.results[0], category: 'resource-inbox' }]
+            }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'another command execution status',
+            createResult: (result) => ({
+                ...result,
+                status: 'queued',
+                results: result.results.map((categoryResult) => ({ ...categoryResult, dryRun: false }))
+            }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
             name: 'no category results',
             createResult: (result) => ({ ...result, results: [] }),
             expectedMessage: 'Admin prune result fields are invalid'

@@ -11,6 +11,7 @@ import {
     toAdminPruneJobId
 } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { toStrictAppInboxQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
 
 import type { ApiV1StateWriteEvidenceSqlParameter } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import {
@@ -143,16 +144,18 @@ describe('API-v1 PGlite state-write evidence source', () => {
 
     it('links public admin request identity to its scoped page-work identity', async () => {
         const requestId = 'admin-evidence-request-0001';
-        const appData = { namespace: 'evidence', storeName: null };
-        const contextId = toAdminPruneContextId('admin', appData);
-        const jobId = await toAdminPruneJobId({
+        const requestedBy = `admin-${'principal-'.repeat(10)}`;
+        const appData = { namespace: `evidence-${'namespace-'.repeat(15)}`, storeName: null };
+        const logicalContextId = toAdminPruneContextId(requestedBy, appData);
+        const physicalKey = toStrictAppInboxQueueKey({
             resourceId: requestId,
             topicId: ADMIN_APP_INBOX_TOPIC,
-            contextId
+            contextId: logicalContextId
         });
+        const jobId = await toAdminPruneJobId(physicalKey);
         const command = await createAdminPruneCommand({
             jobId,
-            requestedBy: 'admin',
+            requestedBy,
             requestedSessionId: 'session-1',
             capturedAtEpochMs: 1_700_000_000_000,
             expireAtEpochMs: 1_700_000_060_000,
@@ -163,9 +166,9 @@ describe('API-v1 PGlite state-write evidence source', () => {
         });
         const inbox = {
             ri_row_id: 1,
-            ri_resource_id: requestId,
-            ri_topic_id: ADMIN_APP_INBOX_TOPIC,
-            fk_ext_bank_id: contextId,
+            ri_resource_id: physicalKey.resourceId,
+            ri_topic_id: physicalKey.topicId,
+            fk_ext_bank_id: physicalKey.contextId,
             ri_resource: JSON.stringify({
                 payload: {
                     typeId: 'ADMIN_PRUNE_EXPIRED',
@@ -246,7 +249,11 @@ describe('API-v1 PGlite state-write evidence source', () => {
             resourceOutbox: [{ commandId: jobId, effectKind: 'admin-prune-page' }]
         });
 
-        inbox.fk_ext_bank_id = 'caller=another-admin:app-data-namespace=evidence:app-data-store=';
+        inbox.fk_ext_bank_id = toStrictAppInboxQueueKey({
+            resourceId: requestId,
+            topicId: ADMIN_APP_INBOX_TOPIC,
+            contextId: toAdminPruneContextId('another-admin', appData)
+        }).contextId;
         await expect(collectApiV1StateWriteEvidenceFromSql({
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED']
@@ -268,7 +275,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             appData: command.appData,
             pageSize: command.pageSize
         });
-        inbox.fk_ext_bank_id = contextId;
+        inbox.fk_ext_bank_id = physicalKey.contextId;
         inbox.ri_resource = JSON.stringify({
             payload: {
                 typeId: 'ADMIN_PRUNE_EXPIRED',

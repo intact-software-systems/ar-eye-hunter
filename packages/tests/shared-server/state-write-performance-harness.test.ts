@@ -3,6 +3,8 @@ import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../..
 
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { readScopedGroupCommandIdentity } from '../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
@@ -24,12 +26,19 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         const requestId = 'state-write:membership:7';
         const actorPrincipalId = 'client-7';
         const groupRef = {
-            applicationId: 'state-write-app',
-            workspaceId: 'state-write-workspace',
+            applicationId: 'state-write-run-uncontended-measured-0',
+            workspaceId: 'state-write-workspace-with-a-benchmark-length-identity',
             groupId: 'group-2'
         };
         const topicId = 'GROUP_MEMBER_UPSERT';
-        const contextId = 'state-write-app:state-write-workspace:group-2';
+        const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
+            .map(encodeURIComponent)
+            .join(':');
+        const physicalKey = toAppQueueKey({
+            resourceId: requestId,
+            topicId,
+            contextId: logicalContextId
+        });
         const descriptor = mutationDescriptor(
             'upsertMember',
             {
@@ -56,7 +65,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                     type: topicId,
                     topicId,
                     resourceId: requestId,
-                    contextId,
+                    contextId: logicalContextId,
                     authority: {
                         authorityProof: {
                             version: 1,
@@ -76,15 +85,15 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             }
         });
         const row = {
-            ri_resource_id: requestId,
-            ri_topic_id: topicId,
-            fk_ext_bank_id: contextId,
+            ri_resource_id: physicalKey.resourceId,
+            ri_topic_id: physicalKey.topicId,
+            fk_ext_bank_id: physicalKey.contextId,
             ri_resource: resource
         };
         const expectation = {
             requestId,
             topicId,
-            contextId,
+            logicalContextId,
             groupRef,
             actorPrincipalId
         };
@@ -101,6 +110,91 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             ...expectation,
             actorPrincipalId: 'wrong-actor'
         })).resolves.toBeUndefined();
+    });
+
+    it('matches benchmark-length outbox identities produced by the production queue constructor', async () => {
+        const command = {
+            kind: 'membership',
+            commandId: 'state-write:membership:7',
+            stackIndex: 0,
+            latencyMs: 1,
+            status: 'accepted'
+        } as const;
+        const aggregateRef = {
+            applicationId: 'state-write-run-uncontended-measured-0',
+            workspaceId: 'state-write-workspace-with-a-benchmark-length-identity',
+            groupId: 'group-7'
+        };
+        const scopedCommandId = `group-app-inbox:${'a'.repeat(64)}`;
+        const entry = computeGroupPresenceSummaryEntry({
+            effectKind: 'group-presence-summary',
+            aggregateRef,
+            commandId: scopedCommandId,
+            createdAtEpochMs: 1_000,
+            expireAtEpochMs: 100_000,
+            acceptedCausalRevision: { groupRevision: 4, presenceRevision: 3 },
+            event: {
+                ...aggregateRef,
+                eventId: 'summary-event',
+                eventType: 'session-connected',
+                snapshotVersion: 4,
+                causalRevision: { groupRevision: 4, presenceRevision: 3 },
+                occurredAtEpochMs: 1_000,
+                actor: { kind: 'service', serviceId: 'summary-handler' },
+                reason: null,
+                traceId: null,
+                requestId: command.commandId,
+                payload: {}
+            }
+        }, 'summary-handler');
+        const receipt = {
+            commandId: command.commandId,
+            receiptIds: [scopedCommandId],
+            outboxIds: [entry.key.resourceId],
+            identityKind: 'physical-resource-id' as const,
+            resultBindings: [{
+                operationId: 'command',
+                receiptId: scopedCommandId,
+                requestId: command.commandId,
+                commandHash: `sha256:${'b'.repeat(64)}`,
+                outcome: 'applied',
+                attemptCount: 1,
+                outboxId: null,
+                outboxIds: [entry.key.resourceId],
+                aggregateRef,
+                stateRevision: 4,
+                snapshotVersion: 4,
+                acceptedVersion: null,
+                operation: null,
+                target: null,
+                acceptedStorageRevision: null,
+                acceptedCreatedAtEpochMs: null,
+                acceptedUpdatedAtEpochMs: null,
+                acceptedExpiresAtEpochMs: null,
+                acceptedConfig: null,
+                acceptedCausalRevision: null,
+                eventId: 'summary-event'
+            }]
+        };
+        const expectation = computeProductionOutboxExpectations([command], [receipt])[0]!;
+        const row = {
+            ri_resource_id: entry.key.resourceId,
+            ri_topic_id: entry.key.topicId,
+            fk_ext_bank_id: entry.key.contextId,
+            ri_type_id: entry.typeId,
+            ri_resource: entry.resource
+        };
+        const repository = createProductionOutboxRepository(vi.fn(async () => [row]) as never);
+
+        expect(expectation.physicalKey).toEqual(entry.key);
+        expect(expectation.logicalContextId.length).toBeGreaterThan(entry.key.contextId.length);
+        await expect(repository.find(expectation)).resolves.toMatchObject({
+            record: {
+                resourceId: entry.key.resourceId,
+                outboxId: expect.stringContaining(':group-presence-summary:'),
+                canonicalCommandId: scopedCommandId
+            }
+        });
     });
 
     it('selects outbox evidence by the exact tuple and rejects an ambiguous duplicate', async () => {
@@ -121,24 +215,24 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         };
         const expectation = computeProductionOutboxExpectations([command], [receipt])[0]!;
         const exactRow = {
-            ri_resource_id: expectation.resourceId,
-            ri_topic_id: expectation.topicId,
-            fk_ext_bank_id: expectation.contextId,
+            ri_resource_id: expectation.physicalKey.resourceId,
+            ri_topic_id: expectation.physicalKey.topicId,
+            fk_ext_bank_id: expectation.physicalKey.contextId,
             ri_type_id: expectation.typeId,
             ri_resource: queueResource(
                 {
                     type: expectation.payloadTypeId,
-                    topicId: expectation.topicId,
+                    topicId: expectation.physicalKey.topicId,
                     resourceId: expectation.effectId,
-                    contextId: expectation.contextId,
+                    contextId: expectation.logicalContextId,
                     senderId: 'server-1',
                     data: {}
                 },
                 expectation.effectId,
                 {
-                    resourceId: expectation.resourceId,
-                    topicId: expectation.topicId,
-                    contextId: expectation.contextId,
+                    resourceId: expectation.physicalKey.resourceId,
+                    topicId: expectation.physicalKey.topicId,
+                    contextId: expectation.physicalKey.contextId,
                     payloadTypeId: expectation.payloadTypeId
                 }
             )
@@ -153,9 +247,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 
         await expect(repository.find(expectation)).resolves.toMatchObject({
             record: {
-                resourceId: expectation.resourceId,
+                resourceId: expectation.physicalKey.resourceId,
                 outboxId: expectation.effectId,
-                topicId: expectation.topicId
+                topicId: expectation.physicalKey.topicId
             }
         });
 
@@ -555,8 +649,12 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             canonicalCommandId: topologyCommand.commandId,
             effectKind: 'rtc-topology-recompute',
             typeId: 'APP_OUTBOX',
-            topicId: 'app-outbox.rtc-topology',
-            contextId: 'app=app:ws=workspace:group=topology-command',
+            physicalKey: toAppQueueKey({
+                resourceId: topologyRecord.outboxId,
+                topicId: 'app-outbox.rtc-topology',
+                contextId: 'app=app:ws=workspace:group=topology-command'
+            }),
+            logicalContextId: 'app=app:ws=workspace:group=topology-command',
             payloadTypeId: 'RTC_TOPOLOGY_RECOMPUTE'
         });
         expect(

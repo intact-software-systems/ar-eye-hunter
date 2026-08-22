@@ -27,7 +27,6 @@ import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { groupEventWorkspaceKey } from '../rallar-system/group-event-workspace-key.ts';
 import { PSqlClientStateAdminStatsReader } from './p-sql-client-state-admin-stats-reader.ts';
 
-export { PSqlAdminOperationsPruner } from './p-sql-admin-operations-pruner.ts';
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
 export type PSqlAdminOperationsStatsReaderOptions = Readonly<{
     now: () => number;

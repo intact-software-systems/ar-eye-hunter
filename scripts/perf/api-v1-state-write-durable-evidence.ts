@@ -205,7 +205,7 @@ function createScopedGroupCommandExpectations(
         return [{
             requestId: command.commandId,
             topicId,
-            contextId: [scope.applicationId, scope.workspaceId, groupId]
+            logicalContextId: [scope.applicationId, scope.workspaceId, groupId]
                 .map(encodeURIComponent)
                 .join(':'),
             groupRef: { ...scope, groupId },

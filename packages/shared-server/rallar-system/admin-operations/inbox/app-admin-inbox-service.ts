@@ -40,7 +40,7 @@ import { AppInboxType, type AppInboxMessageContext } from '../../services/app-in
 import { decodeJsonWireValue } from '../../services/mutation-command-identity.ts';
 import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../services/timing.ts';
 import {
-    decodeAdminPruneEnqueueResult,
+    decodeAdminPruneEnqueueResultForCommand,
     decodeAdminPruneRequest,
     type AdminPruneEnqueueResult
 } from './admin-prune-inbox-codec.ts';
@@ -208,7 +208,7 @@ export class AppAdminInboxService extends AppInboxService {
         assertMatchingAdminPruneIdentity(identity, command);
         const enqueued = await this.waitForReservedEntryResult<AdminPruneCommand, AdminPruneEnqueueResult>(
             reservation.enqueue,
-            decodeAdminPruneEnqueueResult,
+            (value) => decodeAdminPruneEnqueueResultForCommand(value, command),
             reservation.winner
         );
         return await this.toCallerResult(command, enqueued);

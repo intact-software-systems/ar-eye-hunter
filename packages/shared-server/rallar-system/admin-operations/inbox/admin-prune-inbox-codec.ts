@@ -5,7 +5,7 @@ import {
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
-import type { AdminPruneAppData } from './admin-prune-command-codec.ts';
+import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
 export interface AdminPruneEnqueueResult {
     readonly generatedAtEpochMs: number;
@@ -86,6 +86,9 @@ export function decodeAdminPruneEnqueueResult(value: RallarCrdtJsonValue): Admin
     if (status === 'queued' && categoryResults.some((categoryResult) => categoryResult.deletedRows !== 0)) {
         throw new TypeError('Admin prune queued result has deleted rows');
     }
+    if (status === 'dry-run' && categoryResults.some((categoryResult) => categoryResult.deletedRows !== 0)) {
+        throw new TypeError('Admin prune dry-run result has deleted rows');
+    }
     const changed = categoryResults.some((categoryResult) => categoryResult.deletedRows > 0);
     if (result.changed !== changed) {
         throw new TypeError('Admin prune result changed status is invalid');
@@ -103,6 +106,26 @@ export function decodeAdminPruneEnqueueResult(value: RallarCrdtJsonValue): Admin
         jobId,
         results: categoryResults
     };
+}
+
+export function decodeAdminPruneEnqueueResultForCommand(
+    value: RallarCrdtJsonValue,
+    command: AdminPruneCommand
+): AdminPruneEnqueueResult {
+    const result = decodeAdminPruneEnqueueResult(value);
+    const expectedStatus = command.dryRun ? 'dry-run' : 'queued';
+    const matches = result.jobId === command.jobId &&
+        result.generatedAtEpochMs === command.capturedAtEpochMs &&
+        result.status === expectedStatus &&
+        result.results.length === command.categories.length &&
+        result.results.every((categoryResult, index) =>
+            categoryResult.category === command.categories[index] &&
+            categoryResult.dryRun === command.dryRun
+        );
+    if (!matches) {
+        throw new TypeError('Admin prune durable result differs from command');
+    }
+    return result;
 }
 
 function readCategories(

@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/\
-PSqlAdminOperationsStatsReader.ts';
+p-sql-admin-operations-pruner.ts';
 
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/\
 p-sql-admin-prune-repository.ts';

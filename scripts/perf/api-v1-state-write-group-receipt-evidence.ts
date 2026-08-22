@@ -25,7 +25,7 @@ export interface ScopedGroupCommandIdentity {
 export interface ScopedGroupCommandExpectation {
     readonly requestId: string;
     readonly topicId: string;
-    readonly contextId: string;
+    readonly logicalContextId: string;
     readonly groupRef: GroupRef;
     readonly actorPrincipalId: string;
 }
@@ -48,15 +48,7 @@ export async function readScopedGroupCommandIdsByRequestId({
 }: ReadScopedGroupCommandIdsByRequestIdInput): Promise<ReadonlyMap<string, string>> {
     const expectationByPhysicalKey = new Map<string, ScopedGroupCommandExpectation>();
     for (const expectation of expectations) {
-        const physicalKey = toPhysicalKey({
-            resourceId: toAppQueueKey({
-                topicId: expectation.topicId,
-                resourceId: expectation.requestId,
-                contextId: expectation.contextId
-            }).resourceId,
-            topicId: expectation.topicId,
-            contextId: expectation.contextId
-        });
+        const physicalKey = toPhysicalKey(toScopedGroupCommandQueueKey(expectation));
         if (expectationByPhysicalKey.has(physicalKey)) {
             throw new Error(`Benchmark group command expectation is duplicated: ${expectation.requestId}`);
         }
@@ -69,8 +61,12 @@ export async function readScopedGroupCommandIdsByRequestId({
         select ri_resource_id, ri_topic_id, fk_ext_bank_id, ri_resource
         from resource_inbox
         where ri_type_id = 'APP_INBOX'
-          and ri_topic_id = any(${[...new Set(expectations.map((entry) => entry.topicId))]})
-          and fk_ext_bank_id = any(${[...new Set(expectations.map((entry) => entry.contextId))]})
+          and ri_topic_id = any(${[
+        ...new Set(expectations.map((entry) => toScopedGroupCommandQueueKey(entry).topicId))
+    ]})
+          and fk_ext_bank_id = any(${[
+        ...new Set(expectations.map((entry) => toScopedGroupCommandQueueKey(entry).contextId))
+    ]})
     `;
     const identities = new Map<string, string>();
     for (const row of rows) {
@@ -103,14 +99,11 @@ export async function readScopedGroupCommandIdentity(
     row: PersistedScopedGroupCommandRow,
     expectation: ScopedGroupCommandExpectation
 ): Promise<ScopedGroupCommandIdentity | undefined> {
+    const queueKey = toScopedGroupCommandQueueKey(expectation);
     if (
-        row.ri_topic_id !== expectation.topicId ||
-        row.fk_ext_bank_id !== expectation.contextId ||
-        row.ri_resource_id !== toAppQueueKey({
-                topicId: expectation.topicId,
-                resourceId: expectation.requestId,
-                contextId: expectation.contextId
-            }).resourceId
+        row.ri_topic_id !== queueKey.topicId ||
+        row.fk_ext_bank_id !== queueKey.contextId ||
+        row.ri_resource_id !== queueKey.resourceId
     ) {
         return undefined;
     }
@@ -125,7 +118,7 @@ export async function readScopedGroupCommandIdentity(
         enqueueResource?.type !== expectation.topicId ||
         enqueueResource?.topicId !== expectation.topicId ||
         enqueueResource?.resourceId !== expectation.requestId ||
-        enqueueResource?.contextId !== expectation.contextId ||
+        enqueueResource?.contextId !== expectation.logicalContextId ||
         !hasExactKeys(preparation, [
             'authorityProof',
             'descriptor',
@@ -193,6 +186,14 @@ export async function readScopedGroupCommandIdentity(
         return undefined;
     }
     return { requestId: expectation.requestId, commandId: command.commandId };
+}
+
+function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation) {
+    return toAppQueueKey({
+        topicId: expectation.topicId,
+        resourceId: expectation.requestId,
+        contextId: expectation.logicalContextId
+    });
 }
 
 interface IsValidatedGroupReceiptIdentityInput {

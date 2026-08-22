@@ -3,9 +3,10 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
+import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/\
+p-sql-admin-operations-pruner.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/\
 p-sql-admin-prune-repository.ts';
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 
 import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxRepository.ts';

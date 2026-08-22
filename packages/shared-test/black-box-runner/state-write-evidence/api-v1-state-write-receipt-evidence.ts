@@ -13,6 +13,7 @@ import * as ClientState from '@shared-server/rallar-system/repositories/ClientSt
 import * as GroupState from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import * as AppInboxCommandIdentity from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { toStrictAppInboxQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
 import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
@@ -520,8 +521,14 @@ async function readAdminPruneEvidence(
         topicId: row.ri_topic_id,
         contextId: row.fk_ext_bank_id
     };
-    const currentIdentity = row.ri_topic_id === ADMIN_APP_INBOX_TOPIC &&
-        row.fk_ext_bank_id === toAdminPruneContextId(command.requestedBy, command.appData) &&
+    const expectedCurrentKey = toStrictAppInboxQueueKey({
+        resourceId: row.ri_resource_id,
+        topicId: ADMIN_APP_INBOX_TOPIC,
+        contextId: toAdminPruneContextId(command.requestedBy, command.appData)
+    });
+    const currentIdentity = row.ri_resource_id === expectedCurrentKey.resourceId &&
+        row.ri_topic_id === expectedCurrentKey.topicId &&
+        row.fk_ext_bank_id === expectedCurrentKey.contextId &&
         command.jobId === (await toAdminPruneJobId(key));
     const legacyIdentity = row.ri_topic_id === LEGACY_ADMIN_APP_INBOX_TOPIC &&
         row.fk_ext_bank_id === command.requestedBy &&
