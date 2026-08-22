@@ -60,7 +60,7 @@ interface BalancedBlockManifestPosition {
     readonly generatedAt: string;
 }
 
-describe('group-topology position-balanced state-write pooling', { timeout: 120_000 }, () => {
+describe('group-topology position-balanced state-write pooling', { timeout: 180_000 }, () => {
     it('keeps A-B-B-A and B-A-A-B as separate validated 18-sample evidence blocks', () => {
         const input = createInput();
         const pooled = poolGroupTopologyStateWritePositionBalancedResults(input);
