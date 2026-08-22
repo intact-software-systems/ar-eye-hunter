@@ -9,10 +9,10 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import assert from 'node:assert/strict';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { createApiAdminInboxService } from '../../src/services/create-api-admin-inbox-service.ts';
-import { readPGliteDatabaseEpochMs } from './pglite-auth-test-harness.ts';
+import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
+import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
+import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { readPGliteDatabaseEpochMs } from '../../db/pglite-auth-test-harness.ts';
 
 type ApiAdminInboxService = ReturnType<typeof createApiAdminInboxService>;
 type AdminPruneResult = Awaited<ReturnType<ApiAdminInboxService['pruneExpired']>>;

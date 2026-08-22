@@ -15,7 +15,7 @@ export function isValidPersistedResult(entry, command, binding) {
     }
     if (command.kind.startsWith('presence-')) {
         return entry.commandType.startsWith('GROUP_PRESENCE_') &&
-            result.commandId === command.commandId && typeof result.outcome === 'string' &&
+            result.commandId === binding.receiptId && typeof result.outcome === 'string' &&
             Number.isSafeInteger(result.attemptCount) && isDenseStringArray(result.outboxIds) &&
             new Set(result.outboxIds).size === result.outboxIds.length &&
             matchesEmbeddedReceipt(result, binding);
@@ -75,8 +75,7 @@ export function validateReceiptResultBindings(receipt, command, path, index, err
                 'acceptedCausalRevision',
                 'eventId'
             ]) || typeof binding.receiptId !== 'string' || binding.receiptId.length === 0 ||
-            binding.receiptId !== expectedReceiptId(command, binding.operationId) ||
-            binding.requestId !== binding.receiptId ||
+            !isValidReceiptIdentity(command, binding) ||
             !/^sha256:[0-9a-f]{64}$/.test(binding.commandHash) ||
             typeof binding.outcome !== 'string' || binding.outcome.length === 0 ||
             !Number.isSafeInteger(binding.attemptCount) || binding.attemptCount < 1 ||
@@ -165,6 +164,16 @@ function expectedReceiptId(command, operationId) {
     return command.kind === 'profile-instance'
         ? `${command.commandId}-${operationId}`
         : command.commandId;
+}
+
+function isValidReceiptIdentity(command, binding) {
+    const requestId = expectedReceiptId(command, binding.operationId);
+    if (binding.requestId !== requestId) {
+        return false;
+    }
+    return command.kind === 'profile-instance' || command.kind === 'topology-source'
+        ? binding.receiptId === requestId
+        : /^group-app-inbox:[0-9a-f]{64}$/.test(binding.receiptId);
 }
 
 function matchesStateResult(right, binding, aggregateField) {

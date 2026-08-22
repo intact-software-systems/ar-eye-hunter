@@ -27,8 +27,7 @@ import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-rout
 
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
-decode-crdt-mutation-result.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
 import { toResilienceDto } from '../../../src/middleware-resilience.ts';
 

@@ -1,16 +1,11 @@
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxResultsRepository.ts';
-import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/\
-app-crdt-inbox-service.ts';
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-mutation-repository.ts';
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
-AppInboxService.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';

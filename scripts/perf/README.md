@@ -149,7 +149,7 @@ membership, presence connect/heartbeat/disconnect, group config, and topology
 source config. Workload group counts are 100 (`uncontended`), five (`shared`),
 and one (`hot`).
 
-Artifacts use schema `rallar.api-v1.state-write.v5`. Each measured run retains
+Artifacts use schema `rallar.api-v1.state-write.v6`. Each measured run retains
 exactly 700 command records and latencies (100 of every mutation kind), balanced
 service-stack counts, and durable AppInbox attempt observations.
 It also includes latency percentiles, throughput, SQL/row/serialized-byte
@@ -159,8 +159,9 @@ immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
 
 Attempt observations come from actual ResourceInbox release telemetry and are
-reconciled exactly with durable `resource_inbox.ri_attempts` values for
-`APP_INBOX` rows. Each operation has a one-based attempt number, observed retry
+reconciled exactly with durable `resource_inbox.ri_attempts` values for the
+operation's production-derived AppInbox resource, topic, and context tuple.
+Each operation has a one-based attempt number, observed retry
 delay and due age, selected `fast`, `fairness`, or `timeout` lane, and a final
 accepted or exhausted outcome. Profile and instance remain separate operations;
 the other mutation kinds use one command operation. Both comparison roles reject

@@ -135,6 +135,26 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
     },
     {
         actionNames: [
+            'differentAdminPrunePrimary',
+            'differentAdminPruneSecondary',
+            'differentAdminPruneTertiary'
+        ],
+        file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+        kind: 'concurrent-contenders',
+        requestId: 'idem-contract-admin-prune-different-{runId}'
+    },
+    {
+        actionNames: [
+            'equalAdminPrunePrimary',
+            'equalAdminPruneSecondary',
+            'equalAdminPruneTertiary'
+        ],
+        file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+        kind: 'concurrent-contenders',
+        requestId: 'idem-contract-admin-prune-equal-{runId}'
+    },
+    {
+        actionNames: [
             'exactGroupReplayAfterSessionRenewal',
             'firstGroupMutation',
             'normalizedGroupReplay',
@@ -149,6 +169,17 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
         file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
         kind: 'sequential-replay',
         requestId: 'idem-contract-logout-replay-{runId}'
+    },
+    {
+        actionNames: [
+            'firstNormalizedPruneCategories',
+            'rejectChangedNormalizedPruneIntent',
+            'rejectMismatchedAdminClientHeader',
+            'replayNormalizedPruneCategories'
+        ],
+        file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+        kind: 'sequential-replay',
+        requestId: 'idem-contract-prune-normalized-{runId}'
     },
     {
         actionNames: ['performNoOpMutation', 'replayNoOpMutation'],
@@ -183,6 +214,22 @@ const sameLogicalActionRequestIdentityReuse: readonly SameLogicalActionRequestId
 ];
 const requestIdentityIsolationProbes: readonly RequestIdentityIsolationProbe[] = [
     {
+        actionNames: ['firstAdminActorIsolationPrune', 'proveAdminActorIsolation'],
+        dimension: 'actor',
+        file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+        requestId: 'idem-contract-admin-actor-isolation-{runId}'
+    },
+    {
+        actionNames: [
+            'proveAdminCrdtOperationIsolation',
+            'proveAdminPruneOperationIsolation',
+            'proveAdminTopologyOperationIsolation'
+        ],
+        dimension: 'operation',
+        file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
+        requestId: 'idem-contract-admin-operation-isolation-{runId}'
+    },
+    {
         actionNames: ['proveActorIsolation', 'seedActorIsolation'],
         dimension: 'actor',
         file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
@@ -204,16 +251,6 @@ const requestIdentityIsolationProbes: readonly RequestIdentityIsolationProbe[] =
         dimension: 'operation',
         file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
         requestId: 'idem-contract-equal-contenders-{runId}'
-    },
-    {
-        actionNames: [
-            'firstNormalizedPruneCategories',
-            'proveAdminActorIsolation',
-            'replayNormalizedPruneCategories'
-        ],
-        dimension: 'actor',
-        file: `${apiV1RecipeDirectory}/api-v1-idempotency-contract.json`,
-        requestId: 'idem-contract-prune-normalized-{runId}'
     },
     {
         actionNames: ['proveScopeIsolation', 'seedScopeIsolation'],

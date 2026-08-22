@@ -1,5 +1,4 @@
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/\
-AuthSessionRepository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type {
     GroupMutationDescriptor,
     GroupMutationPreparation,

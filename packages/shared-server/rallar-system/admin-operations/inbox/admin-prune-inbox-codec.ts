@@ -5,7 +5,7 @@ import {
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
-import type { AdminPruneAppData } from '../AdminPruneExpiredWork.ts';
+import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
 export interface AdminPruneEnqueueResult {
     readonly generatedAtEpochMs: number;
@@ -48,32 +48,84 @@ export function decodeAdminPruneRequest(
 }
 
 export function decodeAdminPruneEnqueueResult(value: RallarCrdtJsonValue): AdminPruneEnqueueResult {
-    const result = requireRecord(value, 'Admin prune result must be an object');
+    const result = requireExactRecord(value, [
+        'generatedAtEpochMs',
+        'serverId',
+        'warnings',
+        'operation',
+        'status',
+        'changed',
+        'jobId',
+        'results'
+    ], 'Admin prune result');
+    const serverId = readNonEmptyString(result.serverId);
+    const jobId = readNonEmptyString(result.jobId);
     if (
-        typeof result.serverId !== 'string' ||
+        serverId === null ||
         !Array.isArray(result.warnings) ||
         result.warnings.length !== 0 ||
         result.operation !== 'maintenance.prune-expired' ||
         !['dry-run', 'queued', 'completed'].includes(String(result.status)) ||
         typeof result.changed !== 'boolean' ||
-        typeof result.jobId !== 'string' ||
-        !Array.isArray(result.results)
+        jobId === null ||
+        !Array.isArray(result.results) ||
+        result.results.length === 0
     ) {
         throw new TypeError('Admin prune result fields are invalid');
+    }
+    const status = readAdminPruneStatus(result.status);
+    const categoryResults = result.results.map(decodeAdminPruneCategoryResult);
+    const categories = categoryResults.map((categoryResult) => categoryResult.category);
+    if (new Set(categories).size !== categories.length) {
+        throw new TypeError('Admin prune result has duplicate categories');
+    }
+    const expectedDryRun = status === 'dry-run';
+    if (categoryResults.some((categoryResult) => categoryResult.dryRun !== expectedDryRun)) {
+        throw new TypeError('Admin prune result dry-run status is invalid');
+    }
+    if (status === 'queued' && categoryResults.some((categoryResult) => categoryResult.deletedRows !== 0)) {
+        throw new TypeError('Admin prune queued result has deleted rows');
+    }
+    if (status === 'dry-run' && categoryResults.some((categoryResult) => categoryResult.deletedRows !== 0)) {
+        throw new TypeError('Admin prune dry-run result has deleted rows');
+    }
+    const changed = categoryResults.some((categoryResult) => categoryResult.deletedRows > 0);
+    if (result.changed !== changed) {
+        throw new TypeError('Admin prune result changed status is invalid');
     }
     return {
         generatedAtEpochMs: readNonNegativeSafeInteger(
             result.generatedAtEpochMs,
             'Admin prune result generation time is invalid'
         ),
-        serverId: result.serverId,
+        serverId,
         warnings: [],
         operation: 'maintenance.prune-expired',
-        status: readAdminPruneStatus(result.status),
+        status,
         changed: result.changed,
-        jobId: result.jobId,
-        results: result.results.map(decodeAdminPruneCategoryResult)
+        jobId,
+        results: categoryResults
     };
+}
+
+export function decodeAdminPruneEnqueueResultForCommand(
+    value: RallarCrdtJsonValue,
+    command: AdminPruneCommand
+): AdminPruneEnqueueResult {
+    const result = decodeAdminPruneEnqueueResult(value);
+    const expectedStatus = command.dryRun ? 'dry-run' : 'queued';
+    const matches = result.jobId === command.jobId &&
+        result.generatedAtEpochMs === command.capturedAtEpochMs &&
+        result.status === expectedStatus &&
+        result.results.length === command.categories.length &&
+        result.results.every((categoryResult, index) =>
+            categoryResult.category === command.categories[index] &&
+            categoryResult.dryRun === command.dryRun
+        );
+    if (!matches) {
+        throw new TypeError('Admin prune durable result differs from command');
+    }
+    return result;
 }
 
 function readCategories(
@@ -108,11 +160,15 @@ function readAppData(value: AdminPruneExpiredRequest['appData']): AdminPruneAppD
 function decodeAdminPruneCategoryResult(
     value: RallarCrdtJsonValue
 ): AdminPruneEnqueueResult['results'][number] {
-    const result = requireRecord(value, 'Admin prune category result must be an object');
+    const result = requireExactRecord(
+        value,
+        ['category', 'expiredRows', 'deletedRows', 'dryRun'],
+        'Admin prune category result'
+    );
     if (typeof result.dryRun !== 'boolean') {
         throw new TypeError('Admin prune category result fields are invalid');
     }
-    return {
+    const decoded = {
         category: readCategory(result.category),
         expiredRows: readNonNegativeSafeInteger(
             result.expiredRows,
@@ -124,14 +180,22 @@ function decodeAdminPruneCategoryResult(
         ),
         dryRun: result.dryRun
     };
+    if (decoded.deletedRows > decoded.expiredRows) {
+        throw new TypeError('Admin prune deleted rows exceed expired rows');
+    }
+    return decoded;
 }
 
-function requireRecord(
+function requireExactRecord(
     value: RallarCrdtJsonValue,
-    message: string
+    keys: readonly string[],
+    label: string
 ): Readonly<Record<string, RallarCrdtJsonValue>> {
     if (!isJsonRecord(value)) {
-        throw new TypeError(message);
+        throw new TypeError(`${label} must be an object`);
+    }
+    if (Object.keys(value).sort().join('\0') !== [...keys].sort().join('\0')) {
+        throw new TypeError(`${label} fields are invalid`);
     }
     return value;
 }

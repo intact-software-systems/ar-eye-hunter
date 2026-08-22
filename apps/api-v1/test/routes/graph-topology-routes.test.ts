@@ -5,8 +5,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
-group-topology-config-canonical.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 

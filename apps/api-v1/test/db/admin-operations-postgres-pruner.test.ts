@@ -1,4 +1,4 @@
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 import assert from 'node:assert/strict';
 
 import { createApiV1SqlClient } from '../../src/db/db.ts';

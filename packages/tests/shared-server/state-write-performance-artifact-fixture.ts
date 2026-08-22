@@ -156,6 +156,7 @@ function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]):
             operationId,
             resourceId: `${command.commandId}:${operationId}`,
             topicId: 'app-inbox.state',
+            contextId: `app-inbox.state:${command.commandId}`,
             status: 'COMPLETED',
             resultStatus: 'COMPLETED',
             attempts: 1,
@@ -175,9 +176,9 @@ function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]):
     );
     const receipts = commands.map((command) => ({
         commandId: command.commandId,
-        receiptIds: command.kind === 'profile-instance'
-            ? operationIds(command).map((operationId) => `${command.commandId}-${operationId}`)
-            : [command.commandId],
+        receiptIds: operationIds(command).map(
+            (operationId) => binding(command, operationId).receiptId
+        ),
         outboxIds: effectIds(command),
         identityKind: command.kind === 'topology-source' ? 'logical-msg-id' : 'physical-resource-id',
         resultBindings: operationIds(command).map((operationId) => binding(command, operationId))

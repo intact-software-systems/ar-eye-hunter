@@ -5,6 +5,7 @@ const topologyConcurrencyTests = [
     'postgres-topology-config-override-concurrency.test.ts',
     'postgres-topology-mutation-worker-concurrency.test.ts'
 ].map((filename) => `${topologyConcurrencyDirectory}/${filename}`);
+const adminPrunePageTest = 'packages/tests/shared-server/admin-operations/prune/admin-prune-page-postgres.test.ts';
 
 export default {
     ...denoVitestConfig,
@@ -12,6 +13,7 @@ export default {
         ...denoVitestConfig.test,
         include: [
             'packages/tests/shared-server/integration/postgres/*.test.ts',
+            adminPrunePageTest,
             ...topologyConcurrencyTests
         ]
     }

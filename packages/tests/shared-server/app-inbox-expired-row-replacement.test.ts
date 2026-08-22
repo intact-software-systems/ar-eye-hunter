@@ -2,26 +2,20 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
-AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
-ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
 import { AppGroupInboxService, AppInboxType, type GroupCreateAppInboxPayload } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/\
-auth-credential-issuer.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 
-import { createAuthMutationService } from '@shared-server/rallar-system/services/\
-auth-state-mutations.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 
 import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/\
-group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { createResilience, readEntries, TestResourceInbox, TestResourceInboxResults, waitForQueuedEntry } from './auth/auth-app-inbox-test-runtime.ts';

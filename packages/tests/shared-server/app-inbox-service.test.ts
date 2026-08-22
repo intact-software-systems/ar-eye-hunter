@@ -8,8 +8,7 @@ import {
     type GroupMemberUpsertAppInboxPayload
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 
-import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/\
-AppInboxService.ts';
+import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 

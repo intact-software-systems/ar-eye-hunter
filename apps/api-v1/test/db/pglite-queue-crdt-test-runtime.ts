@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { JsonWireValue } from '@shared-server/rallar-system/services/\
-mutation-command-identity.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 

@@ -25,8 +25,7 @@ import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
-import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/\
-to-topology-config-mutation-result.ts';
+import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
 import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
 import {
@@ -35,8 +34,10 @@ import {
     type TopologyAppInboxMutationOwners
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
-import type { GroupTopologyConfigMutationComputed, GroupTopologyConfigMutationReceipt } from '@shared-server/rallar-system/topology/config/mutation/\
-group-topology-config-mutation-contracts.ts';
+import type {
+    GroupTopologyConfigMutationComputed,
+    GroupTopologyConfigMutationReceipt
+} from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 
 import type {
     GroupTopologyConfigMutationAttemptRead,

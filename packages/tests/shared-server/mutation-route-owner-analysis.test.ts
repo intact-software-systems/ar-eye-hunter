@@ -6,7 +6,7 @@ import * as boundaryAnalysis from './mutation-boundary-analysis.ts';
 import * as routingContract from './mutation-routing-inventory.ts';
 
 const AUTHORISED_WS_HELPER = 'packages/shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
-const ADMIN_OPERATIONS = 'packages/shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
+const ADMIN_OPERATIONS = 'packages/shared-server/rallar-system/admin-operations/admin-operations-service.ts';
 
 describe('Mutation route owner analysis contracts', () => {
     it('uses one named readonly input object for each authorised websocket enqueue helper', () => {

@@ -3,28 +3,34 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory, type AdminPruneExpiredRequest } from '@shared/api/admin-operations-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
     createAdminPruneCommand,
     decodeAdminPruneCommand,
     type AdminPruneCommand
-} from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ADMIN_PRUNE_AGGREGATE_TOPIC, toAdminPruneAggregateKey } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity,
     LEGACY_ADMIN_APP_INBOX_TOPIC,
     type AdminPruneEnqueueResult
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import { decodeAdminPruneWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import {
+    ADMIN_PRUNE_AGGREGATE_TOPIC,
+    decodeAdminPruneAggregate,
+    toAdminPruneAggregateKey
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from './group-state/inbox/group-state-inbox-test-runtime.ts';
+import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
+import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 const INITIAL_TIME_EPOCH_MS = 1_800_000_000_000;
 const RETRY_EXPIRY_OFFSET_MS = 900_000;
@@ -48,6 +54,12 @@ interface AdminPruneUnavailableCase {
     readonly options: CreateAdminInboxHarnessOptions;
     readonly request: AdminPruneRequestFixture;
     readonly expectedCode: string;
+}
+
+interface MalformedAdminPruneResultCase {
+    readonly name: string;
+    readonly createResult: (result: AdminPruneEnqueueResult) => RallarCrdtJsonValue;
+    readonly expectedMessage: string;
 }
 
 interface AdminPruneRequestFixture extends AdminPruneExpiredRequest {
@@ -393,6 +405,34 @@ describe('AppAdminInboxService initial prune command', () => {
         ).toBe(2);
     });
 
+    it('puts app-data details only on the app-data page of a mixed-category command', async () => {
+        const harness = createAdminInboxHarness({ waitForResult: false });
+        const pending = harness.service.pruneExpired({
+            adminSession: createAdminSession('admin', 'admin-session'),
+            requestId: 'mixed-category-page-details',
+            request: {
+                categories: ['runtime-state', 'app-data'],
+                appData: { namespace: 'tenant-a', storeName: 'cache' },
+                dryRun: false
+            }
+        });
+
+        await waitForQueueEntry(harness.queue);
+        await dequeueInitialCommand(harness);
+        await pending;
+
+        const pages = [...harness.database.outboxEntries.values()]
+            .map((entry) => decodeAdminPruneWork({ ...entry, status: EntityStatus.RESERVED }))
+            .toSorted((left, right) => left.category.localeCompare(right.category));
+        expect(pages.map((page) => ({ category: page.category, appData: page.appData }))).toEqual([
+            {
+                category: 'app-data',
+                appData: { namespace: 'tenant-a', storeName: 'cache' }
+            },
+            { category: 'runtime-state', appData: null }
+        ]);
+    });
+
     it('bounds downstream identities for a maximum request ID and long scoped target', async () => {
         const harness = createAdminInboxHarness({ waitForResult: false });
         const requestId = 'r'.repeat(128);
@@ -617,6 +657,211 @@ describe('AppAdminInboxService initial prune command', () => {
         expect(harness.readWorkCounts()).toEqual(beforeReplay);
     });
 
+    it.each<MalformedAdminPruneResultCase>([
+        {
+            name: 'an extra top-level field',
+            createResult: (result) => ({ ...result, unexpected: true }),
+            expectedMessage: 'Admin prune result fields are invalid'
+        },
+        {
+            name: 'an empty durable identity',
+            createResult: (result) => ({ ...result, jobId: '' }),
+            expectedMessage: 'Admin prune result fields are invalid'
+        },
+        {
+            name: 'duplicate categories',
+            createResult: (result) => ({ ...result, results: [result.results[0]!, result.results[0]!] }),
+            expectedMessage: 'Admin prune result has duplicate categories'
+        },
+        {
+            name: 'more deleted rows than expired rows',
+            createResult: (result) => ({
+                ...result,
+                changed: true,
+                results: [{ ...result.results[0], deletedRows: result.results[0]!.expiredRows + 1 }]
+            }),
+            expectedMessage: 'Admin prune deleted rows exceed expired rows'
+        },
+        {
+            name: 'an inconsistent changed flag',
+            createResult: (result) => ({ ...result, changed: true }),
+            expectedMessage: 'Admin prune result changed status is invalid'
+        },
+        {
+            name: 'an inconsistent dry-run flag',
+            createResult: (result) => ({
+                ...result,
+                results: result.results.map((categoryResult) => ({ ...categoryResult, dryRun: false }))
+            }),
+            expectedMessage: 'Admin prune result dry-run status is invalid'
+        },
+        {
+            name: 'dry-run deletions',
+            createResult: (result) => ({
+                ...result,
+                changed: true,
+                results: [{ ...result.results[0], expiredRows: 1, deletedRows: 1 }]
+            }),
+            expectedMessage: 'Admin prune dry-run result has deleted rows'
+        },
+        {
+            name: 'another command job identity',
+            createResult: (result) => ({ ...result, jobId: 'another-admin-prune-job' }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'another command generation time',
+            createResult: (result) => ({
+                ...result,
+                generatedAtEpochMs: result.generatedAtEpochMs + 1
+            }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'another command category',
+            createResult: (result) => ({
+                ...result,
+                results: [{ ...result.results[0], category: 'resource-inbox' }]
+            }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'another command execution status',
+            createResult: (result) => ({
+                ...result,
+                status: 'queued',
+                results: result.results.map((categoryResult) => ({ ...categoryResult, dryRun: false }))
+            }),
+            expectedMessage: 'Admin prune durable result differs from command'
+        },
+        {
+            name: 'no category results',
+            createResult: (result) => ({ ...result, results: [] }),
+            expectedMessage: 'Admin prune result fields are invalid'
+        }
+    ])('rejects durable replay containing $name', async ({ createResult, expectedMessage }) => {
+        const harness = createAdminInboxHarness();
+        const request = {
+            requestId: 'malformed-durable-replay',
+            categories: ['runtime-state'] as const,
+            dryRun: true
+        };
+        const first = await completePrune(
+            harness,
+            createAdminSession('admin', 'admin-session'),
+            request
+        );
+        if (first.right === undefined) {
+            throw new Error('Expected successful admin prune result');
+        }
+        const key = (await harness.queue.getAllKeys()).find(
+            (candidate) => candidate.resourceId === request.requestId
+        );
+        if (key === undefined) {
+            throw new Error('Expected durable admin prune key');
+        }
+        const stored = await harness.results.findByKey(key);
+        if (stored === undefined) {
+            throw new Error('Expected durable admin prune result');
+        }
+        await harness.results.replace({
+            ...stored,
+            resource: JSON.stringify(createResult(first.right))
+        });
+        const beforeReplay = harness.readWorkCounts();
+
+        const replay = await harness.service.pruneExpired({
+            adminSession: createAdminSession('admin', 'renewed-session'),
+            ...toPruneInput(request)
+        });
+
+        expect(replay.left).toMatchObject({
+            type: 'app-inbox-failure',
+            code: 'TypeError',
+            status: 400,
+            message: expectedMessage
+        });
+        expect(harness.readWorkCounts()).toEqual(beforeReplay);
+    });
+
+    it('rejects a completed aggregate replay whose identity differs from the stored command', async () => {
+        const harness = createAdminInboxHarness({ waitForResult: false });
+        const adminSession = createAdminSession('admin', 'admin-session');
+        const request = {
+            requestId: 'mismatched-completed-aggregate',
+            categories: ['runtime-state'] as const,
+            dryRun: false
+        };
+        const first = await completePrune(harness, adminSession, request);
+        expect(first.left).toMatchObject({ code: 'app-inbox-unavailable' });
+
+        const command = await readOnlyCommand(harness.queue, request.requestId);
+        const aggregateKey = toAdminPruneAggregateKey(command.jobId);
+        const storedAggregate = await harness.results.findByKey(aggregateKey);
+        if (storedAggregate === undefined) {
+            throw new Error('Expected pending admin prune aggregate');
+        }
+        const aggregate = decodeAdminPruneAggregate(JSON.parse(storedAggregate.resource));
+        await harness.results.replace({
+            ...storedAggregate,
+            status: EntityStatus.COMPLETED,
+            resource: JSON.stringify({
+                ...aggregate,
+                revision: 1,
+                jobId: 'another-completed-admin-prune-job',
+                status: 'completed',
+                completedCategories: ['runtime-state']
+            })
+        });
+
+        await expect(harness.service.pruneExpired({
+            adminSession: createAdminSession('admin', 'renewed-session'),
+            ...toPruneInput(request)
+        })).rejects.toThrow('Admin prune aggregate differs from command');
+    });
+
+    it('accepts a completed aggregate whose page retries renewed its expiry', async () => {
+        const harness = createAdminInboxHarness({ waitForResult: false });
+        const adminSession = createAdminSession('admin', 'admin-session');
+        const request = {
+            requestId: 'renewed-completed-aggregate-expiry',
+            categories: ['runtime-state'] as const,
+            dryRun: false
+        };
+        const first = await completePrune(harness, adminSession, request);
+        expect(first.left).toMatchObject({ code: 'app-inbox-unavailable' });
+
+        const command = await readOnlyCommand(harness.queue, request.requestId);
+        const aggregateKey = toAdminPruneAggregateKey(command.jobId);
+        const storedAggregate = await harness.results.findByKey(aggregateKey);
+        if (storedAggregate === undefined) {
+            throw new Error('Expected pending admin prune aggregate');
+        }
+        const aggregate = decodeAdminPruneAggregate(JSON.parse(storedAggregate.resource));
+        await harness.results.replace({
+            ...storedAggregate,
+            status: EntityStatus.COMPLETED,
+            resource: JSON.stringify({
+                ...aggregate,
+                revision: 1,
+                expireAtEpochMs: command.expireAtEpochMs + 60_000,
+                status: 'completed',
+                completedCategories: ['runtime-state']
+            })
+        });
+
+        await expect(harness.service.pruneExpired({
+            adminSession: createAdminSession('admin', 'renewed-session'),
+            ...toPruneInput(request)
+        })).resolves.toMatchObject({
+            right: {
+                status: 'completed',
+                jobId: command.jobId,
+                results: [{ category: 'runtime-state', dryRun: false }]
+            }
+        });
+    });
+
     it('returns the existing unavailable failure when the initial result wait exhausts', async () => {
         const harness = createAdminInboxHarness({ waitForResult: false });
 
@@ -697,6 +942,7 @@ function readAdminPruneResultCategory(
 interface AdminInboxHarness {
     readonly service: AppAdminInboxService;
     readonly queue: TestResourceInbox;
+    readonly results: TestResourceInboxResults;
     readonly reader: InboxQueueReader;
     readonly database: ReturnType<typeof createAppInboxTestDatabase>;
     readonly events: string[];
@@ -826,6 +1072,7 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     return {
         service,
         queue,
+        results,
         reader,
         database,
         events,

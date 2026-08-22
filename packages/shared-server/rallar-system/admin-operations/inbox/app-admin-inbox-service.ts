@@ -19,27 +19,28 @@ import {
 import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../services/app-inbox-failure.ts';
 import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
+import type { AdminOperationsPruner } from '../admin-operations-service.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
+import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
     createAdminPruneAggregate,
     decodeAdminPruneAggregate,
     toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey,
-    toAdminPruneCompletedResult
-} from '../admin-prune-progress.ts';
-import type { AdminOperationsPruner } from '../AdminOperationsService.ts';
+    toAdminPruneCompletedResultForCommand
+} from '../prune/admin-prune-progress.ts';
 import {
     createAdminPruneCommand,
     decodeAdminPruneCommand,
-    toAdminPruneOutbox,
     type AdminPruneCommand
-} from '../AdminPruneExpiredWork.ts';
+} from './admin-prune-command-codec.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
 
+import { decodeJsonWireValue } from '../../services/mutation-command-identity.ts';
 import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../services/timing.ts';
 import {
-    decodeAdminPruneEnqueueResult,
+    decodeAdminPruneEnqueueResultForCommand,
     decodeAdminPruneRequest,
     type AdminPruneEnqueueResult
 } from './admin-prune-inbox-codec.ts';
@@ -200,12 +201,14 @@ export class AppAdminInboxService extends AppInboxService {
                 };
             }
         );
-        const command = decodeAdminPruneCommand(reservation.enqueue.data);
+        const command = decodeAdminPruneCommand(
+            decodeJsonWireValue(reservation.enqueue.data, 'Reserved admin prune command')
+        );
         await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
         const enqueued = await this.waitForReservedEntryResult<AdminPruneCommand, AdminPruneEnqueueResult>(
             reservation.enqueue,
-            decodeAdminPruneEnqueueResult,
+            (value) => decodeAdminPruneEnqueueResultForCommand(value, command),
             reservation.winner
         );
         return await this.toCallerResult(command, enqueued);
@@ -234,7 +237,7 @@ export class AppAdminInboxService extends AppInboxService {
         const result = await this.writeMutation(context, async (transaction) => {
             const outbox = new ResourceInboxRepository(transaction);
             for (const entry of computed.outboxEntries) {
-                await outbox.writeIfAbsentOrMatch(entry);
+                await outbox.write(entry);
             }
             if (computed.aggregateEntry !== null) {
                 const stored = await new ResourceInboxResultsRepository(
@@ -359,21 +362,24 @@ export class AppAdminInboxService extends AppInboxService {
         if (result.left !== undefined || command.dryRun) {
             return result;
         }
-        return await this.waitForAggregate(command.jobId);
+        return await this.waitForAggregate(command);
     }
 
     private async waitForAggregate(
-        jobId: string
+        command: AdminPruneCommand
     ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
         try {
-            const result = await tryWithPolicy(async () => {
-                const entry = await this.resourceInboxResults.findByKey(toAdminPruneAggregateKey(jobId));
+            const entry = await tryWithPolicy(async () => {
+                const entry = await this.resourceInboxResults.findByKey(toAdminPruneAggregateKey(command.jobId));
                 if (entry === undefined || entry.status !== EntityStatus.COMPLETED) {
                     throw new Error('Admin prune aggregate is pending');
                 }
-                return toAdminPruneCompletedResult(decodeAdminPruneAggregate(JSON.parse(entry.resource)));
+                return entry;
             }, this.aggregateWaitPolicy);
-            return Either.ofRight(result);
+            return Either.ofRight(toAdminPruneCompletedResultForCommand(
+                decodeAdminPruneAggregate(JSON.parse(entry.resource)),
+                command
+            ));
         }
         catch (error) {
             if (error instanceof TryWithExhaustedError) {
@@ -456,7 +462,7 @@ function createInitialAdminPrunePages(
                 pageSize: command.pageSize,
                 afterCursor: null,
                 pageIndex: 0,
-                appData: command.appData
+                appData: category === 'app-data' ? command.appData : null
             },
             serviceId
         )

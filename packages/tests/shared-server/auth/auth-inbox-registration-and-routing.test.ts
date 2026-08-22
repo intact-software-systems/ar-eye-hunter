@@ -4,14 +4,11 @@ import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxServ
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
-auth-mutation-service.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
-auth-credential-issuer.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
-app-auth-inbox-service.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';

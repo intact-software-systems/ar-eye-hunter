@@ -33,8 +33,7 @@ import { createGroupStateService } from '@shared-server/rallar-system/services/g
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/\
-group-topology-config-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
 import {
     GroupTopologyManagementService

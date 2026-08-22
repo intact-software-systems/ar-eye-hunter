@@ -1,4 +1,9 @@
 import {
+    ADMIN_PRUNE_APP_OUTBOX_TOPIC,
+    decodeAdminPruneOutboxMessage,
+    type AdminPrunePageWork
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import {
     type ApiV1StateWriteEvidence,
     type ApiV1StateWriteEvidenceSpec,
     type InboxRow,
@@ -6,11 +11,7 @@ import {
     type OverdueRecoveryEvidence,
     type ParsedInboxRow
 } from './api-v1-state-write-evidence-contracts.ts';
-import {
-    collectEvidenceNamedStrings,
-    nestedEvidenceJson,
-    parseEvidenceJson
-} from './api-v1-state-write-json-evidence.ts';
+import { collectEvidenceNamedStrings, parseEvidenceJson } from './api-v1-state-write-json-evidence.ts';
 import { readPersistedCommandEvidence, type PersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';
 import { validatePersistedAppInboxResult } from './api-v1-state-write-result-evidence.ts';
 
@@ -38,6 +39,7 @@ export function parseApiV1StateWriteEvidenceRow(
         resultResource: row.result_resource,
         authoritativeReceipt: commandEvidence?.receipt,
         commandScope: commandEvidence?.commandScope,
+        adminPruneCommand: commandEvidence?.adminPruneCommand,
         requireAuthoritativeReceipt: commandEvidence !== undefined
     });
     const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
@@ -71,12 +73,12 @@ function canonicalEffect(row: OutboxRow):
         commandId: string;
         effectKind: string;
         outboxId: string;
+        adminPrunePage?: AdminPrunePageWork;
     }>
     | undefined {
     const envelope = parseEvidenceJson(row.ri_resource) as
         | {
             id?: { msgId?: ParsedEvidenceValue; };
-            route?: { contextId?: ParsedEvidenceValue; };
             payload?: { typeId?: ParsedEvidenceValue; resource?: ParsedEvidenceValue; };
         }
         | undefined;
@@ -109,17 +111,30 @@ function canonicalEffect(row: OutboxRow):
             outboxId: msgId
         };
     }
-    const admin = nestedEvidenceJson(envelope?.payload?.resource) as Record<string, unknown> | undefined;
     if (
         row.ri_type_id === 'APP_OUTBOX' &&
-        row.ri_topic_id === 'rallar.admin.prune-expired' &&
-        envelope?.payload?.typeId === 'ADMIN_PRUNE_EXPIRED' &&
-        admin?.kind === 'page' &&
-        typeof admin.jobId === 'string' &&
-        typeof admin.category === 'string' &&
-        envelope.route?.contextId === admin.jobId
+        row.ri_topic_id === ADMIN_PRUNE_APP_OUTBOX_TOPIC
     ) {
-        return { commandId: admin.jobId, effectKind: 'admin-prune-page', outboxId: msgId };
+        try {
+            const { work } = decodeAdminPruneOutboxMessage({
+                key: {
+                    resourceId: row.ri_resource_id,
+                    topicId: row.ri_topic_id,
+                    contextId: row.fk_ext_bank_id
+                },
+                resource: row.ri_resource,
+                typeId: row.ri_type_id
+            });
+            return {
+                commandId: work.jobId,
+                effectKind: 'admin-prune-page',
+                outboxId: row.ri_resource_id,
+                adminPrunePage: work
+            };
+        }
+        catch {
+            return undefined;
+        }
     }
     return undefined;
 }
@@ -152,7 +167,11 @@ type LinkedOutboxEvidence = Readonly<{
     status: string;
     commandId: string;
     appInboxResourceId: string;
+    appInboxTopicId: string;
+    appInboxContextId: string;
     effectKind: string;
+    adminPrunePageCategory?: string;
+    adminPrunePageMatchesCommand?: boolean;
     stage: 'direct' | 'downstream';
 }>;
 
@@ -192,7 +211,7 @@ export function deriveApiV1StateWriteEvidence(
             !['COMPLETED', 'FAILED'].includes(row.status) ||
             !row.durableResultValid
     ).length;
-    const linkedOutbox = linkOutboxEvidence(appInbox, rawOutboxRows);
+    const linkedOutbox = linkOutboxEvidence(appInbox, rawOutboxRows, commandEvidence);
     const resourceOutbox = linkedOutbox.filter((effect) => effect.stage === 'direct');
     const downstreamOutbox = linkedOutbox.filter((effect) => effect.stage === 'downstream');
     const effectFailures = appInbox.filter((row) => {
@@ -200,11 +219,26 @@ export function deriveApiV1StateWriteEvidence(
         if (!expected || row.status !== 'COMPLETED') {
             return false;
         }
-        const effects = resourceOutbox.filter((effect) => effect.appInboxResourceId === row.resourceId);
+        const effects = resourceOutbox.filter((effect) =>
+            effect.appInboxResourceId === row.resourceId &&
+            effect.appInboxTopicId === row.topicId &&
+            effect.appInboxContextId === row.contextId
+        );
         const actual = effects.map((effect) => effect.effectKind);
         const receiptIds = row.receipt?.outboxIds;
+        const adminPruneCommand = findPersistedCommandEvidence(commandEvidence, row)?.adminPruneCommand;
+        const adminPageCategories = effects.flatMap((effect) =>
+            effect.adminPrunePageCategory === undefined ? [] : [effect.adminPrunePageCategory]
+        );
+        const adminPageFailure = row.commandType === 'ADMIN_PRUNE_EXPIRED' &&
+            (
+                adminPruneCommand === undefined ||
+                effects.some((effect) => effect.adminPrunePageMatchesCommand !== true) ||
+                !sameMultiset(adminPruneCommand.categories, adminPageCategories)
+            );
         return (
             !sameMultiset(expected, actual) ||
+            adminPageFailure ||
             (receiptIds !== undefined &&
                 !sameMultiset(
                     receiptIds,
@@ -290,11 +324,27 @@ function selectAppInboxEvidence({
     selectedTypes,
     selectedPrefixes
 }: SelectAppInboxEvidenceInput): readonly ParsedInboxRow[] {
-    const commandEvidenceByResourceId = new Map(
-        commandEvidence.map((entry) => [entry.appInboxResourceId, entry] as const)
-    );
+    const evidenceByPhysicalKey = new Map<string, PersistedCommandEvidence>();
+    for (const evidence of commandEvidence) {
+        const key = toPhysicalAppInboxKey(
+            evidence.appInboxResourceId,
+            evidence.appInboxTopicId,
+            evidence.appInboxContextId
+        );
+        if (evidenceByPhysicalKey.has(key)) {
+            throw new TypeError('Command evidence contains a duplicate physical AppInbox key');
+        }
+        evidenceByPhysicalKey.set(key, evidence);
+    }
     return rawRows
-        .map((row) => parseApiV1StateWriteEvidenceRow(row, commandEvidenceByResourceId.get(row.ri_resource_id)))
+        .map((row) =>
+            parseApiV1StateWriteEvidenceRow(
+                row,
+                evidenceByPhysicalKey.get(
+                    toPhysicalAppInboxKey(row.ri_resource_id, row.ri_topic_id, row.fk_ext_bank_id)
+                )
+            )
+        )
         .filter(
             (row) =>
                 (selectedTypes.size === 0 || selectedTypes.has(row.commandType)) &&
@@ -303,9 +353,25 @@ function selectAppInboxEvidence({
         );
 }
 
+function toPhysicalAppInboxKey(resourceId: string, topicId: string, contextId: string): string {
+    return [resourceId, topicId, contextId].join('\0');
+}
+
+function findPersistedCommandEvidence(
+    commandEvidence: readonly PersistedCommandEvidence[],
+    row: Pick<ParsedInboxRow, 'resourceId' | 'topicId' | 'contextId'>
+): PersistedCommandEvidence | undefined {
+    return commandEvidence.find((evidence) =>
+        evidence.appInboxResourceId === row.resourceId &&
+        evidence.appInboxTopicId === row.topicId &&
+        evidence.appInboxContextId === row.contextId
+    );
+}
+
 function linkOutboxEvidence(
     appInbox: readonly ParsedInboxRow[],
-    rawOutboxRows: readonly OutboxRow[]
+    rawOutboxRows: readonly OutboxRow[],
+    commandEvidence: readonly PersistedCommandEvidence[]
 ): readonly LinkedOutboxEvidence[] {
     const inboxByCommandId = new Map(
         appInbox.flatMap((row) => row.commandIds.map((commandId) => [commandId, row] as const))
@@ -319,6 +385,10 @@ function linkOutboxEvidence(
         if (!command) {
             return [];
         }
+        const adminPruneCommand = findPersistedCommandEvidence(commandEvidence, command)?.adminPruneCommand;
+        const pageMatchesCommand = canonical.adminPrunePage !== undefined &&
+            adminPruneCommand !== undefined &&
+            adminPrunePageMatchesCommand(canonical.adminPrunePage, adminPruneCommand);
         return [
             {
                 resourceId: row.ri_resource_id,
@@ -328,7 +398,15 @@ function linkOutboxEvidence(
                 status: row.ri_status,
                 commandId: canonical.commandId,
                 appInboxResourceId: command.resourceId,
+                appInboxTopicId: command.topicId,
+                appInboxContextId: command.contextId,
                 effectKind: canonical.effectKind,
+                ...(canonical.adminPrunePage === undefined
+                    ? {}
+                    : {
+                        adminPrunePageCategory: canonical.adminPrunePage.category,
+                        adminPrunePageMatchesCommand: pageMatchesCommand
+                    }),
                 stage: canonical.effectKind === 'rtc-topology-recompute' &&
                         command.commandType.startsWith('GROUP_')
                     ? 'downstream'
@@ -336,4 +414,22 @@ function linkOutboxEvidence(
             }
         ];
     });
+}
+
+function adminPrunePageMatchesCommand(
+    page: AdminPrunePageWork,
+    command: NonNullable<PersistedCommandEvidence['adminPruneCommand']>
+): boolean {
+    const expectedAppData = page.category === 'app-data' ? command.appData : null;
+    return page.jobId === command.jobId &&
+        command.categories.includes(page.category) &&
+        page.requestedBy === command.requestedBy &&
+        page.requestedSessionId === command.requestedSessionId &&
+        page.capturedAtEpochMs === command.capturedAtEpochMs &&
+        page.expireAtEpochMs >= command.expireAtEpochMs &&
+        page.pageSize === command.pageSize &&
+        page.afterCursor === null &&
+        page.pageIndex === 0 &&
+        page.appData?.namespace === expectedAppData?.namespace &&
+        page.appData?.storeName === expectedAppData?.storeName;
 }

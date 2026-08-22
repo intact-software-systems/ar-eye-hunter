@@ -4,6 +4,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { createAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import {
+    ADMIN_APP_INBOX_TOPIC,
+    toAdminPruneContextId,
+    toAdminPruneJobId
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
+import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { toStrictAppInboxQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
+
+import type { ApiV1StateWriteEvidenceSqlParameter } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import {
     collectApiV1StateWriteEvidence,
     readPGliteStateWriteEvidenceSnapshot,
@@ -130,6 +140,182 @@ describe('API-v1 PGlite state-write evidence source', () => {
         expect(sql).not.toHaveBeenCalled();
         expect(collectInput).toBe(rawInput);
         expect(snapshotInput).toBe(rawInput);
+    });
+
+    it('links public admin request identity to its scoped page-work identity', async () => {
+        const requestId = 'admin-evidence-request-0001';
+        const requestedBy = `admin-${'principal-'.repeat(10)}`;
+        const appData = { namespace: `evidence-${'namespace-'.repeat(15)}`, storeName: null };
+        const logicalContextId = toAdminPruneContextId(requestedBy, appData);
+        const physicalKey = toStrictAppInboxQueueKey({
+            resourceId: requestId,
+            topicId: ADMIN_APP_INBOX_TOPIC,
+            contextId: logicalContextId
+        });
+        const jobId = await toAdminPruneJobId(physicalKey);
+        const command = await createAdminPruneCommand({
+            jobId,
+            requestedBy,
+            requestedSessionId: 'session-1',
+            capturedAtEpochMs: 1_700_000_000_000,
+            expireAtEpochMs: 1_700_000_060_000,
+            dryRun: false,
+            categories: ['app-data'],
+            appData,
+            pageSize: 100
+        });
+        const enqueue = {
+            type: 'ADMIN_PRUNE_EXPIRED',
+            topicId: physicalKey.topicId,
+            resourceId: physicalKey.resourceId,
+            contextId: physicalKey.contextId,
+            senderId: command.requestedSessionId,
+            data: command
+        };
+        const toInboxResource = (overrides: Partial<typeof enqueue> = {}) =>
+            JSON.stringify({
+                payload: {
+                    typeId: 'ADMIN_PRUNE_EXPIRED',
+                    resource: JSON.stringify({ ...enqueue, ...overrides })
+                }
+            });
+        const inbox = {
+            ri_row_id: 1,
+            ri_resource_id: physicalKey.resourceId,
+            ri_topic_id: physicalKey.topicId,
+            fk_ext_bank_id: physicalKey.contextId,
+            ri_resource: toInboxResource(),
+            ri_status: 'COMPLETED',
+            ri_attempts: 1,
+            start_ts: null,
+            end_ts: null,
+            next_ts: null,
+            result_status: 'COMPLETED',
+            result_resource: JSON.stringify({
+                generatedAtEpochMs: command.capturedAtEpochMs,
+                serverId: 'server-1',
+                warnings: [],
+                operation: 'maintenance.prune-expired',
+                status: 'queued',
+                changed: false,
+                jobId,
+                results: [{
+                    category: 'app-data',
+                    expiredRows: 0,
+                    deletedRows: 0,
+                    dryRun: false
+                }]
+            })
+        };
+        const page = toAdminPruneOutbox({
+            kind: 'page',
+            jobId,
+            category: 'app-data',
+            requestedBy: command.requestedBy,
+            requestedSessionId: command.requestedSessionId,
+            capturedAtEpochMs: command.capturedAtEpochMs,
+            expireAtEpochMs: command.expireAtEpochMs,
+            pageSize: command.pageSize,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: command.appData
+        }, 'server-1');
+        const sql = Object.assign(
+            vi.fn(async (parts: TemplateStringsArray, ...values: ApiV1StateWriteEvidenceSqlParameter[]) => {
+                const query = parts.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+                if (query.includes('from resource_inbox i')) {
+                    return [inbox];
+                }
+                if (query.includes('ri_type_id in (\'app_outbox\', \'ws_outbox\')')) {
+                    return values[0] === jobId
+                        ? [{
+                            ri_resource_id: page.key.resourceId,
+                            ri_topic_id: page.key.topicId,
+                            fk_ext_bank_id: page.key.contextId,
+                            ri_type_id: page.typeId,
+                            ri_status: page.status,
+                            ri_resource: page.resource
+                        }]
+                        : [];
+                }
+                return [];
+            }),
+            { begin: vi.fn() }
+        );
+
+        const evidence = await collectApiV1StateWriteEvidenceFromSql({
+            match: requestId,
+            commandTypes: ['ADMIN_PRUNE_EXPIRED'],
+            expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
+        }, sql as never);
+
+        expect(evidence).toMatchObject({
+            matchedAppInboxCount: 1,
+            atomicCompletionFailures: 0,
+            resourceOutboxCount: 1,
+            resourceOutbox: [{ commandId: jobId, effectKind: 'admin-prune-page' }]
+        });
+
+        for (
+            const malformedEnqueue of [
+                { topicId: `${physicalKey.topicId}:wrong` },
+                { resourceId: `${physicalKey.resourceId}:wrong` },
+                { contextId: `${physicalKey.contextId}:wrong` },
+                { senderId: `${command.requestedSessionId}:wrong` }
+            ]
+        ) {
+            inbox.ri_resource = toInboxResource(malformedEnqueue);
+            await expect(collectApiV1StateWriteEvidenceFromSql({
+                match: requestId,
+                commandTypes: ['ADMIN_PRUNE_EXPIRED']
+            }, sql as never)).resolves.toMatchObject({
+                atomicCompletionFailures: 1,
+                statusResultFailures: 1,
+                appInbox: [{ durableResultValid: false }]
+            });
+        }
+        inbox.ri_resource = toInboxResource();
+
+        inbox.fk_ext_bank_id = toStrictAppInboxQueueKey({
+            resourceId: requestId,
+            topicId: ADMIN_APP_INBOX_TOPIC,
+            contextId: toAdminPruneContextId('another-admin', appData)
+        }).contextId;
+        await expect(collectApiV1StateWriteEvidenceFromSql({
+            match: requestId,
+            commandTypes: ['ADMIN_PRUNE_EXPIRED']
+        }, sql as never)).resolves.toMatchObject({
+            atomicCompletionFailures: 1,
+            statusResultFailures: 1,
+            appInbox: [{ durableResultValid: false }]
+        });
+
+        const arbitraryJobId = `admin-prune:${'f'.repeat(64)}`;
+        const arbitraryJobCommand = await createAdminPruneCommand({
+            jobId: arbitraryJobId,
+            requestedBy: command.requestedBy,
+            requestedSessionId: command.requestedSessionId,
+            capturedAtEpochMs: command.capturedAtEpochMs,
+            expireAtEpochMs: command.expireAtEpochMs,
+            dryRun: command.dryRun,
+            categories: command.categories,
+            appData: command.appData,
+            pageSize: command.pageSize
+        });
+        inbox.fk_ext_bank_id = physicalKey.contextId;
+        inbox.ri_resource = toInboxResource({ data: arbitraryJobCommand });
+        inbox.result_resource = JSON.stringify({
+            ...JSON.parse(inbox.result_resource),
+            jobId: arbitraryJobId
+        });
+        await expect(collectApiV1StateWriteEvidenceFromSql({
+            match: requestId,
+            commandTypes: ['ADMIN_PRUNE_EXPIRED']
+        }, sql as never)).resolves.toMatchObject({
+            atomicCompletionFailures: 1,
+            statusResultFailures: 1,
+            appInbox: [{ durableResultValid: false }]
+        });
     });
 
     it('retains numeric-string minimum and string commandTypes behavior', async () => {

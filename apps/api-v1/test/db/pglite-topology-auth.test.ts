@@ -1,21 +1,14 @@
 import assert from 'node:assert/strict';
 
-import { configureSharedGraphRepositories } from '@shared-graph/repository/\
-configure-shared-graph-repositories.ts';
+import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/\
-createStateRepositories.ts';
+import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
-PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/\
-rtc-rtt-repository.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
-rallar-rtc-topology-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import {
     AppGroupInboxService,
     toTopologyAppInboxCommand,
@@ -24,10 +17,9 @@ import {
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
-group-topology-management-service.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
-persistence/group-topology-config-repository.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {

@@ -11,6 +11,7 @@ import process from 'node:process';
 import postgres, { type Sql } from 'postgres';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import {
     AuthSessionRepository,
     type IssuedAuthSession
@@ -37,6 +38,10 @@ import {
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
+import {
+    toStateWriteBenchmarkGroupContextId,
+    toStateWriteBenchmarkSessionId
+} from './state-write/api-v1-state-write-app-inbox-evidence.ts';
 import {
     createStateWriteBenchmarkArtifact,
     readBenchmarkGitIdentity
@@ -166,17 +171,13 @@ export function createBenchmarkAuthSession(
     principalId: string,
     sessionLabel: string
 ): IssuedAuthSession {
-    const scopeIdentity = `${encodeURIComponent(scope.applicationId)}:${
-        encodeURIComponent(
-            scope.workspaceId
-        )
-    }`;
+    const scopeIdentity = [scope.applicationId, scope.workspaceId].map(encodeURIComponent).join(':');
     const principalIdentity = encodeURIComponent(principalId);
     const sessionIdentity = encodeURIComponent(sessionLabel);
     return {
         clientId: principalId,
         username: principalId,
-        sessionId: `${scopeIdentity}:${principalIdentity}:${sessionIdentity}`,
+        sessionId: toStateWriteBenchmarkSessionId(scope, principalId, sessionLabel),
         accessToken: `state-write-benchmark:${scopeIdentity}:${principalIdentity}:${sessionIdentity}`,
         issuedAtEpochMs: BENCHMARK_SESSION_ISSUED_AT_EPOCH_MS,
         expiresAtEpochMs: BENCHMARK_SESSION_EXPIRES_AT_EPOCH_MS
@@ -541,18 +542,20 @@ async function executeMutation({
     kind,
     command
 }: ExecuteMutationInput): Promise<void> {
-    const clientContextId = inboxContextId(
-        scope.applicationId,
-        scope.workspaceId,
-        command.principalId
-    );
-    const groupContextId = inboxContextId(scope.applicationId, scope.workspaceId, command.groupId);
+    const clientContextId = toAuthenticatedClientMutationContextId({
+        scope,
+        principalId: command.principalId,
+        callerClientId: command.clientAuthority.clientId,
+        callerSessionId: command.clientAuthority.sessionId
+    });
+    const groupContextId = toStateWriteBenchmarkGroupContextId(scope, command.groupId);
     switch (kind) {
         case 'profile-instance': {
             await runAppInboxMutation(runtime, () =>
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                         resourceId: `${command.requestId}-profile`,
                         contextId: clientContextId,
                         senderId: command.principalId,
@@ -574,6 +577,7 @@ async function executeMutation({
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                         resourceId: `${command.requestId}-instance`,
                         contextId: clientContextId,
                         senderId: command.principalId,
@@ -600,6 +604,7 @@ async function executeMutation({
                 runtime.group.processAuthenticatedGroupEntryUntilCompletion(
                     {
                         type: AppInboxType.GROUP_MEMBER_UPSERT,
+                        topicId: AppInboxType.GROUP_MEMBER_UPSERT,
                         resourceId: command.requestId,
                         contextId: groupContextId,
                         senderId: command.principalId,
@@ -682,6 +687,7 @@ async function executeMutation({
                 runtime.group.processAuthenticatedGroupEntryUntilCompletion(
                     {
                         type: AppInboxType.GROUP_UPDATE,
+                        topicId: AppInboxType.GROUP_UPDATE,
                         resourceId: command.requestId,
                         contextId: groupContextId,
                         senderId: command.ownerId,
@@ -720,6 +726,7 @@ async function executeMutation({
                 runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
                     {
                         type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                        topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
                         resourceId: command.requestId,
                         contextId: groupContextId,
                         senderId: command.ownerId,
@@ -769,6 +776,7 @@ function toGroupPresenceEnqueue(
 ): AuthenticatedGroupMutationEnqueue {
     const command = input.command;
     const shared = {
+        topicId: input.type,
         resourceId: command.requestId,
         contextId: input.contextId,
         senderId: command.principalId
@@ -824,10 +832,6 @@ async function runAppInboxMutation(
     );
 }
 
-function inboxContextId(...parts: string[]): string {
-    return parts.map(encodeURIComponent).join(':');
-}
-
 async function seedCompleteState(
     sql: Sql,
     scope: StateScope,
@@ -855,8 +859,9 @@ async function seedCompleteState(
                 runtime.group.processAuthenticatedGroupEntryUntilCompletion(
                     {
                         type: AppInboxType.GROUP_CREATE,
+                        topicId: AppInboxType.GROUP_CREATE,
                         resourceId: `seed-group-${groupIndex}`,
-                        contextId: inboxContextId(scope.applicationId, scope.workspaceId, groupId),
+                        contextId: toStateWriteBenchmarkGroupContextId(scope, groupId),
                         senderId: ownerId,
                         data: {
                             scope,
@@ -891,11 +896,17 @@ async function seedCompleteState(
                 `client-session-${clientIndex}`
             );
             await authSessionRepository.putSession(authority);
-            const contextId = inboxContextId(scope.applicationId, scope.workspaceId, principalId);
+            const contextId = toAuthenticatedClientMutationContextId({
+                scope,
+                principalId,
+                callerClientId: authority.clientId,
+                callerSessionId: authority.sessionId
+            });
             await runAppInboxMutation(runtime, () =>
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                         resourceId: `seed-principal-${clientIndex}`,
                         contextId,
                         senderId: principalId,
@@ -917,6 +928,7 @@ async function seedCompleteState(
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                         resourceId: `seed-instance-${clientIndex}`,
                         contextId,
                         senderId: principalId,

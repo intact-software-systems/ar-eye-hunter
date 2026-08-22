@@ -5,22 +5,15 @@ import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppD
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
-PSqlRuntimeStateRepository.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-log-repository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/\
-RtcTopologyExecutionRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/\
-RtcTopologySnapshotRepository.ts';
-import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/\
-CoalescedAppOutboxWorkService.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
-rallar-rtc-topology-service.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
+import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
-group-topology-management-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';

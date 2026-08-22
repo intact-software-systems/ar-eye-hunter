@@ -7,7 +7,8 @@ const evidence = [{
     commandId: 'command-1',
     operationId: 'operation-1',
     resourceId: 'resource-1',
-    topicId: 'topic-1'
+    topicId: 'topic-1',
+    contextId: 'scope'
 }];
 
 function release(
@@ -65,5 +66,18 @@ describe('state-write attempt evidence', () => {
             outcome: 'conflicted',
             failure: expect.objectContaining({ name: 'RuntimeStateWriteConflictError' })
         })]);
+    });
+
+    it('does not attribute a release from another physical AppInbox context', () => {
+        const wrongContext = {
+            ...release({ kind: 'retryable', code: 'ECONNRESET', name: 'Error' }),
+            key: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'other-scope' }
+        };
+
+        expect(deriveAppInboxAttemptObservations(
+            [wrongContext],
+            evidence,
+            [{ commandId: 'command-1', status: 'accepted' }]
+        )).toEqual([]);
     });
 });

@@ -1,9 +1,12 @@
-import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 import { decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireValue
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 export interface ExactStandaloneCommandIdsInput {
     readonly type: AppInboxType;
@@ -31,7 +34,7 @@ export function readExactStandaloneCommandIds(
         return [command.commandId, command.deliveryId];
     }
     if (type === AppInboxType.ADMIN_PRUNE_EXPIRED) {
-        return [decodeAdminPruneCommand(data).jobId];
+        return [decodeAdminPruneCommand(decodeJsonWireValue(data, 'Admin prune command')).jobId];
     }
     if (type === AppInboxType.RTC_RTT_SUBMIT) {
         return [readRtcRttRequestId(data)];

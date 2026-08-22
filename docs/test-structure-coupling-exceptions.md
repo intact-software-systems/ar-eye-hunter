@@ -1847,7 +1847,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-090194f72a5aaa6c",
+      "id": "test-structure-coupling-4b2a565041549359",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",

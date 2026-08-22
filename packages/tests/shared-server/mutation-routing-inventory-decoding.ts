@@ -16,10 +16,10 @@ const PATHS = {
     ac: 'apps/api-v1/src/routes/auth/register-auth-credential-mutation-routes.ts',
     au: 'apps/api-v1/src/routes/auth/register-auth-user-mutation-routes.ts',
     w: 'apps/api-v1/src/routes/ws-routes.ts',
-    ad: 'apps/api-v1/src/routes/admin-operations-routes.ts',
+    ad: 'apps/api-v1/src/admin-operations/register-admin-operation-mutation-routes.ts',
     cr: 'apps/api-v1/src/crdt/register-crdt-admin-routes.ts',
     cm: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
-    ag: 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
+    ag: 'apps/api-v1/src/admin-operations/create-api-admin-mutation-gateway.ts',
     rq: 'apps/api-v1/src/services/request-auth-service.ts',
     l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
     e: 'packages/shared-server/rallar-system/group-state/presence/' +

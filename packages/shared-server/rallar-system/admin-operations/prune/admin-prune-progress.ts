@@ -3,8 +3,9 @@ import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-typ
 import { ADMIN_PRUNE_EXPIRED_CATEGORIES } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from '../services/app-inbox-queue-key.ts';
-import type { AdminPrunePageComputed } from './AdminPruneExpiredWork.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
+import type { AdminPruneCommand } from '../inbox/admin-prune-command-codec.ts';
+import type { AdminPrunePageWork } from './admin-prune-page-codec.ts';
 
 export const ADMIN_PRUNE_AGGREGATE_TOPIC = 'admin-prune.aggregate';
 
@@ -43,6 +44,13 @@ export type AdminPruneCompletedResult = Readonly<{
     results: readonly AdminPruneCategoryResult[];
 }>;
 
+export interface AdminPrunePageProgress {
+    readonly jobId: string;
+    readonly category: AdminPruneExpiredCategory;
+    readonly deletedRows: number;
+    readonly next: AdminPrunePageWork | null;
+}
+
 export function createAdminPruneAggregate(
     input: Readonly<{
         jobId: string;
@@ -80,7 +88,7 @@ export function createAdminPruneAggregate(
 
 export function advanceAdminPruneAggregate(
     aggregate: AdminPruneAggregate,
-    page: Pick<AdminPrunePageComputed, 'jobId' | 'category' | 'deletedRows' | 'next'>
+    page: AdminPrunePageProgress
 ): AdminPruneAggregate {
     if (aggregate.status !== 'pending' || aggregate.jobId !== page.jobId) {
         throw new TypeError('Admin prune aggregate identity is invalid');
@@ -160,7 +168,7 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
     if (new Set(completed).size !== completed.length) {
         throw new TypeError('Admin prune aggregate has duplicate completed category');
     }
-    const results = value.results.map((entry) => {
+    const results: readonly AdminPruneCategoryResult[] = value.results.map((entry) => {
         if (!isRecord(entry)) {
             throw new TypeError('Admin prune aggregate result is invalid');
         }
@@ -176,7 +184,12 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
         if (entry.deletedRows > entry.expiredRows) {
             throw new TypeError('Admin prune aggregate deleted rows exceed expired rows');
         }
-        return { category, deletedRows: entry.deletedRows as number };
+        return {
+            category,
+            expiredRows: entry.expiredRows,
+            deletedRows: entry.deletedRows,
+            dryRun: false
+        };
     });
     const categories = results.map((entry) => entry.category);
     if (new Set(categories).size !== categories.length) {
@@ -185,7 +198,7 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
     if (completed.some((category) => !categories.includes(category))) {
         throw new TypeError('Admin prune aggregate completion category is invalid');
     }
-    if ((value.revision as number) < completed.length) {
+    if (value.revision < completed.length) {
         throw new TypeError('Admin prune aggregate revision precedes completion progress');
     }
     const isComplete = completed.length === categories.length;
@@ -196,7 +209,22 @@ export function decodeAdminPruneAggregate(value: unknown): AdminPruneAggregate {
     if (value.changed !== changed) {
         throw new TypeError('Admin prune aggregate changed status is invalid');
     }
-    return value as unknown as AdminPruneAggregate;
+    return {
+        version: 1,
+        revision: value.revision,
+        jobId: value.jobId,
+        generatedAtEpochMs: value.generatedAtEpochMs,
+        expireAtEpochMs: value.expireAtEpochMs,
+        serverId: value.serverId,
+        requestedBy: value.requestedBy,
+        requestedSessionId: value.requestedSessionId,
+        operation: 'maintenance.prune-expired',
+        status: value.status,
+        changed: value.changed,
+        warnings: [],
+        completedCategories: completed,
+        results
+    };
 }
 
 export function toAdminPruneCompletedResult(
@@ -215,6 +243,24 @@ export function toAdminPruneCompletedResult(
         jobId: aggregate.jobId,
         results: aggregate.results
     };
+}
+
+export function toAdminPruneCompletedResultForCommand(
+    aggregate: AdminPruneAggregate,
+    command: AdminPruneCommand
+): AdminPruneCompletedResult {
+    const matches = !command.dryRun &&
+        aggregate.jobId === command.jobId &&
+        aggregate.generatedAtEpochMs === command.capturedAtEpochMs &&
+        aggregate.expireAtEpochMs >= command.expireAtEpochMs &&
+        aggregate.requestedBy === command.requestedBy &&
+        aggregate.requestedSessionId === command.requestedSessionId &&
+        aggregate.results.length === command.categories.length &&
+        aggregate.results.every((result, index) => result.category === command.categories[index]);
+    if (!matches) {
+        throw new TypeError('Admin prune aggregate differs from command');
+    }
+    return toAdminPruneCompletedResult(aggregate);
 }
 
 export function toAdminPruneAggregateKey(jobId: string): Key {
@@ -254,7 +300,7 @@ function requireExactKeys(value: Record<string, unknown>, expected: readonly str
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
-    return Number.isSafeInteger(value) && (value as number) >= 0;
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -262,8 +308,10 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function readCategory(value: unknown): AdminPruneExpiredCategory {
-    if (!ADMIN_PRUNE_EXPIRED_CATEGORIES.includes(value as AdminPruneExpiredCategory)) {
-        throw new TypeError('Admin prune aggregate category is invalid');
+    for (const category of ADMIN_PRUNE_EXPIRED_CATEGORIES) {
+        if (value === category) {
+            return category;
+        }
     }
-    return value as AdminPruneExpiredCategory;
+    throw new TypeError('Admin prune aggregate category is invalid');
 }

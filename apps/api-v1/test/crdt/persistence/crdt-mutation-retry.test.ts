@@ -3,22 +3,17 @@ import assert from 'node:assert/strict';
 import { RALLAR_CRDT_PROTOCOL_VERSION, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef, type RallarCrdtSnapshotEnvelope } from '@shared/crdt/mod.ts';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-log-repository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
-import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/\
-crdt-mutation-value-codec.ts';
+import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
 
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/\
-decode-crdt-mutation-result.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
 import { createApiCrdtInboxFactory, readConfiguredCrdtPolicies } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';

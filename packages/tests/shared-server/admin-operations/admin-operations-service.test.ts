@@ -9,7 +9,7 @@ import type {
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import type { AdminOperationsMutationGateway } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
-import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
+import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/admin-operations-service.ts';
 import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import type { CrdtAdminCompactResult, CrdtAdminEraseResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';

@@ -19,11 +19,10 @@ import {
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/\
-client-state-snapshot-read-through-cache.ts';
 import {
     createCachedClientStateService
 } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
+import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import {
     createGroupFormationMetricsRecorder,
     type RallarGroupFormationMetricsRecorder
@@ -36,11 +35,10 @@ import type {
 import {
     GroupPresenceSummaryWork
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/\
-group-state-snapshot-read-through-cache.ts';
 import {
     createCachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import {

@@ -6,11 +6,9 @@ import {
     createAuthUserRepository,
     createRuntimeStateRepository
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/\
-RallarServerApplication.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/\
-psql-crdt-log-repository.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 

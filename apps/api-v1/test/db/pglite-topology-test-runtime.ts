@@ -2,48 +2,36 @@ import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/\
-p-sql-rtc-topology-delivery-repository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
-PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/\
-RtcTopologyExecutionRepository.ts';
-import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/repositories/\
-RtcTopologyPublicationRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/\
-RtcTopologySnapshotRepository.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/\
-rallar-rtc-topology-service.ts';
-import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/\
-rtc-topology-ws-outbox-entry.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import {
     AppGroupInboxService,
     type TopologyAppInboxCommand
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
     writeRtcTopologyOutbox
 } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/\
-config/mutation/group-topology-config-mutation-contracts.ts';
+import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
     GroupTopologyManagementService,
     materializeRtcOverlayTopologyBroadcastMessage
-} from '@shared-server/rallar-system/topology/\
-group-topology-management-service.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
-persistence/group-topology-config-repository.ts';
+} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/\
-group-topology-config-canonical.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 

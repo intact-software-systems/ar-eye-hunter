@@ -5,7 +5,7 @@ import { AppInboxType, type AppInboxMessageContext } from '../../services/app-in
 import { toStrictAppInboxQueueKey } from '../../services/app-inbox-queue-key.ts';
 import { AppInboxIdempotencyConflictError } from '../../services/AppInboxService.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
-import type { AdminPruneAppData, AdminPruneCommand } from '../AdminPruneExpiredWork.ts';
+import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
 export const ADMIN_APP_INBOX_TOPIC = AppInboxType.ADMIN_PRUNE_EXPIRED;
 export const LEGACY_ADMIN_APP_INBOX_TOPIC = 'app-inbox.admin-operations';

@@ -1,13 +1,26 @@
 import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
 import {
+    decodeAdminPruneCommand,
+    type AdminPruneCommand
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import {
+    ADMIN_APP_INBOX_TOPIC,
+    assertAdminPruneStoredIdentity,
+    LEGACY_ADMIN_APP_INBOX_TOPIC,
+    toAdminPruneContextId,
+    toAdminPruneJobId
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
+import {
     groupMutationIdempotencyKey
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-idempotency-key.ts';
 import * as ClientState from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import * as GroupState from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import * as AppInboxCommandIdentity from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { toStrictAppInboxQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
 import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import type {
     RuntimeStateEntry,
@@ -44,6 +57,8 @@ export interface AuthoritativeReceiptEvidence extends PublicResultReceiptIdentit
 
 export interface PersistedCommandEvidence {
     readonly appInboxResourceId: string;
+    readonly appInboxTopicId: string;
+    readonly appInboxContextId: string;
     readonly valid: boolean;
     readonly commandType: string;
     readonly commandIds: readonly string[];
@@ -52,6 +67,7 @@ export interface PersistedCommandEvidence {
         workspaceId: string;
         groupId?: string;
     }>;
+    readonly adminPruneCommand?: AdminPruneCommand;
     readonly receipt?: AuthoritativeReceiptEvidence;
     readonly failure?: string;
 }
@@ -59,6 +75,7 @@ export interface PersistedCommandEvidence {
 interface InboxCommandRow {
     readonly ri_resource_id: string;
     readonly ri_topic_id: string;
+    readonly fk_ext_bank_id: string;
     readonly ri_resource: string;
     readonly result_status?: string | null;
 }
@@ -143,8 +160,7 @@ export async function readPersistedCommandEvidence(
         resource: row.ri_resource
     });
     if (!identity.valid) {
-        return invalid({
-            appInboxResourceId: row.ri_resource_id,
+        return invalid(row, {
             commandType: identity.identity.operation,
             commandIds: [],
             failure: 'malformed-app-inbox-command'
@@ -202,15 +218,28 @@ export async function readPersistedCommandEvidence(
         if (commandType === AppInboxType.TOPOLOGY_RECONFIGURE) {
             const command = readTopologyReconfigureCommand(identity.command.authority);
             return {
-                appInboxResourceId: row.ri_resource_id,
+                ...toPersistedCommandIdentity(row),
                 valid: true,
                 commandType,
                 commandIds: [command.requestId],
                 commandScope: command.groupRef
             };
         }
+        if (commandType === AppInboxType.ADMIN_PRUNE_EXPIRED) {
+            return await readAdminPruneEvidence(
+                row,
+                {
+                    topicId: identity.command.topicId,
+                    resourceId: identity.command.resourceId,
+                    contextId: identity.command.contextId,
+                    senderId: identity.command.senderId,
+                    data: decodeJsonWireValue(identity.command.data, 'Admin prune evidence command')
+                },
+                commandType
+            );
+        }
         return {
-            appInboxResourceId: row.ri_resource_id,
+            ...toPersistedCommandIdentity(row),
             valid: true,
             commandType,
             commandIds: readExactStandaloneCommandIds({
@@ -222,8 +251,7 @@ export async function readPersistedCommandEvidence(
         };
     }
     catch (error) {
-        return invalid({
-            appInboxResourceId: row.ri_resource_id,
+        return invalid(row, {
             commandType,
             commandIds: [],
             failure: error instanceof Error ? error.message : String(error)
@@ -325,7 +353,7 @@ async function readClientReceiptByIdentity(
     ).findIdempotentClientMutationReceipt(ref, requestId);
     if (!stored && allowMissing) {
         return {
-            appInboxResourceId: row.ri_resource_id,
+            ...toPersistedCommandIdentity(row),
             valid: true,
             commandType,
             commandIds: [requestId]
@@ -343,7 +371,7 @@ async function readClientReceiptByIdentity(
         throw new TypeError('client authoritative receipt differs from command identity');
     }
     return {
-        appInboxResourceId: row.ri_resource_id,
+        ...toPersistedCommandIdentity(row),
         valid: true,
         commandType,
         commandIds: [requestId],
@@ -390,7 +418,7 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
     }
     if (!requireReceipt) {
         return {
-            appInboxResourceId: row.ri_resource_id,
+            ...toPersistedCommandIdentity(row),
             valid: true,
             commandType,
             commandIds: [command.commandId]
@@ -413,7 +441,7 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
         throw new TypeError('group authoritative receipt differs from command identity');
     }
     return {
-        appInboxResourceId: row.ri_resource_id,
+        ...toPersistedCommandIdentity(row),
         valid: true,
         commandType,
         commandIds: [command.commandId],
@@ -461,7 +489,7 @@ async function readTopologyReceipt(
     }
     if (!requireReceipt) {
         return {
-            appInboxResourceId: row.ri_resource_id,
+            ...toPersistedCommandIdentity(row),
             valid: true,
             commandType,
             commandIds: [requestId]
@@ -479,7 +507,7 @@ async function readTopologyReceipt(
         throw new TypeError('topology authoritative receipt differs from command hash');
     }
     return {
-        appInboxResourceId: row.ri_resource_id,
+        ...toPersistedCommandIdentity(row),
         valid: true,
         commandType,
         commandIds: [requestId],
@@ -488,13 +516,76 @@ async function readTopologyReceipt(
 }
 
 interface InvalidEvidenceInput {
-    readonly appInboxResourceId: string;
     readonly commandType: string;
     readonly commandIds: readonly string[];
     readonly failure: string;
 }
 
-function invalid(input: InvalidEvidenceInput): PersistedCommandEvidence {
-    const { appInboxResourceId, commandType, commandIds, failure } = input;
-    return { appInboxResourceId, valid: false, commandType, commandIds, failure };
+async function readAdminPruneEvidence(
+    row: InboxCommandRow,
+    enqueue: Readonly<{
+        readonly topicId?: string;
+        readonly resourceId?: string;
+        readonly contextId?: string;
+        readonly senderId?: string;
+        readonly data: Parameters<typeof decodeAdminPruneCommand>[0];
+    }>,
+    commandType: AppInboxType
+): Promise<PersistedCommandEvidence> {
+    const command = decodeAdminPruneCommand(enqueue.data);
+    const key = {
+        resourceId: row.ri_resource_id,
+        topicId: row.ri_topic_id,
+        contextId: row.fk_ext_bank_id
+    };
+    const expectedCurrentKey = toStrictAppInboxQueueKey({
+        resourceId: row.ri_resource_id,
+        topicId: ADMIN_APP_INBOX_TOPIC,
+        contextId: toAdminPruneContextId(command.requestedBy, command.appData)
+    });
+    const currentIdentity = row.ri_resource_id === expectedCurrentKey.resourceId &&
+        row.ri_topic_id === expectedCurrentKey.topicId &&
+        row.fk_ext_bank_id === expectedCurrentKey.contextId &&
+        command.jobId === (await toAdminPruneJobId(key));
+    const legacyIdentity = row.ri_topic_id === LEGACY_ADMIN_APP_INBOX_TOPIC &&
+        row.fk_ext_bank_id === command.requestedBy &&
+        command.jobId === row.ri_resource_id &&
+        enqueue.topicId === row.ri_topic_id &&
+        enqueue.resourceId === row.ri_resource_id &&
+        enqueue.contextId === row.fk_ext_bank_id &&
+        enqueue.senderId === command.requestedSessionId;
+    if (!currentIdentity && !legacyIdentity) {
+        throw new TypeError('Admin prune queue identity differs from physical queue identity');
+    }
+    if (currentIdentity) {
+        await assertAdminPruneStoredIdentity(key, enqueue, command);
+    }
+    return {
+        ...toPersistedCommandIdentity(row),
+        valid: true,
+        commandType,
+        commandIds: [command.jobId],
+        adminPruneCommand: command
+    };
+}
+
+function toPersistedCommandIdentity(
+    row: InboxCommandRow
+): Pick<PersistedCommandEvidence, 'appInboxResourceId' | 'appInboxTopicId' | 'appInboxContextId'> {
+    return {
+        appInboxResourceId: row.ri_resource_id,
+        appInboxTopicId: row.ri_topic_id,
+        appInboxContextId: row.fk_ext_bank_id
+    };
+}
+
+function invalid(row: InboxCommandRow, input: InvalidEvidenceInput): PersistedCommandEvidence {
+    const { commandType, commandIds, failure } = input;
+    return {
+        ...toPersistedCommandIdentity(row),
+        valid: false,
+        commandType,
+        commandIds,
+        failure
+    };
 }

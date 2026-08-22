@@ -53,7 +53,7 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
         );
         const artifactDigest = await crypto.subtle.digest('SHA-256', artifactBytes);
         expect(toHex(artifactDigest)).toBe(
-            '36b2810baac9613e69c4152eb60e66e548bea94636aead2e5b3b35fd1f1b55e3'
+            '00830eb1e67353eb1749fa4d7865b507dec74f05fad2dac76a840c0a997b7fc8'
         );
         expect(() => parseBenchmarkOptions(['--regression-reasons-file=tmp/perf/../topology-reasons.json'])).toThrow(/must remain under tmp\/perf/);
         for (const mutate of conflictReasonFailures()) {

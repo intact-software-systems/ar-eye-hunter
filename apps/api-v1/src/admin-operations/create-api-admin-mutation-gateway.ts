@@ -1,10 +1,8 @@
 import type {
     AdminOperationsMutationGateway
 } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
-import type { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/\
-app-admin-inbox-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/\
-auth-session-repository.ts';
+import type { AppAdminInboxService } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type {
     CrdtAdminCompactResult,
     CrdtAdminEraseResult
@@ -18,8 +16,7 @@ import {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtDocumentMetadata } from '@shared/crdt/mod.ts';
 
-import { decodeJsonWireValue } from '@shared-server/rallar-system/services/\
-mutation-command-identity.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 import type { CrdtAdminMutations, CrdtAdminPublicResult } from '../crdt/create-crdt-admin-mutations.ts';
 

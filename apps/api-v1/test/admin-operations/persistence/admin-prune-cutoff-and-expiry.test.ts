@@ -1,18 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
-import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/\
-PSqlAdminOperationsStatsReader.ts';
+import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/\
-PSqlAdminPruneExpiredRepository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
-ResourceInboxResultsRepository.ts';
-import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 
-import { queueNow } from '../crdt/crdt-api-test-fixtures.ts';
-import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { queueNow } from '../../crdt/crdt-api-test-fixtures.ts';
+import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test(
     'initial prune statistics use the command capture cutoff instead of database now',
@@ -60,7 +57,7 @@ Deno.test('prune progress renews physical and JSON aggregate expiry together', a
         };
         const successor = toAdminPruneAggregateEntry(renewed);
         await sql.begin(async (transaction) => {
-            await new PSqlAdminPruneExpiredRepository(sql, 'server-1').writeProgress(transaction, {
+            await new PSqlAdminPruneRepository(sql).writeProgress(transaction, {
                 kind: 'page',
                 jobId: current.jobId,
                 category: 'runtime-state',

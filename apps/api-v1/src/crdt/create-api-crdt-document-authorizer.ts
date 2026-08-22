@@ -12,8 +12,7 @@ import type {
 import type { GroupMemberStatus, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
-import type { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/\
-client-state-snapshot-read-through-cache.ts';
+import type { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 
 import type {
     CurrentMutationAuthority,

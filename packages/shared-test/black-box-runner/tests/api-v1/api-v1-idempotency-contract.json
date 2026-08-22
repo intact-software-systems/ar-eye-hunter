@@ -18,7 +18,13 @@
     "workspaceId": { "env": "RALLAR_BB_WORKSPACE_ID", "default": "primary-{runId}" },
     "crdtApplicationId": "rallar-server",
     "crdtWorkspaceId": "default",
-    "groupId": { "env": "RALLAR_BB_GROUP_ID", "default": "contract-group-{runId}" }
+    "groupId": { "env": "RALLAR_BB_GROUP_ID", "default": "contract-group-{runId}" },
+    "secondAdminUsername": { "env": "RALLAR_BOB_USERNAME", "default": "bob" },
+    "secondAdminPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
   },
   "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
   "connections": {
@@ -906,6 +912,74 @@
       }
     },
     {
+      "name": "proveAdminCrdtOperationIsolation",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/crdt/lifecycle/requests/idem-contract-admin-operation-isolation-{runId}",
+        "headers": {
+          "Authorization": "{crdtAdminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "{crdtApplicationId}",
+            "workspaceId": "{crdtWorkspaceId}",
+            "scope": "app",
+            "documentType": "black-box-map",
+            "documentId": "contract-document-{runId}"
+          },
+          "lifecycle": "active",
+          "reason": "operation-isolation"
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "proveAdminTopologyOperationIsolation",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/topology/recompute/requests/idem-contract-admin-operation-isolation-{runId}",
+        "headers": {
+          "Authorization": "{renewedAdminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "publish": false,
+          "reason": "operation-isolation"
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "proveAdminPruneOperationIsolation",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-operation-isolation-{runId}",
+        "headers": {
+          "Authorization": "{renewedAdminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "dryRun": true,
+          "categories": ["app-data"],
+          "appData": { "namespace": "operation-isolation-{runId}" },
+          "reason": "operation-isolation"
+        }
+      },
+      "expect": { "status": 200, "body": { "status": "dry-run", "changed": false } }
+    },
+    {
       "name": "seedDocumentIsolation",
       "type": "http",
       "connection": "apiPrimary",
@@ -984,7 +1058,8 @@
           "dryRun": true,
           "categories": ["runtime-state", "resource-inbox-results"],
           "reason": "idempotency-contract"
-        }
+        },
+        "outputs": { "firstNormalizedPruneBody": "body" }
       },
       "expect": { "status": 200, "body": { "status": "dry-run", "changed": false } }
     },
@@ -1003,12 +1078,54 @@
           "reason": "idempotency-contract",
           "categories": ["resource-inbox-results", "runtime-state"],
           "dryRun": true
-        }
+        },
+        "outputs": { "replayedNormalizedPruneBody": "body" }
       },
       "expect": { "status": 200, "body": { "status": "dry-run", "changed": false } }
     },
     {
-      "name": "proveAdminActorIsolation",
+      "name": "assertNormalizedPruneReplay",
+      "type": "assert",
+      "actual": {
+        "first": "{firstNormalizedPruneBody}",
+        "replay": "{replayedNormalizedPruneBody}"
+      },
+      "expect": {
+        "body": {
+          "first": "{firstNormalizedPruneBody}",
+          "replay": "{firstNormalizedPruneBody}"
+        }
+      }
+    },
+    {
+      "name": "rejectChangedNormalizedPruneIntent",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-prune-normalized-{runId}",
+        "headers": {
+          "Authorization": "{renewedAdminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "dryRun": false,
+          "categories": ["runtime-state", "resource-inbox-results"],
+          "reason": "changed-intent"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v1",
+          "code": "app-inbox-idempotency-conflict",
+          "status": 409
+        }
+      }
+    },
+    {
+      "name": "rejectMismatchedAdminClientHeader",
       "type": "http",
       "connection": "apiSecondary",
       "request": {
@@ -1032,6 +1149,385 @@
           "code": "authentication-required",
           "status": 401
         }
+      }
+    },
+    {
+      "name": "loginSecondAdmin",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/idem-contract-login-admin-two-{runId}",
+        "body": {
+          "username": "{secondAdminUsername}",
+          "password": "{secondAdminPassword}"
+        },
+        "outputs": {
+          "secondAdminClientId": "body.clientId",
+          "secondAdminAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200, "body": { "clientId": "bob" } }
+    },
+    {
+      "name": "deriveSecondAdminAuthHeader",
+      "type": "set",
+      "output": "secondAdminAuthHeader",
+      "secret": true,
+      "redactAs": "secondAdminAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.secondAdminAccessToken" }] }
+    },
+    {
+      "name": "firstAdminActorIsolationPrune",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-actor-isolation-{runId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "dryRun": false,
+          "categories": ["app-data"],
+          "appData": { "namespace": "admin-actor-isolation-{runId}" },
+          "reason": "first-admin"
+        }
+      },
+      "expect": { "status": 200, "body": { "status": "completed" } }
+    },
+    {
+      "name": "proveAdminActorIsolation",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-actor-isolation-{runId}",
+        "headers": {
+          "Authorization": "{secondAdminAuthHeader}",
+          "x-client-id": "{secondAdminClientId}"
+        },
+        "body": {
+          "dryRun": false,
+          "categories": ["app-data"],
+          "appData": { "namespace": "admin-actor-isolation-{runId}" },
+          "reason": "second-admin"
+        }
+      },
+      "expect": { "status": 200, "body": { "status": "completed" } }
+    },
+    {
+      "name": "exposeAdminActorIsolationEvidence",
+      "type": "set.state-write-evidence",
+      "output": "adminActorIsolationEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "idem-contract-admin-actor-isolation-{runId}",
+          "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
+          "minimumMatchedRows": 2,
+          "expectedEffectsByCommandType": {
+            "ADMIN_PRUNE_EXPIRED": ["admin-prune-page"]
+          }
+        }
+      }
+    },
+    {
+      "name": "assertAdminActorIsolationEvidence",
+      "type": "assert",
+      "actual": {
+        "matchedAppInboxCount": "{adminActorIsolationEvidence.matchedAppInboxCount}",
+        "completedAppInboxCount": "{adminActorIsolationEvidence.completedAppInboxCount}",
+        "failedAppInboxCount": "{adminActorIsolationEvidence.failedAppInboxCount}",
+        "atomicCompletionFailures": "{adminActorIsolationEvidence.atomicCompletionFailures}",
+        "resourceOutboxCount": "{adminActorIsolationEvidence.resourceOutboxCount}",
+        "appInbox": "{adminActorIsolationEvidence.appInbox}",
+        "resourceOutbox": "{adminActorIsolationEvidence.resourceOutbox}"
+      },
+      "expect": {
+        "body": {
+          "matchedAppInboxCount": 2,
+          "completedAppInboxCount": 2,
+          "failedAppInboxCount": 0,
+          "atomicCompletionFailures": 0,
+          "resourceOutboxCount": 2
+        },
+        "comparators": [
+          { "path": "appInbox", "length": 2 },
+          { "path": "resourceOutbox", "length": 2 }
+        ]
+      }
+    },
+    {
+      "name": "raceEqualAdminPruneAcrossThreeNodes",
+      "type": "parallel",
+      "maxConcurrency": 3,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "admin-prune-equal-primary",
+          "steps": [{
+            "name": "equalAdminPrunePrimary",
+            "type": "http",
+            "connection": "apiPrimary",
+            "request": {
+              "method": "POST",
+              "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-prune-equal-{runId}",
+              "headers": {
+                "Authorization": "{adminAuthHeader}",
+                "x-client-id": "{adminClientId}"
+              },
+              "body": {
+                "dryRun": false,
+                "categories": ["app-data"],
+                "appData": { "namespace": "admin-prune-equal-{runId}" },
+                "reason": "equal-primary"
+              },
+              "outputs": { "equalAdminPrunePrimaryBody": "body" }
+            },
+            "expect": { "status": 200, "body": { "status": "completed" } }
+          }]
+        },
+        {
+          "name": "admin-prune-equal-secondary",
+          "steps": [{
+            "name": "equalAdminPruneSecondary",
+            "type": "http",
+            "connection": "apiSecondary",
+            "request": {
+              "method": "POST",
+              "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-prune-equal-{runId}",
+              "headers": {
+                "Authorization": "{renewedAdminAuthHeader}",
+                "x-client-id": "{adminClientId}"
+              },
+              "body": {
+                "reason": "equal-secondary",
+                "appData": { "namespace": "admin-prune-equal-{runId}" },
+                "categories": ["app-data"],
+                "dryRun": false
+              },
+              "outputs": { "equalAdminPruneSecondaryBody": "body" }
+            },
+            "expect": { "status": 200, "body": { "status": "completed" } }
+          }]
+        },
+        {
+          "name": "admin-prune-equal-tertiary",
+          "steps": [{
+            "name": "equalAdminPruneTertiary",
+            "type": "http",
+            "connection": "apiTertiary",
+            "request": {
+              "method": "POST",
+              "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-prune-equal-{runId}",
+              "headers": {
+                "Authorization": "{renewedAdminAuthHeader}",
+                "x-client-id": "{adminClientId}"
+              },
+              "body": {
+                "categories": ["app-data"],
+                "dryRun": false,
+                "appData": { "namespace": "admin-prune-equal-{runId}" },
+                "reason": "equal-tertiary"
+              },
+              "outputs": { "equalAdminPruneTertiaryBody": "body" }
+            },
+            "expect": { "status": 200, "body": { "status": "completed" } }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "assertEqualAdminPruneResults",
+      "type": "assert",
+      "actual": {
+        "primary": "{equalAdminPrunePrimaryBody}",
+        "secondary": "{equalAdminPruneSecondaryBody}",
+        "tertiary": "{equalAdminPruneTertiaryBody}"
+      },
+      "expect": {
+        "body": {
+          "primary": "{equalAdminPrunePrimaryBody}",
+          "secondary": "{equalAdminPrunePrimaryBody}",
+          "tertiary": "{equalAdminPrunePrimaryBody}"
+        }
+      }
+    },
+    {
+      "name": "exposeEqualAdminPruneEvidence",
+      "type": "set.state-write-evidence",
+      "output": "equalAdminPruneEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "idem-contract-admin-prune-equal-{runId}",
+          "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
+          "minimumMatchedRows": 1,
+          "expectedEffectsByCommandType": {
+            "ADMIN_PRUNE_EXPIRED": ["admin-prune-page"]
+          }
+        }
+      }
+    },
+    {
+      "name": "assertEqualAdminPruneEvidence",
+      "type": "assert",
+      "actual": {
+        "matchedAppInboxCount": "{equalAdminPruneEvidence.matchedAppInboxCount}",
+        "completedAppInboxCount": "{equalAdminPruneEvidence.completedAppInboxCount}",
+        "failedAppInboxCount": "{equalAdminPruneEvidence.failedAppInboxCount}",
+        "atomicCompletionFailures": "{equalAdminPruneEvidence.atomicCompletionFailures}",
+        "intermediateMutationIntentCount": "{equalAdminPruneEvidence.intermediateMutationIntentCount}",
+        "resourceOutboxCount": "{equalAdminPruneEvidence.resourceOutboxCount}",
+        "appInbox": "{equalAdminPruneEvidence.appInbox}",
+        "resourceOutbox": "{equalAdminPruneEvidence.resourceOutbox}"
+      },
+      "expect": {
+        "body": {
+          "matchedAppInboxCount": 1,
+          "completedAppInboxCount": 1,
+          "failedAppInboxCount": 0,
+          "atomicCompletionFailures": 0,
+          "intermediateMutationIntentCount": 0,
+          "resourceOutboxCount": 1
+        },
+        "comparators": [
+          { "path": "appInbox", "length": 1 },
+          { "path": "resourceOutbox", "length": 1 }
+        ]
+      }
+    },
+    {
+      "name": "raceDifferentAdminPruneIntentsAcrossThreeNodes",
+      "type": "parallel",
+      "maxConcurrency": 3,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "admin-prune-different-primary",
+          "steps": [{
+            "name": "differentAdminPrunePrimary",
+            "type": "http",
+            "connection": "apiPrimary",
+            "request": {
+              "method": "POST",
+              "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-prune-different-{runId}",
+              "headers": {
+                "Authorization": "{adminAuthHeader}",
+                "x-client-id": "{adminClientId}"
+              },
+              "body": {
+                "dryRun": false,
+                "categories": ["app-data"],
+                "appData": { "namespace": "admin-prune-different-{runId}" }
+              }
+            },
+            "expect": { "statusCode": [200, 409] }
+          }]
+        },
+        {
+          "name": "admin-prune-different-secondary",
+          "steps": [{
+            "name": "differentAdminPruneSecondary",
+            "type": "http",
+            "connection": "apiSecondary",
+            "request": {
+              "method": "POST",
+              "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-prune-different-{runId}",
+              "headers": {
+                "Authorization": "{renewedAdminAuthHeader}",
+                "x-client-id": "{adminClientId}"
+              },
+              "body": {
+                "dryRun": false,
+                "categories": ["runtime-state", "app-data"],
+                "appData": { "namespace": "admin-prune-different-{runId}" }
+              }
+            },
+            "expect": { "statusCode": [200, 409] }
+          }]
+        },
+        {
+          "name": "admin-prune-different-tertiary",
+          "steps": [{
+            "name": "differentAdminPruneTertiary",
+            "type": "http",
+            "connection": "apiTertiary",
+            "request": {
+              "method": "POST",
+              "path": "/api/admin/operations/maintenance/prune-expired/requests/idem-contract-admin-prune-different-{runId}",
+              "headers": {
+                "Authorization": "{renewedAdminAuthHeader}",
+                "x-client-id": "{adminClientId}"
+              },
+              "body": {
+                "dryRun": false,
+                "categories": ["app-data", "resource-inbox-results"],
+                "appData": { "namespace": "admin-prune-different-{runId}" }
+              }
+            },
+            "expect": { "statusCode": [200, 409] }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "assertOneDifferentAdminPruneWinner",
+      "type": "assert",
+      "actual": {
+        "statuses": [
+          "{resultsByName.differentAdminPrunePrimary.0.actual.statusCode}",
+          "{resultsByName.differentAdminPruneSecondary.0.actual.statusCode}",
+          "{resultsByName.differentAdminPruneTertiary.0.actual.statusCode}"
+        ]
+      },
+      "expect": {
+        "anyOf": [
+          { "statuses": [200, 409, 409] },
+          { "statuses": [409, 200, 409] },
+          { "statuses": [409, 409, 200] }
+        ]
+      }
+    },
+    {
+      "name": "exposeDifferentAdminPruneEvidence",
+      "type": "set.state-write-evidence",
+      "output": "differentAdminPruneEvidence",
+      "request": {
+        "stateWriteEvidence": {
+          "match": "idem-contract-admin-prune-different-{runId}",
+          "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
+          "minimumMatchedRows": 1
+        }
+      }
+    },
+    {
+      "name": "assertDifferentAdminPruneEvidence",
+      "type": "assert",
+      "actual": {
+        "matchedAppInboxCount": "{differentAdminPruneEvidence.matchedAppInboxCount}",
+        "completedAppInboxCount": "{differentAdminPruneEvidence.completedAppInboxCount}",
+        "failedAppInboxCount": "{differentAdminPruneEvidence.failedAppInboxCount}",
+        "atomicCompletionFailures": "{differentAdminPruneEvidence.atomicCompletionFailures}",
+        "resourceOutboxCount": "{differentAdminPruneEvidence.resourceOutboxCount}"
+      },
+      "expect": {
+        "anyOf": [
+          {
+            "matchedAppInboxCount": 1,
+            "completedAppInboxCount": 1,
+            "failedAppInboxCount": 0,
+            "atomicCompletionFailures": 0,
+            "resourceOutboxCount": 1
+          },
+          {
+            "matchedAppInboxCount": 1,
+            "completedAppInboxCount": 1,
+            "failedAppInboxCount": 0,
+            "atomicCompletionFailures": 0,
+            "resourceOutboxCount": 2
+          }
+        ]
       }
     },
     {

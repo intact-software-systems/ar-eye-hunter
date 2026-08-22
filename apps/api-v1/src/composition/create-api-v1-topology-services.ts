@@ -3,31 +3,25 @@ import type { GroupFormationRttMutationSink } from '@shared-server/rallar-system
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/\
-RtcTopologySnapshotRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import type {
     RtcRttAppInboxDependencies
 } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/\
-rtc-rtt-repository.ts';
-import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/\
-rtc-rtt-refinement-service.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import {
     RtcRttRefinementGate,
     type RtcRttRefinementGateConfig
 } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
+import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
 import {
     RallarRtcTopologyService,
     type RallarRtcTopologyServiceOptions
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/\
-group-topology-management-service.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
-persistence/group-topology-config-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

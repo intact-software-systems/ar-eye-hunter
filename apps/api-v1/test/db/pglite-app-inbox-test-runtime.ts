@@ -5,9 +5,8 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/\
-mutation-command-identity.ts';
 import { AppInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 

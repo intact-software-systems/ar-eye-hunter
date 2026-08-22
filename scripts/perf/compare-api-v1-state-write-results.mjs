@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { isValidPersistedResult, validateReceiptResultBindings } from './api-v1-state-write-result-binding.mjs';
 
-export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v5';
+export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v6';
 export const STATE_WRITE_COMMANDS_PER_RUN = 700;
 
 export const PRODUCTION_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
@@ -1024,7 +1024,9 @@ function validateAppInboxEvidence(entries, commandsById, receiptsByCommand, path
             !isObject(entry) || typeof entry.commandId !== 'string' ||
             !commandsById.has(entry.commandId) || typeof entry.operationId !== 'string' ||
             entry.operationId.length === 0 || typeof entry.resourceId !== 'string' ||
-            entry.resourceId.length === 0 || entry.status !== 'COMPLETED' ||
+            entry.resourceId.length === 0 || typeof entry.topicId !== 'string' ||
+            entry.topicId.length === 0 || typeof entry.contextId !== 'string' ||
+            entry.contextId.length === 0 || entry.status !== 'COMPLETED' ||
             entry.resultStatus !== 'COMPLETED' || !Number.isInteger(entry.attempts) ||
             entry.attempts < 1 || !isNonNegativeNumber(entry.retryDelayMs) ||
             !isNonNegativeNumber(entry.dueAgeMs) ||

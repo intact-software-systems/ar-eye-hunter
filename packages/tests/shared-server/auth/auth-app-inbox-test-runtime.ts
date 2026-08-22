@@ -6,16 +6,12 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/\
-auth-mutation-service.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
-auth-credential-issuer.ts';
-import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/\
-auth-credential-issuer.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/\
-app-auth-inbox-service.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 
 import type { AppInboxTestDatabase, AppInboxTestDatabaseOptions } from '../app-inbox-test-database-contracts.ts';

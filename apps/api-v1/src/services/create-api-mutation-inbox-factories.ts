@@ -10,7 +10,7 @@ import type {
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 
-import { createApiAdminInboxService } from './create-api-admin-inbox-service.ts';
+import { createApiAdminInboxService } from '../admin-operations/create-api-admin-inbox-service.ts';
 
 export interface CurrentAdminMutationSession {
     readonly clientId: string;

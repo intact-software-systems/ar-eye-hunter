@@ -1,15 +1,14 @@
-import { createAdminPruneAggregate, decodeAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+import { createAdminPruneCommand, decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
-    createAdminPruneCommand,
-    decodeAdminPruneCommand,
     decodeAdminPruneWork,
     toAdminPruneOutbox,
     type AdminPrunePageWork
-} from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { createAdminPruneAggregate, decodeAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
-describe('Task 9 correction 3 prune invariants', () => {
+describe('admin prune command and progress invariants', () => {
     it('rejects command expiry at or before its immutable capture cutoff', async () => {
         const command = await createAdminPruneCommand({
             jobId: 'job-1',

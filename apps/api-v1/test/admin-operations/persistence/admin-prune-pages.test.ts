@@ -1,16 +1,16 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import {
     advanceAdminPruneAggregate,
     createAdminPruneAggregate,
     toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey
-} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
-import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import assert from 'node:assert/strict';
-import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
+import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 Deno.test('admin prune PSQL repository reads and deletes one deterministic page', async () => {
     await withPGliteSql(async (sql) => {
@@ -27,14 +27,14 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
         store_namespace, store_key, store_value, expire_at_ts, revision
       ) values ('test', 'future', '{}', ${new Date(now + 60_000)}, 1)
     `;
-        const repository = new PSqlAdminPruneExpiredRepository(sql, 'server-1');
+        const repository = new PSqlAdminPruneRepository(sql);
         const read = await repository.readPage({
             category: 'runtime-state',
             pageSize: 2,
             afterCursor: null,
             expireAtEpochMs: now,
             appData: null,
-            excludedResourceId: null
+            excludedResourceKey: null
         });
         assert.equal(read.rowIds.length, 2);
         assert.equal(read.hasMore, true);
@@ -68,21 +68,79 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
         const inbox = new ResourceInboxRepository(sql);
         const expiryTs = Temporal.Instant.fromEpochMilliseconds(now - 1);
         await inbox.write(createResourceEntry('executing', { expiryTs }));
+        await inbox.write(createResourceEntry('executing', {
+            topicId: 'other-topic',
+            contextId: 'other-context',
+            expiryTs
+        }));
         await inbox.write(createResourceEntry('other', { expiryTs }));
-        const repository = new PSqlAdminPruneExpiredRepository(sql, 'server-1');
+        const repository = new PSqlAdminPruneRepository(sql);
         const read = await repository.readPage({
             category: 'resource-inbox',
             pageSize: 10,
             afterCursor: null,
             expireAtEpochMs: now,
             appData: null,
-            excludedResourceId: 'executing'
+            excludedResourceKey: {
+                resourceId: 'executing',
+                topicId: 'topic-smoke',
+                contextId: 'ctx-smoke'
+            }
         });
-        assert.equal(read.rowIds.length, 1);
-        const rows = await sql<{ ri_resource_id: string; }[]>`
-      select ri_resource_id from resource_inbox where ri_row_id = ${Number(read.rowIds[0])}
+        assert.equal(read.rowIds.length, 2);
+        const rows = await sql<{
+            ri_resource_id: string;
+            ri_topic_id: string;
+            fk_ext_bank_id: string;
+        }[]>`
+      select ri_resource_id, ri_topic_id, fk_ext_bank_id
+      from resource_inbox
+      where ri_row_id in ${sql(read.rowIds.map(Number))}
+      order by ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
-        assert.deepEqual(rows.map((row) => row.ri_resource_id), ['other']);
+        assert.deepEqual(rows, [
+            {
+                ri_resource_id: 'executing',
+                ri_topic_id: 'other-topic',
+                fk_ext_bank_id: 'other-context'
+            },
+            {
+                ri_resource_id: 'other',
+                ri_topic_id: 'topic-smoke',
+                fk_ext_bank_id: 'ctx-smoke'
+            }
+        ]);
+    });
+});
+
+Deno.test('admin prune successor outbox rejects an identical active identity', async () => {
+    await withPGliteSql(async (sql) => {
+        const now = await readPGliteDatabaseEpochMs(sql);
+        const entry = toAdminPruneOutbox(
+            {
+                kind: 'page',
+                jobId: 'collision-job',
+                category: 'runtime-state',
+                requestedBy: 'admin',
+                requestedSessionId: 'session',
+                capturedAtEpochMs: now,
+                expireAtEpochMs: now + 60_000,
+                pageSize: 100,
+                afterCursor: 'cursor',
+                pageIndex: 1,
+                appData: null
+            },
+            'server-1'
+        );
+        await new ResourceInboxRepository(sql).write(entry);
+
+        await assert.rejects(
+            () =>
+                sql.begin(async (transaction) => {
+                    await new PSqlAdminPruneRepository(sql).writeOutbox(transaction, entry);
+                }),
+            Error
+        );
     });
 });
 
@@ -102,7 +160,7 @@ Deno.test('admin prune PSQL progress CAS completes the aggregate result', async 
         const aggregateEntry = toAdminPruneAggregateEntry(aggregate);
         await new ResourceInboxResultsRepository(sql).replace(aggregateEntry);
 
-        const repository = new PSqlAdminPruneExpiredRepository(sql, 'server-1');
+        const repository = new PSqlAdminPruneRepository(sql);
         await sql.begin(async (transaction) => {
             const page = {
                 kind: 'page',

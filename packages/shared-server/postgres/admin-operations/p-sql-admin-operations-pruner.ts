@@ -1,6 +1,6 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 
-import type { AdminOperationsPruner } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
+import type { AdminOperationsPruner } from '../../rallar-system/admin-operations/admin-operations-service.ts';
 
 import type { AdminPruneExpiredOptions } from '../../rallar-system/admin-operations/admin-prune-options.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';

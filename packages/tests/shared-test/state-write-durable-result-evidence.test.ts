@@ -1,8 +1,12 @@
+import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
+import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import type {
     AuthoritativeReceiptEvidence,
     PersistedCommandEvidence
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
+import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 import { describe, expect, it } from 'vitest';
 
 const commandId = 'topology-command-1';
@@ -74,6 +78,7 @@ const command = {
 const effect = {
     ri_resource_id: 'physical-queue-key-1',
     ri_topic_id: 'app-outbox.rtc-topology',
+    fk_ext_bank_id: 'scope',
     ri_type_id: 'APP_OUTBOX',
     ri_status: 'NEW',
     ri_resource: JSON.stringify({
@@ -255,6 +260,8 @@ describe('durable AppInbox result evidence', () => {
         };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: commandId,
+            appInboxTopicId: command.ri_topic_id,
+            appInboxContextId: command.fk_ext_bank_id,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [commandId],
@@ -328,6 +335,8 @@ describe('durable AppInbox result evidence', () => {
         };
         const authoritative = [{
             appInboxResourceId: resourceId,
+            appInboxTopicId: topology.ri_topic_id,
+            appInboxContextId: topology.fk_ext_bank_id,
             valid: true,
             commandType: 'TOPOLOGY_RECONFIGURE',
             commandIds: [requestId],
@@ -381,6 +390,8 @@ describe('durable AppInbox result evidence', () => {
         };
         const cleanupEvidence = [{
             appInboxResourceId: resourceId,
+            appInboxTopicId: cleanup.ri_topic_id,
+            appInboxContextId: cleanup.fk_ext_bank_id,
             valid: true,
             commandType: 'GROUP_PRESENCE_SESSION_CLEANUP',
             commandIds: ['session-1', 'generation-1']
@@ -400,6 +411,8 @@ describe('durable AppInbox result evidence', () => {
         const physicalCommand = { ...command, ri_resource_id: physicalResourceId };
         const authoritative: readonly PersistedCommandEvidence[] = [{
             appInboxResourceId: physicalResourceId,
+            appInboxTopicId: physicalCommand.ri_topic_id,
+            appInboxContextId: physicalCommand.fk_ext_bank_id,
             valid: true,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [commandId],
@@ -439,10 +452,203 @@ describe('durable AppInbox result evidence', () => {
     it('rejects a production command decoder failure before trusting its result', () => {
         expect(deriveApiV1StateWriteEvidence(spec, [command], [effect], [], undefined, [{
             appInboxResourceId: commandId,
+            appInboxTopicId: command.ri_topic_id,
+            appInboxContextId: command.fk_ext_bank_id,
             valid: false,
             commandType: 'TOPOLOGY_CONFIG_PUT',
             commandIds: [],
             failure: 'topology command scope differs from queue identity'
         }])).toMatchObject({ statusResultFailures: 1 });
+    });
+
+    it('pairs command evidence by physical row when scoped commands share a request id', () => {
+        const sharedRequestId = 'shared-admin-request-id';
+        const adminRow = (rowId: number, contextId: string, jobId: string) => ({
+            ...command,
+            ri_row_id: rowId,
+            ri_resource_id: sharedRequestId,
+            ri_topic_id: 'ADMIN_PRUNE_EXPIRED',
+            fk_ext_bank_id: contextId,
+            ri_resource: JSON.stringify({ payload: { typeId: 'ADMIN_PRUNE_EXPIRED' } }),
+            result_resource: JSON.stringify({
+                generatedAtEpochMs: rowId,
+                serverId: `server-${rowId}`,
+                warnings: [],
+                operation: 'maintenance.prune-expired',
+                status: 'queued',
+                changed: false,
+                jobId,
+                results: [{
+                    category: 'runtime-state',
+                    expiredRows: 0,
+                    deletedRows: 0,
+                    dryRun: false
+                }]
+            })
+        });
+        const adminCommand = (jobId: string, capturedAtEpochMs: number): AdminPruneCommand => ({
+            version: 1,
+            jobId,
+            commandHash: `${jobId}:hash`,
+            requestedBy: 'admin',
+            requestedSessionId: 'session',
+            capturedAtEpochMs,
+            expireAtEpochMs: capturedAtEpochMs + 60_000,
+            dryRun: false,
+            categories: ['runtime-state'],
+            appData: null,
+            pageSize: 100
+        });
+        const commandEvidence = (
+            contextId: string,
+            jobId: string,
+            capturedAtEpochMs: number
+        ): PersistedCommandEvidence => ({
+            appInboxResourceId: sharedRequestId,
+            appInboxTopicId: 'ADMIN_PRUNE_EXPIRED',
+            appInboxContextId: contextId,
+            valid: true,
+            commandType: 'ADMIN_PRUNE_EXPIRED',
+            commandIds: [jobId],
+            adminPruneCommand: adminCommand(jobId, capturedAtEpochMs)
+        });
+        const page = (jobId: string, capturedAtEpochMs: number) => {
+            const entry = toAdminPruneOutbox({
+                kind: 'page',
+                jobId,
+                category: 'runtime-state',
+                requestedBy: 'admin',
+                requestedSessionId: 'session',
+                capturedAtEpochMs,
+                expireAtEpochMs: capturedAtEpochMs + 60_000,
+                pageSize: 100,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: null
+            }, 'server');
+            return {
+                ri_resource_id: entry.key.resourceId,
+                ri_topic_id: entry.key.topicId,
+                fk_ext_bank_id: entry.key.contextId,
+                ri_type_id: entry.typeId,
+                ri_status: 'COMPLETED',
+                ri_resource: entry.resource
+            };
+        };
+
+        expect(deriveApiV1StateWriteEvidence(
+            {
+                match: sharedRequestId,
+                commandTypes: ['ADMIN_PRUNE_EXPIRED'],
+                expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
+            },
+            [adminRow(1, 'caller=admin', 'admin-job-1'), adminRow(2, 'caller=bob', 'admin-job-2')],
+            [page('admin-job-1', 1), page('admin-job-2', 2)],
+            [],
+            undefined,
+            [
+                commandEvidence('caller=admin', 'admin-job-1', 1),
+                commandEvidence('caller=bob', 'admin-job-2', 2)
+            ]
+        )).toMatchObject({
+            matchedAppInboxCount: 2,
+            atomicCompletionFailures: 0,
+            statusResultFailures: 0,
+            resourceOutboxCount: 2,
+            appInbox: [
+                { contextId: 'caller=admin', commandIds: ['admin-job-1'], durableResultValid: true },
+                { contextId: 'caller=bob', commandIds: ['admin-job-2'], durableResultValid: true }
+            ]
+        });
+    });
+
+    it.each<readonly [string, (result: AdminPruneEnqueueResult) => RallarCrdtJsonValue]>([
+        ['an arbitrary category', (result) => ({
+            ...result,
+            results: [{ ...result.results[0]!, category: 'arbitrary' }]
+        })],
+        ['duplicate categories', (result) => ({
+            ...result,
+            results: [result.results[0]!, result.results[0]!]
+        })],
+        ['no categories', (result) => ({ ...result, results: [] })],
+        ['a negative count', (result) => ({
+            ...result,
+            results: [{ ...result.results[0]!, expiredRows: -1 }]
+        })],
+        ['more deletions than expirations', (result) => ({
+            ...result,
+            changed: true,
+            results: [{ ...result.results[0]!, expiredRows: 1, deletedRows: 2 }]
+        })],
+        ['an inconsistent changed flag', (result) => ({ ...result, changed: true })],
+        ['an inconsistent status', (result) => ({ ...result, status: 'completed' })],
+        ['an inconsistent dry-run flag', (result) => ({
+            ...result,
+            results: [{ ...result.results[0]!, dryRun: true }]
+        })],
+        ['another capture time', (result) => ({
+            ...result,
+            generatedAtEpochMs: result.generatedAtEpochMs + 1
+        })],
+        ['another command category', (result) => ({
+            ...result,
+            results: [{ ...result.results[0]!, category: 'resource-inbox' }]
+        })]
+    ])('rejects an admin durable result containing %s', (_name, mutate) => {
+        const jobId = 'strict-admin-result-job';
+        const adminPruneCommand: AdminPruneCommand = {
+            version: 1,
+            jobId,
+            commandHash: 'strict-admin-command-hash',
+            requestedBy: 'admin',
+            requestedSessionId: 'session',
+            capturedAtEpochMs: 10,
+            expireAtEpochMs: 60_010,
+            dryRun: false,
+            categories: ['runtime-state'],
+            appData: null,
+            pageSize: 100
+        };
+        const result: AdminPruneEnqueueResult = {
+            generatedAtEpochMs: adminPruneCommand.capturedAtEpochMs,
+            serverId: 'server',
+            warnings: [],
+            operation: 'maintenance.prune-expired',
+            status: 'queued',
+            changed: false,
+            jobId,
+            results: [{ category: 'runtime-state', expiredRows: 1, deletedRows: 0, dryRun: false }]
+        };
+        const candidate = {
+            ...command,
+            ri_resource_id: 'strict-admin-request',
+            ri_topic_id: 'ADMIN_PRUNE_EXPIRED',
+            fk_ext_bank_id: 'strict-admin-context',
+            ri_resource: JSON.stringify({ payload: { typeId: 'ADMIN_PRUNE_EXPIRED' } }),
+            result_resource: JSON.stringify(mutate(result))
+        };
+        const evidence: PersistedCommandEvidence = {
+            appInboxResourceId: candidate.ri_resource_id,
+            appInboxTopicId: candidate.ri_topic_id,
+            appInboxContextId: candidate.fk_ext_bank_id,
+            valid: true,
+            commandType: 'ADMIN_PRUNE_EXPIRED',
+            commandIds: [jobId],
+            adminPruneCommand
+        };
+
+        expect(deriveApiV1StateWriteEvidence(
+            { match: jobId, commandTypes: ['ADMIN_PRUNE_EXPIRED'] },
+            [candidate],
+            [],
+            [],
+            undefined,
+            [evidence]
+        )).toMatchObject({
+            atomicCompletionFailures: 1,
+            statusResultFailures: 1,
+            appInbox: [{ durableResultValid: false }]
+        });
     });
 });

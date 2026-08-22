@@ -13,11 +13,9 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/repositories
 
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/\
-group-topology-config-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/\
-group-topology-config-runtime-namespaces.ts';
+import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 

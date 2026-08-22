@@ -3,9 +3,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
 import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
+import type { PersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import { toExactPersistedEvidenceMatches } from '@shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts';
 import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 
@@ -318,6 +321,7 @@ describe('API-v1 state-write recipe evidence', () => {
         const canonical = {
             ri_resource_id: 'effect-1',
             ri_topic_id: 'app-outbox.group-presence-summary',
+            fk_ext_bank_id: 'scope',
             ri_type_id: 'APP_OUTBOX',
             ri_status: 'COMPLETED',
             ri_resource: JSON.stringify({
@@ -455,6 +459,7 @@ describe('API-v1 state-write recipe evidence', () => {
         ].map(([msgId, typeId]) => ({
             ri_resource_id: msgId,
             ri_topic_id: 'app.crdt',
+            fk_ext_bank_id: 'scope',
             ri_type_id: 'WS_OUTBOX',
             ri_status: 'NEW',
             ri_resource: JSON.stringify({ id: { msgId }, payload: { typeId } })
@@ -481,6 +486,19 @@ describe('API-v1 state-write recipe evidence', () => {
     });
 
     it('derives exactly one typed admin prune page effect per category', () => {
+        const adminCommand: AdminPruneCommand = {
+            version: 1,
+            jobId: 'admin-job-1',
+            commandHash: 'admin-command-hash-1',
+            requestedBy: 'admin-1',
+            requestedSessionId: 'session-1',
+            capturedAtEpochMs: 1,
+            expireAtEpochMs: 60_001,
+            dryRun: false,
+            categories: ['runtime-state', 'resource-inbox'],
+            appData: null,
+            pageSize: 100
+        };
         const inbox = [{
             ri_row_id: 3,
             ri_resource_id: 'admin-inbox-1',
@@ -501,8 +519,8 @@ describe('API-v1 state-write recipe evidence', () => {
                 changed: false,
                 jobId: 'admin-job-1',
                 results: [
-                    { category: 'sessions', expiredRows: 1, deletedRows: 0, dryRun: false },
-                    { category: 'groups', expiredRows: 1, deletedRows: 0, dryRun: false }
+                    { category: 'runtime-state', expiredRows: 1, deletedRows: 0, dryRun: false },
+                    { category: 'resource-inbox', expiredRows: 1, deletedRows: 0, dryRun: false }
                 ]
             }),
             ri_resource: JSON.stringify({
@@ -512,20 +530,42 @@ describe('API-v1 state-write recipe evidence', () => {
                 }
             })
         }];
-        const page = (category: string, suffix = '') => ({
-            ri_resource_id: `admin-page-${category}${suffix}`,
-            ri_topic_id: 'rallar.admin.prune-expired',
-            ri_type_id: 'APP_OUTBOX',
-            ri_status: 'NEW',
-            ri_resource: JSON.stringify({
-                id: { msgId: `admin-job-1:${category}${suffix}` },
-                route: { contextId: 'admin-job-1' },
-                payload: {
-                    typeId: 'ADMIN_PRUNE_EXPIRED',
-                    resource: JSON.stringify({ kind: 'page', jobId: 'admin-job-1', category })
-                }
-            })
-        });
+        const page = (
+            category: AdminPruneCommand['categories'][number],
+            overrides: Partial<AdminPrunePageWork> = {}
+        ) => {
+            const entry = toAdminPruneOutbox({
+                kind: 'page',
+                jobId: adminCommand.jobId,
+                category,
+                requestedBy: adminCommand.requestedBy,
+                requestedSessionId: adminCommand.requestedSessionId,
+                capturedAtEpochMs: adminCommand.capturedAtEpochMs,
+                expireAtEpochMs: adminCommand.expireAtEpochMs,
+                pageSize: adminCommand.pageSize,
+                afterCursor: null,
+                pageIndex: 0,
+                appData: category === 'app-data' ? adminCommand.appData : null,
+                ...overrides
+            }, 'server-1');
+            return {
+                ri_resource_id: entry.key.resourceId,
+                ri_topic_id: entry.key.topicId,
+                fk_ext_bank_id: entry.key.contextId,
+                ri_type_id: entry.typeId,
+                ri_status: entry.status,
+                ri_resource: entry.resource
+            };
+        };
+        const commandEvidence: PersistedCommandEvidence = {
+            appInboxResourceId: 'admin-inbox-1',
+            appInboxTopicId: 'app-inbox.admin',
+            appInboxContextId: 'admin-job-1',
+            valid: true,
+            commandType: 'ADMIN_PRUNE_EXPIRED',
+            commandIds: [adminCommand.jobId],
+            adminPruneCommand: adminCommand
+        };
         const spec = {
             match: 'admin-job-1',
             commandTypes: ['ADMIN_PRUNE_EXPIRED'],
@@ -533,15 +573,81 @@ describe('API-v1 state-write recipe evidence', () => {
                 ADMIN_PRUNE_EXPIRED: ['admin-prune-page', 'admin-prune-page']
             }
         };
+        const runtimeStatePage = page('runtime-state');
+        const resourceInboxPage = page('resource-inbox');
 
-        expect(deriveApiV1StateWriteEvidence(spec, inbox, [page('sessions'), page('groups')]))
+        expect(deriveApiV1StateWriteEvidence(
+            spec,
+            inbox,
+            [runtimeStatePage, resourceInboxPage],
+            [],
+            undefined,
+            [commandEvidence]
+        ))
             .toMatchObject({ atomicCompletionFailures: 0, resourceOutboxCount: 2 });
-        expect(deriveApiV1StateWriteEvidence(spec, inbox, [page('sessions')]))
+        expect(deriveApiV1StateWriteEvidence(
+            spec,
+            inbox,
+            [runtimeStatePage],
+            [],
+            undefined,
+            [commandEvidence]
+        ))
             .toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
         expect(deriveApiV1StateWriteEvidence(
             spec,
             inbox,
-            [page('sessions'), page('groups'), page('groups', '-duplicate')]
+            [runtimeStatePage, resourceInboxPage, resourceInboxPage],
+            [],
+            undefined,
+            [commandEvidence]
         )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+
+        const pageResource = JSON.parse(resourceInboxPage.ri_resource);
+        const pageWork = JSON.parse(pageResource.payload.resource);
+        const malformedPages = [
+            { ...resourceInboxPage, ri_topic_id: 'rallar.admin.prune-expired.wrong' },
+            { ...resourceInboxPage, ri_resource_id: `${resourceInboxPage.ri_resource_id}:wrong` },
+            { ...resourceInboxPage, fk_ext_bank_id: `${resourceInboxPage.fk_ext_bank_id}:wrong` },
+            {
+                ...resourceInboxPage,
+                ri_resource: JSON.stringify({
+                    ...pageResource,
+                    payload: {
+                        ...pageResource.payload,
+                        resource: JSON.stringify({ ...pageWork, pageIndex: 1 })
+                    }
+                })
+            }
+        ];
+        for (const malformedPage of malformedPages) {
+            expect(deriveApiV1StateWriteEvidence(
+                spec,
+                inbox,
+                [runtimeStatePage, malformedPage],
+                [],
+                undefined,
+                [commandEvidence]
+            )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+        }
+
+        const canonicalPagesFromAnotherCommand = [
+            page('resource-inbox-results'),
+            page('resource-inbox', { requestedBy: 'another-admin' }),
+            page('resource-inbox', { requestedSessionId: 'another-session' }),
+            page('resource-inbox', { capturedAtEpochMs: adminCommand.capturedAtEpochMs + 1 }),
+            page('resource-inbox', { pageSize: adminCommand.pageSize + 1 }),
+            page('app-data', { appData: { namespace: 'another-namespace', storeName: null } })
+        ];
+        for (const canonicalPage of canonicalPagesFromAnotherCommand) {
+            expect(deriveApiV1StateWriteEvidence(
+                spec,
+                inbox,
+                [runtimeStatePage, canonicalPage],
+                [],
+                undefined,
+                [commandEvidence]
+            )).toMatchObject({ atomicCompletionFailures: 1, finalEffectFailureCount: 1 });
+        }
     });
 });

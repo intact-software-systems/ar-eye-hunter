@@ -27,8 +27,7 @@ import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import { hashCanonicalCommand } from '@shared-server/rallar-system/services/\
-canonical-command-hash.ts';
+import { hashCanonicalCommand } from '@shared-server/rallar-system/services/canonical-command-hash.ts';
 import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 export type CrdtAdminMutationOperation =

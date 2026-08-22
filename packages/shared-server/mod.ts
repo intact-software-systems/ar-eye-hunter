@@ -4,6 +4,7 @@ export * from './game/mod.ts';
 export * from './http/production-env-hardening.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
+export * from './postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 export * from './postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 export * from './postgres/admin-support/PSqlAdminSupportReader.ts';
 export * from './postgres/al-runtime/createPSqlALRuntimeStores.ts';
@@ -24,7 +25,7 @@ export * from './rallar-ai/mod.ts';
 export * from './rallar-facade/RallarServer.ts';
 export * from './rallar-facade/RallarServerApplication.ts';
 export * from './rallar-facade/ws-topic-router.ts';
-export * from './rallar-system/admin-operations/AdminOperationsService.ts';
+export * from './rallar-system/admin-operations/admin-operations-service.ts';
 export * from './rallar-system/admin-support/AdminSupportService.ts';
 export {
     type AuthMutationService,
@@ -112,7 +113,6 @@ export * from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifier
 export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-write-candidate.ts';
 export * from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
-export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.ts';

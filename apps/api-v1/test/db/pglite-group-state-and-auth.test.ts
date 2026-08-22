@@ -1,22 +1,15 @@
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/\
-createStateRepositories.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/\
-group-event-workspace-key.ts';
+import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
+import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import { PSqlClientStateEventRepository, PSqlGroupStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/\
-PSqlRuntimeStateRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/\
-ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/\
-GroupPresenceSummaryWork.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -29,6 +22,7 @@ import {
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';

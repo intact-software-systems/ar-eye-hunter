@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { AdminPruneAppData, AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+import type { AdminPruneAppData } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -166,7 +167,7 @@ async function deletePage(
     work: AdminPrunePageWork,
     rowIds: readonly string[]
 ): Promise<number> {
-    const repository = new PSqlAdminPruneExpiredRepository(sql, 'test');
+    const repository = new PSqlAdminPruneRepository(sql);
     return await sql.begin(async (transaction) => {
         return await repository.deletePage(transaction, work, rowIds);
     });

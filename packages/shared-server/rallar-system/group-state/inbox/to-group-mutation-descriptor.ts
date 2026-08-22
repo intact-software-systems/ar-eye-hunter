@@ -1,6 +1,7 @@
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import { GroupMutationAuthorizationError, mutationDescriptor } from '../group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state-service-contracts.ts';
+import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import { type AuthenticatedGroupMutationEnqueue } from './group-state-inbox-contracts.ts';
 
 export function toGroupMutationDescriptor(
@@ -40,6 +41,55 @@ export function toGroupMutationDescriptor(
             throw new GroupMutationAuthorizationError(
                 'App inbox type is not an authenticated group mutation.'
             );
+        }
+    }
+}
+
+export interface GroupMutationDescriptorTargetIdentity {
+    readonly targetPrincipalId: string | null;
+    readonly sessionId: string | null;
+}
+
+export function toGroupMutationDescriptorTargetIdentity(
+    command: GroupMutationCommand
+): GroupMutationDescriptorTargetIdentity {
+    switch (command.operation) {
+        case 'connectPresence':
+        case 'heartbeatPresence':
+        case 'disconnectPresence':
+            return {
+                targetPrincipalId: command.input.principalId ?? null,
+                sessionId: command.sessionId
+            };
+        case 'createGroupInvite':
+        case 'revokeGroupInvite':
+        case 'removeGroupMember':
+        case 'banGroupMember':
+        case 'unbanGroupMember':
+        case 'grantGroupAdmission':
+        case 'declineGroupAdmission':
+        case 'setGroupMemberRole':
+        case 'transferGroupOwnership':
+        case 'upsertMember':
+            return {
+                targetPrincipalId: command.targetPrincipalId,
+                sessionId: null
+            };
+        case 'createGroup':
+        case 'updateGroup':
+        case 'appointDirector':
+        case 'startGroupEstablishment':
+        case 'reopenGroupEstablishment':
+        case 'activateGroup':
+        case 'failGroupFormation':
+        case 'joinGroup':
+        case 'acceptGroupInvite':
+        case 'rotateGroupJoinCode':
+            return { targetPrincipalId: null, sessionId: null };
+        default: {
+            const exhaustiveCommand: never = command;
+            void exhaustiveCommand;
+            throw new TypeError('Unsupported group mutation command');
         }
     }
 }
