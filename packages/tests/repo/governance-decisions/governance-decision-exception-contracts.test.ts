@@ -155,6 +155,24 @@ describe('governance decision exception contracts', () => {
         );
     });
 
+    it('rejects a vague authenticated interaction requirement', () => {
+        const projection = interactionTestCouplingProjection();
+
+        expect(() =>
+            decodeGovernanceDecisionRequest(
+                exceptionApprovalRequest('test-structure-coupling', {
+                    ...projection,
+                    semanticContract: {
+                        ...projection.semanticContract,
+                        interactionRequirement: 'This interaction is required to protect the expected behavior.'
+                    }
+                })
+            )
+        ).toThrow(
+            'test-structure-coupling interactionRequirement must state the observable effect and why count, absence, or order is required'
+        );
+    });
+
     it('revokes exactly one prior approval decision without accepting a projection', () => {
         const priorDecisionId = 'a'.repeat(64);
         const request = decodeGovernanceDecisionRequest({

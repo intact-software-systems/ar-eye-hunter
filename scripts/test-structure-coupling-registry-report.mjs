@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
+import { hasConcreteInteractionRequirement } from './test-structure-coupling-interaction-requirement.mjs';
 import { readRevisionFile } from './test-structure-coupling-range-evidence.mjs';
 
 const registryPath = 'docs/test-structure-coupling-exceptions.md';
@@ -85,7 +86,7 @@ export function validateRegistry(registry, candidates) {
             if (
                 entry.disposition === 'durable-boundary' &&
                 entry.boundary === 'interaction' &&
-                !hasConcreteText(semanticContract.interactionRequirement)
+                !hasConcreteInteractionRequirement(semanticContract.interactionRequirement)
             ) {
                 errors.push(
                     `interaction boundary contract requires an independently observable interaction requirement: ${entry.id}`

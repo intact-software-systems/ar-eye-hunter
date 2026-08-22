@@ -232,6 +232,8 @@ function readHighSignalTestCouplingCandidates(evidence) {
     const detections = [
         {
             matches: isMockInvocationMatcher(matcher) ||
+                isNegatedMockPayloadAssertion(node, matcher) ||
+                isMockCallsCountAssertion(matcher, callSource) ||
                 isCompleteMockCallsAssertion(matcher, callSource) ||
                 isInvocationOrderAssertion(matcher, callSource),
             kind: 'mock-invocation-count-or-order',
@@ -256,6 +258,34 @@ function readHighSignalTestCouplingCandidates(evidence) {
     return detections
         .filter(({ matches }) => matches)
         .map(({ kind, reason }) => createCandidate({ ...evidence, location: node.callee, kind, reason }));
+}
+
+function isNegatedMockPayloadAssertion(node, matcher) {
+    return (
+        ['toBeCalledWith', 'toHaveBeenCalledWith'].includes(matcher) &&
+        node.callee.type === 'MemberExpression' &&
+        memberPropertyName(node.callee.object) === 'not'
+    );
+}
+
+function isMockCallsCountAssertion(matcher, callSource) {
+    if (matcher === 'toHaveLength') {
+        return /\.mock\s*\.\s*calls\b/u.test(callSource);
+    }
+    return (
+        [
+            'toBe',
+            'toEqual',
+            'toStrictEqual',
+            'toBeGreaterThan',
+            'toBeGreaterThanOrEqual',
+            'toBeLessThan',
+            'toBeLessThanOrEqual'
+        ].includes(
+            matcher
+        ) &&
+        /\.mock\s*\.\s*calls\s*\.\s*length\b/u.test(callSource)
+    );
 }
 
 function isMockInvocationMatcher(matcher) {

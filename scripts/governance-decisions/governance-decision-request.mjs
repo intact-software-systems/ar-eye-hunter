@@ -1,3 +1,4 @@
+import { hasConcreteInteractionRequirement } from '../test-structure-coupling-interaction-requirement.mjs';
 import { computeSha256, toCanonicalJson } from './canonical-json.mjs';
 
 const commonKeys = [
@@ -348,6 +349,9 @@ function validateTestCouplingDisposition(disposition, semanticContract) {
                 'test-structure-coupling interaction boundary requires semanticContract.interactionRequirement'
             );
         }
+        if (disposition.boundary === 'interaction') {
+            requireConcreteInteractionRequirement(semanticContract.interactionRequirement);
+        }
     }
     else if (disposition?.kind === 'temporary-ratchet') {
         requireExactKeys(
@@ -364,6 +368,14 @@ function validateTestCouplingDisposition(disposition, semanticContract) {
     }
     if (disposition.semanticCoverage !== semanticContract.semanticCoverage) {
         throw new Error('test-structure-coupling disposition must match semantic contract coverage');
+    }
+}
+
+function requireConcreteInteractionRequirement(value) {
+    if (!hasConcreteInteractionRequirement(value)) {
+        throw new Error(
+            'test-structure-coupling interactionRequirement must state the observable effect and why count, absence, or order is required'
+        );
     }
 }
 

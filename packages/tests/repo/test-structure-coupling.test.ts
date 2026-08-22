@@ -138,6 +138,25 @@ describe('test structure-coupling review', () => {
         expect(result.stdout).toContain('PASS: no current structure-coupled test candidates');
     });
 
+    it('reports negated payload absence and mock call-array count assertions', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/interaction-topology.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).not.toHaveBeenCalledWith({ amountOre: 2_500 });',
+                'expect(paymentGateway.charge.mock.calls).toHaveLength(1);',
+                'expect(paymentGateway.charge.mock.calls.length).toBe(1);'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixture);
+        const candidates = readCandidates(result.stdout);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(candidates).toHaveLength(3);
+        expect(candidates.every(({ kind }) => kind === 'mock-invocation-count-or-order')).toBe(true);
+    });
+
     it('does not flag governance tests that read canonical guidance rather than production source', () => {
         const fixture = createGitFixture({
             'docs/repo-human-style-guide.md': '# Canonical guidance\n',
@@ -308,6 +327,32 @@ describe('test structure-coupling review', () => {
             fixture.root,
             candidates.map(interactionEntry),
             [exampleContract('payment-idempotency-contract')]
+        );
+
+        const result = runChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(
+            'interaction boundary contract requires an independently observable interaction requirement'
+        );
+    });
+
+    it('rejects a vague interaction requirement even when it is nonempty', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/payment-idempotency.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).toHaveBeenCalledTimes(1);'
+            ].join('\n')
+        });
+        const candidates = readCandidates(runChecker(fixture).stdout);
+        writeRegistry(
+            fixture.root,
+            candidates.map(interactionEntry),
+            [{
+                ...interactionContract(),
+                interactionRequirement: 'This interaction is required to protect the expected behavior.'
+            }]
         );
 
         const result = runChecker(fixture);

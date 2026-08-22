@@ -37,7 +37,9 @@ The checker report still prints the live `path:line:column` for navigation.
 Every entry has a named `owner`. A `durable-boundary` entry additionally
 declares `boundary` as `public`, `security`, `compatibility`, or `interaction`.
 The linked contract for an `interaction` boundary additionally declares a
-concrete `interactionRequirement`. A `temporary-ratchet` entry additionally
+concrete `interactionRequirement` naming the observable effect, the count,
+absence, or order constraint, and why that constraint is required. A
+`temporary-ratchet` entry additionally
 declares an assertion-specific `removalCondition`. Placeholder, escaped
 control-only, or vague values such as
 `TODO`, `none`, `later`, `...`, `-`, `semantic coverage`, or bracketed
