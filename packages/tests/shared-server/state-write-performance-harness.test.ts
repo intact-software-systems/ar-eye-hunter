@@ -8,7 +8,6 @@ import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-co
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { readStateWriteAppInboxIdentity, toStateWriteAppInboxExpectations } from '../../../scripts/perf/api-v1-state-write-app-inbox-evidence.ts';
 import {
     readScopedGroupCommandIdentity,
     readValidatedGroupReceiptIdentity,
@@ -23,6 +22,7 @@ import {
     readResourceEffectKind
 } from '../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
 import { classifyBenchmarkSql } from '../../../scripts/perf/create-instrumented-state-write-sql.ts';
+import { readStateWriteAppInboxIdentity, toStateWriteAppInboxExpectations } from '../../../scripts/perf/state-write/api-v1-state-write-app-inbox-evidence.ts';
 import { STATE_WRITE_REASONS } from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 
 import { parseBenchmarkOptions } from '../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';

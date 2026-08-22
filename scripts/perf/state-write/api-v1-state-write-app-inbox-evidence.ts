@@ -9,8 +9,11 @@ import {
     AppInboxType,
     type AppInboxType as AppInboxTypeValue
 } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-
-import { parseJsonRecord } from './api-v1-state-write-attempt-evidence.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 
 export interface StateWriteAppInboxCommand {
     readonly commandId: string;
@@ -106,11 +109,11 @@ export function readStateWriteAppInboxIdentity(
     ) {
         return undefined;
     }
-    const envelope = parseJsonRecord(row.ri_resource);
+    const envelope = readJsonWireObject(row.ri_resource);
     const route = readRecord(envelope?.route);
     const payload = readRecord(envelope?.payload);
     const enqueue = typeof payload?.resource === 'string'
-        ? parseJsonRecord(payload.resource)
+        ? readJsonWireObject(payload.resource)
         : undefined;
     if (
         payload?.typeId !== expectation.topicId ||
@@ -194,8 +197,17 @@ function toExpectation(
     };
 }
 
-function readRecord(value: unknown): Record<string, unknown> | undefined {
-    return value !== null && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
+function readJsonWireObject(value: string): JsonWireObject | undefined {
+    try {
+        return readRecord(decodeJsonWireValue(JSON.parse(value), 'Benchmark AppInbox resource'));
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function readRecord(value: JsonWireValue | undefined): JsonWireObject | undefined {
+    return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)
+        ? value as JsonWireObject
         : undefined;
 }

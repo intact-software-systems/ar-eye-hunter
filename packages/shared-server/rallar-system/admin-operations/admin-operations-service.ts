@@ -67,9 +67,6 @@ export interface AdminOperationsPruner {
         options: AdminPruneExpiredOptions
     ) => Promise<number>;
 }
-export interface AdminOperationsTopologyManagement {
-    readonly reconfigureGroupTopology: (input: unknown) => Promise<unknown>;
-}
 export interface AdminOperationsServiceOptions {
     readonly now: () => number;
     readonly serverId?: string;

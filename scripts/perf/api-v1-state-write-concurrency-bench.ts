@@ -27,10 +27,6 @@ import type {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import {
-    toStateWriteBenchmarkGroupContextId,
-    toStateWriteBenchmarkSessionId
-} from './api-v1-state-write-app-inbox-evidence.ts';
-import {
     deriveAppInboxAttemptObservations,
     type AppInboxAttemptObservation
 } from './api-v1-state-write-attempt-evidence.ts';
@@ -42,6 +38,10 @@ import {
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
+import {
+    toStateWriteBenchmarkGroupContextId,
+    toStateWriteBenchmarkSessionId
+} from './state-write/api-v1-state-write-app-inbox-evidence.ts';
 import {
     createStateWriteBenchmarkArtifact,
     readBenchmarkGitIdentity

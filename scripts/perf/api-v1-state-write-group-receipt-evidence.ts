@@ -176,7 +176,7 @@ export async function readScopedGroupCommandIdentity(
     let commandHash;
     try {
         semanticCommand = toDescriptorCommand(
-            descriptor as unknown as GroupMutationDescriptor,
+            descriptor as GroupMutationDescriptor,
             () => {
                 throw new TypeError('Benchmark group mutation request ID is required');
             }
