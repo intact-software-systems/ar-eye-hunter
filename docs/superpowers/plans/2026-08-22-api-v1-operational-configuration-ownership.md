@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Work only on the implementation branch/worktree associated with draft PR #317. Never commit or push the default branch.
+- After this design/plan PR merges, create a fresh worktree from current `main` on `codex/api-v1-operational-configuration-ownership`. Never edit, commit, or push the default branch.
 - Follow `.agents/skills/rallar-code-writing/references/repo-code-style.md`, `.agents/skills/rallar-code-writing/references/typescript-type-organization.md`, and `.agents/skills/rallar-code-writing/references/convergent-service-writing.md` for every TypeScript file.
 - Follow touched-file standards closure. Review every changed human-authored file in full; recursively include support files changed to repair violations.
 - Do not introduce aliases, deprecated exports, forwarders, overloads, duplicate resources, fallback readers, compatibility JSON, dual reads, or legacy registries. Delete superseded code in the same task that migrates its final consumer.
@@ -26,7 +26,7 @@
 - Never print supplied configuration values in decoding errors. Never print secret values, lengths, fingerprints, credential-bearing URLs, source objects, or environment dumps.
 - Every retained test must name an independent production break, exercise the lowest stable owned boundary, and derive expectations independently of production decoders/builders. Assert interaction counts or order only for required lifecycle, idempotency, cache, retry, or exactly-once effects.
 - Use direct imports. Never use backslash line continuations in import specifiers; allow an import line to remain long when required.
-- After each task, run its focused checks, review `git diff --check`, commit one reviewable slice, and push the branch so PR #317 remains current.
+- Open one draft implementation PR after the first coherent implementation commit. After each task, run its focused checks, review `git diff --check`, commit one reviewable slice, and push so that implementation PR remains current.
 - Slices 1 and 2 are the only concrete current implementation horizon. Slices 3-5 record required outcome owners and acceptance evidence; after the first two slices, select and refine only the next one or two useful slices from current source evidence without weakening the approved outcomes.
 - The delayed formation-timer queue wake race is independent. Do not change configuration defaults, add sleeps, or weaken black-box assertions to hide it. Classify a matching failure with the existing issue evidence.
 
@@ -584,7 +584,7 @@ node scripts/perf/compare-api-v1-state-write-results.mjs tmp/perf/api-v1-state-w
 - [ ] Trigger and pass Branch Release Gate. Record the run URL in the PR without adding governance metadata files.
 - [ ] Review every touched file in full for cognitive indirection, ownership, direct imports, type names, test semantics, and complete legacy closure. Run `git diff --check` and `git status --short`.
 - [ ] Commit any factual closure repairs in one named commit, push, and wait for PR checks. Do not create an empty closure commit.
-- [ ] Update PR #317 with completed behavior, exact validation results, known independently tracked formation-race classification if encountered, and rollback risk. Keep the PR draft until implementation and required checks are complete.
+- [ ] Update the implementation PR with completed behavior, exact validation results, known independently tracked formation-race classification if encountered, and rollback risk. Keep it draft until implementation and required checks are complete.
 - [ ] Run `npm run pr:delivery -- ready` exactly once at handoff. When GitHub reports the PR merged, stop.
 
 ## Spec Coverage and Risk Guardrails
@@ -624,7 +624,7 @@ The work is complete only when all of the following are true:
 - Persisted formation facts retain their required shape and use only the canonical `'damped'` literal.
 - Deployment, Hetzner, Deno, black-box, tests, and active docs select canonical profiles and use only allowlisted overrides.
 - Focused tests, full API-v1/Relic/shared-server suites, repository checks, black-box matrix, performance comparison, and Branch Release Gate pass, with the independent formation-timer race handled only by classification.
-- PR #317 contains the current commits, validation evidence, risk/rollback summary, and no unpushed work.
+- The implementation PR contains the current commits, validation evidence, risk/rollback summary, and no unpushed work.
 - Every changed human-authored file has been reviewed and remediated in full.
 - Every support file modified by that remediation has entered closure recursively until closure.
 - Independent untouched code remains outside closure.
