@@ -1,7 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
-import { isConcreteInteractionRequirement } from './test-structure-coupling-interaction-requirement.mjs';
+import {
+    hasConcreteText,
+    hasMeaningfulText,
+    isConcreteInteractionRequirement
+} from './test-structure-coupling-interaction-requirement.mjs';
 import { readRevisionFile } from './test-structure-coupling-range-evidence.mjs';
 
 const registryPath = 'docs/test-structure-coupling-exceptions.md';
@@ -350,34 +354,6 @@ function evidenceStatus(entry) {
         return 'temporary-ratchet';
     }
     return 'invalid-registration';
-}
-
-function hasMeaningfulText(value) {
-    if (typeof value !== 'string') {
-        return false;
-    }
-    const text = value.trim();
-    return (
-        text.length > 0 && !/^(?:tbd|todo|none|later|\.\.\.|-)|^\[[^\]]*\]$|^<[^>]*>$/iu.test(text)
-    );
-}
-
-function hasConcreteText(value) {
-    if (!hasMeaningfulText(value)) {
-        return false;
-    }
-    const text = value.trim();
-    const visibleWords = text
-        .replace(/\\(?:[nrtbfv0]|u\{?[0-9a-f]{1,6}\}?)/giu, ' ')
-        .replace(/[\p{Cc}\p{Cf}\p{P}\p{S}]+/gu, ' ')
-        .trim()
-        .split(/\s+/u)
-        .filter(Boolean);
-    if (visibleWords.join('').length < 12) {
-        return false;
-    }
-    const vagueEvidence = /^(?:semantic coverage|runtime behavior|same file|supporting contract|source check)$/iu;
-    return !vagueEvidence.test(visibleWords.join(' '));
 }
 
 function hasSpecificSemanticCoverage(value) {

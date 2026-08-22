@@ -19,13 +19,29 @@ export function isConcreteInteractionRequirement(value) {
         );
 }
 
-function hasConcreteText(value) {
+export function hasMeaningfulText(value) {
     if (typeof value !== 'string') {
         return false;
     }
+    const text = value.trim();
+    return (
+        text.length > 0 && !/^(?:tbd|todo|none|later|\.\.\.|-)|^\[[^\]]*\]$|^<[^>]*>$/iu.test(text)
+    );
+}
+
+export function hasConcreteText(value) {
+    if (!hasMeaningfulText(value)) {
+        return false;
+    }
     const visibleText = value
+        .replace(/\\(?:[nrtbfv0]|u\{?[0-9a-f]{1,6}\}?)/giu, ' ')
         .replace(/[\p{Cc}\p{Cf}\p{P}\p{S}]+/gu, ' ')
         .replaceAll(/\s+/gu, ' ')
         .trim();
-    return visibleText.replaceAll(' ', '').length >= 12;
+    if (visibleText.replaceAll(' ', '').length < 12) {
+        return false;
+    }
+    return !/^(?:semantic coverage|runtime behavior|same file|supporting contract|source check)$/iu.test(
+        visibleText
+    );
 }

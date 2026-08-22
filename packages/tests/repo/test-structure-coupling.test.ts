@@ -353,10 +353,10 @@ describe('test structure-coupling review', () => {
                 ...interactionContract(),
                 interactionRequirement: {
                     interactionKind: 'count',
-                    ownedPort: 'gateway',
-                    observableEffect: 'effect',
-                    requiredConstraint: 'exactly once',
-                    failureRationale: 'required'
+                    ownedPort: 'TODO TODO TODO',
+                    observableEffect: 'TODO TODO TODO',
+                    requiredConstraint: 'TODO TODO TODO',
+                    failureRationale: 'TODO TODO TODO'
                 }
             }]
         );

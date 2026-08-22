@@ -173,6 +173,31 @@ describe('governance decision exception contracts', () => {
         );
     });
 
+    it('rejects placeholder-filled authenticated interaction evidence', () => {
+        const projection = interactionTestCouplingProjection();
+        const placeholderEvidence = 'TODO TODO TODO';
+
+        expect(() =>
+            decodeGovernanceDecisionRequest(
+                exceptionApprovalRequest('test-structure-coupling', {
+                    ...projection,
+                    semanticContract: {
+                        ...projection.semanticContract,
+                        interactionRequirement: {
+                            interactionKind: 'count',
+                            ownedPort: placeholderEvidence,
+                            observableEffect: placeholderEvidence,
+                            requiredConstraint: placeholderEvidence,
+                            failureRationale: placeholderEvidence
+                        }
+                    }
+                })
+            )
+        ).toThrow(
+            'test-structure-coupling interactionRequirement must define interactionKind, ownedPort, observableEffect, requiredConstraint, and failureRationale'
+        );
+    });
+
     it('revokes exactly one prior approval decision without accepting a projection', () => {
         const priorDecisionId = 'a'.repeat(64);
         const request = decodeGovernanceDecisionRequest({
