@@ -3344,15 +3344,7 @@ components:
 
     MyRealtimeSpaStatisticsResponse:
       type: object
-      required: [
-        generatedAtEpochMs,
-        scope,
-        actor,
-        warnings,
-        realtime,
-        clientState,
-        groupPresence,
-      ]
+      required: [generatedAtEpochMs, scope, actor, warnings, realtime, clientState, groupPresence]
       properties:
         generatedAtEpochMs:
           type: integer
@@ -3394,14 +3386,7 @@ components:
               type: array
               items:
                 type: object
-                required: [
-                  groupRef,
-                  displayName,
-                  kind,
-                  status,
-                  joinMode,
-                  actorSessionPresent,
-                ]
+                required: [groupRef, displayName, kind, status, joinMode, actorSessionPresent]
                 properties:
                   groupRef:
                     $ref: '#/components/schemas/GroupRef'
@@ -5125,13 +5110,7 @@ components:
           properties:
             selection:
               type: string
-              enum: [
-                none,
-                creator,
-                assigned,
-                elected-by-rank,
-                elected-random-deterministic,
-              ]
+              enum: [none, creator, assigned, elected-by-rank, elected-random-deterministic]
             assignedPrincipalIds:
               type: array
               items:
@@ -6423,13 +6402,7 @@ components:
           enum: [active, archived, destroyed, quarantined]
         rollout:
           type: string
-          enum: [
-            disabled,
-            experimental-local,
-            experimental-live,
-            durable-beta,
-            production,
-          ]
+          enum: [disabled, experimental-local, experimental-live, durable-beta, production]
         updateCount:
           type: integer
           format: int64
