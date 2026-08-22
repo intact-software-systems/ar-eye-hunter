@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "rallar-testing-evaluation-v1",
+  "execution": {
+    "model": "gpt-5.6-terra",
+    "reasoningEffort": "medium",
+    "forkTurns": "none",
+    "singleShot": true,
+    "repositoryRootResolution": "suite-checkout"
+  },
+  "repetitionsPerVariant": 5,
+  "automaticInputs": [
+    { "id": "codex-runtime-guidance", "source": "runtime-injected-system-and-developer" },
+    { "id": "repository-guide", "source": "runtime-injected-baseline-AGENTS.md" },
+    { "id": "repository-skill-catalog", "source": "runtime-injected-repo-plugin-frontmatter" }
+  ],
+  "scenario": {
+    "id": "new-test-creation-across-equivalent-implementations",
+    "pressures": [
+      "Coverage is low before tomorrow's review.",
+      "Existing tests make private helper and complete mock-call assertions easy to copy.",
+      "Several examples overlap and deleting tests can feel riskier than adding more."
+    ],
+    "prompt": "A public `priceOrder(request, pricingPort)` function accepts ordered lines `{ sku, quantity }`. The port exposes `readUnitPrice(sku)`. Its documented contract returns `{ currency: 'NOK', lines, subtotalOre, discountOre, totalOre }`; combines repeated SKUs; rejects zero or negative quantities with `InvalidQuantityError`; applies a 10% discount when subtotal is at least 10_000 ore; and preserves first-seen SKU order. The current implementation validates, normalizes lines, reads prices in input order through `pricingPort`, then applies discount through private helpers. Coverage is low and review is tomorrow. Propose the smallest durable Vitest suite. Existing tests separately assert the empty-order result, one ordinary line, two ordinary lines, repeated SKU combination, threshold discount, above-threshold discount, invalid zero, invalid negative, exact calls to each private helper, and the complete `pricingPort.readUnitPrice.mock.calls` sequence. Return only: (1) proposed Vitest test cases/code, (2) existing tests you would retain, merge, replace, or delete, and (3) a one-paragraph rationale.",
+    "requiredOutput": "A minimal public-behavior Vitest suite plus explicit disposition of overlapping and coupled tests."
+  },
+  "scoringContext": {
+    "equivalentImplementation": "Combines repeated SKUs first, memoizes unit prices, and computes discount in one pass while preserving every documented output and error.",
+    "nonRequirement": "Pricing read count, absence, and order are not independently specified."
+  },
+  "variants": [
+    {
+      "id": "current-guidance",
+      "treeSource": { "kind": "immutable-head-tree" },
+      "explicitInputs": [".agents/skills/rallar-testing/SKILL.md"]
+    },
+    {
+      "id": "candidate-guidance",
+      "treeSource": { "kind": "full-worktree-git-tree" },
+      "explicitInputs": [".agents/skills/rallar-testing/SKILL.md"]
+    }
+  ],
+  "requiredDimensions": [
+    {
+      "id": "behavior.independent-break",
+      "pass": "Each retained assertion names an independent production defect rather than a private implementation decision."
+    },
+    {
+      "id": "observation.public-boundary",
+      "pass": "Assertions observe return values, errors, public state, artifacts, visible state, or effects at an owned external port."
+    },
+    {
+      "id": "implementation.substitutability",
+      "pass": "Every behaviorally equivalent implementation passes the proposed tests unchanged."
+    },
+    {
+      "id": "coverage.minimum-distinct-risk",
+      "pass": "The suite merges overlapping cases and keeps only tests that protect distinct behavior or risk."
+    },
+    {
+      "id": "maintenance.obsolete-test-deletion",
+      "pass": "Obsolete implementation-coupled coverage is deleted or replaced without reshaping production code."
+    },
+    {
+      "id": "interaction.narrow-exception",
+      "pass": "Count, absence, or order is asserted only when that interaction is independently observable and required, with a narrow governance rationale."
+    }
+  ],
+  "evidenceContract": {
+    "schemaVersion": "general-agent-guidance-evidence-ledger-v2",
+    "digestAlgorithm": "sha256",
+    "rawOutputPolicy": "verbatim-agent-response-separate-from-score-artifact",
+    "statuses": ["running", "completed", "failed", "excluded", "aborted"],
+    "requiredPerRunFields": [
+      "runId",
+      "variant",
+      "status",
+      "treeIdentity",
+      "automaticInputs",
+      "explicitInputs",
+      "inputBundleDigest",
+      "promptDigest",
+      "runtimePreambleArtifact",
+      "runtimePreambleDigest",
+      "exactInvocationDigest",
+      "model",
+      "reasoningEffort",
+      "forkTurns",
+      "singleShot",
+      "freshAgentId",
+      "startedAt",
+      "completedAt",
+      "rawOutputArtifact",
+      "rawOutputDigest",
+      "scoreArtifact",
+      "scoreDigest"
+    ]
+  }
+}

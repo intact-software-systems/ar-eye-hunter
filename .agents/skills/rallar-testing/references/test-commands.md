@@ -206,7 +206,7 @@ proofs; do not expand a Markdown-only change into unrelated local suites.
 - For popups, auth, storage, realtime, downloads, or navigation, assert URL cleanup, localStorage/sessionStorage, requests, visible status, session IDs, connected agents, or artifacts.
 
 ```bash
-npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
+npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/control-foundation-local-smoke.spec.ts
 ```
 
 ## Notes
