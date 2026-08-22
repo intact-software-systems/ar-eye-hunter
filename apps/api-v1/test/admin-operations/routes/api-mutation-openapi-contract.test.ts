@@ -2,7 +2,7 @@ import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@s
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { init } from '../../src/routes/swagger-routes.ts';
+import { init } from '../../../src/routes/swagger-routes.ts';
 
 interface CoveredApiMutation {
     readonly method: 'delete' | 'post' | 'put';

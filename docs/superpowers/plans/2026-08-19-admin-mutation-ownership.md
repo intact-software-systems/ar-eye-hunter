@@ -31,9 +31,10 @@ structure, coupling, legacy, and performance checks.
 Wave 2 item 6. Preserve CRDT delegation constraints from
 [`docs/superpowers/specs/2026-08-17-crdt-mutation-and-administration-ownership-design.md`](../specs/2026-08-17-crdt-mutation-and-administration-ownership-design.md).
 
-**Refreshed planning base:** `6704f5b8c12218991a53ac9536db6cacee5f82ae` (`origin/main` on
-2026-08-21). At implementation start, fetch `origin/main`, create the implementation branch from
-that exact current head, and derive all changed-range evidence from its merge base. If production
+**Implementation base:** `905e9e55cf796a669354acba88f26e2f8a68758e` (`origin/main` on
+2026-08-22). Implementation continues in the existing draft PR branch
+`codex/admin-mutation-ownership-plan-refresh`; derive all changed-range evidence from its merge
+base. If production
 ownership or the locked contracts below have changed, stop and amend this plan before editing code;
 an advanced base alone is not a reason to redesign the work.
 
@@ -275,8 +276,8 @@ maintainer review before implementation continues.
 
 **Steps:**
 
-- [ ] Fetch `origin/main`, create `codex/admin-mutation-ownership` from current `origin/main`, and
-      record `ADMIN_MUTATION_BASE=$(git merge-base HEAD origin/main)` before editing.
+- [x] Fetch `origin/main`, rebase the existing draft PR branch onto current `origin/main`, and record
+      `ADMIN_MUTATION_BASE=$(git merge-base HEAD origin/main)` before editing.
 - [ ] Run `npm run pr:delivery -- status`. Repair a real conflict first; do not rebase solely for a
       `BEHIND` report while GitHub still reports mergeable.
 - [ ] Record two code-derived traces: construction/registration and runtime invocation. Include
@@ -549,7 +550,8 @@ npx tsc -p packages/shared-server/tsconfig.json --noEmit
 cd apps/api-v1
 deno task check
 deno lint src/admin-operations test/admin-operations
-deno fmt --check src/admin-operations test/admin-operations
+cd ../..
+npm run format:check
 ```
 
 **Database and black-box behavior:**

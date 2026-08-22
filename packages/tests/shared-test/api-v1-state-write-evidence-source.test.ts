@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { createAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+
+import type { ApiV1StateWriteEvidenceSqlParameter } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import {
     collectApiV1StateWriteEvidence,
     readPGliteStateWriteEvidenceSnapshot,
@@ -130,6 +134,106 @@ describe('API-v1 PGlite state-write evidence source', () => {
         expect(sql).not.toHaveBeenCalled();
         expect(collectInput).toBe(rawInput);
         expect(snapshotInput).toBe(rawInput);
+    });
+
+    it('links public admin request identity to its scoped page-work identity', async () => {
+        const requestId = 'admin-evidence-request-0001';
+        const jobId = 'admin-prune:scoped-job-0001';
+        const command = await createAdminPruneCommand({
+            jobId,
+            requestedBy: 'admin',
+            requestedSessionId: 'session-1',
+            capturedAtEpochMs: 1_700_000_000_000,
+            expireAtEpochMs: 1_700_000_060_000,
+            dryRun: false,
+            categories: ['app-data'],
+            appData: { namespace: 'evidence', storeName: null },
+            pageSize: 100
+        });
+        const inbox = {
+            ri_row_id: 1,
+            ri_resource_id: requestId,
+            ri_topic_id: 'ADMIN_PRUNE_EXPIRED',
+            fk_ext_bank_id: 'caller=admin:app-data-namespace=evidence:app-data-store=',
+            ri_resource: JSON.stringify({
+                payload: {
+                    typeId: 'ADMIN_PRUNE_EXPIRED',
+                    resource: JSON.stringify({
+                        type: 'ADMIN_PRUNE_EXPIRED',
+                        resourceId: requestId,
+                        data: command
+                    })
+                }
+            }),
+            ri_status: 'COMPLETED',
+            ri_attempts: 1,
+            start_ts: null,
+            end_ts: null,
+            next_ts: null,
+            result_status: 'COMPLETED',
+            result_resource: JSON.stringify({
+                generatedAtEpochMs: command.capturedAtEpochMs,
+                serverId: 'server-1',
+                warnings: [],
+                operation: 'maintenance.prune-expired',
+                status: 'queued',
+                changed: false,
+                jobId,
+                results: [{
+                    category: 'app-data',
+                    expiredRows: 0,
+                    deletedRows: 0,
+                    dryRun: false
+                }]
+            })
+        };
+        const page = toAdminPruneOutbox({
+            kind: 'page',
+            jobId,
+            category: 'app-data',
+            requestedBy: command.requestedBy,
+            requestedSessionId: command.requestedSessionId,
+            capturedAtEpochMs: command.capturedAtEpochMs,
+            expireAtEpochMs: command.expireAtEpochMs,
+            pageSize: command.pageSize,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: command.appData
+        }, 'server-1');
+        const sql = Object.assign(
+            vi.fn(async (parts: TemplateStringsArray, ...values: ApiV1StateWriteEvidenceSqlParameter[]) => {
+                const query = parts.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+                if (query.includes('from resource_inbox i')) {
+                    return [inbox];
+                }
+                if (query.includes('ri_type_id in (\'app_outbox\', \'ws_outbox\')')) {
+                    return values[0] === jobId
+                        ? [{
+                            ri_resource_id: page.key.resourceId,
+                            ri_topic_id: page.key.topicId,
+                            ri_type_id: page.typeId,
+                            ri_status: page.status,
+                            ri_resource: page.resource
+                        }]
+                        : [];
+                }
+                return [];
+            }),
+            { begin: vi.fn() }
+        );
+
+        const evidence = await collectApiV1StateWriteEvidenceFromSql({
+            match: requestId,
+            commandTypes: ['ADMIN_PRUNE_EXPIRED'],
+            expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
+        }, sql as never);
+
+        expect(evidence).toMatchObject({
+            matchedAppInboxCount: 1,
+            atomicCompletionFailures: 0,
+            resourceOutboxCount: 1,
+            resourceOutbox: [{ commandId: jobId, effectKind: 'admin-prune-page' }]
+        });
     });
 
     it('retains numeric-string minimum and string commandTypes behavior', async () => {

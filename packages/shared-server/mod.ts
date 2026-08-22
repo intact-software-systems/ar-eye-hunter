@@ -24,7 +24,7 @@ export * from './rallar-ai/mod.ts';
 export * from './rallar-facade/RallarServer.ts';
 export * from './rallar-facade/RallarServerApplication.ts';
 export * from './rallar-facade/ws-topic-router.ts';
-export * from './rallar-system/admin-operations/AdminOperationsService.ts';
+export * from './rallar-system/admin-operations/admin-operations-service.ts';
 export * from './rallar-system/admin-support/AdminSupportService.ts';
 export {
     type AuthMutationService,

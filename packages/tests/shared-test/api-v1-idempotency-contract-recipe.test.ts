@@ -12,6 +12,10 @@ const EQUAL_CONTENDER_PATH = '/api/state/apps/{applicationId}/workspaces/{worksp
 const DIFFERENT_CONTENDER_PATH = '/api/state/apps/{applicationId}/workspaces/{workspaceId}' +
     '/groups/{groupId}/topology/override/requests/' +
     'idem-contract-different-contenders-{runId}';
+const ADMIN_PRUNE_EQUAL_PATH = '/api/admin/operations/maintenance/prune-expired/requests/' +
+    'idem-contract-admin-prune-equal-{runId}';
+const ADMIN_PRUNE_DIFFERENT_PATH = '/api/admin/operations/maintenance/prune-expired/requests/' +
+    'idem-contract-admin-prune-different-{runId}';
 
 describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
     it('is a Tier 2 three-node cluster recipe', () => {
@@ -69,7 +73,20 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
                 'replayCrdtHttpMutation',
                 'rejectChangedCrdtHttpIntent',
                 'replayNormalizedPruneCategories',
+                'assertNormalizedPruneReplay',
+                'rejectChangedNormalizedPruneIntent',
+                'rejectMismatchedAdminClientHeader',
                 'proveAdminActorIsolation',
+                'assertAdminActorIsolationEvidence',
+                'raceEqualAdminPruneAcrossThreeNodes',
+                'assertEqualAdminPruneResults',
+                'assertEqualAdminPruneEvidence',
+                'raceDifferentAdminPruneIntentsAcrossThreeNodes',
+                'assertOneDifferentAdminPruneWinner',
+                'assertDifferentAdminPruneEvidence',
+                'proveAdminCrdtOperationIsolation',
+                'proveAdminTopologyOperationIsolation',
+                'proveAdminPruneOperationIsolation',
                 'replayTopologyAfterRestartBoundary',
                 'exposeStateWriteEvidence',
                 'assertAtomicAppInboxCompletion',
@@ -98,6 +115,66 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
         expect(paths(byName, ['differentContenderPrimary', 'differentContenderSecondary'])).toEqual(
             new Set([DIFFERENT_CONTENDER_PATH])
         );
+        expect(
+            paths(byName, [
+                'equalAdminPrunePrimary',
+                'equalAdminPruneSecondary',
+                'equalAdminPruneTertiary'
+            ])
+        ).toEqual(new Set([ADMIN_PRUNE_EQUAL_PATH]));
+        expect(
+            paths(byName, [
+                'differentAdminPrunePrimary',
+                'differentAdminPruneSecondary',
+                'differentAdminPruneTertiary'
+            ])
+        ).toEqual(new Set([ADMIN_PRUNE_DIFFERENT_PATH]));
+    });
+
+    it('proves admin operation, actor, and three-node effect isolation', () => {
+        const byName = new Map(
+            readSteps().flatMap((step) => typeof step.name === 'string' ? [[step.name, step] as const] : [])
+        );
+        const operationPaths = paths(byName, [
+            'proveAdminCrdtOperationIsolation',
+            'proveAdminTopologyOperationIsolation',
+            'proveAdminPruneOperationIsolation'
+        ]);
+        expect(operationPaths.size).toBe(3);
+        for (const path of operationPaths) {
+            expect(path).toContain('/requests/idem-contract-admin-operation-isolation-{runId}');
+        }
+        expect(byName.get('loginSecondAdmin')).toMatchObject({
+            request: {
+                body: { username: 'idempotency-admin-two-{runId}' },
+                outputs: {
+                    secondAdminClientId: 'body.clientId',
+                    secondAdminAccessToken: { path: 'body.accessToken', secret: true }
+                }
+            }
+        });
+        expect(byName.get('exposeAdminActorIsolationEvidence')).toMatchObject({
+            request: {
+                stateWriteEvidence: {
+                    commandTypes: ['ADMIN_PRUNE_EXPIRED'],
+                    minimumMatchedRows: 2,
+                    expectedEffectsByCommandType: {
+                        ADMIN_PRUNE_EXPIRED: ['admin-prune-page']
+                    }
+                }
+            }
+        });
+        expect(byName.get('exposeEqualAdminPruneEvidence')).toMatchObject({
+            request: {
+                stateWriteEvidence: {
+                    commandTypes: ['ADMIN_PRUNE_EXPIRED'],
+                    minimumMatchedRows: 1,
+                    expectedEffectsByCommandType: {
+                        ADMIN_PRUNE_EXPIRED: ['admin-prune-page']
+                    }
+                }
+            }
+        });
     });
 
     it('encodes the CRDT path-bearing operation as literal JSON', () => {
@@ -119,7 +196,7 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
 
         expect(variables?.crdtApplicationId).toBe('rallar-server');
         expect(variables?.crdtWorkspaceId).toBe('default');
-        expect(crdtSteps).toHaveLength(7);
+        expect(crdtSteps).toHaveLength(8);
         for (const step of crdtSteps) {
             const serialized = JSON.stringify(step);
             expect(serialized).toContain('"applicationId":"{crdtApplicationId}"');

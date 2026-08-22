@@ -1,35 +1,21 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-import { runInTransaction } from '../../postgres/run-in-transaction.ts';
+import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
+import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
+import {
+    decodeAdminPruneWork,
+    toAdminPruneOutbox,
+    type AdminPrunePageWork,
+    type ReservedAdminPrunePageWork
+} from './admin-prune-page-codec.ts';
 import {
     advanceAdminPruneAggregate,
     toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey,
     type AdminPruneAggregate
 } from './admin-prune-progress.ts';
-import {
-    decodeAdminPruneWork,
-    requirePageSize,
-    toAdminPruneOutbox,
-    type AdminPruneAppData,
-    type AdminPrunePageWork,
-    type ReservedAdminPrunePageWork
-} from './admin-prune-work-codec.ts';
-
-export {
-    ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-    createAdminPruneCommand,
-    decodeAdminPruneCommand,
-    decodeAdminPruneWork,
-    toAdminPruneOutbox
-} from './admin-prune-work-codec.ts';
-export type {
-    AdminPruneAppData,
-    AdminPruneCommand,
-    AdminPrunePageWork
-} from './admin-prune-work-codec.ts';
 
 export type AdminPruneCandidatePage = Readonly<{
     rowIds: readonly string[];
@@ -57,7 +43,7 @@ export type AdminPrunePageComputed = Readonly<{
     finishedAtEpochMs: number;
 }>;
 
-export type AdminPruneExpiredRepository = Readonly<{
+export type AdminPrunePageRepository = Readonly<{
     readPage(
         input: Readonly<{
             category: AdminPruneExpiredCategory;
@@ -91,45 +77,31 @@ export type AdminPruneExpiredRepository = Readonly<{
     ): Promise<boolean>;
 }>;
 
-export class AdminPruneExpiredWork {
+export interface AdminPrunePageWorkerOptions {
+    readonly database: PSqlSql;
+    readonly repository: AdminPrunePageRepository;
+    readonly serviceId: string;
+    readonly pageSize: number;
+    readonly now?: () => number;
+    readonly readAuthority: (
+        input: Readonly<{
+            requestedBy: string;
+            requestedSessionId: string;
+            nowEpochMs: number;
+        }>
+    ) => Promise<Readonly<{ allowed: boolean; code: string; }>>;
+    readonly wakeQueue?: () => void;
+}
+
+export class AdminPrunePageWorker {
     private readonly pageSize: number;
     private readonly now: () => number;
 
-    private readonly options: Readonly<{
-        database: PSqlSql;
-        repository: AdminPruneExpiredRepository;
-        serviceId: string;
-        pageSize: number;
-        now?: () => number;
-        readAuthority(
-            input: Readonly<{
-                requestedBy: string;
-                requestedSessionId: string;
-                nowEpochMs: number;
-            }>
-        ): Promise<Readonly<{ allowed: boolean; code: string; }>>;
-        wakeQueue?: () => void;
-    }>;
+    private readonly options: AdminPrunePageWorkerOptions;
 
-    constructor(
-        options: Readonly<{
-            database: PSqlSql;
-            repository: AdminPruneExpiredRepository;
-            serviceId: string;
-            pageSize: number;
-            now?: () => number;
-            readAuthority(
-                input: Readonly<{
-                    requestedBy: string;
-                    requestedSessionId: string;
-                    nowEpochMs: number;
-                }>
-            ): Promise<Readonly<{ allowed: boolean; code: string; }>>;
-            wakeQueue?: () => void;
-        }>
-    ) {
+    constructor(options: AdminPrunePageWorkerOptions) {
         this.options = options;
-        this.pageSize = requirePageSize(options.pageSize);
+        this.pageSize = requireAdminPrunePageSize(options.pageSize);
         this.now = options.now ?? (() => Date.now());
     }
 

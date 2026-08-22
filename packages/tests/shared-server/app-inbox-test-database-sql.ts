@@ -228,9 +228,7 @@ async function executeResultAndReservationSql(
 }
 
 function executeOutboxSql(input: AppInboxTestSqlExecution): unknown[] | undefined {
-    const insertsOutbox = input.query.includes('insert into resource_inbox') &&
-        input.query.includes('on conflict') &&
-        input.query.includes('do nothing');
+    const insertsOutbox = input.query.includes('insert into resource_inbox');
     if (insertsOutbox) {
         const entry = toInboxEntry(input.values);
         if (input.options.shouldFailOutboxWrite?.()) {
@@ -241,7 +239,13 @@ function executeOutboxSql(input: AppInboxTestSqlExecution): unknown[] | undefine
         }
         const key = toResourceKey(entry);
         if (input.pending.outbox.has(key)) {
-            return [];
+            if (input.query.includes('on conflict') && input.query.includes('do nothing')) {
+                return [];
+            }
+            throw new ResourceInboxInvariantCorruptionError(
+                entry.key,
+                'AppInbox outbox identity already exists'
+            );
         }
         input.pending.outbox.set(key, entry);
         return [toInboxRow(entry)];

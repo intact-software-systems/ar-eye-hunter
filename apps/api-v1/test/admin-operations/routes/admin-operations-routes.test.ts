@@ -10,9 +10,9 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../src/crdt/create-crdt-admin-mutations.ts';
-import * as adminOperationsRoutes from '../../src/routes/admin-operations-routes.ts';
-import { createApiAdminMutationGateway, type CreateApiAdminMutationGatewayInput } from '../../src/services/create-api-admin-mutation-gateway.ts';
+import { createApiAdminMutationGateway, type CreateApiAdminMutationGatewayInput } from '../../../src/admin-operations/create-api-admin-mutation-gateway.ts';
+import * as adminOperationsRoutes from '../../../src/admin-operations/register-admin-operations-routes.ts';
+import type { CrdtAdminMutationInput, CrdtAdminPublicResult } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const ADMIN_SESSION = {
@@ -376,8 +376,7 @@ interface CreateAppOptions {
     readonly adminClientIds?: adminOperationsRoutes.AdminOperationsRouteDependencies['adminClientIds'];
     readonly requireApiAuthSession?: adminOperationsRoutes.AdminOperationsRouteDependencies['requireApiAuthSession'];
     readonly requireApiAdminSession?: adminOperationsRoutes.AdminOperationsRouteDependencies['requireApiAdminSession'];
-    readonly now?: adminOperationsRoutes.AdminOperationsRouteDependencies['now'];
-    readonly operations?: Partial<adminOperationsRoutes.AdminOperationsServiceLike>;
+    readonly operations?: Partial<adminOperationsRoutes.AdminOperationsRouteService>;
 }
 
 function createRecordingGateway(
@@ -450,10 +449,9 @@ function toRecordedCrdtResult(mutation: CrdtAdminMutationInput): CrdtAdminPublic
 function createApp(options: CreateAppOptions = {}): Hono {
     const app = new Hono();
     const { operations, ...routeOptions } = options;
-    adminOperationsRoutes.init(app, {
+    adminOperationsRoutes.registerAdminOperationsRoutes(app, {
         adminClientIds: ['platform-admin'],
         requireApiAuthSession: () => Promise.resolve(ADMIN_SESSION),
-        now: () => NOW_EPOCH_MS,
         operations: createOperations(operations),
         ...routeOptions
     });
@@ -461,8 +459,9 @@ function createApp(options: CreateAppOptions = {}): Hono {
 }
 
 function createOperations(
-    overrides: Partial<adminOperationsRoutes.AdminOperationsServiceLike> = {}
-): adminOperationsRoutes.AdminOperationsServiceLike {
+    overrides: Partial<adminOperationsRoutes.AdminOperationsRouteService> = {}
+): adminOperationsRoutes.AdminOperationsRouteService {
+    const unusedOperation = () => Promise.reject(new Error('Admin operation is unused'));
     return {
         readOverview: () =>
             Promise.resolve({
@@ -471,50 +470,19 @@ function createOperations(
                 warnings: [],
                 health: { status: 'ok' }
             }),
-        readQueues: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        readRealtime: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        readState: (input: adminOperationsRoutes.AdminOperationReadInput) =>
-            Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                warnings: [],
-                scope: input.scope
-            }),
-        readCrdt: (input: adminOperationsRoutes.AdminOperationReadInput) =>
-            Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                warnings: [],
-                scope: input.scope
-            }),
-        readSystem: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        resetMetrics: () =>
-            Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                warnings: [],
-                operation: 'metrics.reset',
-                status: 'completed',
-                changed: false
-            }),
-        recomputeTopology: () =>
-            Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                warnings: [],
-                operation: 'topology.recompute',
-                status: 'completed',
-                changed: false
-            }),
-        pruneExpired: () =>
-            Promise.resolve({
-                generatedAtEpochMs: NOW_EPOCH_MS,
-                warnings: [],
-                operation: 'maintenance.prune-expired',
-                status: 'dry-run',
-                changed: false
-            }),
-        verifyCrdtIntegrity: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        exportCrdtDebug: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        compactCrdt: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        updateCrdtLifecycle: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
-        eraseCrdt: () => Promise.resolve({ generatedAtEpochMs: NOW_EPOCH_MS, warnings: [] }),
+        readQueues: unusedOperation,
+        readRealtime: unusedOperation,
+        readState: unusedOperation,
+        readCrdt: unusedOperation,
+        readSystem: unusedOperation,
+        resetMetrics: unusedOperation,
+        recomputeTopology: unusedOperation,
+        pruneExpired: unusedOperation,
+        verifyCrdtIntegrity: unusedOperation,
+        exportCrdtDebug: unusedOperation,
+        compactCrdt: unusedOperation,
+        updateCrdtLifecycle: unusedOperation,
+        eraseCrdt: unusedOperation,
         ...overrides
     };
 }

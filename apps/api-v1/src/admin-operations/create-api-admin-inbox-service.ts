@@ -3,8 +3,8 @@ import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInbo
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/\
-PSqlAdminPruneExpiredRepository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/\
+p-sql-admin-prune-repository.ts';
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 
 import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/\
@@ -12,11 +12,12 @@ ResourceInboxRepository.ts';
 
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/\
 ResourceInboxResultsRepository.ts';
-import { AdminPruneExpiredWork } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
 import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import { AdminPrunePageWorker } from '@shared-server/rallar-system/admin-operations/prune/\
+admin-prune-page-worker.ts';
 
 import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/\
 AppInboxService.ts';
@@ -71,9 +72,9 @@ export function createApiAdminInboxService(
             code: allowed ? 'allowed' : 'admin-prune-authority-denied'
         };
     };
-    const pageWork = new AdminPruneExpiredWork({
+    const pageWork = new AdminPrunePageWorker({
         database: input.database,
-        repository: new PSqlAdminPruneExpiredRepository(input.database, input.serviceId),
+        repository: new PSqlAdminPruneRepository(input.database),
         serviceId: input.serviceId,
         pageSize,
         now: input.options?.nowEpochMs,

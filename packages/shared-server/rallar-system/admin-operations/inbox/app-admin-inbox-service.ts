@@ -19,24 +19,25 @@ import {
 import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../services/app-inbox-failure.ts';
 import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
+import type { AdminOperationsPruner } from '../admin-operations-service.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
+import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
     createAdminPruneAggregate,
     decodeAdminPruneAggregate,
     toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey,
     toAdminPruneCompletedResult
-} from '../admin-prune-progress.ts';
-import type { AdminOperationsPruner } from '../AdminOperationsService.ts';
+} from '../prune/admin-prune-progress.ts';
 import {
     createAdminPruneCommand,
     decodeAdminPruneCommand,
-    toAdminPruneOutbox,
     type AdminPruneCommand
-} from '../AdminPruneExpiredWork.ts';
+} from './admin-prune-command-codec.ts';
 
 import { AppInboxType, type AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
 
+import { decodeJsonWireValue } from '../../services/mutation-command-identity.ts';
 import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../services/timing.ts';
 import {
     decodeAdminPruneEnqueueResult,
@@ -200,7 +201,9 @@ export class AppAdminInboxService extends AppInboxService {
                 };
             }
         );
-        const command = decodeAdminPruneCommand(reservation.enqueue.data);
+        const command = decodeAdminPruneCommand(
+            decodeJsonWireValue(reservation.enqueue.data, 'Reserved admin prune command')
+        );
         await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
         const enqueued = await this.waitForReservedEntryResult<AdminPruneCommand, AdminPruneEnqueueResult>(
@@ -234,7 +237,7 @@ export class AppAdminInboxService extends AppInboxService {
         const result = await this.writeMutation(context, async (transaction) => {
             const outbox = new ResourceInboxRepository(transaction);
             for (const entry of computed.outboxEntries) {
-                await outbox.writeIfAbsentOrMatch(entry);
+                await outbox.write(entry);
             }
             if (computed.aggregateEntry !== null) {
                 const stored = await new ResourceInboxResultsRepository(

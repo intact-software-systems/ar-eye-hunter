@@ -2,13 +2,13 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { createAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
-import type { ReservedAdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+import type { ReservedAdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import {
-    AdminPruneExpiredWork,
-    type AdminPruneExpiredRepository,
-    type AdminPrunePageRead
-} from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+    AdminPrunePageWorker,
+    type AdminPrunePageRead,
+    type AdminPrunePageRepository
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import { createAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS, RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
@@ -17,7 +17,7 @@ const RETRY_LIFETIME = DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS + RESOURCE_INBOX_
 
 describe('admin prune retry lifetime', () => {
     it('gives every successor and pending result a complete 20-attempt retry horizon', () => {
-        const service = new AdminPruneExpiredWork({
+        const service = new AdminPrunePageWorker({
             database: createDatabase(),
             repository: createRepository(),
             serviceId: 'server-1',
@@ -97,7 +97,7 @@ function createDatabase(): PSqlSql {
     return database;
 }
 
-function createRepository(): AdminPruneExpiredRepository {
+function createRepository(): AdminPrunePageRepository {
     return {
         readPage: () => Promise.reject(new Error('not read')),
         readAggregate: () => Promise.reject(new Error('not read')),

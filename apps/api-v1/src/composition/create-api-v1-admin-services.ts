@@ -7,7 +7,7 @@ import type { RallarServerWsStatus } from '@shared-server/rallar-facade/ws-topic
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/\
 formation-metrics.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/\
-AdminOperationsService.ts';
+admin-operations-service.ts';
 import { AdminSupportService, type AdminSupportTopologyManagement } from '@shared-server/rallar-system/admin-support/\
 AdminSupportService.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
@@ -19,14 +19,14 @@ SpaStatisticsService.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
-import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
-import type { ApiV1DatabaseBackendConfig } from '../db/database-config.ts';
-import type { ApiV1DatabasePubSubConfig } from '../db/database-pubsub-config.ts';
 import {
     createApiAdminMutationGateway,
     type ApiAdminPruneMutationPort,
     type ApiTopologyRecomputeMutationPort
-} from '../services/create-api-admin-mutation-gateway.ts';
+} from '../admin-operations/create-api-admin-mutation-gateway.ts';
+import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
+import type { ApiV1DatabaseBackendConfig } from '../db/database-config.ts';
+import type { ApiV1DatabasePubSubConfig } from '../db/database-pubsub-config.ts';
 
 export interface CreateApiV1AdminServicesInput {
     readonly database: PSqlSql;

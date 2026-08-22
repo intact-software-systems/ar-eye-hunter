@@ -90,6 +90,8 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_STATE_STRICT_READ_AUTH = env.RALLAR_STATE_STRICT_READ_AUTH ?? '1';
     env.AUTH_STATIC_CLIENTS_MODE = env.AUTH_STATIC_CLIENTS_MODE ?? 'demo';
     env.AUTH_REGISTRATION_MODE = env.AUTH_REGISTRATION_MODE ?? 'public';
+    env.AUTH_ADMIN_CLIENT_IDS = env.AUTH_ADMIN_CLIENT_IDS ??
+        `admin,idempotency-admin-two-${options.runId}`;
     env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON = env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON ??
         '[{"documentType":"black-box-map","rollout":"production"}]';
 

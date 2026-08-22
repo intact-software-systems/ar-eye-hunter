@@ -4,11 +4,11 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import assert from 'node:assert/strict';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
-import { createApiAdminInboxService } from '../../src/services/create-api-admin-inbox-service.ts';
-import { assertUtcPGliteSession, RealEngineAdminPruneFixture } from './pglite-admin-prune-real-engine-fixture.ts';
-import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withUtcPGliteSql } from './pglite-auth-test-harness.ts';
+import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
+import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
+import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { assertUtcPGliteSession, RealEngineAdminPruneFixture } from './admin-prune-real-engine-fixture.ts';
 
 Deno.test('committed initial admin page work wakes the running queue engine into APP_OUTBOX processing', async () => {
     await withUtcPGliteSql(runRealEngineHandoffTest);

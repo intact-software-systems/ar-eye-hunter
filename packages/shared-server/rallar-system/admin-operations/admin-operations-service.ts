@@ -17,12 +17,14 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
     type RallarCrdtAdminReadRepository,
+    type RallarCrdtDebugBundle,
     type RallarCrdtDocumentMetadata,
-    type RallarCrdtLifecycleInput
+    type RallarCrdtIntegrityReport
 } from '@shared/crdt/mod.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
 
 import { type CrdtAdminCompactResult, type CrdtAdminEraseResult } from '../crdt/mutation/crdt-mutation-contracts.ts';
+import type { JsonWireValue } from '../services/mutation-command-identity.ts';
 import { nowMs, recordRallarTiming, type RallarTimingEventInput, type RallarTimingSink } from '../services/timing.ts';
 
 import type { TopologyReconfigureInboxResult } from '../topology/inbox/topology-app-inbox-handler.ts';
@@ -246,7 +248,9 @@ export class AdminOperationsService {
         return await this.options.mutationGateway.pruneExpired(input);
     }
 
-    async verifyCrdtIntegrity(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
+    async verifyCrdtIntegrity(
+        input: AdminOperationsWriteInput<JsonWireValue>
+    ): Promise<RallarCrdtIntegrityReport> {
         return await this.timeWrite(
             'crdt.integrity',
             input,
@@ -257,7 +261,9 @@ export class AdminOperationsService {
         );
     }
 
-    async exportCrdtDebug(input: AdminOperationsWriteInput<unknown>): Promise<unknown> {
+    async exportCrdtDebug(
+        input: AdminOperationsWriteInput<JsonWireValue>
+    ): Promise<RallarCrdtDebugBundle> {
         return await this.timeWrite('crdt.debug-export', input, async () => {
             const body = readObject(input.request);
             const redactPayloads = body.redactPayloads === false ? false : true;
@@ -277,19 +283,19 @@ export class AdminOperationsService {
     }
 
     async compactCrdt(
-        input: AdminOperationsMutationWriteInput<unknown>
+        input: AdminOperationsMutationWriteInput<JsonWireValue>
     ): Promise<CrdtAdminCompactResult> {
         return await this.options.mutationGateway.compactCrdt(input);
     }
 
     async updateCrdtLifecycle(
-        input: AdminOperationsMutationWriteInput<RallarCrdtLifecycleInput>
+        input: AdminOperationsMutationWriteInput<JsonWireValue>
     ): Promise<RallarCrdtDocumentMetadata> {
         return await this.options.mutationGateway.updateCrdtLifecycle(input);
     }
 
     async eraseCrdt(
-        input: AdminOperationsMutationWriteInput<unknown>
+        input: AdminOperationsMutationWriteInput<JsonWireValue>
     ): Promise<CrdtAdminEraseResult> {
         return await this.options.mutationGateway.eraseCrdt(input);
     }

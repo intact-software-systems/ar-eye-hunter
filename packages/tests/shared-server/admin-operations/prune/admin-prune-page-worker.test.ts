@@ -1,22 +1,20 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
-import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+import { createAdminPruneCommand, decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
     ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-    AdminPruneExpiredWork,
-    createAdminPruneCommand,
-    decodeAdminPruneCommand,
     decodeAdminPruneWork,
-    type AdminPruneExpiredRepository
-} from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
+    toAdminPruneOutbox,
+    type AdminPrunePageWork
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { AdminPrunePageWorker, type AdminPrunePageRepository } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { describe, expect, it } from 'vitest';
 
 const NOW = 1_700_000_000_000;
 
-describe('AdminPruneExpiredWork', () => {
+describe('AdminPrunePageWorker', () => {
     it('exactly decodes bounded single-category prune commands', async () => {
         const command = await createAdminPruneCommand({
             jobId: 'prune-1',
@@ -48,7 +46,7 @@ describe('AdminPruneExpiredWork', () => {
 
     it('reads and deletes at most one configured page for one category', async () => {
         const repository = new MemoryPruneRepository(['1', '2', '3']);
-        const work = new AdminPruneExpiredWork({
+        const work = new AdminPrunePageWorker({
             database: repository.database,
             repository,
             serviceId: 'server-1',
@@ -95,7 +93,7 @@ describe('AdminPruneExpiredWork', () => {
 
     it('excludes the currently executing resource-inbox row from its page', async () => {
         const repository = new MemoryPruneRepository(['10', '11', '12']);
-        const work = new AdminPruneExpiredWork({
+        const work = new AdminPrunePageWorker({
             database: repository.database,
             repository,
             serviceId: 'server-1',
@@ -103,20 +101,17 @@ describe('AdminPruneExpiredWork', () => {
             now: () => NOW,
             readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
         });
-        const entry = createReservedEntry(
-            {
-                kind: 'page',
-                jobId: 'prune-queue',
-                category: 'resource-inbox',
-                capturedAtEpochMs: NOW,
-                expireAtEpochMs: NOW + 60_000,
-                pageSize: 3,
-                afterCursor: null,
-                pageIndex: 0,
-                appData: null
-            },
-            '11'
-        );
+        const entry = createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-queue',
+            category: 'resource-inbox',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 3,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        });
 
         const command = decodeAdminPruneWork(entry);
         const read = await work.read(command);
@@ -128,7 +123,7 @@ describe('AdminPruneExpiredWork', () => {
     it('rolls deletion and successor back when reservation fencing fails', async () => {
         const repository = new MemoryPruneRepository(['1', '2', '3']);
         repository.loseReservation = true;
-        const work = new AdminPruneExpiredWork({
+        const work = new AdminPrunePageWorker({
             database: repository.database,
             repository,
             serviceId: 'server-1',
@@ -153,10 +148,153 @@ describe('AdminPruneExpiredWork', () => {
         expect(repository.writtenEntries).toEqual([]);
     });
 
+    it('does not write or wake when current page authority is denied', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        let wakeCount = 0;
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: false, code: 'session-revoked' }),
+            wakeQueue: () => {
+                wakeCount += 1;
+            }
+        });
+
+        await expect(work.processReservedEntry(createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-denied',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        }))).rejects.toMatchObject({ code: 'admin-prune-authority-denied', status: 403 });
+
+        expect(repository.deleted).toEqual([]);
+        expect(repository.writtenEntries).toEqual([]);
+        expect(repository.finished).toEqual([]);
+        expect(repository.progressWrites).toBe(0);
+        expect(wakeCount).toBe(0);
+    });
+
+    it('rolls aggregate, deletion, successor, and reservation back on outbox collision', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        repository.rejectOutbox = true;
+        let wakeCount = 0;
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
+            wakeQueue: () => {
+                wakeCount += 1;
+            }
+        });
+
+        await expect(work.processReservedEntry(createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-outbox-collision',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        }))).rejects.toThrow(/outbox collision/i);
+
+        expect(repository.deleted).toEqual([]);
+        expect(repository.writtenEntries).toEqual([]);
+        expect(repository.finished).toEqual([]);
+        expect(repository.progressWrites).toBe(0);
+        expect(wakeCount).toBe(0);
+    });
+
+    it('rolls every page effect back when commit fails', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        repository.rejectCommit = true;
+        let wakeCount = 0;
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
+            wakeQueue: () => {
+                wakeCount += 1;
+            }
+        });
+
+        await expect(work.processReservedEntry(createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-commit-failure',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        }))).rejects.toThrow(/commit failed/i);
+
+        expect(repository.deleted).toEqual([]);
+        expect(repository.writtenEntries).toEqual([]);
+        expect(repository.finished).toEqual([]);
+        expect(repository.progressWrites).toBe(0);
+        expect(wakeCount).toBe(0);
+    });
+
+    it('rereads page, aggregate predecessor, and authority after a progress conflict', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        repository.rejectProgressOnce = true;
+        let authorityReads = 0;
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => {
+                authorityReads += 1;
+                return Promise.resolve({ allowed: true, code: 'allowed' });
+            }
+        });
+        const entry = createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-progress-retry',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        });
+
+        await expect(work.processReservedEntry(entry)).rejects.toMatchObject({
+            code: 'admin-prune-progress-conflict'
+        });
+        await work.processReservedEntry(entry);
+
+        expect(repository.readPageCalls).toBe(2);
+        expect(repository.readAggregateCalls).toBe(2);
+        expect(authorityReads).toBe(2);
+        expect(repository.deleted).toEqual(['1', '2']);
+        expect(repository.progressWrites).toBe(1);
+    });
+
     it('wakes the queue only after committed successor page work', async () => {
         const repository = new MemoryPruneRepository(['1', '2', '3']);
         let wakeCount = 0;
-        const work = new AdminPruneExpiredWork({
+        const work = new AdminPrunePageWorker({
             database: repository.database,
             repository,
             serviceId: 'server-1',
@@ -187,7 +325,7 @@ describe('AdminPruneExpiredWork', () => {
 
     it('extends pending aggregate and successor expiry from the page read time', async () => {
         const repository = new MemoryPruneRepository(['1', '2', '3']);
-        const work = new AdminPruneExpiredWork({
+        const work = new AdminPrunePageWorker({
             database: repository.database,
             repository,
             serviceId: 'server-1',
@@ -246,18 +384,26 @@ describe('AdminPruneExpiredWork', () => {
     });
 });
 
-class MemoryPruneRepository implements AdminPruneExpiredRepository {
+class MemoryPruneRepository implements AdminPrunePageRepository {
     readonly transaction = (() => undefined) as never;
     readonly database = Object.assign((() => undefined) as never, {
         begin: async <T>(write: (transaction: never) => Promise<T>) => {
             const beforeDeleted = [...this.deleted];
             const beforeEntries = [...this.writtenEntries];
+            const beforeFinished = [...this.finished];
+            const beforeProgressWrites = this.progressWrites;
             try {
-                return await write(this.transaction);
+                const result = await write(this.transaction);
+                if (this.rejectCommit) {
+                    throw new Error('Admin prune commit failed');
+                }
+                return result;
             }
             catch (error) {
                 this.deleted.splice(0, this.deleted.length, ...beforeDeleted);
                 this.writtenEntries.splice(0, this.writtenEntries.length, ...beforeEntries);
+                this.finished.splice(0, this.finished.length, ...beforeFinished);
+                this.progressWrites = beforeProgressWrites;
                 throw error;
             }
         }
@@ -268,6 +414,12 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
     readonly calls: string[] = [];
     lastExcludedResourceId: string | null = null;
     loseReservation = false;
+    progressWrites = 0;
+    readAggregateCalls = 0;
+    readPageCalls = 0;
+    rejectCommit = false;
+    rejectOutbox = false;
+    rejectProgressOnce = false;
 
     private readonly rowIds: readonly string[];
 
@@ -276,6 +428,7 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
     }
 
     readPage(input: { pageSize: number; excludedResourceId: string | null; }) {
+        this.readPageCalls += 1;
         this.lastExcludedResourceId = input.excludedResourceId;
         const selected = this.rowIds
             .filter((id) => id !== input.excludedResourceId)
@@ -287,6 +440,7 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
     }
 
     readAggregate(jobId: string) {
+        this.readAggregateCalls += 1;
         const aggregate = createAdminPruneAggregate({
             jobId,
             generatedAtEpochMs: NOW,
@@ -315,11 +469,21 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
     writeOutbox(_transaction: never, entry: ResourceEntry) {
         this.calls.push('outbox');
         this.writtenEntries.push(entry);
+        if (this.rejectOutbox) {
+            throw new Error('Admin prune outbox collision');
+        }
         return Promise.resolve();
     }
 
     writeProgress() {
         this.calls.push('progress');
+        this.progressWrites += 1;
+        if (this.rejectProgressOnce) {
+            this.rejectProgressOnce = false;
+            throw Object.assign(new Error('Admin prune aggregate changed before commit'), {
+                code: 'admin-prune-progress-conflict'
+            });
+        }
         return Promise.resolve();
     }
 
@@ -333,50 +497,17 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
 }
 
 function createReservedEntry(
-    work: Omit<AdminPrunePageWork, 'requestedBy' | 'requestedSessionId'>,
-    _resourceId = 'prune-work-1'
+    work: Omit<AdminPrunePageWork, 'requestedBy' | 'requestedSessionId'>
 ): ResourceEntry {
     const normalized: AdminPrunePageWork = {
         ...work,
         requestedBy: 'admin-1',
         requestedSessionId: 'session-1'
     };
-    const jobId = normalized.jobId;
-    const computedResourceId = `${jobId}:${normalized.category}:${normalized.pageIndex}`;
-    const expireAtEpochMs = normalized.expireAtEpochMs;
-    const createdTs = Temporal.Instant.fromEpochMilliseconds(NOW)
-        .toZonedDateTimeISO('UTC')
-        .toPlainDateTime();
+    const entry = toAdminPruneOutbox(normalized, 'server-1');
     return {
-        key: {
-            topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-            resourceId: computedResourceId,
-            contextId: jobId
-        },
-        resource: JSON.stringify({
-            id: { v: 2, msgId: computedResourceId, ts: NOW, senderId: 'server-1' },
-            route: {
-                topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
-                resourceId: computedResourceId,
-                contextId: jobId
-            },
-            targets: { mode: 'all', scope: 'global' },
-            constraints: { expiresAtMs: expireAtEpochMs },
-            payload: {
-                typeId: 'ADMIN_PRUNE_EXPIRED',
-                contentType: 'application/json',
-                resource: JSON.stringify(normalized)
-            },
-            audit: { createdBy: 'server-1', createdTs: NOW }
-        }),
-        typeId: EnqueuedType.APP_OUTBOX,
+        ...entry,
         status: EntityStatus.RESERVED,
-        audit: {
-            date: createdTs.toPlainTime(),
-            createdBy: 'server-1',
-            createdTs,
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(expireAtEpochMs)
-        },
         dequeueAudit: {
             startTs: Temporal.Instant.fromEpochMilliseconds(NOW),
             attempts: 1

@@ -1,4 +1,4 @@
-import type { AdminPruneCommand } from './AdminPruneExpiredWork.ts';
+import type { AdminPruneCommand } from './inbox/admin-prune-command-codec.ts';
 
 export type AdminPruneExpiredOptions = Readonly<{
     cutoffEpochMs: number;

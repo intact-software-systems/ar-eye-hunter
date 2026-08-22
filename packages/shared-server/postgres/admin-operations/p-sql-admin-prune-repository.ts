@@ -1,14 +1,14 @@
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { AdminPrunePageWork } from '../../rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import type {
+    AdminPruneCandidatePage,
+    AdminPrunePageComputed,
+    AdminPrunePageRepository
+} from '../../rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import {
     decodeAdminPruneAggregate,
     toAdminPruneAggregateKey
-} from '../../rallar-system/admin-operations/admin-prune-progress.ts';
-import type {
-    AdminPruneCandidatePage,
-    AdminPruneExpiredRepository,
-    AdminPrunePageComputed,
-    AdminPrunePageWork
-} from '../../rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+} from '../../rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '../resource-inbox/ResourceInboxResultsRepository.ts';
@@ -18,17 +18,14 @@ type ResourceRow = Readonly<{ ri_row_id: number | string; }>;
 type ResultsRow = Readonly<{ ris_row_id: number | string; }>;
 type AppDataRow = Readonly<{ store_name: string; data_key: string; }>;
 
-export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredRepository {
+export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
     private readonly sql: PSqlSql;
 
-    constructor(
-        sql: PSqlSql,
-        _serviceId: string
-    ) {
+    constructor(sql: PSqlSql) {
         this.sql = sql;
     }
 
-    async readPage(input: Parameters<AdminPruneExpiredRepository['readPage']>[0]): Promise<AdminPruneCandidatePage> {
+    async readPage(input: Parameters<AdminPrunePageRepository['readPage']>[0]): Promise<AdminPruneCandidatePage> {
         switch (input.category) {
             case 'runtime-state':
                 return await readRuntimePage(this.sql, input);
@@ -66,7 +63,7 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
     }
 
     async writeOutbox(transaction: PSqlTransactionSql, entry: ResourceEntry): Promise<void> {
-        await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
+        await new ResourceInboxRepository(transaction).write(entry);
     }
 
     async writeProgress(
@@ -108,7 +105,7 @@ export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredReposit
 
 async function readRuntimePage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
+    input: Parameters<AdminPrunePageRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const [namespace, key] = decodeTuple(input.afterCursor, 2);
     const rows = await sql<RuntimeRow[]>`
@@ -124,7 +121,7 @@ async function readRuntimePage(
 
 async function readResourcePage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
+    input: Parameters<AdminPrunePageRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResourceRow[]>`
@@ -141,7 +138,7 @@ async function readResourcePage(
 
 async function readResultsPage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
+    input: Parameters<AdminPrunePageRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResultsRow[]>`
@@ -156,7 +153,7 @@ async function readResultsPage(
 
 async function readAppDataPage(
     sql: PSqlSql,
-    input: Parameters<AdminPruneExpiredRepository['readPage']>[0]
+    input: Parameters<AdminPrunePageRepository['readPage']>[0]
 ): Promise<AdminPruneCandidatePage> {
     if (!input.appData) {
         throw new TypeError('App-data prune requires namespace');

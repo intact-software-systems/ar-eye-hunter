@@ -9,22 +9,22 @@ import {
     createAdminPruneCommand,
     decodeAdminPruneCommand,
     type AdminPruneCommand
-} from '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ADMIN_PRUNE_AGGREGATE_TOPIC, toAdminPruneAggregateKey } from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity,
     LEGACY_ADMIN_APP_INBOX_TOPIC,
     type AdminPruneEnqueueResult
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
+import { ADMIN_PRUNE_AGGREGATE_TOPIC, toAdminPruneAggregateKey } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from './group-state/inbox/group-state-inbox-test-runtime.ts';
+import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
+import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 const INITIAL_TIME_EPOCH_MS = 1_800_000_000_000;
 const RETRY_EXPIRY_OFFSET_MS = 900_000;

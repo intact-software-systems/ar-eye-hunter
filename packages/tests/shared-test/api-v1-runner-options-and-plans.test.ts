@@ -167,6 +167,7 @@ describe('API-v1 runner options and process plans', () => {
         );
         expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
         expect(env.AUTH_REGISTRATION_MODE).toBe('public');
+        expect(env.AUTH_ADMIN_CLIENT_IDS).toBe(`admin,idempotency-admin-two-${options.runId}`);
         expect(env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON).toBe(
             '[{"documentType":"black-box-map","rollout":"production"}]'
         );

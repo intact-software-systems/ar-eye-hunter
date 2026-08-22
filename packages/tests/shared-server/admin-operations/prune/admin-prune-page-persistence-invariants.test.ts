@@ -1,31 +1,32 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
+import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import {
+    decodeAdminPruneWork,
+    toAdminPruneOutbox,
+    type AdminPrunePageWork
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { AdminPrunePageWorker, type AdminPrunePageComputed } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import {
     createAdminPruneAggregate,
     decodeAdminPruneAggregate,
+    toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey
-} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
-import {
-    AdminPruneExpiredWork,
-    decodeAdminPruneWork,
-    toAdminPruneOutbox,
-    type AdminPrunePageComputed,
-    type AdminPrunePageWork
-} from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
 const NOW = 1_700_000_000_000;
 
-describe('Task 9 admin prune correction contracts', () => {
+describe('admin prune page persistence invariants', () => {
     it('deletes a bounded page with one conditional SQL statement', async () => {
         const statements: string[] = [];
         const transaction = ((parts: TemplateStringsArray) => {
             statements.push(parts.join('?'));
             return Promise.resolve([{ ri_row_id: 1 }, { ri_row_id: 2 }, { ri_row_id: 3 }]);
         }) as never;
-        const repository = new PSqlAdminPruneExpiredRepository((() => undefined) as never, 'server-1');
+        const repository = new PSqlAdminPruneRepository((() => undefined) as never);
         const deleted = await repository.deletePage(
             transaction,
             pageWork({ category: 'resource-inbox' }),
@@ -62,7 +63,7 @@ describe('Task 9 admin prune correction contracts', () => {
             categories: [work.category],
             expiredRows: { [work.category]: 0 }
         });
-        const service = new AdminPruneExpiredWork({
+        const service = new AdminPrunePageWorker({
             database: {} as never,
             repository: {} as never,
             serviceId: 'server-1',
@@ -116,18 +117,48 @@ describe('Task 9 admin prune correction contracts', () => {
         ).toThrow(/duplicate|category/i);
     });
 
-    it('write applies a computed aggregate successor without domain reads or clocks', async () => {
-        const repository = new PSqlAdminPruneExpiredRepository((() => undefined) as never, 'server-1');
-        const source = Function.prototype.toString.call(repository.writeProgress);
-        expect(source).not.toMatch(/findAnyByKey|Date\.now|new Date/);
-        expect(source).toMatch(/expectedAggregate|aggregateSuccessor|computed/);
-    });
+    it('writes the exact computed aggregate successor behind its read predecessor', async () => {
+        const aggregate = createAdminPruneAggregate({
+            jobId: 'job-progress',
+            generatedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            serverId: 'server-1',
+            requestedBy: 'admin-1',
+            requestedSessionId: 'session-1',
+            categories: ['runtime-state'],
+            expiredRows: { 'runtime-state': 0 }
+        });
+        const aggregateSuccessor = {
+            ...aggregate,
+            revision: 1
+        } as const;
+        const successorEntry = toAdminPruneAggregateEntry(aggregateSuccessor);
+        const computed: AdminPrunePageComputed = {
+            kind: 'page',
+            jobId: aggregate.jobId,
+            category: 'runtime-state',
+            rowIds: [],
+            deletedRows: 0,
+            next: null,
+            expectedAggregate: JSON.stringify(aggregate),
+            aggregateSuccessor: successorEntry,
+            finishedAtEpochMs: NOW
+        };
+        const boundValues: Parameters<PSqlSql>[0] = [];
+        const transaction = ((parts: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => {
+            boundValues.push(...values);
+            return Promise.resolve([{ ris_row_id: 1 }]);
+        }) as never;
+        const repository = new PSqlAdminPruneRepository((() => undefined) as never);
 
-    it('reads current job predecessor, page, authority, and clock facts before compute', () => {
-        const source = Function.prototype.toString.call(AdminPruneExpiredWork.prototype.read);
-        expect(source).toMatch(/readAggregate|aggregate/i);
-        expect(source).toMatch(/readAuthority|authority/i);
-        expect(source).toMatch(/nowEpochMs|captured.*clock|this\.now/i);
+        await repository.writeProgress(transaction, computed);
+
+        expect(boundValues).toContain(successorEntry.resource);
+        expect(boundValues).toContain(successorEntry.status);
+        expect(boundValues).toContain(successorEntry.key.topicId);
+        expect(boundValues).toContain(successorEntry.key.resourceId);
+        expect(boundValues).toContain(successorEntry.key.contextId);
+        expect(boundValues).toContain(computed.expectedAggregate);
     });
 });
 
@@ -162,5 +193,3 @@ function reservedEntry(work: AdminPrunePageWork): ResourceEntry {
         }
     };
 }
-
-void ({} as AdminPrunePageComputed);

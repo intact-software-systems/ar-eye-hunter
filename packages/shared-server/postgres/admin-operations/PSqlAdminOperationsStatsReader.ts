@@ -11,7 +11,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type {
     AdminOperationsReadInput,
     AdminOperationsStatsReader
-} from '../../rallar-system/admin-operations/AdminOperationsService.ts';
+} from '../../rallar-system/admin-operations/admin-operations-service.ts';
 import {
     decodeGroupStateGroupStorageKey,
     decodeGroupStateMemberStorageKey,

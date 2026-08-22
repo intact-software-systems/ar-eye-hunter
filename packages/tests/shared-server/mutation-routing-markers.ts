@@ -24,8 +24,8 @@ export const ROUTING_SOURCE_MARKERS = {
         'writeCrdtAdminMutation',
         'writeCrdtCommandUntilCompletion'
     ],
-    'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts': [
-        'AppInboxType.TOPOLOGY_RECONFIGURE',
+    'apps/api-v1/src/admin-operations/create-api-admin-mutation-gateway.ts': [
+        'toTopologyAppInboxCommand',
         'appAdmin.pruneExpired',
         'crdtAdminMutations.writeCrdtAdminMutation'
     ],

@@ -20,15 +20,27 @@ export type ApiV1StateWriteEvidenceSqlSpec = ApiV1StateWriteEvidenceSpec;
 
 async function readOutboxRows(
     sql: ApiV1StateWriteEvidenceQuery,
-    match: string
+    matches: readonly string[]
 ): Promise<readonly OutboxRow[]> {
-    return await sql<OutboxRow[]>`
-        select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
-        from resource_inbox
-        where ri_type_id in ('APP_OUTBOX', 'WS_OUTBOX')
-          and position(${match} in ri_resource) > 0
-        order by ri_row_id
-    `;
+    const rows = await Promise.all(
+        [...new Set(matches)].map(async (match) =>
+            await sql<OutboxRow[]>`
+                select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
+                from resource_inbox
+                where ri_type_id in ('APP_OUTBOX', 'WS_OUTBOX')
+                  and position(${match} in ri_resource) > 0
+                order by ri_row_id
+            `
+        )
+    );
+    return [...new Map(rows.flatMap((batch) =>
+        batch.map((row) =>
+            [
+                [row.ri_type_id, row.ri_topic_id, row.ri_resource_id, row.ri_resource].join('\0'),
+                row
+            ] as const
+        )
+    )).values()];
 }
 
 async function readRows(
@@ -166,10 +178,13 @@ export async function collectApiV1StateWriteEvidenceFromSql(
         ? await runOverdueRecoveryFixture(sql, rows, spec.overdueRecoveryFixture)
         : undefined;
     const finalRows = overdueRecovery ? await readRows(sql, spec.match) : rows;
-    const outboxRows = await readOutboxRows(sql, spec.match);
     const commandEvidence = await Promise.all(
         finalRows.map((row) => readPersistedCommandEvidence(sql, row))
     );
+    const outboxRows = await readOutboxRows(sql, [
+        spec.match,
+        ...commandEvidence.flatMap((evidence) => evidence.commandIds)
+    ]);
     return deriveApiV1StateWriteEvidence(
         spec,
         finalRows,

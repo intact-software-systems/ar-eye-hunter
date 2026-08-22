@@ -7,10 +7,13 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
+import {
+    registerAdminOperationsRoutes,
+    type AdminOperationsRouteService
+} from '../admin-operations/register-admin-operations-routes.ts';
 import { createApiCrdtDocumentAccessAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import * as crdtAdminRoutes from '../crdt/register-crdt-admin-routes.ts';
-import * as adminOperationsRoutes from '../routes/admin-operations-routes.ts';
 import * as adminSupportRoutes from '../routes/admin-support-routes.ts';
 import * as configRoutes from '../routes/config-route.ts';
 import * as graphTopologyRoutes from '../routes/graph-topology-routes.ts';
@@ -59,7 +62,7 @@ export interface ApiV1RouteInstallerTopology {
 }
 
 export interface ApiV1RouteInstallerAdminServices {
-    readonly operations: adminOperationsRoutes.AdminOperationsServiceLike;
+    readonly operations: AdminOperationsRouteService;
     readonly support: adminSupportRoutes.AdminSupportServiceLike;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
 }
@@ -253,10 +256,9 @@ function createApiV1AdministrationRouteInstallers<
                     })
             }),
         (app) =>
-            adminOperationsRoutes.init(app, {
+            registerAdminOperationsRoutes(app, {
                 adminClientIds: input.topology.adminClientIds,
                 operations: input.admin.operations,
-                now: input.nowEpochMs,
                 requireApiAuthSession: requireSession
             }),
         (app) =>

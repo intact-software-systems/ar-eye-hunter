@@ -5,7 +5,7 @@ import {
 } from '@shared/api/admin-operations-types.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
-import type { AdminPruneAppData } from '../AdminPruneExpiredWork.ts';
+import type { AdminPruneAppData } from './admin-prune-command-codec.ts';
 
 export interface AdminPruneEnqueueResult {
     readonly generatedAtEpochMs: number;
